@@ -8,9 +8,9 @@ import "@wterm/react/css";
 
 const INITIAL_FILES: Record<string, string> = {
   "/home/user/README.md":
-    "# wterm\n\nA terminal emulator built with Zig and WebAssembly.\nRuns entirely in the browser — no backend required.\n",
+    "# wterm\n\nA terminal emulator for the web.\nRenders to the DOM — native text selection, copy/paste, and accessibility come for free.\nThe core is written in Zig and compiled to WASM.\n",
   "/home/user/package.json":
-    '{\n  "name": "wterm",\n  "version": "0.1.0",\n  "description": "Zig/WASM terminal emulator"\n}\n',
+    '{\n  "name": "wterm",\n  "version": "0.1.0",\n  "description": "Terminal emulator for the web"\n}\n',
 };
 
 const THEMES = [
@@ -74,7 +74,7 @@ function HeroTerminal({
     const shell = new BashShell({
       files: INITIAL_FILES,
       greeting: [
-        "\x1b[1;36mwterm\x1b[0m — Zig/WASM terminal emulator",
+        "\x1b[1;36mwterm\x1b[0m — terminal emulator for the web",
         "",
         "Try: \x1b[33mls\x1b[0m, \x1b[33mcat README.md\x1b[0m, \x1b[33mecho hello\x1b[0m",
         "",

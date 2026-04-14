@@ -36,4 +36,5 @@ For any user-facing change (new feature, option, API change, bug fix, etc.), upd
 - **Package READMEs**: Each package under `packages/@wterm/` has its own `README.md`. Update the relevant one when its API, options, or usage changes.
 - **Navigation** (`apps/docs/src/lib/docs-navigation.ts`): Update if adding or renaming pages.
 - **Page titles** (`apps/docs/src/lib/page-titles.ts`): Update if adding new pages.
+- **Example READMEs**: Each example under `examples/` must have a `README.md` covering what it does, setup steps, how it works, and key files.
 - **Code examples in docs**: Ensure import paths match the current package structure (e.g. `@wterm/dom` for vanilla JS, `@wterm/react` for React).

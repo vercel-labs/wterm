@@ -27,9 +27,9 @@ const THEMES: Theme[] = [
 
 const INITIAL_FILES: Record<string, string> = {
   "/home/user/README.md":
-    "# wterm\n\nA terminal emulator built with Zig and WebAssembly.\nRuns entirely in the browser — no backend required.\n\nPowered by just-bash for shell execution.\n",
+    "# wterm\n\nA terminal emulator for the web.\nRenders to the DOM — native text selection, copy/paste, and accessibility come for free.\nThe core is written in Zig and compiled to WASM.\n\nUses just-bash for shell execution.\n",
   "/home/user/package.json":
-    '{\n  "name": "wterm",\n  "version": "0.1.0",\n  "description": "Zig/WASM terminal emulator"\n}\n',
+    '{\n  "name": "wterm",\n  "version": "0.1.0",\n  "description": "Terminal emulator for the web"\n}\n',
   "/home/user/src/main.zig":
     'const std = @import("std");\n\npub fn main() void {\n    std.debug.print("Hello from Zig!\\n", .{});\n}\n',
   "/home/user/examples/hello.sh":
@@ -48,7 +48,7 @@ export default function Home() {
     const shell = new BashShell({
       files: INITIAL_FILES,
       greeting: [
-        "\x1b[1;36mwterm\x1b[0m — Zig/WASM terminal emulator",
+        "\x1b[1;36mwterm\x1b[0m — terminal emulator for the web",
         "\x1b[2mPowered by just-bash · running entirely in the browser\x1b[0m",
         "",
         "Type \x1b[1mhelp\x1b[0m for commands, or try: \x1b[33mls\x1b[0m, \x1b[33mcat README.md\x1b[0m, \x1b[33mbash examples/hello.sh\x1b[0m",

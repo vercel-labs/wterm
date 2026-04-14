@@ -1,7 +1,7 @@
 {
   "name": "@wterm/react",
   "version": "0.1.0",
-  "description": "React component for wterm — a Zig/WASM terminal emulator for the web",
+  "description": "React component for wterm — a terminal emulator for the web",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

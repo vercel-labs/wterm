@@ -1,6 +1,6 @@
 # @wterm/dom
 
-DOM renderer, input handler, and orchestrator for wterm — a Zig/WASM terminal emulator for the web. No framework required.
+DOM renderer, input handler, and orchestrator for [wterm](https://github.com/vercel-labs/wterm) — a terminal emulator for the web. No framework required.
 
 Re-exports everything from `@wterm/core`, so this is the only package you need for vanilla JS usage.
 

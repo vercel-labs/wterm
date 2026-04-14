@@ -1,7 +1,7 @@
 {
   "name": "@wterm/core",
   "version": "0.1.0",
-  "description": "Headless Zig/WASM terminal emulator core — WASM bridge and WebSocket transport",
+  "description": "Headless terminal emulator core for the web — WASM bridge and WebSocket transport",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

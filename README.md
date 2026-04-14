@@ -1,8 +1,8 @@
 # wterm
 
-A terminal emulator for the web, powered by Zig and WebAssembly.
+A terminal emulator for the web.
 
-The terminal core is written in Zig and compiled to WASM for near-native performance in the browser. Rendering uses the DOM — native text selection, copy/paste, find, and accessibility come for free.
+wterm (pronounced "dub-term") renders to the DOM — native text selection, copy/paste, find, and accessibility come for free. The core is written in Zig and compiled to WASM for near-native performance.
 
 ## Packages
 

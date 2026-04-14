@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "wterm — Next.js Example",
-  description: "A Zig/WASM terminal emulator running in Next.js",
+  description: "A terminal emulator for the web, running in Next.js",
 };
 
 export default function RootLayout({

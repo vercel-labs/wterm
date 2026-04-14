@@ -1,6 +1,6 @@
 # @wterm/core
 
-Headless terminal emulator core powered by Zig/WASM. Provides the WASM bridge and WebSocket transport — no DOM dependency.
+Headless terminal emulator core for [wterm](https://github.com/vercel-labs/wterm). Provides the WASM bridge and WebSocket transport — no DOM dependency.
 
 For a ready-to-use DOM terminal, see [`@wterm/dom`](../dom) or [`@wterm/react`](../react).
 

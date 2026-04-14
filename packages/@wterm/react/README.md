@@ -1,6 +1,6 @@
 # @wterm/react
 
-React component for [wterm](https://github.com/vercel-labs/wterm) — a Zig/WASM terminal emulator for the web.
+React component for [wterm](https://github.com/vercel-labs/wterm) — a terminal emulator for the web.
 
 ## Install
 

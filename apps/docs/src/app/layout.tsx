@@ -22,7 +22,7 @@ export const metadata: Metadata = {
     template: "%s | wterm",
   },
   description:
-    "A terminal emulator for the web, powered by Zig and WebAssembly.",
+    "A terminal emulator for the web. Renders to the DOM, powered by Zig/WASM.",
   openGraph: {
     type: "website",
     locale: "en_US",
@@ -30,14 +30,14 @@ export const metadata: Metadata = {
     siteName: "wterm",
     title: "wterm | Terminal Emulator for the Web",
     description:
-      "A terminal emulator for the web, powered by Zig and WebAssembly.",
+      "A terminal emulator for the web. Renders to the DOM, powered by Zig/WASM.",
     images: [{ url: "/og", width: 1200, height: 630, alt: "wterm" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "wterm | Terminal Emulator for the Web",
     description:
-      "A terminal emulator for the web, powered by Zig and WebAssembly.",
+      "A terminal emulator for the web. Renders to the DOM, powered by Zig/WASM.",
     images: ["/og"],
   },
 };

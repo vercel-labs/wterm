@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { PAGE_TITLES } from "./page-titles";
 
 const DESCRIPTION =
-  "A terminal emulator for the web, powered by Zig and WebAssembly.";
+  "A terminal emulator for the web. Renders to the DOM, powered by Zig/WASM.";
 
 export function pageMetadata(slug: string): Metadata {
   const title = PAGE_TITLES[slug];

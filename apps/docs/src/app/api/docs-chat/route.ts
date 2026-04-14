@@ -12,7 +12,7 @@ export const maxDuration = 60;
 
 const DEFAULT_MODEL = "anthropic/claude-haiku-4.5";
 
-const SYSTEM_PROMPT = `You are a helpful documentation assistant for wterm, a terminal emulator for the web powered by Zig and WebAssembly.
+const SYSTEM_PROMPT = `You are a helpful documentation assistant for wterm (pronounced "dub-term"), a terminal emulator for the web. It renders to the DOM — native text selection, copy/paste, find, and accessibility come for free. The core is written in Zig and compiled to WASM.
 
 GitHub repository: https://github.com/vercel-labs/wterm
 Documentation: https://wterm.dev
