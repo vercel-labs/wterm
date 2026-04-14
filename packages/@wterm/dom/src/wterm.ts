@@ -155,6 +155,9 @@ export class WTerm {
 
     this.renderer.render(this.bridge);
 
+    const hasScrollback = this.bridge.getScrollbackCount() > 0;
+    this.element.classList.toggle("has-scrollback", hasScrollback);
+
     if (this._shouldScrollToBottom) {
       this._scrollToBottom();
     }

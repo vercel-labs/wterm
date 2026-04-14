@@ -34,7 +34,7 @@
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   outline: none;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .wterm:focus,
@@ -68,6 +68,10 @@
 @keyframes cursor-blink {
   0%, 100% { background: var(--term-cursor); color: var(--term-bg); }
   50% { background: transparent; color: inherit; }
+}
+
+.wterm.has-scrollback {
+  overflow-y: auto;
 }
 
 .wterm ::selection {
