@@ -1,0 +1,40 @@
+{
+  "name": "@wterm/markdown",
+  "version": "0.1.0",
+  "description": "Streaming markdown-to-ANSI renderer for wterm terminals",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@internal/ts": "workspace:*",
+    "typescript": "^6.0.2"
+  },
+  "keywords": [
+    "terminal",
+    "markdown",
+    "ansi",
+    "wterm",
+    "streaming"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://wterm.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vercel-labs/wterm",
+    "directory": "packages/@wterm/markdown"
+  }
+}

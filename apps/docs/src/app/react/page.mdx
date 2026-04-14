@@ -1,0 +1,96 @@
+# React
+
+The `@wterm/react` package provides a `<Terminal>` component and a `useTerminal` hook for integrating wterm into React applications.
+
+## Install
+
+```bash
+npm install @wterm/dom @wterm/react
+```
+
+## Basic Usage
+
+```tsx
+import { Terminal, useTerminal } from "@wterm/react";
+import "@wterm/react/css";
+
+function App() {
+  const { ref, write } = useTerminal();
+
+  return (
+    <Terminal
+      ref={ref}
+      wasmUrl="/wterm.wasm"
+      onData={(data) => write(data)}
+    />
+  );
+}
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+|---|---|---|---|
+| `cols` | `number` | `80` | Initial column count |
+| `rows` | `number` | `24` | Initial row count |
+| `wasmUrl` | `string` | `"wterm.wasm"` | URL to the WASM binary |
+| `theme` | `string` | — | Theme name (`"solarized-dark"`, `"monokai"`, `"light"`) |
+| `autoResize` | `boolean` | `false` | Auto-resize based on container |
+| `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
+| `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response) |
+| `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
+| `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
+| `onReady` | `(wt: WTerm) => void` | — | Called after WASM loads |
+
+Standard `div` props (`className`, `style`, `id`, etc.) are forwarded to the container element.
+
+## useTerminal Hook
+
+Returns a ref and imperative helpers:
+
+```tsx
+const { ref, write, resize, focus } = useTerminal();
+```
+
+| Return | Type | Description |
+|---|---|---|
+| `ref` | `RefObject<TerminalHandle>` | Pass to `<Terminal ref={ref}>` |
+| `write` | `(data: string \| Uint8Array) => void` | Write data to the terminal |
+| `resize` | `(cols: number, rows: number) => void` | Resize the terminal |
+| `focus` | `() => void` | Focus the terminal |
+
+## TerminalHandle
+
+The imperative handle exposed via `ref`:
+
+```ts
+interface TerminalHandle {
+  write(data: string | Uint8Array): void;
+  resize(cols: number, rows: number): void;
+  focus(): void;
+  readonly instance: WTerm | null;
+}
+```
+
+## Themes
+
+Import the stylesheet and switch themes via the `theme` prop:
+
+```tsx
+import "@wterm/react/css";
+
+<Terminal theme="monokai" />
+```
+
+Built-in themes: `solarized-dark`, `monokai`, `light`. Define custom themes with CSS custom properties (`--term-fg`, `--term-bg`, `--term-color-0` through `--term-color-15`).
+
+## Next.js
+
+For Next.js, add `@wterm/dom` and `@wterm/react` to `transpilePackages` in your config, and place the WASM file in `public/`:
+
+```js
+// next.config.mjs
+const nextConfig = {
+  transpilePackages: ["@wterm/dom", "@wterm/react"],
+};
+```

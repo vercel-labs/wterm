@@ -1,0 +1,66 @@
+# Get Started
+
+## Install
+
+### React
+
+```bash
+npm install @wterm/dom @wterm/react
+```
+
+### Vanilla JS
+
+```bash
+npm install @wterm/dom
+```
+
+You also need to serve the `wterm.wasm` binary as a static asset in your application. Build it from source with Zig, or grab a prebuilt release.
+
+## Quick Start
+
+### React
+
+```tsx
+import { Terminal, useTerminal } from "@wterm/react";
+import "@wterm/react/css";
+
+function App() {
+  const { ref, write } = useTerminal();
+
+  return (
+    <Terminal
+      ref={ref}
+      wasmUrl="/wterm.wasm"
+      onData={(data) => write(data)}
+    />
+  );
+}
+```
+
+### Vanilla JS
+
+```js
+import { WTerm } from "@wterm/dom";
+import "@wterm/dom/css";
+
+const term = new WTerm(document.getElementById("terminal"), {
+  cols: 80,
+  rows: 24,
+  wasmUrl: "/wterm.wasm",
+  onData(data) {
+    term.write(data);
+  },
+});
+
+await term.init();
+```
+
+## Building the WASM Binary
+
+Requires [Zig](https://ziglang.org/) 0.15.2+:
+
+```bash
+zig build -Doptimize=ReleaseSmall
+```
+
+The compiled binary is output to `web/wterm.wasm`.

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wterm</title>
+  <link rel="stylesheet" href="css/terminal.css">
+  <style>
+    .demo-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    .demo-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      color: #888;
+    }
+    .demo-bar select {
+      background: #2a2a2a;
+      color: #ccc;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 13px;
+    }
+    .demo-bar .title-display {
+      color: #aaa;
+      font-style: italic;
+    }
+    #terminal {
+      width: 700px;
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-wrapper">
+    <div class="demo-bar">
+      <strong style="color:#ccc">wterm</strong>
+      <span>·</span>
+      <label>
+        Theme:
+        <select id="theme-select">
+          <option value="">Default (Dark)</option>
+          <option value="theme-solarized-dark">Solarized Dark</option>
+          <option value="theme-monokai">Monokai</option>
+          <option value="theme-light">Light</option>
+        </select>
+      </label>
+      <span class="title-display" id="title-display"></span>
+    </div>
+    <div id="terminal" role="textbox" aria-label="Terminal" aria-multiline="true" aria-roledescription="terminal"></div>
+  </div>
+
+  <script type="module">
+    import { WTerm } from './js/terminal.js';
+
+    const termEl = document.getElementById('terminal');
+    const themeSelect = document.getElementById('theme-select');
+    const titleDisplay = document.getElementById('title-display');
+
+    const term = new WTerm(termEl, {
+      cols: 80,
+      rows: 24,
+      autoResize: false,
+      onData(data) {
+        let out = '';
+        for (const ch of data) {
+          if (ch === '\r') {
+            out += '\r\n';
+          } else if (ch === '\x7f' || ch === '\x08') {
+            out += '\x08 \x08';
+          } else {
+            out += ch;
+          }
+        }
+        term.write(out);
+      },
+      onTitle(title) {
+        titleDisplay.textContent = title;
+        document.title = title ? `${title} — wterm` : 'wterm';
+      },
+    });
+
+    await term.init();
+
+    themeSelect.addEventListener('change', () => {
+      termEl.className = '';
+      termEl.classList.add('wterm');
+      if (themeSelect.value) termEl.classList.add(themeSelect.value);
+      // Re-add the term-grid container class
+      termEl.querySelector('.term-grid')?.classList.add('term-grid');
+    });
+
+    const welcome = [
+      '\x1b[1;36m┌──────────────────────────────────────┐\x1b[0m',
+      '\x1b[1;36m│\x1b[0m  \x1b[1;33mwterm\x1b[0m — a terminal for the web     \x1b[1;36m│\x1b[0m',
+      '\x1b[1;36m│\x1b[0m  powered by Zig + WebAssembly        \x1b[1;36m│\x1b[0m',
+      '\x1b[1;36m└──────────────────────────────────────┘\x1b[0m',
+      '',
+      'Type anything — this is local echo mode.',
+      'Try: \x1b[1mbold\x1b[0m, \x1b[3mitalic\x1b[0m, \x1b[4munderline\x1b[0m, \x1b[9mstrikethrough\x1b[0m',
+      'Colors: \x1b[31mr\x1b[32mg\x1b[33my\x1b[34mb\x1b[35mm\x1b[36mc\x1b[0m | 256: \x1b[38;5;208m208\x1b[0m \x1b[38;5;135m135\x1b[0m \x1b[38;5;82m82\x1b[0m',
+      '',
+      '\x1b[32m$\x1b[0m ',
+    ].join('\r\n');
+
+    term.write(welcome);
+  </script>
+</body>
+</html>

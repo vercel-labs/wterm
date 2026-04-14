@@ -1,0 +1,45 @@
+{
+  "name": "@wterm/just-bash",
+  "version": "0.1.0",
+  "description": "just-bash shell adapter for wterm — line editing, tab completion, history, prompt",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "just-bash": "^2"
+  },
+  "devDependencies": {
+    "@internal/ts": "workspace:*",
+    "just-bash": "^2",
+    "typescript": "^6.0.2"
+  },
+  "keywords": [
+    "terminal",
+    "bash",
+    "shell",
+    "wterm",
+    "just-bash",
+    "wasm"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://wterm.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vercel-labs/wterm",
+    "directory": "packages/@wterm/just-bash"
+  }
+}

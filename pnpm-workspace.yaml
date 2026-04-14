@@ -1,0 +1,6 @@
+packages:
+  - "packages/*"
+  - "packages/@wterm/*"
+  - "packages/@internal/*"
+  - "apps/*"
+  - "examples/*"

@@ -1,0 +1,52 @@
+{
+  "name": "@wterm/docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "command -v portless >/dev/null 2>&1 || (echo '\\nportless is required but not installed. Run: npm i -g portless\\nSee: https://github.com/vercel-labs/portless\\n' && exit 1)",
+    "dev": "portless docs.wterm next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@ai-sdk/react": "^3",
+    "@mdx-js/loader": "^3",
+    "@mdx-js/react": "^3",
+    "@next/mdx": "^16.2.3",
+    "@upstash/ratelimit": "^2",
+    "@upstash/redis": "^1",
+    "@wterm/core": "workspace:*",
+    "@wterm/dom": "workspace:*",
+    "@wterm/just-bash": "workspace:*",
+    "@wterm/markdown": "workspace:*",
+    "@wterm/react": "workspace:*",
+    "ai": "^6",
+    "bash-tool": "^1",
+    "clsx": "^2",
+    "geist": "^1",
+    "just-bash": "^2",
+    "next": "^16.2.3",
+    "next-themes": "^0.4",
+    "radix-ui": "^1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "shiki": "^4.0.2",
+    "streamdown": "^2",
+    "tailwind-merge": "^3",
+    "tailwindcss-animate": "^1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/mdx": "^2",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "16.2.3",
+    "tailwindcss": "^4",
+    "typescript": "^6.0.2"
+  }
+}

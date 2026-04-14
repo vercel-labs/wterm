@@ -1,0 +1,104 @@
+# Vanilla JS
+
+The `@wterm/dom` package provides a framework-free terminal that works with plain HTML/CSS/JS.
+
+## Install
+
+```bash
+npm install @wterm/dom
+```
+
+## Usage
+
+```html
+<div id="terminal"></div>
+
+<script type="module">
+  import { WTerm } from "@wterm/dom";
+  import "@wterm/dom/css";
+
+  const term = new WTerm(document.getElementById("terminal"), {
+    cols: 80,
+    rows: 24,
+    wasmUrl: "/wterm.wasm",
+    onData(data) {
+      term.write(data);
+    },
+    onTitle(title) {
+      document.title = title;
+    },
+  });
+
+  await term.init();
+</script>
+```
+
+## Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `cols` | `number` | `80` | Initial column count |
+| `rows` | `number` | `24` | Initial row count |
+| `wasmUrl` | `string` | `"wterm.wasm"` | URL to the WASM binary |
+| `autoResize` | `boolean` | `true` | Auto-resize based on container |
+| `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
+| `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response) |
+| `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
+| `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
+
+## Methods
+
+| Method | Description |
+|---|---|
+| `init(): Promise<WTerm>` | Load WASM and start rendering |
+| `write(data: string \| Uint8Array)` | Write data to the terminal |
+| `resize(cols, rows)` | Resize the terminal grid |
+| `focus()` | Focus the terminal element |
+| `destroy()` | Clean up event listeners and DOM |
+
+## Themes
+
+Import the stylesheet and apply a theme class to the terminal element:
+
+```js
+import "@wterm/dom/css";
+```
+
+Built-in themes: `theme-solarized-dark`, `theme-monokai`, `theme-light`:
+
+```js
+element.classList.add("theme-monokai");
+```
+
+All colors use CSS custom properties (`--term-fg`, `--term-bg`, `--term-color-0` through `--term-color-15`) so you can define your own theme with plain CSS.
+
+## WebSocket Transport
+
+Connect to a PTY backend over WebSocket:
+
+```js
+import { WTerm, WebSocketTransport } from "@wterm/dom";
+
+const term = new WTerm(el, { cols: 80, rows: 24, wasmUrl: "/wterm.wasm" });
+await term.init();
+
+const ws = new WebSocketTransport({
+  url: "ws://localhost:8080/pty",
+  onData: (data) => term.write(data),
+});
+
+ws.connect();
+term.onData = (data) => ws.send(data);
+```
+
+### Transport Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `url` | `string` | — | WebSocket server URL |
+| `reconnect` | `boolean` | `true` | Auto-reconnect on disconnect |
+| `maxReconnectDelay` | `number` | `30000` | Maximum delay between reconnection attempts (ms), with exponential backoff |
+| `onData` | `(data: Uint8Array \| string) => void` | — | Called when data is received from the server |
+| `onOpen` | `() => void` | — | Called when the connection opens |
+| `onClose` | `() => void` | — | Called when the connection closes |
+| `onError` | `(event: Event) => void` | — | Called when a WebSocket error occurs |

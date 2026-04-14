@@ -1,0 +1,54 @@
+{
+  "name": "@wterm/react",
+  "version": "0.1.0",
+  "description": "React component for wterm — a Zig/WASM terminal emulator for the web",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./css": {
+      "style": "./src/terminal.css",
+      "import": "./src/terminal.css",
+      "default": "./src/terminal.css"
+    }
+  },
+  "files": [
+    "dist",
+    "src/terminal.css"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@internal/ts": "workspace:*",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^6.0.2"
+  },
+  "peerDependencies": {
+    "@wterm/dom": "workspace:*",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "keywords": [
+    "terminal",
+    "emulator",
+    "wasm",
+    "zig",
+    "react",
+    "xterm"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://wterm.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vercel-labs/wterm",
+    "directory": "packages/@wterm/react"
+  }
+}

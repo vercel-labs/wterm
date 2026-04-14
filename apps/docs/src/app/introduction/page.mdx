@@ -1,0 +1,29 @@
+import { HeroSection } from "@/components/hero-terminal";
+
+<div className="mb-12">
+  <h1 className="mb-6 text-2xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">A terminal emulator for the web</h1>
+  <div className="mb-8 hidden text-sm leading-relaxed text-neutral-600 dark:text-neutral-400 md:block">
+    wterm <span className="text-neutral-400 dark:text-neutral-500">(pronounced "dub-term")</span> is a terminal emulator whose core is written in Zig and compiled to WASM for near-native performance in the browser. Rendering uses the DOM — native text selection, copy/paste, find, and accessibility come for free.
+  </div>
+  <div className="mb-6 md:mb-0">
+    <HeroSection />
+  </div>
+  <div className="mt-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400 md:hidden">
+    wterm <span className="text-neutral-400 dark:text-neutral-500">(pronounced "dub-term")</span> is a terminal emulator whose core is written in Zig and compiled to WASM for near-native performance in the browser. Rendering uses the DOM — native text selection, copy/paste, find, and accessibility come for free.
+  </div>
+  <div className="mt-3 text-xs text-neutral-500 dark:text-neutral-500">
+    Example uses <a href="https://github.com/nicolo-ribaudo/just-bash" className="underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-300">just-bash</a>. See also: <a href="https://github.com/vercel-labs/wterm/tree/main/examples/ssh" className="underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-300">SSH</a>, <a href="https://github.com/vercel-labs/wterm/tree/main/examples/local" className="underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-300">local</a>.
+  </div>
+</div>
+
+## Features
+
+- **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~12 KB `.wasm` binary
+- **DOM rendering** — native text selection, clipboard, browser find, screen reader support
+- **Dirty-row tracking** — only touched rows are re-rendered each frame via `requestAnimationFrame`
+- **Themes** — CSS custom properties with built-in Default, Solarized Dark, Monokai, and Light themes
+- **Alternate screen buffer** — `vim`, `less`, `htop` work correctly
+- **Scrollback history** — configurable ring buffer
+- **24-bit color** — full RGB SGR support
+- **Auto-resize** — `ResizeObserver`-based terminal resizing
+- **WebSocket transport** — connect to a PTY backend with reconnection

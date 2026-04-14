@@ -1,0 +1,40 @@
+{
+  "name": "@wterm/core",
+  "version": "0.1.0",
+  "description": "Headless Zig/WASM terminal emulator core — WASM bridge and WebSocket transport",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@internal/ts": "workspace:*",
+    "typescript": "^6.0.2"
+  },
+  "keywords": [
+    "terminal",
+    "emulator",
+    "wasm",
+    "zig",
+    "xterm"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://wterm.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vercel-labs/wterm",
+    "directory": "packages/@wterm/core"
+  }
+}

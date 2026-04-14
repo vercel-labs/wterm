@@ -1,0 +1,55 @@
+{
+  "name": "@wterm/dom",
+  "version": "0.1.0",
+  "description": "DOM renderer, input handler, and orchestrator for wterm",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./css": {
+      "style": "./src/terminal.css",
+      "import": "./src/terminal.css",
+      "default": "./src/terminal.css"
+    },
+    "./src/terminal.css": {
+      "style": "./src/terminal.css",
+      "import": "./src/terminal.css",
+      "default": "./src/terminal.css"
+    }
+  },
+  "files": [
+    "dist",
+    "src/terminal.css"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@wterm/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@internal/ts": "workspace:*",
+    "typescript": "^6.0.2"
+  },
+  "keywords": [
+    "terminal",
+    "emulator",
+    "wasm",
+    "zig",
+    "dom",
+    "xterm"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://wterm.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vercel-labs/wterm",
+    "directory": "packages/@wterm/dom"
+  }
+}

@@ -1,0 +1,169 @@
+# Themes
+
+wterm uses CSS custom properties for all visual styling, making it easy to switch between built-in themes or create your own.
+
+## Using a Theme
+
+### React
+
+Pass the theme name via the `theme` prop:
+
+```tsx
+<Terminal theme="monokai" wasmUrl="/wterm.wasm" />
+```
+
+### Vanilla JS
+
+Add the theme class to the terminal element:
+
+```js
+const term = new WTerm(document.getElementById("terminal"), {
+  wasmUrl: "/wterm.wasm",
+});
+term.element.classList.add("theme-monokai");
+await term.init();
+```
+
+## Built-in Themes
+
+### Default
+
+The default dark theme, inspired by VS Code's Dark+ palette.
+
+<table>
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Background</td><td><code>#1e1e1e</code></td></tr>
+    <tr><td>Foreground</td><td><code>#d4d4d4</code></td></tr>
+    <tr><td>Cursor</td><td><code>#aeafad</code></td></tr>
+  </tbody>
+</table>
+
+### Solarized Dark
+
+The classic Solarized Dark color scheme by Ethan Schoonover.
+
+```tsx
+<Terminal theme="solarized-dark" wasmUrl="/wterm.wasm" />
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Background</td><td><code>#002b36</code></td></tr>
+    <tr><td>Foreground</td><td><code>#839496</code></td></tr>
+    <tr><td>Cursor</td><td><code>#93a1a1</code></td></tr>
+  </tbody>
+</table>
+
+### Monokai
+
+Based on the Monokai color scheme.
+
+```tsx
+<Terminal theme="monokai" wasmUrl="/wterm.wasm" />
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Background</td><td><code>#272822</code></td></tr>
+    <tr><td>Foreground</td><td><code>#f8f8f2</code></td></tr>
+    <tr><td>Cursor</td><td><code>#f8f8f0</code></td></tr>
+  </tbody>
+</table>
+
+### Light
+
+A clean light theme inspired by Atom's One Light.
+
+```tsx
+<Terminal theme="light" wasmUrl="/wterm.wasm" />
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Background</td><td><code>#fafafa</code></td></tr>
+    <tr><td>Foreground</td><td><code>#383a42</code></td></tr>
+    <tr><td>Cursor</td><td><code>#526eff</code></td></tr>
+  </tbody>
+</table>
+
+## Custom Themes
+
+Create a custom theme by defining a CSS class that overrides the wterm custom properties:
+
+```css
+.wterm.theme-tokyo-night {
+  --term-bg: #1a1b26;
+  --term-fg: #c0caf5;
+  --term-cursor: #f7768e;
+
+  --term-color-0: #15161e;
+  --term-color-1: #f7768e;
+  --term-color-2: #9ece6a;
+  --term-color-3: #e0af68;
+  --term-color-4: #7aa2f7;
+  --term-color-5: #bb9af7;
+  --term-color-6: #7dcfff;
+  --term-color-7: #a9b1d6;
+  --term-color-8: #414868;
+  --term-color-9: #f7768e;
+  --term-color-10: #9ece6a;
+  --term-color-11: #e0af68;
+  --term-color-12: #7aa2f7;
+  --term-color-13: #bb9af7;
+  --term-color-14: #7dcfff;
+  --term-color-15: #c0caf5;
+}
+```
+
+Then apply it the same way as a built-in theme:
+
+```tsx
+<Terminal theme="tokyo-night" wasmUrl="/wterm.wasm" />
+```
+
+## CSS Custom Properties Reference
+
+<table>
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><code>--term-bg</code></td><td>Terminal background color</td></tr>
+    <tr><td><code>--term-fg</code></td><td>Default text color</td></tr>
+    <tr><td><code>--term-cursor</code></td><td>Cursor color</td></tr>
+    <tr><td><code>--term-font-family</code></td><td>Font stack (default: Menlo, Consolas, DejaVu Sans Mono, Courier New, monospace)</td></tr>
+    <tr><td><code>--term-font-size</code></td><td>Font size (default: <code>14px</code>)</td></tr>
+    <tr><td><code>--term-line-height</code></td><td>Line height multiplier (default: <code>1.2</code>)</td></tr>
+    <tr><td><code>--term-color-0</code> … <code>--term-color-7</code></td><td>Standard ANSI colors (black, red, green, yellow, blue, magenta, cyan, white)</td></tr>
+    <tr><td><code>--term-color-8</code> … <code>--term-color-15</code></td><td>Bright ANSI colors</td></tr>
+  </tbody>
+</table>
+
+Colors beyond the 16-color palette (indices 16–255 and true-color RGB) are computed by the renderer and do not use custom properties.

@@ -1,0 +1,10 @@
+zig-out/
+.zig-cache/
+*.wasm
+.DS_Store
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+.next/
+next-env.d.ts
