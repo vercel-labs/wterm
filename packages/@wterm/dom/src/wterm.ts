@@ -52,7 +52,10 @@ export class WTerm {
     this.element.classList.add("wterm");
     if (options.cursorBlink) this.element.classList.add("cursor-blink");
 
-    this._onClickFocus = () => this.input?.focus();
+    this._onClickFocus = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) this.input?.focus();
+    };
     this.element.addEventListener("click", this._onClickFocus);
   }
 
