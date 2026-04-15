@@ -55,6 +55,13 @@
   contain: content;
 }
 
+.term-block {
+  display: inline-block;
+  width: 1ch;
+  height: calc(var(--term-font-size) * var(--term-line-height));
+  vertical-align: top;
+  overflow: hidden;
+}
 
 .term-cursor {
   background: var(--term-cursor);

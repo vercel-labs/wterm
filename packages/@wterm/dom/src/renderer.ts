@@ -64,6 +64,101 @@ function appendRun(parent: HTMLElement, text: string, style: string): void {
   }
 }
 
+function resolveColors(
+  fg: number,
+  bg: number,
+  flags: number,
+): { fg: string; bg: string } {
+  let fgC = fg,
+    bgC = bg;
+  if (flags & FLAG_REVERSE) {
+    [fgC, bgC] = [bgC, fgC];
+    if (fgC === DEFAULT_COLOR) fgC = 0;
+    if (bgC === DEFAULT_COLOR) bgC = 7;
+  }
+  return {
+    fg: colorToCSS(fgC) || "var(--term-fg)",
+    bg: colorToCSS(bgC) || "var(--term-bg)",
+  };
+}
+
+function getBlockBackground(cp: number, fg: string, bg: string): string {
+  switch (cp) {
+    case 0x2580:
+      return `linear-gradient(${fg} 50%,${bg} 50%)`;
+    case 0x2581:
+      return `linear-gradient(${bg} 87.5%,${fg} 87.5%)`;
+    case 0x2582:
+      return `linear-gradient(${bg} 75%,${fg} 75%)`;
+    case 0x2583:
+      return `linear-gradient(${bg} 62.5%,${fg} 62.5%)`;
+    case 0x2584:
+      return `linear-gradient(${bg} 50%,${fg} 50%)`;
+    case 0x2585:
+      return `linear-gradient(${bg} 37.5%,${fg} 37.5%)`;
+    case 0x2586:
+      return `linear-gradient(${bg} 25%,${fg} 25%)`;
+    case 0x2587:
+      return `linear-gradient(${bg} 12.5%,${fg} 12.5%)`;
+    case 0x2588:
+      return fg;
+    case 0x2589:
+      return `linear-gradient(to right,${fg} 87.5%,${bg} 87.5%)`;
+    case 0x258a:
+      return `linear-gradient(to right,${fg} 75%,${bg} 75%)`;
+    case 0x258b:
+      return `linear-gradient(to right,${fg} 62.5%,${bg} 62.5%)`;
+    case 0x258c:
+      return `linear-gradient(to right,${fg} 50%,${bg} 50%)`;
+    case 0x258d:
+      return `linear-gradient(to right,${fg} 37.5%,${bg} 37.5%)`;
+    case 0x258e:
+      return `linear-gradient(to right,${fg} 25%,${bg} 25%)`;
+    case 0x258f:
+      return `linear-gradient(to right,${fg} 12.5%,${bg} 12.5%)`;
+    case 0x2590:
+      return `linear-gradient(to right,${bg} 50%,${fg} 50%)`;
+    case 0x2591:
+      return `color-mix(in srgb,${fg} 25%,${bg})`;
+    case 0x2592:
+      return `color-mix(in srgb,${fg} 50%,${bg})`;
+    case 0x2593:
+      return `color-mix(in srgb,${fg} 75%,${bg})`;
+    case 0x2594:
+      return `linear-gradient(${fg} 12.5%,${bg} 12.5%)`;
+    case 0x2595:
+      return `linear-gradient(to right,${bg} 87.5%,${fg} 87.5%)`;
+    default: {
+      const QUADRANTS: Record<number, [boolean, boolean, boolean, boolean]> = {
+        0x2596: [false, false, true, false],
+        0x2597: [false, false, false, true],
+        0x2598: [true, false, false, false],
+        0x2599: [true, false, true, true],
+        0x259a: [true, false, false, true],
+        0x259b: [true, true, true, false],
+        0x259c: [true, true, false, true],
+        0x259d: [false, true, false, false],
+        0x259e: [false, true, true, false],
+        0x259f: [false, true, true, true],
+      };
+      const q = QUADRANTS[cp];
+      if (!q) return fg;
+      const [tl, tr, bl, br] = q;
+      if (tl && tr && bl && br) return fg;
+      const layers: string[] = [];
+      const POS = ["0 0", "100% 0", "0 100%", "100% 100%"];
+      q.forEach((filled, i) => {
+        if (filled)
+          layers.push(
+            `linear-gradient(${fg},${fg}) ${POS[i]}/50% 50% no-repeat`,
+          );
+      });
+      layers.push(bg);
+      return layers.join(",");
+    }
+  }
+}
+
 export class Renderer {
   private container: HTMLElement;
   private rows = 0;
@@ -143,19 +238,37 @@ export class Renderer {
     for (let col = 0; col < this.cols; col++) {
       const cell = getCell(col);
       const inBounds = col < lineLen;
-      const ch =
-        inBounds && cell.char >= 32 ? String.fromCodePoint(cell.char) : " ";
-      const style = inBounds
-        ? buildCellStyle(cell.fg, cell.bg, cell.flags)
-        : "";
+      const cp = inBounds ? cell.char : 0;
 
-      if (style !== runStyle) {
+      if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
         flushRun(col);
-        runStyle = style;
-        runText = ch;
-        runStart = col;
+
+        const colors = resolveColors(cell.fg, cell.bg, cell.flags);
+        const span = document.createElement("span");
+        span.className =
+          col === cursorCol ? "term-block term-cursor" : "term-block";
+        span.style.background = getBlockBackground(cp, colors.fg, colors.bg);
+        if (cell.flags & FLAG_DIM) span.style.opacity = "0.5";
+        rowEl.appendChild(span);
+
+        runStyle = "";
+        runText = "";
+        runStart = col + 1;
       } else {
-        runText += ch;
+        const ch =
+          inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ";
+        const style = inBounds
+          ? buildCellStyle(cell.fg, cell.bg, cell.flags)
+          : "";
+
+        if (style !== runStyle) {
+          flushRun(col);
+          runStyle = style;
+          runText = ch;
+          runStart = col;
+        } else {
+          runText += ch;
+        }
       }
     }
     flushRun(this.cols);
