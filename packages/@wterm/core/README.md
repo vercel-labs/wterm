@@ -2,7 +2,14 @@
 
 Headless terminal emulator core for [wterm](https://github.com/vercel-labs/wterm). Provides the WASM bridge and WebSocket transport — no DOM dependency.
 
-For a ready-to-use DOM terminal, see [`@wterm/dom`](../dom) or [`@wterm/react`](../react).
+## Related Packages
+
+| Package | Description |
+|---|---|
+| [`@wterm/dom`](https://www.npmjs.com/package/@wterm/dom) | DOM renderer, input handler — vanilla JS terminal |
+| [`@wterm/react`](https://www.npmjs.com/package/@wterm/react) | React component + `useTerminal` hook |
+| [`@wterm/just-bash`](https://www.npmjs.com/package/@wterm/just-bash) | In-browser Bash shell powered by just-bash |
+| [`@wterm/markdown`](https://www.npmjs.com/package/@wterm/markdown) | Streaming Markdown-to-ANSI renderer for terminals |
 
 ## Install
 

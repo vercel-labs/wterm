@@ -107,7 +107,7 @@ async function Header() {
             {stars && <span>{stars}</span>}
           </a>
           <a
-            href="https://www.npmjs.com/package/@wterm/dom"
+            href="https://www.npmjs.com/package/@wterm/core"
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-neutral-500 hover:text-neutral-900 transition-colors dark:text-neutral-400 dark:hover:text-neutral-100"

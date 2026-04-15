@@ -34,6 +34,7 @@ For any user-facing change (new feature, option, API change, bug fix, etc.), upd
 - **Docs app** (`apps/docs/src/app/`): Update the corresponding MDX pages (e.g. `get-started/page.mdx`, `vanilla/page.mdx`, `react/page.mdx`, `configuration/page.mdx`, `themes/page.mdx`). Tables in MDX must use `<table>` HTML elements, not markdown table syntax.
 - **Root README** (`README.md`): Keep the package table, features list, and development instructions current.
 - **Package READMEs**: Each package under `packages/@wterm/` has its own `README.md`. Update the relevant one when its API, options, or usage changes.
+- **`@wterm/core` README**: Must link to every other `@wterm/*` package. When adding or removing a package, update the "Related Packages" section in `packages/@wterm/core/README.md`.
 - **Navigation** (`apps/docs/src/lib/docs-navigation.ts`): Update if adding or renaming pages.
 - **Page titles** (`apps/docs/src/lib/page-titles.ts`): Update if adding new pages.
 - **Example READMEs**: Each example under `examples/` must have a `README.md` covering what it does, setup steps, how it works, and key files.
