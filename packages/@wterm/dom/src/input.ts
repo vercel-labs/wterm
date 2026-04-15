@@ -135,7 +135,11 @@ export class InputHandler {
       const sel = window.getSelection();
       if (sel && sel.toString().length > 0) return;
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === "v") return;
+    if ((e.metaKey || e.ctrlKey) && e.key === "v") {
+      e.preventDefault();
+      this.readClipboard();
+      return;
+    }
     if (e.metaKey && !e.ctrlKey) {
       if (e.key === "Backspace") {
         e.preventDefault();
@@ -152,8 +156,19 @@ export class InputHandler {
   private handlePaste(e: ClipboardEvent): void {
     e.preventDefault();
     const text = e.clipboardData?.getData("text");
-    if (!text) return;
+    if (text) this.emitPaste(text);
+  }
 
+  private readClipboard(): void {
+    if (navigator.clipboard?.readText) {
+      navigator.clipboard.readText().then(
+        (text) => { if (text) this.emitPaste(text); },
+        () => {},
+      );
+    }
+  }
+
+  private emitPaste(text: string): void {
     const bridge = this.getBridge();
     if (bridge && bridge.bracketedPaste()) {
       this.onData("\x1b[200~" + text + "\x1b[201~");
