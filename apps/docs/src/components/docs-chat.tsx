@@ -328,6 +328,13 @@ class ChatShell {
         this._cursor++;
         w("\x1b[C");
       }
+    } else if (data === "\x15") {
+      if (this._line.length > 0) {
+        if (this._cursor > 0) w(`\x1b[${this._cursor}D`);
+        w("\x1b[K");
+        this._line = "";
+        this._cursor = 0;
+      }
     } else if (data === "\x01") {
       if (this._cursor > 0) {
         w(`\x1b[${this._cursor}D`);

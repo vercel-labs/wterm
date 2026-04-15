@@ -136,7 +136,13 @@ export class InputHandler {
       if (sel && sel.toString().length > 0) return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key === "v") return;
-    if (e.metaKey && !e.ctrlKey) return;
+    if (e.metaKey && !e.ctrlKey) {
+      if (e.key === "Backspace") {
+        e.preventDefault();
+        this.onData("\x15");
+      }
+      return;
+    }
 
     e.preventDefault();
     const seq = this.keyToSequence(e);

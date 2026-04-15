@@ -160,6 +160,13 @@ export class BashShell {
         this._cursor++;
         write("\x1b[C");
       }
+    } else if (data === "\x15") {
+      if (this._line.length > 0) {
+        if (this._cursor > 0) write(`\x1b[${this._cursor}D`);
+        write("\x1b[K");
+        this._line = "";
+        this._cursor = 0;
+      }
     } else if (data === "\x01") {
       if (this._cursor > 0) {
         write(`\x1b[${this._cursor}D`);
