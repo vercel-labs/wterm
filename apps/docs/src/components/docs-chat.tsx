@@ -25,7 +25,9 @@ function setCookie(name: string, value: string) {
 
 function getCookie(name: string): string | undefined {
   const match = document.cookie.match(
-    new RegExp("(?:^|; )" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "=([^;]*)"),
+    new RegExp(
+      "(?:^|; )" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "=([^;]*)",
+    ),
   );
   return match ? decodeURIComponent(match[1]) : undefined;
 }
