@@ -1,6 +1,6 @@
 # Next.js Example
 
-In-browser terminal running [just-bash](https://github.com/nicolo-ribaudo/just-bash) — no backend required. Includes theme switching and a virtual filesystem.
+In-browser terminal running [just-bash](https://github.com/vercel-labs/just-bash) — no backend required. Includes theme switching and a virtual filesystem.
 
 ## Setup
 
