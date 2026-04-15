@@ -26,7 +26,6 @@
     "onlyBuiltDependencies": [
       "cpu-features",
       "esbuild",
-      "node-pty",
       "ssh2"
     ],
     "patchedDependencies": {

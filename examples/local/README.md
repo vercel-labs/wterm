@@ -1,6 +1,6 @@
 # Local Shell Example
 
-Full local terminal in the browser, connected to your machine's shell via WebSocket and [node-pty](https://github.com/microsoft/node-pty).
+Full local terminal in the browser, connected to your machine's shell via WebSocket and [zigpty](https://github.com/pithings/zigpty).
 
 ## Setup
 
