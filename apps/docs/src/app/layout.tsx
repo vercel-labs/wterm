@@ -8,7 +8,6 @@ import { DocsChat } from "@/components/docs-chat";
 import { DocsMobileNav } from "@/components/docs-mobile-nav";
 import { DocsNav } from "@/components/docs-nav";
 import { getStarCount } from "@/lib/github";
-import { cookies } from "next/headers";
 import "./globals.css";
 
 export const viewport: Viewport = {
@@ -121,35 +120,20 @@ async function Header() {
   );
 }
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const cookieStore = await cookies();
-  const chatOpen = cookieStore.get("docs-chat-open")?.value === "true";
-  const chatWidth = Math.min(
-    700,
-    Math.max(300, Number(cookieStore.get("docs-chat-width")?.value) || 400),
-  );
-
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        {chatOpen && (
-          <style
-            dangerouslySetInnerHTML={{
-              __html: `@media(min-width:640px){body{padding-right:${chatWidth}px}}`,
-            }}
-          />
-        )}
-      </head>
+      <head />
       <body className="bg-white text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100">
         <ThemeProvider>
           <Header />
           <DocsMobileNav />
           <DocsNav>{children}</DocsNav>
-          <DocsChat defaultOpen={chatOpen} defaultWidth={chatWidth} />
+          <DocsChat />
         </ThemeProvider>
       </body>
     </html>

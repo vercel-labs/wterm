@@ -23,6 +23,13 @@ function setCookie(name: string, value: string) {
   document.cookie = `${name}=${encodeURIComponent(value)};path=/;max-age=${60 * 60 * 24 * 365};samesite=lax`;
 }
 
+function getCookie(name: string): string | undefined {
+  const match = document.cookie.match(
+    new RegExp("(?:^|; )" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "=([^;]*)"),
+  );
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
 const subscribeNoop = () => () => {};
 const returnTrue = () => true;
 const returnFalse = () => false;
@@ -435,22 +442,29 @@ function ChatTerminal() {
 // DocsChat — panel wrapper (aside on desktop, Sheet on mobile)
 // ---------------------------------------------------------------------------
 
-export function DocsChat({
-  defaultOpen = false,
-  defaultWidth = DESKTOP_DEFAULT_WIDTH,
-}: {
-  defaultOpen?: boolean;
-  defaultWidth?: number;
-}) {
+export function DocsChat() {
   const isDesktop = useMediaQuery("(min-width: 640px)");
   const hasMounted = useMounted();
 
-  const [open, setOpen] = useState(defaultOpen);
-  const [desktopWidth, setDesktopWidth] = useState(
-    Math.min(DESKTOP_MAX_WIDTH, Math.max(DESKTOP_MIN_WIDTH, defaultWidth)),
-  );
+  const [open, setOpen] = useState(false);
+  const [desktopWidth, setDesktopWidth] = useState(DESKTOP_DEFAULT_WIDTH);
   const isDraggingRef = useRef(false);
-  const [hasBeenOpened, setHasBeenOpened] = useState(defaultOpen);
+  const [hasBeenOpened, setHasBeenOpened] = useState(false);
+
+  // Cookie restore must run after hydration to avoid server/client mismatch
+  useEffect(() => {
+    const storedOpen = getCookie("docs-chat-open") === "true";
+    const storedWidth = Number(getCookie("docs-chat-width"));
+    if (storedOpen) {
+      setOpen(true);
+      setHasBeenOpened(true);
+    }
+    if (storedWidth) {
+      setDesktopWidth(
+        Math.min(DESKTOP_MAX_WIDTH, Math.max(DESKTOP_MIN_WIDTH, storedWidth)),
+      );
+    }
+  }, []);
 
   const updateOpen = useCallback(
     (next: boolean | ((prev: boolean) => boolean)) => {
