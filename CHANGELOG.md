@@ -1,8 +1,22 @@
 # Changelog
 
-## 0.1.6
+## 0.1.7
 
 <!-- release:start -->
+
+### Improvements
+
+- **Zero-boilerplate usage** — `<Terminal />` and `new WTerm(el)` now work out of the box with no `onData` wiring required. When `onData` is omitted, typed input is echoed back automatically (#16)
+- **Simpler getting-started examples** — docs, READMEs, and configuration pages updated to show the minimal one-liner usage first, with `onData` / `useTerminal` documented as an advanced pattern (#16, #17)
+- **Faster docs layout** — removed server-side cookie reads from the root layout, making it synchronous; chat panel state is now fully client-driven via `useSyncExternalStore`
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.1.6
 
 ### Bug Fixes
 
@@ -16,8 +30,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.1.5
 
