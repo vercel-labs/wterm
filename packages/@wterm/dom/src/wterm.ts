@@ -178,8 +178,7 @@ export class WTerm {
     if (gridHeight > 0) {
       const cs = getComputedStyle(this.element);
       let extra =
-        (parseFloat(cs.paddingTop) || 0) +
-        (parseFloat(cs.paddingBottom) || 0);
+        (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
       if (cs.boxSizing === "border-box") {
         extra +=
           (parseFloat(cs.borderTopWidth) || 0) +
