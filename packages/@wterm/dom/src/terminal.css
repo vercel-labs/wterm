@@ -64,11 +64,17 @@
 }
 
 .term-cursor {
-  background: var(--term-cursor);
-  color: var(--term-bg);
+  outline: 1px solid var(--term-cursor);
+  outline-offset: -1px;
 }
 
-.wterm.cursor-blink .term-cursor {
+.wterm.focused .term-cursor {
+  background: var(--term-cursor);
+  color: var(--term-bg);
+  outline: none;
+}
+
+.wterm.focused.cursor-blink .term-cursor {
   animation: cursor-blink 1s step-end infinite;
 }
 

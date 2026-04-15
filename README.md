@@ -2,7 +2,7 @@
 
 A terminal emulator for the web.
 
-wterm (pronounced "dub-term") renders to the DOM — native text selection, copy/paste, find, and accessibility come for free. The core is written in Zig and compiled to WASM for near-native performance.
+wterm ("dub-term") renders to the DOM — native text selection, copy/paste, find, and accessibility come for free. The core is written in Zig and compiled to WASM for near-native performance.
 
 ## Packages
 
