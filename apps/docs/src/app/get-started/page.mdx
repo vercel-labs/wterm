@@ -21,18 +21,11 @@ The WASM binary is embedded in the package — no extra setup required.
 ### React
 
 ```tsx
-import { Terminal, useTerminal } from "@wterm/react";
+import { Terminal } from "@wterm/react";
 import "@wterm/react/css";
 
 function App() {
-  const { ref, write } = useTerminal();
-
-  return (
-    <Terminal
-      ref={ref}
-      onData={(data) => write(data)}
-    />
-  );
+  return <Terminal />;
 }
 ```
 
@@ -42,14 +35,7 @@ function App() {
 import { WTerm } from "@wterm/dom";
 import "@wterm/dom/css";
 
-const term = new WTerm(document.getElementById("terminal"), {
-  cols: 80,
-  rows: 24,
-  onData(data) {
-    term.write(data);
-  },
-});
-
+const term = new WTerm(document.getElementById("terminal"));
 await term.init();
 ```
 

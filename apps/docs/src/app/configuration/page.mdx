@@ -61,7 +61,7 @@ Both the React `Terminal` component and the vanilla `WTerm` constructor accept t
     <tr>
       <td><code>onData</code></td>
       <td><code>(data: string) =&gt; void</code></td>
-      <td>Called when the terminal produces output (user input or emulator response)</td>
+      <td>Called when the terminal produces output (user input or emulator response). When omitted, input is echoed back automatically.</td>
     </tr>
     <tr>
       <td><code>onTitle</code></td>
@@ -112,7 +112,7 @@ When using `useTerminal`, the returned ref exposes an imperative handle:
 import { Terminal, useTerminal } from "@wterm/react";
 
 function App() {
-  const { ref, write } = useTerminal();
+  const { ref } = useTerminal();
 
   return (
     <Terminal
@@ -121,7 +121,6 @@ function App() {
       onReady={(wt) => {
         wt.resize(120, 40);
       }}
-      onData={(data) => write(data)}
     />
   );
 }

@@ -18,11 +18,6 @@ npm install @wterm/dom
   import "@wterm/dom/css";
 
   const term = new WTerm(document.getElementById("terminal"), {
-    cols: 80,
-    rows: 24,
-    onData(data) {
-      term.write(data);
-    },
     onTitle(title) {
       document.title = title;
     },
@@ -30,6 +25,20 @@ npm install @wterm/dom
 
   await term.init();
 </script>
+```
+
+## Custom Input Handling
+
+By default, typed input is echoed back to the terminal. Pass `onData` when you need control over input — for example, sending it to a server:
+
+```js
+const term = new WTerm(document.getElementById("terminal"), {
+  onData(data) {
+    socket.send(data);
+  },
+});
+
+await term.init();
 ```
 
 ## Options
@@ -78,7 +87,7 @@ npm install @wterm/dom
       <td><code>onData</code></td>
       <td><code>(data: string) =&gt; void</code></td>
       <td>—</td>
-      <td>Called when the terminal produces data (user input or host response)</td>
+      <td>Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically.</td>
     </tr>
     <tr>
       <td><code>onTitle</code></td>
