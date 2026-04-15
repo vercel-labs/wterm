@@ -65,6 +65,7 @@ class ChatShell {
   private _write: ((data: string) => void) | null = null;
   private _messages: ChatMessage[] = [];
   private _line = "";
+  private _cursor = 0;
   private _busy = false;
   private _history: string[] = [];
   private _historyPos = -1;
@@ -98,6 +99,7 @@ class ChatShell {
   clear() {
     this._messages = [];
     this._line = "";
+    this._cursor = 0;
     this._history = [];
     this._historyPos = -1;
     this._save();
@@ -119,6 +121,7 @@ class ChatShell {
     if (data === "\r") {
       const query = this._line.trim();
       this._line = "";
+      this._cursor = 0;
       w("\r\n");
 
       if (!query) {
@@ -284,9 +287,12 @@ class ChatShell {
         this._showPrompt();
       }
     } else if (data === "\x7f" || data === "\b") {
-      if (this._line.length > 0) {
-        this._line = this._line.slice(0, -1);
-        w("\b \b");
+      if (this._cursor > 0) {
+        const tail = this._line.slice(this._cursor);
+        this._line = this._line.slice(0, this._cursor - 1) + tail;
+        this._cursor--;
+        w("\b" + tail + "\x1b[K");
+        if (tail.length > 0) w(`\x1b[${tail.length}D`);
       }
     } else if (data === "\x1b[A") {
       if (!this._history.length) return;
@@ -296,6 +302,7 @@ class ChatShell {
         const entry = this._history[this._historyPos];
         w(`\r\x1b[1;32m>\x1b[0m \x1b[K${entry}`);
         this._line = entry;
+        this._cursor = entry.length;
       }
     } else if (data === "\x1b[B") {
       if (this._historyPos < 0) return;
@@ -304,21 +311,66 @@ class ChatShell {
         this._historyPos = -1;
         w(`\r\x1b[1;32m>\x1b[0m \x1b[K`);
         this._line = "";
+        this._cursor = 0;
       } else {
         const entry = this._history[this._historyPos];
         w(`\r\x1b[1;32m>\x1b[0m \x1b[K${entry}`);
         this._line = entry;
+        this._cursor = entry.length;
+      }
+    } else if (data === "\x1b[D") {
+      if (this._cursor > 0) {
+        this._cursor--;
+        w("\x1b[D");
+      }
+    } else if (data === "\x1b[C") {
+      if (this._cursor < this._line.length) {
+        this._cursor++;
+        w("\x1b[C");
+      }
+    } else if (data === "\x15") {
+      if (this._line.length > 0) {
+        if (this._cursor > 0) w(`\x1b[${this._cursor}D`);
+        w("\x1b[K");
+        this._line = "";
+        this._cursor = 0;
+      }
+    } else if (data === "\x01") {
+      if (this._cursor > 0) {
+        w(`\x1b[${this._cursor}D`);
+        this._cursor = 0;
+      }
+    } else if (data === "\x05") {
+      if (this._cursor < this._line.length) {
+        w(`\x1b[${this._line.length - this._cursor}C`);
+        this._cursor = this._line.length;
       }
     } else if (data === "\x03") {
       this._line = "";
+      this._cursor = 0;
       w("^C\r\n");
       this._showPrompt();
     } else if (data === "\x0c") {
       w("\x1b[2J\x1b[H");
       this._showPrompt();
+      w(this._line);
+      if (this._cursor < this._line.length) {
+        w(`\x1b[${this._line.length - this._cursor}D`);
+      }
     } else if (data.length === 1 && data >= " ") {
-      this._line += data;
-      w(data);
+      const tail = this._line.slice(this._cursor);
+      this._line = this._line.slice(0, this._cursor) + data + tail;
+      this._cursor++;
+      if (tail.length === 0) {
+        w(data);
+      } else {
+        w(data + tail + "\x1b[K");
+        w(`\x1b[${tail.length}D`);
+      }
+    } else if (data.length > 1) {
+      for (const ch of data) {
+        await this.handleInput(ch);
+      }
     }
   }
 

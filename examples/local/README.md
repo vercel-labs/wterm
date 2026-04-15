@@ -1,6 +1,6 @@
 # Local Shell Example
 
-Full local terminal in the browser, connected to your machine's shell via WebSocket and [node-pty](https://github.com/nicolo-ribaudo/just-bash).
+Full local terminal in the browser, connected to your machine's shell via WebSocket and [node-pty](https://github.com/microsoft/node-pty).
 
 ## Setup
 

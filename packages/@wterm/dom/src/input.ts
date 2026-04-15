@@ -53,6 +53,8 @@ export class InputHandler {
   private _onCompositionStart: () => void;
   private _onCompositionEnd: (e: CompositionEvent) => void;
   private _onInput: () => void;
+  private _onFocus: () => void;
+  private _onBlur: () => void;
 
   constructor(
     element: HTMLElement,
@@ -95,6 +97,8 @@ export class InputHandler {
     this._onCompositionStart = this.handleCompositionStart.bind(this);
     this._onCompositionEnd = this.handleCompositionEnd.bind(this);
     this._onInput = this.handleInput.bind(this);
+    this._onFocus = () => this.element.classList.add("focused");
+    this._onBlur = () => this.element.classList.remove("focused");
 
     this.textarea.addEventListener("keydown", this._onKeyDown);
     this.textarea.addEventListener("paste", this._onPaste as EventListener);
@@ -107,6 +111,8 @@ export class InputHandler {
       this._onCompositionEnd as EventListener,
     );
     this.textarea.addEventListener("input", this._onInput);
+    this.textarea.addEventListener("focus", this._onFocus);
+    this.textarea.addEventListener("blur", this._onBlur);
   }
 
   focus(): void {
@@ -125,6 +131,9 @@ export class InputHandler {
       this._onCompositionEnd as EventListener,
     );
     this.textarea.removeEventListener("input", this._onInput);
+    this.textarea.removeEventListener("focus", this._onFocus);
+    this.textarea.removeEventListener("blur", this._onBlur);
+    this.element.classList.remove("focused");
     this.textarea.remove();
   }
 
@@ -135,8 +144,26 @@ export class InputHandler {
       const sel = window.getSelection();
       if (sel && sel.toString().length > 0) return;
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === "v") return;
-    if (e.metaKey && !e.ctrlKey) return;
+    if ((e.metaKey || e.ctrlKey) && e.key === "v") {
+      this.textarea.focus();
+      return;
+    }
+    if (e.metaKey && !e.ctrlKey) {
+      if (e.key === "Backspace") {
+        e.preventDefault();
+        this.onData("\x15");
+      } else if (e.key === "a") {
+        e.preventDefault();
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.createRange();
+          range.selectNodeContents(this.element);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
+      return;
+    }
 
     e.preventDefault();
     const seq = this.keyToSequence(e);

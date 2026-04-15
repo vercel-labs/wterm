@@ -21,6 +21,8 @@ export class BashShell {
   private _write: ((data: string) => void) | null = null;
   private _cwd: string;
   private _line = "";
+  private _cursor = 0;
+  private _buffer = "";
   private _history: string[] = [];
   private _historyPos = -1;
   private _busy = false;
@@ -81,9 +83,19 @@ export class BashShell {
     }
 
     if (data === "\r") {
-      const cmd = this._line;
+      const cur = this._line;
       this._line = "";
+      this._cursor = 0;
       write("\r\n");
+
+      if (cur.endsWith("\\")) {
+        this._buffer += cur + "\n";
+        write("> ");
+        return;
+      }
+
+      const cmd = this._buffer + cur;
+      this._buffer = "";
 
       if (cmd.trim() && this._bash) {
         this._history.push(cmd);
@@ -117,9 +129,12 @@ export class BashShell {
 
       write(this._prompt(this._cwd));
     } else if (data === "\x7f" || data === "\b") {
-      if (this._line.length > 0) {
-        this._line = this._line.slice(0, -1);
-        write("\b \b");
+      if (this._cursor > 0) {
+        const tail = this._line.slice(this._cursor);
+        this._line = this._line.slice(0, this._cursor - 1) + tail;
+        this._cursor--;
+        write("\b" + tail + "\x1b[K");
+        if (tail.length > 0) write(`\x1b[${tail.length}D`);
       }
     } else if (data === "\x1b[A") {
       if (!this._history.length) return;
@@ -129,6 +144,7 @@ export class BashShell {
         const entry = this._history[this._historyPos];
         write(`\r${this._prompt(this._cwd)}\x1b[K${entry}`);
         this._line = entry;
+        this._cursor = entry.length;
       }
     } else if (data === "\x1b[B") {
       if (this._historyPos < 0) return;
@@ -137,21 +153,67 @@ export class BashShell {
         this._historyPos = -1;
         write(`\r${this._prompt(this._cwd)}\x1b[K`);
         this._line = "";
+        this._cursor = 0;
       } else {
         const entry = this._history[this._historyPos];
         write(`\r${this._prompt(this._cwd)}\x1b[K${entry}`);
         this._line = entry;
+        this._cursor = entry.length;
+      }
+    } else if (data === "\x1b[D") {
+      if (this._cursor > 0) {
+        this._cursor--;
+        write("\x1b[D");
+      }
+    } else if (data === "\x1b[C") {
+      if (this._cursor < this._line.length) {
+        this._cursor++;
+        write("\x1b[C");
+      }
+    } else if (data === "\x15") {
+      if (this._line.length > 0) {
+        if (this._cursor > 0) write(`\x1b[${this._cursor}D`);
+        write("\x1b[K");
+        this._line = "";
+        this._cursor = 0;
+      }
+    } else if (data === "\x01") {
+      if (this._cursor > 0) {
+        write(`\x1b[${this._cursor}D`);
+        this._cursor = 0;
+      }
+    } else if (data === "\x05") {
+      if (this._cursor < this._line.length) {
+        write(`\x1b[${this._line.length - this._cursor}C`);
+        this._cursor = this._line.length;
       }
     } else if (data === "\x03") {
       this._line = "";
+      this._cursor = 0;
+      this._buffer = "";
       write("^C\r\n");
       write(this._prompt(this._cwd));
     } else if (data === "\x0c") {
       write("\x1b[2J\x1b[H");
       write(this._prompt(this._cwd));
+      write(this._line);
+      if (this._cursor < this._line.length) {
+        write(`\x1b[${this._line.length - this._cursor}D`);
+      }
     } else if (data.length === 1 && data >= " ") {
-      this._line += data;
-      write(data);
+      const tail = this._line.slice(this._cursor);
+      this._line = this._line.slice(0, this._cursor) + data + tail;
+      this._cursor++;
+      if (tail.length === 0) {
+        write(data);
+      } else {
+        write(data + tail + "\x1b[K");
+        write(`\x1b[${tail.length}D`);
+      }
+    } else if (data.length > 1) {
+      for (const ch of data) {
+        await this.handleInput(ch);
+      }
     }
   }
 
@@ -220,6 +282,7 @@ export class BashShell {
       const completion = candidates[0].slice(prefix.length);
       if (completion) {
         this._line += completion;
+        this._cursor += completion.length;
         write(completion);
       }
       try {
@@ -231,6 +294,7 @@ export class BashShell {
         );
         if (stat.stdout?.trim() === "DIR" && !this._line.endsWith("/")) {
           this._line += "/";
+          this._cursor++;
           write("/");
         }
       } catch {
@@ -246,6 +310,7 @@ export class BashShell {
       const partialCompletion = common.slice(prefix.length);
       if (partialCompletion) {
         this._line += partialCompletion;
+        this._cursor += partialCompletion.length;
         write(partialCompletion);
       } else {
         write("\r\n");

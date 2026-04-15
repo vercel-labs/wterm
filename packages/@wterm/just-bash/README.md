@@ -1,6 +1,6 @@
 # @wterm/just-bash
 
-Shell adapter for [wterm](https://github.com/vercel-labs/wterm), powered by [just-bash](https://github.com/nicolo-ribaudo/just-bash). Provides line editing, tab completion, command history, and a colored prompt — all running in the browser with no backend.
+Shell adapter for [wterm](https://github.com/vercel-labs/wterm), powered by [just-bash](https://github.com/vercel-labs/just-bash). Provides line editing, tab completion, command history, and a colored prompt — all running in the browser with no backend.
 
 ## Install
 
