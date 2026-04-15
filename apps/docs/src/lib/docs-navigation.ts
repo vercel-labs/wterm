@@ -46,6 +46,11 @@ export const navGroups: NavGroup[] = [
         href: `${GITHUB}/tree/main/examples/local`,
         external: true,
       },
+      {
+        name: "Nitro",
+        href: `${GITHUB}/tree/main/examples/nitro`,
+        external: true,
+      },
     ],
   },
   {
