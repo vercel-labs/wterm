@@ -136,8 +136,7 @@ export class InputHandler {
       if (sel && sel.toString().length > 0) return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key === "v") {
-      e.preventDefault();
-      this.readClipboard();
+      this.textarea.focus();
       return;
     }
     if (e.metaKey && !e.ctrlKey) {
@@ -156,19 +155,8 @@ export class InputHandler {
   private handlePaste(e: ClipboardEvent): void {
     e.preventDefault();
     const text = e.clipboardData?.getData("text");
-    if (text) this.emitPaste(text);
-  }
+    if (!text) return;
 
-  private readClipboard(): void {
-    if (navigator.clipboard?.readText) {
-      navigator.clipboard.readText().then(
-        (text) => { if (text) this.emitPaste(text); },
-        () => {},
-      );
-    }
-  }
-
-  private emitPaste(text: string): void {
     const bridge = this.getBridge();
     if (bridge && bridge.bracketedPaste()) {
       this.onData("\x1b[200~" + text + "\x1b[201~");

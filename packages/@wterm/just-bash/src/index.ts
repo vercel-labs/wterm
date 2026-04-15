@@ -210,6 +210,10 @@ export class BashShell {
         write(data + tail + "\x1b[K");
         write(`\x1b[${tail.length}D`);
       }
+    } else if (data.length > 1) {
+      for (const ch of data) {
+        await this.handleInput(ch);
+      }
     }
   }
 

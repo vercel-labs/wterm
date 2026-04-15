@@ -367,6 +367,10 @@ class ChatShell {
         w(data + tail + "\x1b[K");
         w(`\x1b[${tail.length}D`);
       }
+    } else if (data.length > 1) {
+      for (const ch of data) {
+        await this.handleInput(ch);
+      }
     }
   }
 
