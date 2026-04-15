@@ -1,5 +1,5 @@
 const REPO = "vercel-labs/wterm";
-const REVALIDATE = 86400;
+const REVALIDATE = 3600;
 
 export async function getStarCount(): Promise<string> {
   try {
