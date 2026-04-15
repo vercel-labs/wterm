@@ -1,0 +1,287 @@
+:root {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light dark;
+  color: #e6e6e6;
+  background: #1a1a1a;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  max-width: min(1400px, 100vw);
+  width: 100%;
+  margin: 0 auto;
+}
+
+.window {
+  min-width: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.toolbar h1 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.toolbar .logo {
+  height: 1.75rem;
+  width: auto;
+}
+
+.theme-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #a0a0a0;
+}
+
+.theme-select select {
+  background: #2a2a2a;
+  color: inherit;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* macOS-style window */
+.window {
+  border-radius: 10px;
+  overflow: hidden;
+  background: #1e1e1e;
+  border: 1px solid #000;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 10px 40px rgba(0, 0, 0, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 0.75rem;
+  height: 38px;
+  background: linear-gradient(#3a3a3a, #2d2d2d);
+  border-bottom: 1px solid #000;
+  position: relative;
+}
+
+.traffic-lights {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 1px rgba(255, 255, 255, 0.15) inset;
+}
+
+.light.close { background: #ff5f57; }
+.light.minimize { background: #febc2e; }
+.light.maximize { background: #28c840; }
+
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  height: 100%;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 26px;
+  background: transparent;
+  color: #a0a0a0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 0.4rem 0 0.7rem;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  max-width: 180px;
+}
+
+.tab .tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #d0d0d0;
+}
+
+.tab.active {
+  background: #1e1e1e;
+  color: #e6e6e6;
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: #777;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tab-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.tab-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  color: #a0a0a0;
+  border: none;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tab-new:hover {
+  color: #e6e6e6;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#terminal {
+  height: 80vh;
+  position: relative;
+  background: #1e1e1e;
+  padding: 0.5rem;
+  overflow: hidden;
+}
+
+#terminal .terminal-mount {
+  height: 100%;
+}
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 24px;
+  margin-top: -1rem;
+  padding: 0 0.75rem;
+  background: #181818;
+  border: 1px solid #000;
+  border-radius: 8px;
+  color: #888;
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.statusbar .status-cwd {
+  color: #b0b0b0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.statusbar .status-sep {
+  color: #444;
+  flex-shrink: 0;
+}
+
+.statusbar .status-item {
+  flex-shrink: 0;
+}
+
+
+@media (prefers-color-scheme: light) {
+  .statusbar {
+    background: #ececec;
+    border-top-color: rgba(0, 0, 0, 0.15);
+    color: #666;
+  }
+  .statusbar .status-cwd { color: #333; }
+  .statusbar .status-sep { color: #bbb; }
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #1a1a1a;
+    background: #fafafa;
+  }
+  .theme-select select {
+    background: #fff;
+    border-color: #ddd;
+  }
+  .theme-select {
+    color: #666;
+  }
+  .window {
+    background: #f6f6f6;
+    border-color: rgba(0, 0, 0, 0.18);
+  }
+  .titlebar {
+    background: linear-gradient(#e8e8e8, #d7d7d7);
+    border-bottom-color: rgba(0, 0, 0, 0.15);
+  }
+  .tab { color: #555; }
+  .tab:hover { background: rgba(0, 0, 0, 0.05); color: #222; }
+  .tab.active {
+    background: #f6f6f6;
+    color: #1a1a1a;
+    border-color: rgba(0, 0, 0, 0.08);
+  }
+  .tab-close { color: #777; }
+  .tab-close:hover { background: rgba(0, 0, 0, 0.1); color: #000; }
+  .tab-new { color: #666; }
+  .tab-new:hover { background: rgba(0, 0, 0, 0.06); color: #000; }
+  #terminal { background: #f6f6f6; }
+}

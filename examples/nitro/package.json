@@ -1,0 +1,19 @@
+{
+  "name": "nitro-example",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite dev",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "nitro": "latest",
+    "vite": "latest"
+  },
+  "dependencies": {
+    "@wterm/dom": "workspace:*",
+    "zigpty": "^0.1.6"
+  }
+}

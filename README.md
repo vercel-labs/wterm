@@ -76,6 +76,16 @@ cp web/wterm.wasm examples/nextjs/public/
 pnpm --filter nextjs dev
 ```
 
+### Run the Nitro example
+
+Full terminal running on real PTYs (via [zigpty](https://github.com/pithings/zigpty)) allocated by a [Nitro](https://nitro.build) backend — each in-app tab is a named session multiplexed to every browser attached to it.
+
+```bash
+pnpm --filter nitro-example dev
+```
+
+See [examples/nitro/README.md](examples/nitro/README.md) for details.
+
 ### Run Zig tests
 
 ```bash

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/app/assets/nitro.svg" />
+    <title>Nitro wterm</title>
+    <style>
+      @import "~/app/assets/main.css";
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header class="toolbar">
+        <h1>
+          <img src="/app/assets/nitro.svg" alt="Nitro" class="logo" />
+          <span>Nitro wterm</span>
+        </h1>
+        <label class="theme-select">
+          <span>Theme</span>
+          <select id="theme">
+            <option value="">Default</option>
+            <option value="theme-solarized-dark">Solarized Dark</option>
+            <option value="theme-monokai">Monokai</option>
+            <option value="theme-light">Light</option>
+          </select>
+        </label>
+      </header>
+      <div class="window">
+        <div class="titlebar">
+          <div class="traffic-lights" aria-hidden="true">
+            <span class="light close"></span>
+            <span class="light minimize"></span>
+            <span class="light maximize"></span>
+          </div>
+          <div id="tabs" class="tabs">
+            <button id="new-tab" type="button" class="tab-new" aria-label="New tab">
+              +
+            </button>
+          </div>
+        </div>
+        <div id="terminal"></div>
+      </div>
+      <div id="statusbar" class="statusbar">
+        <span class="status-cwd" id="status-cwd">–</span>
+        <span class="status-sep">·</span>
+        <span class="status-item" id="status-proc">–</span>
+        <span class="status-sep">·</span>
+        <span class="status-item" id="status-pid">pid –</span>
+        <span class="status-sep">·</span>
+        <span class="status-item" id="status-cpu">CPU –</span>
+        <span class="status-sep">·</span>
+        <span class="status-item" id="status-mem">MEM –</span>
+        <span class="status-sep">·</span>
+        <span class="status-item" id="status-procs">– procs</span>
+      </div>
+    </div>
+    <script type="module" src="/app/entry-client.ts"></script>
+  </body>
+</html>
