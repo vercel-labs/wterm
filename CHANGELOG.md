@@ -1,8 +1,25 @@
 # Changelog
 
-## 0.1.2
+## 0.1.3
 
 <!-- release:start -->
+
+### Improvements
+
+- **Embedded WASM binary** — the ~12 KB WASM binary is now base64-inlined into the JS bundle, eliminating the need to copy and serve `wterm.wasm` as a static asset. `wasmUrl` is now optional and only needed when serving the binary separately for caching or CDN use.
+- Updated **docs and READMEs** to reflect the zero-setup WASM approach
+
+### Bug Fixes
+
+- Fixed **renderer formatting** — minor code style cleanup in the DOM renderer
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.1.2
 
 ### Bug Fixes
 
@@ -12,8 +29,6 @@
 ### Improvements
 
 - Removed rounded corners in the local example for a cleaner full-screen look
-
-<!-- release:end -->
 
 ## 0.1.1
 

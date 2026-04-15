@@ -1,6 +1,6 @@
 {
   "name": "@wterm/markdown",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Streaming markdown-to-ANSI renderer for wterm terminals",
   "type": "module",
   "main": "dist/index.js",
