@@ -116,7 +116,7 @@ export class InputHandler {
   }
 
   focus(): void {
-    this.textarea.focus();
+    this.textarea.focus({ preventScroll: true });
   }
 
   destroy(): void {

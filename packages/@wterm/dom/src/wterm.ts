@@ -176,10 +176,16 @@ export class WTerm {
   private _lockHeight(): void {
     const gridHeight = this._container.getBoundingClientRect().height;
     if (gridHeight > 0) {
-      const style = getComputedStyle(this.element);
-      const paddingTop = parseFloat(style.paddingTop) || 0;
-      const paddingBottom = parseFloat(style.paddingBottom) || 0;
-      this.element.style.maxHeight = `${gridHeight + paddingTop + paddingBottom}px`;
+      const cs = getComputedStyle(this.element);
+      let extra =
+        (parseFloat(cs.paddingTop) || 0) +
+        (parseFloat(cs.paddingBottom) || 0);
+      if (cs.boxSizing === "border-box") {
+        extra +=
+          (parseFloat(cs.borderTopWidth) || 0) +
+          (parseFloat(cs.borderBottomWidth) || 0);
+      }
+      this.element.style.maxHeight = `${gridHeight + extra}px`;
     }
   }
 
