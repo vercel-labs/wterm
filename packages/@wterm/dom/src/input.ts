@@ -143,6 +143,15 @@ export class InputHandler {
       if (e.key === "Backspace") {
         e.preventDefault();
         this.onData("\x15");
+      } else if (e.key === "a") {
+        e.preventDefault();
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.createRange();
+          range.selectNodeContents(this.element);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
       }
       return;
     }
