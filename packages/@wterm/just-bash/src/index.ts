@@ -89,7 +89,7 @@ export class BashShell {
       write("\r\n");
 
       if (cur.endsWith("\\")) {
-        this._buffer += cur.slice(0, -1) + "\n";
+        this._buffer += cur + "\n";
         write("> ");
         return;
       }
