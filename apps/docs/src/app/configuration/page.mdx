@@ -29,8 +29,8 @@ Both the React `Terminal` component and the vanilla `WTerm` constructor accept t
     <tr>
       <td><code>wasmUrl</code></td>
       <td><code>string</code></td>
-      <td><code>"wterm.wasm"</code></td>
-      <td>URL to the WASM binary</td>
+      <td>—</td>
+      <td>Optional URL to serve the WASM binary separately (embedded by default)</td>
     </tr>
     <tr>
       <td><code>autoResize</code></td>
@@ -117,7 +117,6 @@ function App() {
   return (
     <Terminal
       ref={ref}
-      wasmUrl="/wterm.wasm"
       onReady={(wt) => {
         wt.resize(120, 40);
       }}
@@ -181,7 +180,6 @@ const ws = new WebSocketTransport({
 });
 
 const term = new WTerm(document.getElementById("terminal"), {
-  wasmUrl: "/wterm.wasm",
   onData(data) {
     ws.send(data);
   },

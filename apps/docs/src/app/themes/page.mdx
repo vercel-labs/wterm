@@ -9,7 +9,7 @@ wterm uses CSS custom properties for all visual styling, making it easy to switc
 Pass the theme name via the `theme` prop:
 
 ```tsx
-<Terminal theme="monokai" wasmUrl="/wterm.wasm" />
+<Terminal theme="monokai" />
 ```
 
 ### Vanilla JS
@@ -17,9 +17,7 @@ Pass the theme name via the `theme` prop:
 Add the theme class to the terminal element:
 
 ```js
-const term = new WTerm(document.getElementById("terminal"), {
-  wasmUrl: "/wterm.wasm",
-});
+const term = new WTerm(document.getElementById("terminal"));
 term.element.classList.add("theme-monokai");
 await term.init();
 ```
@@ -49,7 +47,7 @@ The default dark theme, inspired by VS Code's Dark+ palette.
 The classic Solarized Dark color scheme by Ethan Schoonover.
 
 ```tsx
-<Terminal theme="solarized-dark" wasmUrl="/wterm.wasm" />
+<Terminal theme="solarized-dark" />
 ```
 
 <table>
@@ -71,7 +69,7 @@ The classic Solarized Dark color scheme by Ethan Schoonover.
 Based on the Monokai color scheme.
 
 ```tsx
-<Terminal theme="monokai" wasmUrl="/wterm.wasm" />
+<Terminal theme="monokai" />
 ```
 
 <table>
@@ -93,7 +91,7 @@ Based on the Monokai color scheme.
 A clean light theme inspired by Atom's One Light.
 
 ```tsx
-<Terminal theme="light" wasmUrl="/wterm.wasm" />
+<Terminal theme="light" />
 ```
 
 <table>
@@ -142,7 +140,7 @@ Create a custom theme by defining a CSS class that overrides the wterm custom pr
 Then apply it the same way as a built-in theme:
 
 ```tsx
-<Terminal theme="tokyo-night" wasmUrl="/wterm.wasm" />
+<Terminal theme="tokyo-night" />
 ```
 
 ## CSS Custom Properties Reference

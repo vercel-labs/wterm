@@ -66,7 +66,7 @@ Connect to a PTY backend over WebSocket (re-exported from `@wterm/core`).
 ```ts
 import { WTerm, WebSocketTransport } from "@wterm/dom";
 
-const term = new WTerm(el, { cols: 80, rows: 24, wasmUrl: "/wterm.wasm" });
+const term = new WTerm(el, { cols: 80, rows: 24 });
 await term.init();
 
 const ws = new WebSocketTransport({
