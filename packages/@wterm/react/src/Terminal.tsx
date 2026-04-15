@@ -132,9 +132,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
   const classes = ["wterm", themeClass, className].filter(Boolean).join(" ");
 
   const mergedStyle: React.CSSProperties = {
-    ...(autoResize
-      ? undefined
-      : { minHeight: Math.ceil(rows * 14 * 1.2 + 24) }),
+    ...(autoResize ? undefined : { height: rows * 17 + 24 }),
     ...style,
   };
 

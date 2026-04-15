@@ -212,16 +212,19 @@ button {
 }
 
 .wterm {
-  border: 1px solid #e5e5e5;
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px #e5e5e5;
 }
 
 .wterm:focus-within {
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px #e5e5e5;
 }
 
 .dark .wterm {
-  border-color: #262626;
+  box-shadow: inset 0 0 0 1px #262626;
+}
+
+.dark .wterm:focus-within {
+  box-shadow: inset 0 0 0 1px #262626;
 }
 
 .wterm:not([class*="theme-"]) {
@@ -270,12 +273,10 @@ button {
 
 .wterm.wterm-chat {
   --term-bg: var(--background);
-  border: none;
   border-radius: 0;
   box-shadow: none;
   padding: 12px 16px;
 }
-
 
 .wterm.wterm-chat:focus,
 .wterm.wterm-chat:focus-visible,

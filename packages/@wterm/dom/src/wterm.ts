@@ -174,18 +174,18 @@ export class WTerm {
   }
 
   private _lockHeight(): void {
-    const gridHeight = this._container.getBoundingClientRect().height;
-    if (gridHeight > 0) {
-      const cs = getComputedStyle(this.element);
-      let extra =
-        (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-      if (cs.boxSizing === "border-box") {
-        extra +=
-          (parseFloat(cs.borderTopWidth) || 0) +
-          (parseFloat(cs.borderBottomWidth) || 0);
-      }
-      this.element.style.maxHeight = `${gridHeight + extra}px`;
+    const cs = getComputedStyle(this.element);
+    const rowHeight =
+      parseFloat(cs.getPropertyValue("--term-row-height")) || 17;
+    const gridHeight = this.rows * rowHeight;
+    let extra =
+      (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    if (cs.boxSizing === "border-box") {
+      extra +=
+        (parseFloat(cs.borderTopWidth) || 0) +
+        (parseFloat(cs.borderBottomWidth) || 0);
     }
+    this.element.style.height = `${gridHeight + extra}px`;
   }
 
   private _measureCharSize(): { width: number; height: number } | null {

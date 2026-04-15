@@ -23,6 +23,7 @@
   --term-font-family: 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace;
   --term-font-size: 14px;
   --term-line-height: 1.2;
+  --term-row-height: 17px;
 
   position: relative;
   background: var(--term-bg);
@@ -51,14 +52,14 @@
 
 .term-row {
   display: block;
-  height: calc(var(--term-font-size) * var(--term-line-height));
+  height: var(--term-row-height);
   contain: content;
 }
 
 .term-block {
   display: inline-block;
   width: 1ch;
-  height: calc(var(--term-font-size) * var(--term-line-height));
+  height: var(--term-row-height);
   vertical-align: top;
   overflow: hidden;
 }
