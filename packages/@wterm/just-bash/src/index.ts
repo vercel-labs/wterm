@@ -22,6 +22,7 @@ export class BashShell {
   private _cwd: string;
   private _line = "";
   private _cursor = 0;
+  private _buffer = "";
   private _history: string[] = [];
   private _historyPos = -1;
   private _busy = false;
@@ -82,10 +83,19 @@ export class BashShell {
     }
 
     if (data === "\r") {
-      const cmd = this._line;
+      const cur = this._line;
       this._line = "";
       this._cursor = 0;
       write("\r\n");
+
+      if (cur.endsWith("\\")) {
+        this._buffer += cur.slice(0, -1) + "\n";
+        write("> ");
+        return;
+      }
+
+      const cmd = this._buffer + cur;
+      this._buffer = "";
 
       if (cmd.trim() && this._bash) {
         this._history.push(cmd);
@@ -180,6 +190,7 @@ export class BashShell {
     } else if (data === "\x03") {
       this._line = "";
       this._cursor = 0;
+      this._buffer = "";
       write("^C\r\n");
       write(this._prompt(this._cwd));
     } else if (data === "\x0c") {
