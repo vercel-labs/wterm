@@ -107,19 +107,36 @@ function connect() {
 function handleServerMessage(msg: any) {
   switch (msg.type) {
     case "tabs": {
+      const serverIds: string[] = (msg.tabs ?? []).map((t: any) => t.id);
+      for (const sid of serverIds) {
+        if (!tabs.find((t) => t.id === sid)) attachExistingTab(sid);
+      }
+      if (tabs.length === 0) {
+        addTab();
+      } else {
+        if (!activeId) activate(tabs[0].id);
+        if (activeId) sendJSON({ type: "rerender", sid: activeId });
+      }
       return;
     }
     case "opened": {
-      const tab = tabs.find((t) => t.id === msg.sid);
-      if (tab) tab.opened = true;
+      let tab = tabs.find((t) => t.id === msg.sid);
+      if (!tab) tab = attachExistingTab(msg.sid);
+      tab.opened = true;
       return;
     }
     case "closed": {
-      const tab = tabs.find((t) => t.id === msg.sid);
-      if (tab) {
-        tab.term.write(
-          `\r\n\x1b[90m[process exited with code ${msg.exitCode}]\x1b[0m\r\n`,
-        );
+      const idx = tabs.findIndex((t) => t.id === msg.sid);
+      if (idx === -1) return;
+      const tab = tabs[idx];
+      tab.mount.remove();
+      tab.tabEl.remove();
+      tabs.splice(idx, 1);
+      if (activeId === msg.sid) {
+        activeId = null;
+        const next = tabs[idx] ?? tabs[idx - 1];
+        if (next) activate(next.id);
+        else addTab();
       }
       return;
     }
@@ -279,23 +296,7 @@ function activate(id: string) {
 }
 
 function closeTab(id: string) {
-  const idx = tabs.findIndex((t) => t.id === id);
-  if (idx === -1) return;
-  const tab = tabs[idx];
   sendJSON({ type: "close", sid: id });
-  tab.mount.remove();
-  tab.tabEl.remove();
-  tabs.splice(idx, 1);
-
-  if (activeId === id) {
-    activeId = null;
-    const next = tabs[idx] ?? tabs[idx - 1];
-    if (next) activate(next.id);
-  }
-
-  if (tabs.length === 0) {
-    addTab();
-  }
 }
 
 function addTab() {
@@ -303,6 +304,13 @@ function addTab() {
   tabs.push(t);
   openSession(t);
   activate(t.id);
+}
+
+function attachExistingTab(sid: string): Tab {
+  const t = createTab(sid);
+  tabs.push(t);
+  t.opened = true;
+  return t;
 }
 
 newTabBtn.addEventListener("click", addTab);
@@ -315,12 +323,6 @@ window.addEventListener("keydown", (e) => {
 });
 
 connect();
-
-// initial tab
-const first = createTab();
-tabs.push(first);
-openSession(first);
-activate(first.id);
 
 themeSelect.addEventListener("change", () => {
   for (const t of tabs) applyTheme(t.mount, themeSelect.value);
