@@ -31,7 +31,6 @@ function App() {
   return (
     <Terminal
       ref={ref}
-      wasmUrl="/wterm.wasm"
       onReady={handleReady}
       onData={(data) => shell.handleInput(data)}
     />
