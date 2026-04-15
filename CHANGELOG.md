@@ -1,8 +1,30 @@
 # Changelog
 
-## 0.1.3
+## 0.1.4
 
 <!-- release:start -->
+
+### Bug Fixes
+
+- Fixed **caret focus state** — the cursor now correctly shows/hides based on terminal focus
+- Fixed **paste handling** — clipboard paste works reliably in the terminal
+- Fixed **Ctrl+A and Ctrl+E** — jump-to-start and jump-to-end key bindings now work correctly
+- Fixed **left/right arrow keys** in the just-bash package for proper cursor movement
+- Fixed **Cmd+A** — select-all support in the terminal
+- Fixed **clear line** — Ctrl+U now properly clears the current input line
+
+### Improvements
+
+- **Line buffering** — input is now buffered per-line for more accurate editing and replay
+- Fixed **broken links** in docs and package READMEs
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.1.3
 
 ### Improvements
 
@@ -16,8 +38,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.1.2
 
