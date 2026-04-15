@@ -11,6 +11,17 @@ npm install @wterm/dom @wterm/react
 ## Usage
 
 ```tsx
+import { Terminal } from "@wterm/react";
+import "@wterm/react/css";
+
+function App() {
+  return <Terminal />;
+}
+```
+
+By default, typed input is echoed back to the terminal. Use `onData` with `useTerminal` when you need control over input:
+
+```tsx
 import { Terminal, useTerminal } from "@wterm/react";
 import "@wterm/react/css";
 
@@ -20,7 +31,9 @@ function App() {
   return (
     <Terminal
       ref={ref}
-      onData={(data) => write(data)}
+      onData={(data) => {
+        socket.send(data);
+      }}
     />
   );
 }
@@ -38,7 +51,7 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 | `theme` | `string` | — | Theme name (e.g. `"solarized-dark"`, `"monokai"`, `"light"`) |
 | `autoResize` | `boolean` | `false` | Auto-resize based on container dimensions |
 | `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
-| `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response) |
+| `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
 | `onReady` | `(wt: WTerm) => void` | — | Called after WASM is loaded and the terminal is initialized |

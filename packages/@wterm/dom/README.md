@@ -19,17 +19,7 @@ npm install @wterm/dom
   import { WTerm } from "@wterm/dom";
   import "@wterm/dom/css";
 
-  const term = new WTerm(document.getElementById("terminal"), {
-    cols: 80,
-    rows: 24,
-    onData(data) {
-      term.write(data);
-    },
-    onTitle(title) {
-      document.title = title;
-    },
-  });
-
+  const term = new WTerm(document.getElementById("terminal"));
   await term.init();
 </script>
 ```
@@ -55,7 +45,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `wasmUrl` | `string` | — | Optional URL to serve the WASM binary separately (embedded by default) |
 | `autoResize` | `boolean` | `true` | Auto-resize based on container dimensions |
 | `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
-| `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response) |
+| `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
 

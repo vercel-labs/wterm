@@ -84,7 +84,9 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         wasmUrl,
         autoResize: autoResizeRef.current,
         cursorBlink,
-        onData: (data: string) => callbacksRef.current.onData?.(data),
+        onData: callbacksRef.current.onData
+          ? (data: string) => callbacksRef.current.onData?.(data)
+          : undefined,
         onTitle: (title: string) => callbacksRef.current.onTitle?.(title),
         onResize: (c: number, r: number) =>
           callbacksRef.current.onResize?.(c, r),
@@ -125,6 +127,11 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
       el.classList.add("cursor-blink");
     } else if (!cursorBlink && el.classList.contains("cursor-blink")) {
       el.classList.remove("cursor-blink");
+    }
+    if (onData && !wt.onData) {
+      wt.onData = (data: string) => callbacksRef.current.onData?.(data);
+    } else if (!onData && wt.onData) {
+      wt.onData = null;
     }
   }
 

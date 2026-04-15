@@ -11,6 +11,19 @@ npm install @wterm/dom @wterm/react
 ## Basic Usage
 
 ```tsx
+import { Terminal } from "@wterm/react";
+import "@wterm/react/css";
+
+function App() {
+  return <Terminal />;
+}
+```
+
+## Custom Input Handling
+
+By default, typed input is echoed back to the terminal. Use `onData` with `useTerminal` when you need control over input — for example, sending it to a server:
+
+```tsx
 import { Terminal, useTerminal } from "@wterm/react";
 import "@wterm/react/css";
 
@@ -20,7 +33,9 @@ function App() {
   return (
     <Terminal
       ref={ref}
-      onData={(data) => write(data)}
+      onData={(data) => {
+        socket.send(data);
+      }}
     />
   );
 }
@@ -78,7 +93,7 @@ function App() {
       <td><code>onData</code></td>
       <td><code>(data: string) =&gt; void</code></td>
       <td>—</td>
-      <td>Called when the terminal produces data (user input or host response)</td>
+      <td>Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically.</td>
     </tr>
     <tr>
       <td><code>onTitle</code></td>
