@@ -466,10 +466,7 @@ function useCookieState(
     getSnapshot,
     getServerSnapshot,
   );
-  const setValue = useCallback(
-    (v: string) => writeCookie(name, v),
-    [name],
-  );
+  const setValue = useCallback((v: string) => writeCookie(name, v), [name]);
   return [value, setValue];
 }
 
