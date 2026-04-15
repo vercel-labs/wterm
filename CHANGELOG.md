@@ -1,8 +1,28 @@
 # Changelog
 
-## 0.1.4
+## 0.1.5
 
 <!-- release:start -->
+
+### Bug Fixes
+
+- Fixed **Shift key** producing input in the terminal when pressed alone
+- Fixed **focus scroll** — focusing the terminal no longer causes unwanted page scroll
+- Fixed **height lock** — `maxHeight` calculation now accounts for `border-box` sizing and border widths
+
+### Improvements
+
+- **Docs tables** — option/property tables on the Vanilla and React pages now use proper HTML `<table>` elements
+- **Docs routing** — the introduction page is now served at `/` with a redirect from `/introduction`
+- **Star count cache** — reduced GitHub star count revalidation interval from 24 hours to 1 hour
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.1.4
 
 ### Bug Fixes
 
@@ -21,8 +41,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.1.3
 

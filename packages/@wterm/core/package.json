@@ -1,6 +1,6 @@
 {
   "name": "@wterm/core",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Headless terminal emulator core for the web — WASM bridge and WebSocket transport",
   "type": "module",
   "main": "dist/index.js",
