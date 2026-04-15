@@ -1,6 +1,6 @@
 {
   "name": "@wterm/just-bash",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "just-bash shell adapter for wterm — line editing, tab completion, history, prompt",
   "type": "module",
   "main": "dist/index.js",
