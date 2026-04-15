@@ -1,8 +1,25 @@
 # Changelog
 
-## 0.1.5
+## 0.1.6
 
 <!-- release:start -->
+
+### Bug Fixes
+
+- Fixed **terminal height** — replaced `maxHeight` with deterministic `height` computed from `rows * rowHeight`, preventing layout drift caused by `getBoundingClientRect()` timing
+- Fixed **border rendering** — switched docs terminal borders from CSS `border` to `inset box-shadow` to avoid border-width interference with height calculations
+
+### Improvements
+
+- **Row height variable** — added `--term-row-height` CSS custom property so row and block heights are defined in one place
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.1.5
 
 ### Bug Fixes
 
@@ -19,8 +36,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.1.4
 
