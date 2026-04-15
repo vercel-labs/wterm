@@ -1,6 +1,6 @@
 # Nitro Example
 
-Full terminal running on real PTYs allocated by a [Nitro](https://nitro.build) backend. Each **in-app tab** is a named session (`/_ws?id=...`); the server lazily spawns one PTY per session id with [zigpty](https://github.com/pithings/zigpty) and multiplexes it to every browser window attached to that id — so opening the same session id in two browser tabs shares a shell, while hitting the `+` button spawns a fresh one. Theme switching included.
+Full terminal running on real PTYs allocated by a [Nitro](https://nitro.build) backend. Each in-app tab is a named session — the server spawns one PTY per session id via [zigpty](https://github.com/pithings/zigpty) and multiplexes it across every connected browser, so opening a second window mirrors all existing sessions (input, output, tabs, lifecycle) live. Theme switching included.
 
 ## Setup
 
@@ -15,17 +15,23 @@ pnpm --filter nitro-example dev
 ## How It Works
 
 - `@wterm/dom` renders the terminal — plain TS, no framework
-- Nitro WebSocket route (`/terminal`) lazily allocates one shared PTY with `zigpty`
-- Every peer writes to the same PTY and receives a broadcast of its output
-- Keystrokes flow browser → WS → PTY; PTY output flows back to all peers
-- Resize is forwarded with an inline `\x1b[RESIZE:cols;rows]` control sequence
+- Nitro WebSocket route (`/terminal`) owns a `Map<sid, Session>` of shared PTYs
+- On connect, the server sends a `tabs` sync message listing all live session ids; the client attaches an xterm to each
+- `opened` / `closed` broadcasts keep every browser's tab bar in sync across windows
+- Keystrokes flow browser → WS → PTY; PTY output fans out to all peers
+- Per-session stats (pid, cwd, cpu%, rss, proc count, foreground proc) are sampled every second and broadcast
 - Theme selector switches between Default, Solarized Dark, Monokai, and Light
+
+## WebSocket Protocol
+
+Client → server: `open`, `close`, `input`, `resize`, `rerender` (each carries a `sid`).
+Server → client: `tabs` (initial sync), `opened`, `closed`, `data`, `stats`, `error`.
 
 ## Key Files
 
 | File | Description |
 |---|---|
-| `app/entry-client.ts` | Client entry: terminal + WebSocket wiring |
-| `terminal.ts` | WebSocket handler: single shared PTY per session id, broadcasts to all peers |
+| `app/entry-client.ts` | Client entry: tabs, terminal, WebSocket sync |
+| `terminal.ts` | WebSocket handler: PTY-per-session map, broadcasts to all peers |
 | `vite.config.ts` | Vite + Nitro plugin |
 | `nitro.config.ts` | Nitro config (`features.websocket`, registers `/terminal` route) |
