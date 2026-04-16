@@ -13,26 +13,34 @@ npm install @wterm/just-bash just-bash
 ## Usage
 
 ```tsx
+import { useCallback, useRef } from "react";
 import { Terminal, useTerminal } from "@wterm/react";
 import { BashShell } from "@wterm/just-bash";
 import "@wterm/react/css";
 
 function App() {
   const { ref, write } = useTerminal();
+  const shellRef = useRef<BashShell | null>(null);
 
-  const handleReady = () => {
+  const handleReady = useCallback(() => {
+    if (shellRef.current) return;
     const shell = new BashShell({
       files: { "/home/user/hello.txt": "Hello, world!\n" },
       greeting: "Welcome to wterm!",
     });
+    shellRef.current = shell;
     shell.attach(write);
-  };
+  }, [write]);
+
+  const handleData = useCallback((data: string) => {
+    shellRef.current?.handleInput(data);
+  }, []);
 
   return (
     <Terminal
       ref={ref}
       onReady={handleReady}
-      onData={(data) => shell.handleInput(data)}
+      onData={handleData}
     />
   );
 }

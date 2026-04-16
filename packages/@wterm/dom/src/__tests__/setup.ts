@@ -21,8 +21,11 @@ if (typeof globalThis.requestAnimationFrame === "undefined") {
   };
 }
 
+const _origGetComputedStyle =
+  typeof window !== "undefined" ? window.getComputedStyle.bind(window) : null;
+
 vi.stubGlobal("getComputedStyle", (el: Element) => {
-  const orig = typeof window !== "undefined" ? window.getComputedStyle(el) : {};
+  const orig = _origGetComputedStyle ? _origGetComputedStyle(el) : {};
   return {
     ...orig,
     getPropertyValue: (prop: string) => {
