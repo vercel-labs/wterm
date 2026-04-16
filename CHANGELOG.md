@@ -1,8 +1,37 @@
 # Changelog
 
-## 0.1.7
+## 0.1.8
 
 <!-- release:start -->
+
+### New Features
+
+- **E2E browser tests** — added Playwright test suite with 11 tests covering rendering, keyboard input, focus, cursor movement, scrollback, and resize (#25)
+- **Vite example** — minimal vanilla TypeScript terminal with `@wterm/dom` and `@wterm/just-bash`, no framework needed (#24)
+- **Markdown Streaming example** — Next.js app using `@wterm/react`, `@wterm/markdown`, and AI SDK to stream LLM output into a terminal (#24)
+- **API Reference page** — single consolidated reference for all terminal options, React props, WTerm methods, imperative handle, WebSocketTransport, and WasmBridge (#25)
+- **Just Bash docs** — install, quick start, options, virtual FS, network access, and keyboard shortcuts (#23)
+- **Markdown docs** — streaming examples (vanilla + React), supported syntax, and LLM output guide (#23)
+- **Core / Advanced docs** — WasmBridge API, types, headless example, and WebSocketTransport with remote shell example (#23)
+
+### Improvements
+
+- **Zig 0.16.0** — migrated build system and rebuilt `wterm.wasm` with Zig 0.16.0
+- **Vitest workspace** — 165 unit tests across all five packages with V8 coverage and Turbo integration (#21)
+- **Zig CI** — added Zig test step and WASM drift check to CI workflow (#22)
+- **WTerm integration tests** — 33 tests for the DOM orchestrator (#22)
+
+### Bug Fixes
+
+- Fixed **just-bash README** — corrected broken usage example (#22)
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.1.7
 
 ### Improvements
 
@@ -13,8 +42,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.1.6
 
