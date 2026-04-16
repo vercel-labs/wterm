@@ -16,11 +16,14 @@
     "lint": "turbo run lint",
     "publish-packages": "pnpm build && pnpm --filter './packages/@wterm/*' publish --no-git-checks",
     "sync-versions": "node scripts/sync-versions.mjs",
+    "test": "turbo run test",
     "type-check": "turbo run type-check"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.4",
     "prettier": "^3.8.2",
-    "turbo": "^2.9.6"
+    "turbo": "^2.9.6",
+    "vitest": "^4.1.4"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
