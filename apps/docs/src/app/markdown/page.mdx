@@ -1,0 +1,205 @@
+# Markdown
+
+Streaming Markdown-to-ANSI renderer for terminals. Designed for rendering LLM output in real time — push text chunks as they arrive and get styled terminal output back.
+
+## Install
+
+```bash
+npm install @wterm/markdown
+```
+
+## Quick Start
+
+### Vanilla JS
+
+```js
+import { WTerm } from "@wterm/dom";
+import { MarkdownRenderer } from "@wterm/markdown";
+import "@wterm/dom/css";
+
+const term = new WTerm(document.getElementById("terminal"));
+await term.init();
+
+const md = new MarkdownRenderer();
+const response = await fetch("/api/chat", { method: "POST" });
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  const rendered = md.push(decoder.decode(value));
+  if (rendered) term.write(rendered);
+}
+
+term.write(md.flush());
+```
+
+### React
+
+```tsx
+import { useCallback, useRef } from "react";
+import { Terminal, useTerminal } from "@wterm/react";
+import { MarkdownRenderer } from "@wterm/markdown";
+import "@wterm/react/css";
+
+function App() {
+  const { ref, write } = useTerminal();
+  const mdRef = useRef(new MarkdownRenderer());
+
+  const handleReady = useCallback(async () => {
+    const response = await fetch("/api/chat", { method: "POST" });
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const rendered = mdRef.current.push(decoder.decode(value));
+      if (rendered) write(rendered);
+    }
+
+    write(mdRef.current.flush());
+  }, [write]);
+
+  return <Terminal ref={ref} onReady={handleReady} />;
+}
+```
+
+## Options
+
+<table>
+  <thead>
+    <tr>
+      <th>Option</th>
+      <th>Type</th>
+      <th>Default</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>width</code></td>
+      <td><code>number</code></td>
+      <td><code>80</code></td>
+      <td>Terminal width in columns (used for horizontal rules)</td>
+    </tr>
+  </tbody>
+</table>
+
+## Methods
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>push(delta: string): string</code></td>
+      <td>Feed a chunk of Markdown text. Returns rendered ANSI output for any complete lines. Buffers incomplete lines internally.</td>
+    </tr>
+    <tr>
+      <td><code>flush(): string</code></td>
+      <td>Flush remaining buffered content. Call this when the stream ends to render any trailing text and close open code blocks.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Supported Syntax
+
+<table>
+  <thead>
+    <tr>
+      <th>Syntax</th>
+      <th>Rendering</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code># Heading</code> through <code>### Heading</code></td>
+      <td>Bold, bright white for h1–h2; bold for h3+</td>
+    </tr>
+    <tr>
+      <td><code>**bold**</code> or <code>__bold__</code></td>
+      <td>Bold text</td>
+    </tr>
+    <tr>
+      <td><code>*italic*</code> or <code>_italic_</code></td>
+      <td>Italic text</td>
+    </tr>
+    <tr>
+      <td><code>`code`</code></td>
+      <td>Cyan inline code</td>
+    </tr>
+    <tr>
+      <td><code>[text](url)</code></td>
+      <td>Underlined green link text with dimmed URL</td>
+    </tr>
+    <tr>
+      <td>Fenced code blocks (<code>```</code>)</td>
+      <td>Indented with dimmed borders</td>
+    </tr>
+    <tr>
+      <td><code>- item</code>, <code>* item</code>, <code>+ item</code></td>
+      <td>Unordered list with indented bullets</td>
+    </tr>
+    <tr>
+      <td><code>1. item</code> or <code>1) item</code></td>
+      <td>Ordered list with numbered items</td>
+    </tr>
+    <tr>
+      <td><code>&gt; quote</code></td>
+      <td>Blockquote with dimmed vertical bar</td>
+    </tr>
+    <tr>
+      <td><code>---</code>, <code>***</code>, <code>___</code></td>
+      <td>Dimmed horizontal rule</td>
+    </tr>
+  </tbody>
+</table>
+
+## Streaming LLM Output
+
+The renderer is designed for the streaming pattern common with LLM APIs. Here's a complete walkthrough:
+
+```ts
+import { MarkdownRenderer } from "@wterm/markdown";
+
+const md = new MarkdownRenderer();
+
+async function streamChat(
+  write: (data: string) => void,
+  prompt: string,
+) {
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  });
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    const rendered = md.push(chunk);
+    if (rendered) write(rendered);
+  }
+
+  const remaining = md.flush();
+  if (remaining) write(remaining);
+}
+```
+
+**How it works:**
+
+1. Create a `MarkdownRenderer` instance before the stream starts
+2. As each chunk arrives, call `push(chunk)` — it buffers incomplete lines and only returns output for complete lines
+3. When the stream ends, call `flush()` to render any remaining buffered content and close open code blocks
+4. Write each non-empty result to the terminal with `write()`

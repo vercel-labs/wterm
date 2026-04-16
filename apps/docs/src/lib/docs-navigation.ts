@@ -29,6 +29,14 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
+    label: "Packages",
+    items: [
+      { name: "Just Bash", href: "/just-bash" },
+      { name: "Markdown", href: "/markdown" },
+      { name: "Core / Advanced", href: "/core" },
+    ],
+  },
+  {
     label: "Examples",
     items: [
       {

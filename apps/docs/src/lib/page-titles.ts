@@ -6,6 +6,9 @@ export const PAGE_TITLES: Record<string, string> = {
   themes: "Themes",
   react: "React",
   vanilla: "Vanilla JS",
+  "just-bash": "Just Bash",
+  markdown: "Markdown",
+  core: "Core / Advanced",
 };
 
 export function getPageTitle(slug: string): string | null {

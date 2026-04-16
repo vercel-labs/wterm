@@ -1,0 +1,224 @@
+# Just Bash
+
+Shell adapter for wterm, powered by [just-bash](https://github.com/vercel-labs/just-bash). Provides line editing, tab completion, command history, and a colored prompt — all running in the browser with no backend.
+
+## Install
+
+```bash
+npm install @wterm/just-bash just-bash
+```
+
+`just-bash` is a peer dependency.
+
+## Quick Start
+
+```tsx
+import { useCallback, useRef } from "react";
+import { Terminal, useTerminal } from "@wterm/react";
+import { BashShell } from "@wterm/just-bash";
+import "@wterm/react/css";
+
+function App() {
+  const { ref, write } = useTerminal();
+  const shellRef = useRef<BashShell | null>(null);
+
+  const handleReady = useCallback(() => {
+    if (shellRef.current) return;
+    const shell = new BashShell({
+      files: { "/home/user/hello.txt": "Hello, world!\n" },
+      greeting: "Welcome to wterm!",
+    });
+    shellRef.current = shell;
+    shell.attach(write);
+  }, [write]);
+
+  const handleData = useCallback((data: string) => {
+    shellRef.current?.handleInput(data);
+  }, []);
+
+  return (
+    <Terminal
+      ref={ref}
+      onReady={handleReady}
+      onData={handleData}
+    />
+  );
+}
+```
+
+Use a ref to hold the `BashShell` instance so it's accessible from both the `onReady` and `onData` callbacks.
+
+## Options
+
+<table>
+  <thead>
+    <tr>
+      <th>Option</th>
+      <th>Type</th>
+      <th>Default</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>files</code></td>
+      <td><code>Record&lt;string, string&gt;</code></td>
+      <td><code>&#123;&#125;</code></td>
+      <td>Virtual filesystem (keys are absolute paths, values are file contents)</td>
+    </tr>
+    <tr>
+      <td><code>env</code></td>
+      <td><code>Record&lt;string, string&gt;</code></td>
+      <td><code>&#123; SHELL, TERM &#125;</code></td>
+      <td>Environment variables</td>
+    </tr>
+    <tr>
+      <td><code>cwd</code></td>
+      <td><code>string</code></td>
+      <td><code>"/home/user"</code></td>
+      <td>Initial working directory</td>
+    </tr>
+    <tr>
+      <td><code>greeting</code></td>
+      <td><code>string | string[]</code></td>
+      <td>—</td>
+      <td>Lines printed when the shell attaches</td>
+    </tr>
+    <tr>
+      <td><code>prompt</code></td>
+      <td><code>(cwd: string) =&gt; string</code></td>
+      <td>colored <code>user@wterm:~$</code></td>
+      <td>Custom prompt function — receives the current working directory</td>
+    </tr>
+    <tr>
+      <td><code>network</code></td>
+      <td><code>NetworkConfig</code></td>
+      <td>—</td>
+      <td>Network access configuration (see <a href="#network-access">Network Access</a>)</td>
+    </tr>
+  </tbody>
+</table>
+
+## Methods
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>attach(write): Promise&lt;void&gt;</code></td>
+      <td>Connect to a terminal write function. Loads just-bash, prints the greeting, and displays the initial prompt.</td>
+    </tr>
+    <tr>
+      <td><code>handleInput(data): Promise&lt;void&gt;</code></td>
+      <td>Process terminal input (keystrokes, paste). Call this from the terminal's <code>onData</code> callback.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Properties
+
+<table>
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>cwd</code></td>
+      <td><code>string</code></td>
+      <td>Current working directory (updates after <code>cd</code>)</td>
+    </tr>
+    <tr>
+      <td><code>bash</code></td>
+      <td><code>Bash | null</code></td>
+      <td>Underlying just-bash instance (<code>null</code> until <code>attach</code> completes)</td>
+    </tr>
+  </tbody>
+</table>
+
+## Virtual Filesystem
+
+The `files` option populates an in-memory filesystem. Keys are absolute paths, values are file contents:
+
+```ts
+const shell = new BashShell({
+  files: {
+    "/home/user/README.md": "# My Project\n\nHello, world!\n",
+    "/home/user/src/main.zig": 'const std = @import("std");\n',
+    "/home/user/data/config.json": '{ "key": "value" }\n',
+  },
+});
+```
+
+Directories are created implicitly from file paths. Commands like `ls`, `cat`, `cd`, and `pwd` work against this virtual filesystem.
+
+## Network Access
+
+By default, the shell runs fully offline. To enable network access (for commands like `curl` or `fetch`), pass the `network` option from `just-bash`:
+
+```ts
+const shell = new BashShell({
+  network: {
+    dangerouslyAllowFullInternetAccess: true,
+  },
+});
+```
+
+The `NetworkConfig` type is re-exported from `just-bash`. See the [just-bash documentation](https://github.com/vercel-labs/just-bash) for all available network options.
+
+## Keyboard Shortcuts
+
+<table>
+  <thead>
+    <tr>
+      <th>Key</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>Tab</code></td>
+      <td>Autocomplete files and commands</td>
+    </tr>
+    <tr>
+      <td><code>Up</code> / <code>Down</code></td>
+      <td>Navigate command history</td>
+    </tr>
+    <tr>
+      <td><code>Left</code> / <code>Right</code></td>
+      <td>Move cursor within the current line</td>
+    </tr>
+    <tr>
+      <td><code>Ctrl+A</code></td>
+      <td>Jump to start of line</td>
+    </tr>
+    <tr>
+      <td><code>Ctrl+E</code></td>
+      <td>Jump to end of line</td>
+    </tr>
+    <tr>
+      <td><code>Ctrl+U</code></td>
+      <td>Clear the current line</td>
+    </tr>
+    <tr>
+      <td><code>Ctrl+C</code></td>
+      <td>Cancel current input</td>
+    </tr>
+    <tr>
+      <td><code>Ctrl+L</code></td>
+      <td>Clear screen</td>
+    </tr>
+    <tr>
+      <td><code>&#92;</code> at end of line</td>
+      <td>Line continuation (multi-line input)</td>
+    </tr>
+  </tbody>
+</table>
