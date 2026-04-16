@@ -54,6 +54,16 @@ export const navGroups: NavGroup[] = [
         href: `${GITHUB}/tree/main/examples/local`,
         external: true,
       },
+      {
+        name: "Vite",
+        href: `${GITHUB}/tree/main/examples/vite`,
+        external: true,
+      },
+      {
+        name: "Markdown Streaming",
+        href: `${GITHUB}/tree/main/examples/markdown-streaming`,
+        external: true,
+      },
     ],
   },
   {
