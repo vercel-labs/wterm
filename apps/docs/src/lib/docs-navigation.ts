@@ -19,6 +19,7 @@ export const navGroups: NavGroup[] = [
       { name: "Get Started", href: "/get-started" },
       { name: "Configuration", href: "/configuration" },
       { name: "Themes", href: "/themes" },
+      { name: "API Reference", href: "/api-reference" },
     ],
   },
   {

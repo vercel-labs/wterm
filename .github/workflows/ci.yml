@@ -59,3 +59,9 @@ jobs:
 
       - name: Type check
         run: pnpm type-check
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: pnpm test:e2e

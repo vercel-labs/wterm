@@ -1,0 +1,407 @@
+# API Reference
+
+Complete reference for all wterm options, methods, types, and transport APIs.
+
+## Terminal Options
+
+Both the React `<Terminal>` component and the vanilla `WTerm` constructor accept these options:
+
+<table>
+  <thead>
+    <tr>
+      <th>Option</th>
+      <th>Type</th>
+      <th>Default</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>cols</code></td>
+      <td><code>number</code></td>
+      <td><code>80</code></td>
+      <td>Initial column count</td>
+    </tr>
+    <tr>
+      <td><code>rows</code></td>
+      <td><code>number</code></td>
+      <td><code>24</code></td>
+      <td>Initial row count</td>
+    </tr>
+    <tr>
+      <td><code>wasmUrl</code></td>
+      <td><code>string</code></td>
+      <td>—</td>
+      <td>URL to serve the WASM binary separately. When omitted, the ~12 KB binary is decoded from an inlined base64 string.</td>
+    </tr>
+    <tr>
+      <td><code>autoResize</code></td>
+      <td><code>boolean</code></td>
+      <td><code>true</code> (vanilla) / <code>false</code> (React)</td>
+      <td>Automatically resize the terminal to fit its container using a <code>ResizeObserver</code></td>
+    </tr>
+    <tr>
+      <td><code>cursorBlink</code></td>
+      <td><code>boolean</code></td>
+      <td><code>false</code></td>
+      <td>Enable cursor blinking animation</td>
+    </tr>
+    <tr>
+      <td><code>onData</code></td>
+      <td><code>(data: string) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically.</td>
+    </tr>
+    <tr>
+      <td><code>onTitle</code></td>
+      <td><code>(title: string) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called when the terminal title changes via an escape sequence</td>
+    </tr>
+    <tr>
+      <td><code>onResize</code></td>
+      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called after the terminal is resized</td>
+    </tr>
+  </tbody>
+</table>
+
+## React-Only Props
+
+The React `<Terminal>` component adds these props on top of the shared options above. It also spreads standard HTML attributes (`className`, `style`, `id`, etc.) onto the root `div`.
+
+<table>
+  <thead>
+    <tr>
+      <th>Prop</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>theme</code></td>
+      <td><code>string</code></td>
+      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>)</td>
+    </tr>
+    <tr>
+      <td><code>onReady</code></td>
+      <td><code>(wt: WTerm) =&gt; void</code></td>
+      <td>Called with the underlying <code>WTerm</code> instance after WASM loads and initialization completes</td>
+    </tr>
+    <tr>
+      <td><code>onError</code></td>
+      <td><code>(error: unknown) =&gt; void</code></td>
+      <td>Called if WASM loading or initialization fails. When omitted, errors are logged to the console.</td>
+    </tr>
+  </tbody>
+</table>
+
+## WTerm Methods
+
+Instance methods on the vanilla `WTerm` class:
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>init(): Promise&lt;WTerm&gt;</code></td>
+      <td>Load WASM and start rendering</td>
+    </tr>
+    <tr>
+      <td><code>write(data: string | Uint8Array)</code></td>
+      <td>Write data to the terminal</td>
+    </tr>
+    <tr>
+      <td><code>resize(cols, rows)</code></td>
+      <td>Resize the terminal grid</td>
+    </tr>
+    <tr>
+      <td><code>focus()</code></td>
+      <td>Focus the terminal input</td>
+    </tr>
+    <tr>
+      <td><code>destroy()</code></td>
+      <td>Clean up event listeners, observers, and DOM</td>
+    </tr>
+  </tbody>
+</table>
+
+## Imperative Handle (React)
+
+The `useTerminal` hook returns a ref and convenience methods that delegate to the underlying `WTerm` instance:
+
+```tsx
+const { ref, write, resize, focus } = useTerminal();
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Return</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>ref</code></td>
+      <td><code>RefObject&lt;TerminalHandle&gt;</code></td>
+      <td>Pass to <code>&lt;Terminal ref=&#123;ref&#125;&gt;</code></td>
+    </tr>
+    <tr>
+      <td><code>write</code></td>
+      <td><code>(data: string | Uint8Array) =&gt; void</code></td>
+      <td>Write data to the terminal</td>
+    </tr>
+    <tr>
+      <td><code>resize</code></td>
+      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>Resize the terminal grid</td>
+    </tr>
+    <tr>
+      <td><code>focus</code></td>
+      <td><code>() =&gt; void</code></td>
+      <td>Focus the terminal input</td>
+    </tr>
+  </tbody>
+</table>
+
+The `TerminalHandle` interface exposed via `ref`:
+
+```ts
+interface TerminalHandle {
+  write(data: string | Uint8Array): void;
+  resize(cols: number, rows: number): void;
+  focus(): void;
+  readonly instance: WTerm | null;
+}
+```
+
+## WebSocketTransport
+
+Connect to a PTY backend over WebSocket with automatic reconnection and send buffering.
+
+### Options
+
+<table>
+  <thead>
+    <tr>
+      <th>Option</th>
+      <th>Type</th>
+      <th>Default</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>url</code></td>
+      <td><code>string</code></td>
+      <td>—</td>
+      <td>WebSocket server URL</td>
+    </tr>
+    <tr>
+      <td><code>reconnect</code></td>
+      <td><code>boolean</code></td>
+      <td><code>true</code></td>
+      <td>Automatically reconnect on disconnect with exponential backoff</td>
+    </tr>
+    <tr>
+      <td><code>maxReconnectDelay</code></td>
+      <td><code>number</code></td>
+      <td><code>30000</code></td>
+      <td>Maximum delay between reconnection attempts (ms)</td>
+    </tr>
+    <tr>
+      <td><code>onData</code></td>
+      <td><code>(data: Uint8Array | string) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called when data is received from the server</td>
+    </tr>
+    <tr>
+      <td><code>onOpen</code></td>
+      <td><code>() =&gt; void</code></td>
+      <td>—</td>
+      <td>Called when the connection opens</td>
+    </tr>
+    <tr>
+      <td><code>onClose</code></td>
+      <td><code>() =&gt; void</code></td>
+      <td>—</td>
+      <td>Called when the connection closes</td>
+    </tr>
+    <tr>
+      <td><code>onError</code></td>
+      <td><code>(event: Event) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called when a WebSocket error occurs</td>
+    </tr>
+  </tbody>
+</table>
+
+### Methods
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>connect(url?)</code></td>
+      <td>Open the WebSocket connection. Optionally override the URL.</td>
+    </tr>
+    <tr>
+      <td><code>send(data: string | Uint8Array)</code></td>
+      <td>Send data to the server. If the socket is not yet open, data is buffered and flushed on connect.</td>
+    </tr>
+    <tr>
+      <td><code>close()</code></td>
+      <td>Close the connection and stop reconnection attempts.</td>
+    </tr>
+  </tbody>
+</table>
+
+### Properties
+
+<table>
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>connected</code></td>
+      <td><code>boolean</code></td>
+      <td>Whether the WebSocket is currently open</td>
+    </tr>
+  </tbody>
+</table>
+
+## WasmBridge
+
+Low-level interface to the Zig/WASM terminal state machine. The bridge manages a virtual terminal grid in WASM memory — you write data in and read cells, cursor state, and scrollback out.
+
+### Loading
+
+```ts
+import { WasmBridge } from "@wterm/core";
+
+const bridge = await WasmBridge.load();
+const bridge = await WasmBridge.load("/wterm.wasm");
+```
+
+When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string inlined in the package. Pass a URL when you want to serve the binary separately for caching or CDN use.
+
+### Methods
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>WasmBridge.load(url?): Promise&lt;WasmBridge&gt;</code></td>
+      <td>Load the WASM binary and return a new bridge instance</td>
+    </tr>
+    <tr>
+      <td><code>init(cols, rows)</code></td>
+      <td>Initialize the terminal grid</td>
+    </tr>
+    <tr>
+      <td><code>writeString(str)</code></td>
+      <td>Write a UTF-8 string (including escape sequences) to the terminal</td>
+    </tr>
+    <tr>
+      <td><code>writeRaw(data: Uint8Array)</code></td>
+      <td>Write raw bytes to the terminal (chunked to 8192 bytes internally)</td>
+    </tr>
+    <tr>
+      <td><code>resize(cols, rows)</code></td>
+      <td>Resize the terminal grid</td>
+    </tr>
+    <tr>
+      <td><code>getCell(row, col): CellData</code></td>
+      <td>Get cell data at a grid position</td>
+    </tr>
+    <tr>
+      <td><code>getCursor(): CursorState</code></td>
+      <td>Get current cursor position and visibility</td>
+    </tr>
+    <tr>
+      <td><code>getCols() / getRows()</code></td>
+      <td>Get current grid dimensions</td>
+    </tr>
+    <tr>
+      <td><code>isDirtyRow(row): boolean</code></td>
+      <td>Check if a row has changed since last <code>clearDirty()</code></td>
+    </tr>
+    <tr>
+      <td><code>clearDirty()</code></td>
+      <td>Reset all dirty-row flags</td>
+    </tr>
+    <tr>
+      <td><code>getTitle(): string | null</code></td>
+      <td>Get pending title change (via OSC escape), or <code>null</code> if unchanged</td>
+    </tr>
+    <tr>
+      <td><code>getResponse(): string | null</code></td>
+      <td>Get pending host response (e.g. DSR), or <code>null</code>. Reading clears the buffer.</td>
+    </tr>
+    <tr>
+      <td><code>getScrollbackCount(): number</code></td>
+      <td>Number of lines in the scrollback buffer</td>
+    </tr>
+    <tr>
+      <td><code>getScrollbackCell(offset, col): CellData</code></td>
+      <td>Get cell data from a scrollback line</td>
+    </tr>
+    <tr>
+      <td><code>getScrollbackLineLen(offset): number</code></td>
+      <td>Get the length of a scrollback line</td>
+    </tr>
+    <tr>
+      <td><code>cursorKeysApp(): boolean</code></td>
+      <td>Whether cursor keys are in application mode</td>
+    </tr>
+    <tr>
+      <td><code>bracketedPaste(): boolean</code></td>
+      <td>Whether bracketed paste mode is active</td>
+    </tr>
+    <tr>
+      <td><code>usingAltScreen(): boolean</code></td>
+      <td>Whether the alternate screen buffer is active</td>
+    </tr>
+  </tbody>
+</table>
+
+### Types
+
+```ts
+interface CellData {
+  char: number;   // Unicode code point
+  fg: number;     // Foreground color index (256 = default)
+  bg: number;     // Background color index (256 = default)
+  flags: number;  // Style flags (bold, italic, underline, etc.)
+}
+
+interface CursorState {
+  row: number;
+  col: number;
+  visible: boolean;
+}
+```

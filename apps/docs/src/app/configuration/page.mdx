@@ -2,107 +2,15 @@
 
 ## Options
 
-Both the React `Terminal` component and the vanilla `WTerm` constructor accept the same core options:
+Both the React `Terminal` component and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `wasmUrl`, `autoResize`, and `cursorBlink` — plus event callbacks `onData`, `onTitle`, and `onResize`.
 
-<table>
-  <thead>
-    <tr>
-      <th>Option</th>
-      <th>Type</th>
-      <th>Default</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>cols</code></td>
-      <td><code>number</code></td>
-      <td><code>80</code></td>
-      <td>Number of columns</td>
-    </tr>
-    <tr>
-      <td><code>rows</code></td>
-      <td><code>number</code></td>
-      <td><code>24</code></td>
-      <td>Number of rows</td>
-    </tr>
-    <tr>
-      <td><code>wasmUrl</code></td>
-      <td><code>string</code></td>
-      <td>—</td>
-      <td>Optional URL to serve the WASM binary separately (embedded by default)</td>
-    </tr>
-    <tr>
-      <td><code>autoResize</code></td>
-      <td><code>boolean</code></td>
-      <td><code>true</code> (vanilla) / <code>false</code> (React)</td>
-      <td>Automatically resize to fit the container using a <code>ResizeObserver</code></td>
-    </tr>
-    <tr>
-      <td><code>cursorBlink</code></td>
-      <td><code>boolean</code></td>
-      <td><code>false</code></td>
-      <td>Enable cursor blinking animation</td>
-    </tr>
-  </tbody>
-</table>
-
-## Event Callbacks
-
-<table>
-  <thead>
-    <tr>
-      <th>Callback</th>
-      <th>Type</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>onData</code></td>
-      <td><code>(data: string) =&gt; void</code></td>
-      <td>Called when the terminal produces output (user input or emulator response). When omitted, input is echoed back automatically.</td>
-    </tr>
-    <tr>
-      <td><code>onTitle</code></td>
-      <td><code>(title: string) =&gt; void</code></td>
-      <td>Called when the terminal title changes via an escape sequence</td>
-    </tr>
-    <tr>
-      <td><code>onResize</code></td>
-      <td><code>(cols: number, rows: number) =&gt; void</code></td>
-      <td>Called after the terminal is resized</td>
-    </tr>
-  </tbody>
-</table>
+See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
 
 ### React-only
 
-The React `Terminal` component adds two extra props:
+The React `Terminal` component adds `theme`, `onReady`, and `onError` on top of the shared options. It also spreads standard HTML attributes onto the root `div`, so you can pass `className`, `style`, ARIA attributes, and other DOM props directly.
 
-<table>
-  <thead>
-    <tr>
-      <th>Prop</th>
-      <th>Type</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>onReady</code></td>
-      <td><code>(wt: WTerm) =&gt; void</code></td>
-      <td>Fires with the underlying <code>WTerm</code> instance once initialization completes</td>
-    </tr>
-    <tr>
-      <td><code>theme</code></td>
-      <td><code>string</code></td>
-      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>)</td>
-    </tr>
-  </tbody>
-</table>
-
-The component also spreads standard HTML attributes onto the root `div`, so you can pass `className`, `style`, ARIA attributes, and other DOM props directly.
+See [React-Only Props](/api-reference#react-only-props) for details.
 
 ## Imperative Handle (React)
 
@@ -125,37 +33,7 @@ function App() {
 }
 ```
 
-<table>
-  <thead>
-    <tr>
-      <th>Method</th>
-      <th>Type</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>write</code></td>
-      <td><code>(data: string | Uint8Array) =&gt; void</code></td>
-      <td>Write data to the terminal</td>
-    </tr>
-    <tr>
-      <td><code>resize</code></td>
-      <td><code>(cols: number, rows: number) =&gt; void</code></td>
-      <td>Resize the terminal grid</td>
-    </tr>
-    <tr>
-      <td><code>focus</code></td>
-      <td><code>() =&gt; void</code></td>
-      <td>Focus the terminal element</td>
-    </tr>
-    <tr>
-      <td><code>instance</code></td>
-      <td><code>WTerm | null</code></td>
-      <td>Direct access to the underlying <code>WTerm</code> instance</td>
-    </tr>
-  </tbody>
-</table>
+See the full [Imperative Handle](/api-reference#imperative-handle-react) reference for all returned methods.
 
 ## WebSocket Transport
 
@@ -189,53 +67,6 @@ await term.init();
 ws.connect();
 ```
 
-<table>
-  <thead>
-    <tr>
-      <th>Option</th>
-      <th>Type</th>
-      <th>Default</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>url</code></td>
-      <td><code>string</code></td>
-      <td>—</td>
-      <td>WebSocket server URL</td>
-    </tr>
-    <tr>
-      <td><code>reconnect</code></td>
-      <td><code>boolean</code></td>
-      <td><code>true</code></td>
-      <td>Automatically reconnect on disconnect</td>
-    </tr>
-    <tr>
-      <td><code>maxReconnectDelay</code></td>
-      <td><code>number</code></td>
-      <td><code>30000</code></td>
-      <td>Maximum delay between reconnection attempts (ms), with exponential backoff</td>
-    </tr>
-    <tr>
-      <td><code>onData</code></td>
-      <td><code>(data: Uint8Array | string) =&gt; void</code></td>
-      <td>—</td>
-      <td>Called when data is received from the server</td>
-    </tr>
-    <tr>
-      <td><code>onOpen</code></td>
-      <td><code>() =&gt; void</code></td>
-      <td>—</td>
-      <td>Called when the connection opens</td>
-    </tr>
-    <tr>
-      <td><code>onClose</code></td>
-      <td><code>() =&gt; void</code></td>
-      <td>—</td>
-      <td>Called when the connection closes</td>
-    </tr>
-  </tbody>
-</table>
+See the full [WebSocketTransport](/api-reference#websockettransport) reference for all options, methods, and properties.
 
 The transport buffers any `send()` calls made before the connection is open and flushes them automatically on connect.

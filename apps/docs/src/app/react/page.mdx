@@ -43,78 +43,7 @@ function App() {
 
 ## Props
 
-<table>
-  <thead>
-    <tr>
-      <th>Prop</th>
-      <th>Type</th>
-      <th>Default</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>cols</code></td>
-      <td><code>number</code></td>
-      <td><code>80</code></td>
-      <td>Initial column count</td>
-    </tr>
-    <tr>
-      <td><code>rows</code></td>
-      <td><code>number</code></td>
-      <td><code>24</code></td>
-      <td>Initial row count</td>
-    </tr>
-    <tr>
-      <td><code>wasmUrl</code></td>
-      <td><code>string</code></td>
-      <td>—</td>
-      <td>Optional URL to serve the WASM binary separately (embedded by default)</td>
-    </tr>
-    <tr>
-      <td><code>theme</code></td>
-      <td><code>string</code></td>
-      <td>—</td>
-      <td>Theme name (<code>"solarized-dark"</code>, <code>"monokai"</code>, <code>"light"</code>)</td>
-    </tr>
-    <tr>
-      <td><code>autoResize</code></td>
-      <td><code>boolean</code></td>
-      <td><code>false</code></td>
-      <td>Auto-resize based on container</td>
-    </tr>
-    <tr>
-      <td><code>cursorBlink</code></td>
-      <td><code>boolean</code></td>
-      <td><code>false</code></td>
-      <td>Enable cursor blinking animation</td>
-    </tr>
-    <tr>
-      <td><code>onData</code></td>
-      <td><code>(data: string) =&gt; void</code></td>
-      <td>—</td>
-      <td>Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically.</td>
-    </tr>
-    <tr>
-      <td><code>onTitle</code></td>
-      <td><code>(title: string) =&gt; void</code></td>
-      <td>—</td>
-      <td>Called when the terminal title changes</td>
-    </tr>
-    <tr>
-      <td><code>onResize</code></td>
-      <td><code>(cols: number, rows: number) =&gt; void</code></td>
-      <td>—</td>
-      <td>Called on resize</td>
-    </tr>
-    <tr>
-      <td><code>onReady</code></td>
-      <td><code>(wt: WTerm) =&gt; void</code></td>
-      <td>—</td>
-      <td>Called after WASM loads</td>
-    </tr>
-  </tbody>
-</table>
+The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `wasmUrl`, `autoResize`, `cursorBlink`, `onData`, `onTitle`, `onResize`) plus [React-only props](/api-reference#react-only-props) (`theme`, `onReady`, `onError`).
 
 Standard `div` props (`className`, `style`, `id`, etc.) are forwarded to the container element.
 
@@ -126,50 +55,7 @@ Returns a ref and imperative helpers:
 const { ref, write, resize, focus } = useTerminal();
 ```
 
-<table>
-  <thead>
-    <tr>
-      <th>Return</th>
-      <th>Type</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>ref</code></td>
-      <td><code>RefObject&lt;TerminalHandle&gt;</code></td>
-      <td>Pass to <code>&lt;Terminal ref=&#123;ref&#125;&gt;</code></td>
-    </tr>
-    <tr>
-      <td><code>write</code></td>
-      <td><code>(data: string | Uint8Array) =&gt; void</code></td>
-      <td>Write data to the terminal</td>
-    </tr>
-    <tr>
-      <td><code>resize</code></td>
-      <td><code>(cols: number, rows: number) =&gt; void</code></td>
-      <td>Resize the terminal</td>
-    </tr>
-    <tr>
-      <td><code>focus</code></td>
-      <td><code>() =&gt; void</code></td>
-      <td>Focus the terminal</td>
-    </tr>
-  </tbody>
-</table>
-
-## TerminalHandle
-
-The imperative handle exposed via `ref`:
-
-```ts
-interface TerminalHandle {
-  write(data: string | Uint8Array): void;
-  resize(cols: number, rows: number): void;
-  focus(): void;
-  readonly instance: WTerm | null;
-}
-```
+See the full [Imperative Handle](/api-reference#imperative-handle-react) reference for all returned methods and the `TerminalHandle` interface.
 
 ## Themes
 

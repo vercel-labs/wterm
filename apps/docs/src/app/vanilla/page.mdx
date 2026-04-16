@@ -41,101 +41,11 @@ const term = new WTerm(document.getElementById("terminal"), {
 await term.init();
 ```
 
-## Options
+## Options and Methods
 
-<table>
-  <thead>
-    <tr>
-      <th>Option</th>
-      <th>Type</th>
-      <th>Default</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>cols</code></td>
-      <td><code>number</code></td>
-      <td><code>80</code></td>
-      <td>Initial column count</td>
-    </tr>
-    <tr>
-      <td><code>rows</code></td>
-      <td><code>number</code></td>
-      <td><code>24</code></td>
-      <td>Initial row count</td>
-    </tr>
-    <tr>
-      <td><code>wasmUrl</code></td>
-      <td><code>string</code></td>
-      <td>—</td>
-      <td>Optional URL to serve the WASM binary separately (embedded by default)</td>
-    </tr>
-    <tr>
-      <td><code>autoResize</code></td>
-      <td><code>boolean</code></td>
-      <td><code>true</code></td>
-      <td>Auto-resize based on container</td>
-    </tr>
-    <tr>
-      <td><code>cursorBlink</code></td>
-      <td><code>boolean</code></td>
-      <td><code>false</code></td>
-      <td>Enable cursor blinking animation</td>
-    </tr>
-    <tr>
-      <td><code>onData</code></td>
-      <td><code>(data: string) =&gt; void</code></td>
-      <td>—</td>
-      <td>Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically.</td>
-    </tr>
-    <tr>
-      <td><code>onTitle</code></td>
-      <td><code>(title: string) =&gt; void</code></td>
-      <td>—</td>
-      <td>Called when the terminal title changes</td>
-    </tr>
-    <tr>
-      <td><code>onResize</code></td>
-      <td><code>(cols: number, rows: number) =&gt; void</code></td>
-      <td>—</td>
-      <td>Called on resize</td>
-    </tr>
-  </tbody>
-</table>
+The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `wasmUrl`, `autoResize`, `cursorBlink`, `onData`, `onTitle`, `onResize`).
 
-## Methods
-
-<table>
-  <thead>
-    <tr>
-      <th>Method</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>init(): Promise&lt;WTerm&gt;</code></td>
-      <td>Load WASM and start rendering</td>
-    </tr>
-    <tr>
-      <td><code>write(data: string | Uint8Array)</code></td>
-      <td>Write data to the terminal</td>
-    </tr>
-    <tr>
-      <td><code>resize(cols, rows)</code></td>
-      <td>Resize the terminal grid</td>
-    </tr>
-    <tr>
-      <td><code>focus()</code></td>
-      <td>Focus the terminal element</td>
-    </tr>
-    <tr>
-      <td><code>destroy()</code></td>
-      <td>Clean up event listeners and DOM</td>
-    </tr>
-  </tbody>
-</table>
+See [WTerm Methods](/api-reference#wterm-methods) for the full list of instance methods (`init`, `write`, `resize`, `focus`, `destroy`).
 
 ## Themes
 
@@ -172,59 +82,4 @@ ws.connect();
 term.onData = (data) => ws.send(data);
 ```
 
-### Transport Options
-
-<table>
-  <thead>
-    <tr>
-      <th>Option</th>
-      <th>Type</th>
-      <th>Default</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>url</code></td>
-      <td><code>string</code></td>
-      <td>—</td>
-      <td>WebSocket server URL</td>
-    </tr>
-    <tr>
-      <td><code>reconnect</code></td>
-      <td><code>boolean</code></td>
-      <td><code>true</code></td>
-      <td>Auto-reconnect on disconnect</td>
-    </tr>
-    <tr>
-      <td><code>maxReconnectDelay</code></td>
-      <td><code>number</code></td>
-      <td><code>30000</code></td>
-      <td>Maximum delay between reconnection attempts (ms), with exponential backoff</td>
-    </tr>
-    <tr>
-      <td><code>onData</code></td>
-      <td><code>(data: Uint8Array | string) =&gt; void</code></td>
-      <td>—</td>
-      <td>Called when data is received from the server</td>
-    </tr>
-    <tr>
-      <td><code>onOpen</code></td>
-      <td><code>() =&gt; void</code></td>
-      <td>—</td>
-      <td>Called when the connection opens</td>
-    </tr>
-    <tr>
-      <td><code>onClose</code></td>
-      <td><code>() =&gt; void</code></td>
-      <td>—</td>
-      <td>Called when the connection closes</td>
-    </tr>
-    <tr>
-      <td><code>onError</code></td>
-      <td><code>(event: Event) =&gt; void</code></td>
-      <td>—</td>
-      <td>Called when a WebSocket error occurs</td>
-    </tr>
-  </tbody>
-</table>
+See the full [WebSocketTransport](/api-reference#websockettransport) reference for all options, methods, and properties.

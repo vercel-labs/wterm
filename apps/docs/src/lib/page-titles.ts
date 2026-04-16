@@ -9,6 +9,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "just-bash": "Just Bash",
   markdown: "Markdown",
   core: "Core / Advanced",
+  "api-reference": "API Reference",
 };
 
 export function getPageTitle(slug: string): string | null {
