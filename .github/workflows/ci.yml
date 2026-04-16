@@ -15,6 +15,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Zig
+        run: |
+          curl -sSfLo zig.tar.xz https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz
+          echo "02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239  zig.tar.xz" | sha256sum -c
+          tar -xJf zig.tar.xz
+          echo "$PWD/zig-x86_64-linux-0.15.2" >> "$GITHUB_PATH"
+
+      - name: Zig tests
+        run: zig build test
+
+      - name: WASM drift check
+        run: |
+          zig build -Doptimize=ReleaseSmall
+          if ! diff -q zig-out/bin/wterm.wasm packages/@wterm/core/wasm/wterm.wasm > /dev/null 2>&1; then
+            echo "::error::Committed wterm.wasm does not match Zig sources. Rebuild with 'zig build -Doptimize=ReleaseSmall' and commit the updated packages/@wterm/core/wasm/wterm.wasm."
+            exit 1
+          fi
+
+      - name: Clean Zig artifacts
+        run: rm -rf zig-x86_64-linux-0.15.2 zig.tar.xz zig-out .zig-cache
+
       - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
