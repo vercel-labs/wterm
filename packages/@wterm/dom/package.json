@@ -29,6 +29,7 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "pnpm build",
+    "test": "vitest run",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "@internal/ts": "workspace:*",
+    "jsdom": "^29.0.2",
     "typescript": "^6.0.2"
   },
   "keywords": [

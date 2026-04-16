@@ -21,6 +21,7 @@
     "prebuild": "node scripts/inline-wasm.js",
     "build": "tsc",
     "prepublishOnly": "pnpm build",
+    "test": "vitest run",
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {

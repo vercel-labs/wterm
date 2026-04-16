@@ -18,6 +18,7 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "pnpm build",
+    "test": "vitest run",
     "type-check": "tsc --noEmit"
   },
   "peerDependencies": {
