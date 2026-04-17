@@ -38,10 +38,10 @@ const Terminal = defineComponent({
   props: {
     cols: { type: Number, default: 80 },
     rows: { type: Number, default: 24 },
-    wasmUrl: { type: String, default: undefined },
-    theme: { type: String, default: undefined },
-    autoResize: { type: Boolean, default: false },
-    cursorBlink: { type: Boolean, default: false },
+    wasmUrl: String,
+    theme: String,
+    autoResize: Boolean,
+    cursorBlink: Boolean,
   },
   emits: ["data", "title", "resize", "ready", "error"],
   setup(props, { emit, expose }) {
