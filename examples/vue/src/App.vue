@@ -7,8 +7,13 @@ function attachShell(terminal: WTerm) {
   const shell = new BashShell({
     files: {
       "/home/user/README.md":
-        "# wterm Vue Example\n\nThis terminal is running inside a Vue 3 component.\n",
-      "/home/user/hello.sh": '#!/bin/bash\necho "Hello from the Vue 3 example!"\n',
+        `# wterm Vue Example
+
+This terminal is running inside a Vue 3 component.
+`,
+      "/home/user/hello.sh": `#!/bin/bash
+echo "Hello from the Vue 3 example!"
+`,
     },
     greeting: "Welcome to wterm Vue! Type 'help' to get started.",
   });

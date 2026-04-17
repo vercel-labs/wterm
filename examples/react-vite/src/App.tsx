@@ -20,8 +20,13 @@ export default function App() {
       const shell = new BashShell({
         files: {
           "/home/user/README.md":
-            "# wterm React + Vite Example\\n\\nThis terminal is running inside a React app powered by Vite.\\n",
-          "/home/user/hello.sh": '#!/bin/bash\\necho "Hello from the React + Vite example!"\\n',
+            `# wterm React + Vite Example
+
+This terminal is running inside a React app powered by Vite.
+`,
+          "/home/user/hello.sh": `#!/bin/bash
+echo "Hello from the React + Vite example!"
+`,
         },
         greeting: "Welcome to wterm React! Type 'help' to get started.",
       });

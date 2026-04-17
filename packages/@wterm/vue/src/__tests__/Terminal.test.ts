@@ -125,6 +125,32 @@ describe("Terminal component", () => {
     expect(instance.destroy).toHaveBeenCalled();
   });
 
+  it("recreates the terminal when wasmUrl changes", async () => {
+    const wrapper = await mountTerminal({ wasmUrl: "/first.wasm" });
+    await flushPromises();
+
+    const firstInstance = lastWTermInstance;
+    await wrapper.setProps({ wasmUrl: "/second.wasm" });
+    await flushPromises();
+
+    expect(firstInstance.destroy).toHaveBeenCalled();
+    expect(mockWTerm).toHaveBeenCalledTimes(2);
+    expect(lastWTermInstance).not.toBe(firstInstance);
+  });
+
+  it("recreates the terminal when autoResize changes", async () => {
+    const wrapper = await mountTerminal({ autoResize: true });
+    await flushPromises();
+
+    const firstInstance = lastWTermInstance;
+    await wrapper.setProps({ autoResize: false });
+    await flushPromises();
+
+    expect(firstInstance.destroy).toHaveBeenCalled();
+    expect(mockWTerm).toHaveBeenCalledTimes(2);
+    expect(lastWTermInstance).not.toBe(firstInstance);
+  });
+
   it("exposes imperative methods through a template ref", async () => {
     const terminalRef = vueRef<TerminalHandle | null>(null);
     const Terminal = (await import("../Terminal.js")).default;

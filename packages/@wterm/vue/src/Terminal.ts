@@ -70,6 +70,8 @@ const Terminal = defineComponent({
     const elementRef = ref<HTMLDivElement | null>(null);
     const wtermRef = shallowRef<WTerm | null>(null);
     let destroyed = false;
+    let mounted = false;
+    let terminalVersion = 0;
 
     const handle: TerminalHandle = {
       write(data: string | Uint8Array) {
@@ -97,28 +99,20 @@ const Terminal = defineComponent({
       syncLiveOptions(wterm, props);
     };
 
-    watch(
-      () => [
-        props.cols,
-        props.rows,
-        props.autoResize,
-        props.cursorBlink,
-        props.onData,
-        props.onTitle,
-        props.onResize,
-      ],
-      () => {
-        applyLiveOptions();
-      },
-      { immediate: true },
-    );
+    const destroyTerminal = () => {
+      terminalVersion += 1;
+      const wterm = wtermRef.value;
+      wtermRef.value = null;
+      wterm?.destroy();
+    };
 
-    onMounted(() => {
+    const createTerminal = () => {
       const element = elementRef.value;
       if (!element) {
         return;
       }
 
+      const currentVersion = ++terminalVersion;
       const wterm = new WTerm(element, {
         cols: props.cols,
         rows: props.rows,
@@ -135,7 +129,12 @@ const Terminal = defineComponent({
       void wterm
         .init()
         .then(() => {
-          if (destroyed) {
+          if (
+            destroyed ||
+            currentVersion !== terminalVersion ||
+            wtermRef.value !== wterm
+          ) {
+            wterm.destroy();
             return;
           }
 
@@ -143,22 +142,66 @@ const Terminal = defineComponent({
           props.onReady?.(wterm);
         })
         .catch((error: unknown) => {
-          if (destroyed) {
+          if (
+            destroyed ||
+            currentVersion !== terminalVersion ||
+            wtermRef.value !== wterm
+          ) {
             return;
           }
 
+          destroyTerminal();
           if (props.onError) {
             props.onError(error);
           } else {
             console.error(error);
           }
         });
+    };
+
+    watch(
+      () => [
+        props.cols,
+        props.rows,
+        props.autoResize,
+        props.cursorBlink,
+        props.onData,
+        props.onTitle,
+        props.onResize,
+      ],
+      () => {
+        applyLiveOptions();
+      },
+      { immediate: true },
+    );
+
+    watch(
+      () => [props.wasmUrl, props.autoResize] as const,
+      ([nextWasmUrl, nextAutoResize], [prevWasmUrl, prevAutoResize]) => {
+        if (!mounted) {
+          return;
+        }
+
+        if (
+          nextWasmUrl === prevWasmUrl &&
+          nextAutoResize === prevAutoResize
+        ) {
+          return;
+        }
+
+        destroyTerminal();
+        createTerminal();
+      },
+    );
+
+    onMounted(() => {
+      mounted = true;
+      createTerminal();
     });
 
     onBeforeUnmount(() => {
       destroyed = true;
-      wtermRef.value?.destroy();
-      wtermRef.value = null;
+      destroyTerminal();
     });
 
     return () => {

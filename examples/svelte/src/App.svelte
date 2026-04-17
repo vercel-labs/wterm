@@ -7,8 +7,13 @@
     const shell = new BashShell({
       files: {
         "/home/user/README.md":
-          "# wterm Svelte Example\n\nThis terminal is running inside a Svelte app.\n",
-        "/home/user/hello.sh": '#!/bin/bash\necho "Hello from the Svelte example!"\n',
+          `# wterm Svelte Example
+
+This terminal is running inside a Svelte app.
+`,
+        "/home/user/hello.sh": `#!/bin/bash
+echo "Hello from the Svelte example!"
+`,
       },
       greeting: "Welcome to wterm Svelte! Type 'help' to get started.",
     });
