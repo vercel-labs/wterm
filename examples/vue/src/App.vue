@@ -26,16 +26,18 @@ const INITIAL_FILES: Record<string, string> = {
     '#!/bin/bash\necho "Hello from wterm!"\necho "Date: $(date)"\necho "Shell: $SHELL"\n',
 };
 
-const terminalRef = ref<TerminalHandle | null>(null);
+const bashTerminalRef = ref<TerminalHandle | null>(null);
+const localTerminalRef = ref<TerminalHandle | null>(null);
 const themeLabel = ref("Default");
 const title = ref("wterm");
 const shell = shallowRef<BashShell | null>(null);
+const ws = shallowRef<WebSocket | null>(null);
 
 const theme = computed(
   () => THEMES.find((t) => t.value === themeLabel.value)?.theme,
 );
 
-function handleReady() {
+function handleBashReady() {
   if (shell.value) return;
   const s = new BashShell({
     files: INITIAL_FILES,
@@ -48,15 +50,44 @@ function handleReady() {
     ],
   });
   shell.value = s;
-  s.attach((data) => terminalRef.value?.write(data));
+  s.attach((data) => bashTerminalRef.value?.write(data));
 }
 
-function handleData(data: string) {
+function handleBashData(data: string) {
   shell.value?.handleInput(data);
 }
 
 function handleTitle(newTitle: string) {
   title.value = newTitle;
+}
+
+function handleLocalReady() {
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const socket = new WebSocket(`${proto}//${window.location.host}/api/terminal`);
+  ws.value = socket;
+
+  socket.onmessage = (event: MessageEvent) => {
+    localTerminalRef.value?.write(event.data as string);
+  };
+
+  socket.onclose = () => {
+    localTerminalRef.value?.write(
+      "\r\n\x1b[90m[session ended]\x1b[0m\r\n",
+    );
+    ws.value = null;
+  };
+}
+
+function handleLocalData(data: string) {
+  const socket = ws.value;
+  if (socket?.readyState === WebSocket.OPEN) socket.send(data);
+}
+
+function handleLocalResize(cols: number, rows: number) {
+  const socket = ws.value;
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(`\x1b[RESIZE:${cols};${rows}]`);
+  }
 }
 </script>
 
@@ -73,7 +104,7 @@ function handleTitle(newTitle: string) {
         <select
           id="theme-select"
           v-model="themeLabel"
-          class="h-9 w-[160px] rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          class="h-9 w-40 rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option v-for="t in THEMES" :key="t.value" :value="t.value">
             {{ t.value }}
@@ -81,18 +112,39 @@ function handleTitle(newTitle: string) {
         </select>
       </div>
     </header>
-    <main class="flex flex-1 items-start justify-center">
-      <Terminal
-        ref="terminalRef"
-        :cols="80"
-        :rows="24"
-        wasm-url="/wterm.wasm"
-        :theme="theme"
-        class="w-full max-w-[900px]"
-        @data="handleData"
-        @title="handleTitle"
-        @ready="handleReady"
-      />
+    <main class="flex flex-1 flex-col items-center gap-8">
+      <section class="flex w-full max-w-225 flex-col gap-2">
+        <h2 class="text-sm font-medium text-muted-foreground px-2">
+          In-browser bash (just-bash)
+        </h2>
+        <Terminal
+          ref="bashTerminalRef"
+          :cols="80"
+          :rows="24"
+          wasm-url="/wterm.wasm"
+          :theme="theme"
+          class="w-full"
+          @data="handleBashData"
+          @title="handleTitle"
+          @ready="handleBashReady"
+        />
+      </section>
+      <section class="flex w-full max-w-225 flex-col gap-2">
+        <h2 class="text-sm font-medium text-muted-foreground px-2">
+          Local shell (node-pty over WebSocket)
+        </h2>
+        <Terminal
+          ref="localTerminalRef"
+          :cols="80"
+          :rows="24"
+          wasm-url="/wterm.wasm"
+          :theme="theme"
+          class="w-full"
+          @data="handleLocalData"
+          @resize="handleLocalResize"
+          @ready="handleLocalReady"
+        />
+      </section>
     </main>
   </div>
 </template>

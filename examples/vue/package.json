@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predev": "mkdir -p public && cp ../../packages/@wterm/core/wasm/wterm.wasm public/wterm.wasm && (command -v portless >/dev/null 2>&1 || (echo '\\nportless is required but not installed. Run: npm i -g portless\\nSee: https://github.com/vercel-labs/portless\\n' && exit 1))",
+    "predev": "mkdir -p public && cp ../../packages/@wterm/core/wasm/wterm.wasm public/wterm.wasm && chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null; (command -v portless >/dev/null 2>&1 || (echo '\\nportless is required but not installed. Run: npm i -g portless\\nSee: https://github.com/vercel-labs/portless\\n' && exit 1))",
     "dev": "portless vue-example.wterm vite",
     "prebuild": "mkdir -p public && cp ../../packages/@wterm/core/wasm/wterm.wasm public/wterm.wasm",
     "build": "vue-tsc -b && vite build",
@@ -17,11 +17,14 @@
     "@wterm/just-bash": "workspace:*",
     "@wterm/vue": "workspace:*",
     "just-bash": "^2.14.2",
-    "vue": "^3.5.32"
+    "node-pty": "^1.0.0",
+    "vue": "^3.5.32",
+    "ws": "^8.18.2"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^24.12.2",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^6.0.5",
     "@vue/tsconfig": "^0.9.1",
     "tailwindcss": "^4.2.2",
