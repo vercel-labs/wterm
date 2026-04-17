@@ -11,6 +11,8 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 | [`@wterm/core`](packages/@wterm/core) | Headless WASM bridge + WebSocket transport |
 | [`@wterm/dom`](packages/@wterm/dom) | DOM renderer, input handler — vanilla JS terminal |
 | [`@wterm/react`](packages/@wterm/react) | React component + `useTerminal` hook (TypeScript) |
+| [`@wterm/vue`](packages/@wterm/vue) | Vue 3 component + `useTerminal` composable |
+| [`@wterm/svelte`](packages/@wterm/svelte) | Svelte action + imperative terminal controller |
 | [`@wterm/just-bash`](packages/@wterm/just-bash) | In-browser Bash shell powered by just-bash |
 | [`@wterm/markdown`](packages/@wterm/markdown) | Render Markdown in the terminal |
 
@@ -65,6 +67,36 @@ Serve the `web/` directory with any static file server:
 
 ```bash
 cd web && python3 -m http.server 8000
+```
+
+### Run the React + Vite example
+
+```bash
+pnpm --filter @wterm/core build
+pnpm --filter @wterm/dom build
+pnpm --filter @wterm/react build
+pnpm --filter @wterm/just-bash build
+pnpm --filter react-vite-example dev
+```
+
+### Run the Vue example
+
+```bash
+pnpm --filter @wterm/core build
+pnpm --filter @wterm/dom build
+pnpm --filter @wterm/vue build
+pnpm --filter @wterm/just-bash build
+pnpm --filter vue-example dev
+```
+
+### Run the Svelte example
+
+```bash
+pnpm --filter @wterm/core build
+pnpm --filter @wterm/dom build
+pnpm --filter @wterm/svelte build
+pnpm --filter @wterm/just-bash build
+pnpm --filter svelte-example dev
 ```
 
 ### Run the Next.js example

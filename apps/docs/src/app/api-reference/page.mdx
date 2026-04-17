@@ -4,7 +4,7 @@ Complete reference for all wterm options, methods, types, and transport APIs.
 
 ## Terminal Options
 
-Both the React `<Terminal>` component and the vanilla `WTerm` constructor accept these options:
+The vanilla `WTerm` constructor, the React/Vue terminal components, and the Svelte `wterm` action all accept these options:
 
 <table>
   <thead>
@@ -37,7 +37,7 @@ Both the React `<Terminal>` component and the vanilla `WTerm` constructor accept
     <tr>
       <td><code>autoResize</code></td>
       <td><code>boolean</code></td>
-      <td><code>true</code> (vanilla) / <code>false</code> (React)</td>
+      <td><code>true</code> (vanilla) / <code>false</code> (React, Vue, Svelte)</td>
       <td>Automatically resize the terminal to fit its container using a <code>ResizeObserver</code></td>
     </tr>
     <tr>
@@ -84,6 +84,73 @@ The React `<Terminal>` component adds these props on top of the shared options a
       <td><code>theme</code></td>
       <td><code>string</code></td>
       <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>)</td>
+    </tr>
+    <tr>
+      <td><code>onReady</code></td>
+      <td><code>(wt: WTerm) =&gt; void</code></td>
+      <td>Called with the underlying <code>WTerm</code> instance after WASM loads and initialization completes</td>
+    </tr>
+    <tr>
+      <td><code>onError</code></td>
+      <td><code>(error: unknown) =&gt; void</code></td>
+      <td>Called if WASM loading or initialization fails. When omitted, errors are logged to the console.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Vue-Only Props
+
+The Vue `<Terminal>` component adds these props on top of the shared options above. It also forwards standard attributes (`class`, `style`, `id`, `data-*`, etc.) onto the root `div`.
+
+<table>
+  <thead>
+    <tr>
+      <th>Prop</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>theme</code></td>
+      <td><code>string</code></td>
+      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>)</td>
+    </tr>
+    <tr>
+      <td><code>onReady</code></td>
+      <td><code>(wt: WTerm) =&gt; void</code></td>
+      <td>Called with the underlying <code>WTerm</code> instance after WASM loads and initialization completes</td>
+    </tr>
+    <tr>
+      <td><code>onError</code></td>
+      <td><code>(error: unknown) =&gt; void</code></td>
+      <td>Called if WASM loading or initialization fails. When omitted, errors are logged to the console.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Svelte-Only Options
+
+The `wterm` action adds these options on top of the shared options above.
+
+<table>
+  <thead>
+    <tr>
+      <th>Option</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>theme</code></td>
+      <td><code>string</code></td>
+      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>)</td>
+    </tr>
+    <tr>
+      <td><code>controller</code></td>
+      <td><code>TerminalController</code></td>
+      <td>Optional imperative controller for writing to, resizing, or focusing the terminal from outside the action</td>
     </tr>
     <tr>
       <td><code>onReady</code></td>
@@ -183,6 +250,104 @@ interface TerminalHandle {
   readonly instance: WTerm | null;
 }
 ```
+
+## useTerminal (Vue)
+
+The Vue `useTerminal` composable returns a function ref plus convenience methods:
+
+```ts
+const { ref, attach, write, resize, focus } = useTerminal();
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Return</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>ref</code></td>
+      <td><code>ShallowRef&lt;TerminalHandle | null&gt;</code></td>
+      <td>Current imperative terminal handle</td>
+    </tr>
+    <tr>
+      <td><code>attach</code></td>
+      <td><code>(instance: TerminalHandle | null) =&gt; void</code></td>
+      <td>Function ref to pass to <code>&lt;Terminal :ref=&#123;attach&#125; /&gt;</code></td>
+    </tr>
+    <tr>
+      <td><code>write</code></td>
+      <td><code>(data: string | Uint8Array) =&gt; void</code></td>
+      <td>Write data to the terminal</td>
+    </tr>
+    <tr>
+      <td><code>resize</code></td>
+      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>Resize the terminal grid</td>
+    </tr>
+    <tr>
+      <td><code>focus</code></td>
+      <td><code>() =&gt; void</code></td>
+      <td>Focus the terminal input</td>
+    </tr>
+  </tbody>
+</table>
+
+## Terminal Handle (Vue)
+
+The Vue component exposes the same imperative handle shape as React:
+
+```ts
+interface TerminalHandle {
+  write(data: string | Uint8Array): void;
+  resize(cols: number, rows: number): void;
+  focus(): void;
+  readonly instance: WTerm | null;
+}
+```
+
+## Terminal Controller (Svelte)
+
+Create a controller when you want imperative access outside the action:
+
+```ts
+const terminal = createTerminalController();
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Member</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>write</code></td>
+      <td><code>(data: string | Uint8Array) =&gt; void</code></td>
+      <td>Write data to the terminal</td>
+    </tr>
+    <tr>
+      <td><code>resize</code></td>
+      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>Resize the terminal grid</td>
+    </tr>
+    <tr>
+      <td><code>focus</code></td>
+      <td><code>() =&gt; void</code></td>
+      <td>Focus the terminal input</td>
+    </tr>
+    <tr>
+      <td><code>instance</code></td>
+      <td><code>WTerm | null</code></td>
+      <td>Read-only access to the underlying terminal instance</td>
+    </tr>
+  </tbody>
+</table>
 
 ## WebSocketTransport
 

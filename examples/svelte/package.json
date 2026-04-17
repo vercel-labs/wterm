@@ -1,0 +1,23 @@
+{
+  "name": "svelte-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "command -v portless >/dev/null 2>&1 || (echo '\nportless is required but not installed. Run: npm i -g portless\nSee: https://github.com/vercel-labs/portless\n' && exit 1)",
+    "dev": "portless svelte-example.wterm vite",
+    "build": "vite build",
+    "type-check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "dependencies": {
+    "@wterm/just-bash": "workspace:*",
+    "@wterm/svelte": "workspace:*",
+    "svelte": "^5.55.4"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "svelte-check": "^4.4.6",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.8"
+  }
+}

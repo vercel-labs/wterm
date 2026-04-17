@@ -1,7 +1,7 @@
 {
-  "name": "@wterm/react",
+  "name": "@wterm/svelte",
   "version": "0.1.8",
-  "description": "React component for wterm — a terminal emulator for the web",
+  "description": "Svelte action and controller for wterm — a terminal emulator for the web",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -29,29 +29,25 @@
     "test": "vitest run",
     "type-check": "tsc --noEmit"
   },
-  "devDependencies": {
-    "@internal/ts": "workspace:*",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@wterm/dom": "^0.1.7",
-    "jsdom": "^29.0.2",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5",
-    "typescript": "^6.0.2"
+  "dependencies": {
+    "@wterm/dom": "workspace:*"
   },
   "peerDependencies": {
     "@wterm/dom": "workspace:*",
-    "react": "^18.0.0 || ^19.0.0",
-    "react-dom": "^18.0.0 || ^19.0.0"
+    "svelte": "^5.55.4"
+  },
+  "devDependencies": {
+    "@internal/ts": "workspace:*",
+    "jsdom": "^29.0.2",
+    "svelte": "^5.55.4",
+    "typescript": "^6.0.2"
   },
   "keywords": [
     "terminal",
     "emulator",
     "wasm",
     "zig",
-    "react",
+    "svelte",
     "xterm"
   ],
   "license": "Apache-2.0",
@@ -59,6 +55,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/vercel-labs/wterm",
-    "directory": "packages/@wterm/react"
+    "directory": "packages/@wterm/svelte"
   }
 }

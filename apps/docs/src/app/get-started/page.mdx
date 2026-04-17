@@ -8,6 +8,18 @@
 npm install @wterm/dom @wterm/react
 ```
 
+### Vue 3
+
+```bash
+npm install @wterm/dom @wterm/vue vue
+```
+
+### Svelte
+
+```bash
+npm install @wterm/dom @wterm/svelte svelte
+```
+
 ### Vanilla JS
 
 ```bash
@@ -27,6 +39,30 @@ import "@wterm/react/css";
 function App() {
   return <Terminal />;
 }
+```
+
+### Vue 3
+
+```vue
+<script setup lang="ts">
+import { Terminal } from "@wterm/vue";
+import "@wterm/vue/css";
+</script>
+
+<template>
+  <Terminal />
+</template>
+```
+
+### Svelte
+
+```svelte
+<script lang="ts">
+  import { wterm } from "@wterm/svelte";
+  import "@wterm/svelte/css";
+</script>
+
+<div use:wterm></div>
 ```
 
 ### Vanilla JS

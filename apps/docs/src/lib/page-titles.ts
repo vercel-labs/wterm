@@ -5,6 +5,8 @@ export const PAGE_TITLES: Record<string, string> = {
   configuration: "Configuration",
   themes: "Themes",
   react: "React",
+  vue: "Vue 3",
+  svelte: "Svelte",
   vanilla: "Vanilla JS",
   "just-bash": "Just Bash",
   markdown: "Markdown",
