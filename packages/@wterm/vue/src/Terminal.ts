@@ -43,8 +43,16 @@ const Terminal = defineComponent({
     autoResize: Boolean,
     cursorBlink: Boolean,
   },
-  emits: ["data", "title", "resize", "ready", "error"],
-  setup(props, { emit, expose }) {
+  emits: {
+    // Object form: validator signatures carry emit payload types to
+    // both internal `emit(...)` and external `@event="..."` handlers.
+    data: (_data: string) => true,
+    title: (_title: string) => true,
+    resize: (_cols: number, _rows: number) => true,
+    ready: (_wt: WTerm) => true,
+    error: (_err: unknown) => true,
+  },
+  setup(props, { emit }) {
     const root = ref<HTMLDivElement | null>(null);
     const wterm = shallowRef<WTerm | null>(null);
 
@@ -83,7 +91,11 @@ const Terminal = defineComponent({
       () => [props.cols, props.rows] as const,
       ([c, r]) => {
         const wt = wterm.value;
-        if (wt?.bridge && !props.autoResize && (wt.cols !== c || wt.rows !== r)) {
+        if (
+          wt?.bridge &&
+          !props.autoResize &&
+          (wt.cols !== c || wt.rows !== r)
+        ) {
           wt.resize(c, r);
         }
       },
@@ -98,7 +110,12 @@ const Terminal = defineComponent({
       },
     );
 
-    expose({
+    // Returning bindings from setup is the typed equivalent of defineExpose:
+    // Vue auto-unwraps refs and merges these into InstanceType<typeof Terminal>,
+    // so template refs see write/resize/focus/instance with correct types.
+    return {
+      root,
+      instance: wterm,
       write(data: string | Uint8Array) {
         wterm.value?.write(data);
       },
@@ -108,23 +125,20 @@ const Terminal = defineComponent({
       focus() {
         wterm.value?.focus();
       },
-      get instance() {
-        return wterm.value;
-      },
-    } satisfies TerminalHandle);
-
-    return () =>
-      h("div", {
-        ref: root,
-        class: ["wterm", props.theme ? `theme-${props.theme}` : null],
-        style: props.autoResize
-          ? undefined
-          : { height: `${props.rows * 17 + 24}px` },
-        role: "textbox",
-        "aria-label": "Terminal",
-        "aria-multiline": "true",
-        "aria-roledescription": "terminal",
-      });
+    };
+  },
+  render() {
+    return h("div", {
+      ref: "root",
+      class: ["wterm", this.theme ? `theme-${this.theme}` : null],
+      style: this.autoResize
+        ? undefined
+        : { height: `${this.rows * 17 + 24}px` },
+      role: "textbox",
+      "aria-label": "Terminal",
+      "aria-multiline": "true",
+      "aria-roledescription": "terminal",
+    });
   },
 });
 

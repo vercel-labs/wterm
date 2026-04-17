@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, shallowRef } from "vue";
-import { Terminal, type TerminalHandle } from "@wterm/vue";
+import { Terminal } from "@wterm/vue";
 import { BashShell } from "@wterm/just-bash";
 
 interface Theme {
@@ -26,8 +26,8 @@ const INITIAL_FILES: Record<string, string> = {
     '#!/bin/bash\necho "Hello from wterm!"\necho "Date: $(date)"\necho "Shell: $SHELL"\n',
 };
 
-const bashTerminalRef = ref<TerminalHandle | null>(null);
-const localTerminalRef = ref<TerminalHandle | null>(null);
+const bashTerminalRef = ref<InstanceType<typeof Terminal> | null>(null);
+const localTerminalRef = ref<InstanceType<typeof Terminal> | null>(null);
 const themeLabel = ref("Default");
 const title = ref("wterm");
 const shell = shallowRef<BashShell | null>(null);
