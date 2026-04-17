@@ -1,0 +1,58 @@
+{
+  "name": "@wterm/vue",
+  "version": "0.1.0",
+  "description": "Vue component for wterm — a terminal emulator for the web",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./css": {
+      "style": "./src/terminal.css",
+      "import": "./src/terminal.css",
+      "default": "./src/terminal.css"
+    }
+  },
+  "files": [
+    "dist",
+    "src/terminal.css"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "pnpm build",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@internal/ts": "workspace:*",
+    "@vue/test-utils": "^2.4.6",
+    "@wterm/dom": "^0.1.7",
+    "jsdom": "^29.0.2",
+    "typescript": "^6.0.2",
+    "vitest": "^2.1.9",
+    "vue": "^3.5.0"
+  },
+  "peerDependencies": {
+    "@wterm/dom": "workspace:*",
+    "vue": "^3.4.0"
+  },
+  "keywords": [
+    "terminal",
+    "emulator",
+    "wasm",
+    "zig",
+    "vue",
+    "xterm"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://wterm.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vercel-labs/wterm",
+    "directory": "packages/@wterm/vue"
+  }
+}
