@@ -33,6 +33,7 @@ pub const Parser = struct {
     params: [MAX_PARAMS]u16 = [_]u16{0} ** MAX_PARAMS,
     param_count: u8 = 0,
     params_full: bool = false,
+    subparam: [MAX_PARAMS]bool = [_]bool{false} ** MAX_PARAMS,
     intermediates: [MAX_INTERMEDIATES]u8 = [_]u8{0} ** MAX_INTERMEDIATES,
     intermediate_count: u8 = 0,
     csi_private: u8 = 0,
@@ -90,6 +91,7 @@ pub const Parser = struct {
         var i: u8 = 0;
         while (i < MAX_PARAMS) : (i += 1) {
             self.params[i] = 0;
+            self.subparam[i] = false;
         }
     }
 
@@ -219,13 +221,16 @@ pub const Parser = struct {
             }
             return .none;
         }
-        if (byte == ';') {
+        if (byte == ';' or byte == ':') {
             if (self.param_count < MAX_PARAMS) {
                 if (self.param_count == 0) self.param_count = 1;
+                const next = self.param_count;
                 self.param_count += 1;
                 if (self.param_count > MAX_PARAMS) {
                     self.param_count = MAX_PARAMS;
                     self.params_full = true;
+                } else if (byte == ':') {
+                    self.subparam[next] = true;
                 }
             }
             return .none;

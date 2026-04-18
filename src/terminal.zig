@@ -365,6 +365,7 @@ pub const Terminal = struct {
             self.softReset();
             return;
         }
+        if (self.parser.csi_private == '>') return;
 
         switch (final) {
             'A' => self.cursorUp(self.parser.getParam(0, 1)),
@@ -720,7 +721,19 @@ pub const Terminal = struct {
                 1 => self.current_flags |= cell_mod.FLAG_BOLD,
                 2 => self.current_flags |= cell_mod.FLAG_DIM,
                 3 => self.current_flags |= cell_mod.FLAG_ITALIC,
-                4 => self.current_flags |= cell_mod.FLAG_UNDERLINE,
+                4 => {
+                    if (i + 1 < self.parser.param_count and self.parser.subparam[i + 1]) {
+                        const sub = self.parser.params[i + 1];
+                        if (sub == 0) {
+                            self.current_flags &= ~cell_mod.FLAG_UNDERLINE;
+                        } else {
+                            self.current_flags |= cell_mod.FLAG_UNDERLINE;
+                        }
+                        i += 1;
+                    } else {
+                        self.current_flags |= cell_mod.FLAG_UNDERLINE;
+                    }
+                },
                 5 => self.current_flags |= cell_mod.FLAG_BLINK,
                 7 => self.current_flags |= cell_mod.FLAG_REVERSE,
                 8 => self.current_flags |= cell_mod.FLAG_INVISIBLE,
@@ -744,7 +757,12 @@ pub const Terminal = struct {
                 49 => self.current_bg = cell_mod.DEFAULT_COLOR,
                 90...97 => self.current_fg = @intCast(p - 90 + 8),
                 100...107 => self.current_bg = @intCast(p - 100 + 8),
-                else => {},
+                else => {
+                    // Skip colon sub-parameters we don't handle
+                    while (i + 1 < self.parser.param_count and self.parser.subparam[i + 1]) {
+                        i += 1;
+                    }
+                },
             }
             i += 1;
         }
