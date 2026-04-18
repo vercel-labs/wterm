@@ -82,6 +82,7 @@ export class WTerm {
       this.input = new InputHandler(
         this.element,
         (data) => {
+          this._scrollToBottom();
           if (this.onData) {
             this.onData(data);
           } else {
@@ -121,7 +122,7 @@ export class WTerm {
   write(data: string | Uint8Array): void {
     if (!this.bridge) return;
     if (this.debug) this.debug.traceWrite(data);
-    this._shouldScrollToBottom = this._isScrolledToBottom();
+    this._shouldScrollToBottom = true;
     if (typeof data === "string") {
       this.bridge.writeString(data);
     } else {

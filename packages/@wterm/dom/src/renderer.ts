@@ -279,9 +279,13 @@ export class Renderer {
         bgC = lastCell.fg;
         if (bgC === DEFAULT_COLOR) bgC = 7;
       }
-      rowEl.style.background = colorToCSS(bgC) || "";
+      const css = colorToCSS(bgC) || "";
+      rowEl.style.background = css;
+      // Extend bg 1px below to cover sub-pixel gaps between rows at fractional zoom
+      rowEl.style.boxShadow = css ? `0 1px 0 0 ${css}` : "";
     } else {
       rowEl.style.background = "";
+      rowEl.style.boxShadow = "";
     }
   }
 

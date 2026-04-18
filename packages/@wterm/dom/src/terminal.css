@@ -53,7 +53,8 @@
 .term-row {
   display: block;
   height: var(--term-row-height);
-  contain: content;
+  line-height: var(--term-row-height);
+  contain: layout style;
 }
 
 .term-block {
