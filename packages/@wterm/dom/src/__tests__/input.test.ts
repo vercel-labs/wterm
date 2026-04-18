@@ -214,6 +214,22 @@ describe("InputHandler", () => {
       ta.dispatchEvent(pasteEvent);
       expect(received).toContain("\x1b[200~hello\x1b[201~");
     });
+
+    it("strips ESC bytes from bracketed paste to prevent injection", () => {
+      bridgeMock = { bracketedPaste: () => true } as any;
+      const ta = getTextarea();
+      const pasteEvent = new Event("paste", {
+        bubbles: true,
+        cancelable: true,
+      }) as any;
+      // Payload tries to escape bracketed paste mode and inject a command.
+      pasteEvent.clipboardData = {
+        getData: () => "safe\x1b[201~rm -rf /\r",
+      };
+      ta.dispatchEvent(pasteEvent);
+      expect(received.join("")).toBe("\x1b[200~safe[201~rm -rf /\r\x1b[201~");
+      expect(received.join("")).not.toContain("\x1b[201~rm");
+    });
   });
 
   describe("destroy", () => {
