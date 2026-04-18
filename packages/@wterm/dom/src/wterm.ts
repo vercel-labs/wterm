@@ -188,39 +188,45 @@ export class WTerm {
     this.element.style.height = `${gridHeight + extra}px`;
   }
 
-  private _measureCharSize(): { width: number; height: number } | null {
+  private _measureCharSize(): {
+    charWidth: number;
+    rowHeight: number;
+  } | null {
+    const row = document.createElement("div");
+    row.className = "term-row";
+    row.style.visibility = "hidden";
+    row.style.position = "absolute";
+
     const probe = document.createElement("span");
-    probe.className = "term-cell";
     probe.textContent = "W";
-    probe.style.position = "absolute";
-    probe.style.visibility = "hidden";
-    this._container.appendChild(probe);
-    const rect = probe.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
-    probe.remove();
-    if (width === 0 || height === 0) return null;
-    return { width, height };
+    row.appendChild(probe);
+
+    this._container.appendChild(row);
+    const charWidth = probe.getBoundingClientRect().width;
+    const rowHeight = row.getBoundingClientRect().height;
+    row.remove();
+
+    if (charWidth === 0 || rowHeight === 0) return null;
+    return { charWidth, rowHeight };
   }
 
   private _setupResizeObserver(): void {
     const initial = this._measureCharSize();
     if (!initial) return;
 
-    let charWidth = initial.width;
-    let charHeight = initial.height;
+    let { charWidth, rowHeight } = initial;
 
     this.resizeObserver = new ResizeObserver((entries) => {
       const measured = this._measureCharSize();
       if (measured) {
-        charWidth = measured.width;
-        charHeight = measured.height;
+        charWidth = measured.charWidth;
+        rowHeight = measured.rowHeight;
       }
 
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
         const newCols = Math.max(1, Math.floor(width / charWidth));
-        const newRows = Math.max(1, Math.floor(height / charHeight));
+        const newRows = Math.max(1, Math.floor(height / rowHeight));
         if (newCols !== this.cols || newRows !== this.rows) {
           this.resize(newCols, newRows);
         }
