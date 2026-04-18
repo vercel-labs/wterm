@@ -973,6 +973,37 @@ test "alternate screen buffer" {
     try testing.expectEqual(@as(u32, 'm'), t.grid.getCell(0, 0).char);
 }
 
+test "erase inherits current background color" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    // Set bg to red (index 1) and write some text
+    t.write("\x1b[41m");
+    try testing.expectEqual(@as(u16, 1), t.current_bg);
+    // Erase the line — erased cells should inherit the red bg
+    t.write("\x1b[2K");
+    const cell = t.grid.getCell(0, 0);
+    try testing.expectEqual(@as(u16, 1), cell.bg);
+    try testing.expectEqual(@as(u32, ' '), cell.char);
+    // Erase in display (mode 2) — all cells should have red bg
+    t.write("\x1b[2J");
+    const cell2 = t.grid.getCell(5, 10);
+    try testing.expectEqual(@as(u16, 1), cell2.bg);
+    // After SGR reset, erase should use default bg
+    t.write("\x1b[0m\x1b[2K");
+    const cell3 = t.grid.getCell(0, 0);
+    try testing.expectEqual(cell_mod.DEFAULT_COLOR, cell3.bg);
+}
+
+test "scroll fills new lines with current background" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 3);
+    t.write("\x1b[42m"); // green bg
+    t.write("L1\r\nL2\r\nL3\r\nL4");
+    // After scrolling, the bottom row's empty cells should have green bg
+    const blank_cell = t.grid.getCell(2, 79);
+    try testing.expectEqual(@as(u16, 2), blank_cell.bg);
+}
+
 test "scrollback" {
     const testing = @import("std").testing;
     const sb = try testing.allocator.create(Scrollback);

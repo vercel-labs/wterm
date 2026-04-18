@@ -99,7 +99,6 @@ function scanSequences(data: string): TraceEntry[] {
     } else if (next === "]") {
       // OSC sequence
       i++;
-      const oscStart = i;
       while (i < data.length && data.charCodeAt(i) !== 0x07 && !(data.charCodeAt(i) === ESC && i + 1 < data.length && data[i + 1] === "\\")) {
         i++;
       }

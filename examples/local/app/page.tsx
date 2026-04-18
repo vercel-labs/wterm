@@ -5,7 +5,7 @@ import { Terminal, useTerminal } from "@wterm/react";
 import type { WTerm } from "@wterm/dom";
 import "@wterm/react/css";
 
-function useDebugParam(): boolean {
+function getDebugParam(): boolean {
   if (typeof window === "undefined") return false;
   return new URLSearchParams(window.location.search).has("debug");
 }
@@ -13,7 +13,7 @@ function useDebugParam(): boolean {
 export default function LocalTerminal() {
   const { ref, write } = useTerminal();
   const wsRef = useRef<WebSocket | null>(null);
-  const debugEnabled = useDebugParam();
+  const debugEnabled = getDebugParam();
 
   const handleReady = useCallback(
     (wt: WTerm) => {

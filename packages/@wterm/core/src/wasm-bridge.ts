@@ -214,8 +214,12 @@ export class WasmBridge {
     const total = Math.min(count, maxEntries);
     const dv = new DataView(this.memory.buffer);
     const entries: UnhandledSequence[] = [];
+    const startIdx = count >= maxEntries
+      ? count % maxEntries
+      : 0;
     for (let i = 0; i < total; i++) {
-      const off = ptr + i * entrySize;
+      const idx = (startIdx + i) % maxEntries;
+      const off = ptr + idx * entrySize;
       const finalByte = dv.getUint8(off);
       if (finalByte === 0) continue;
       const privateByte = dv.getUint8(off + 1);

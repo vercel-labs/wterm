@@ -33,7 +33,7 @@
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@wterm/dom": "^0.1.7",
+    "@wterm/dom": "workspace:*",
     "jsdom": "^29.0.2",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
