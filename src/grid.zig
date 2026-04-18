@@ -41,25 +41,33 @@ pub const Grid = struct {
     }
 
     pub fn clearRow(self: *Grid, row: u16) void {
+        self.clearRowAs(row, Cell{});
+    }
+
+    pub fn clearRowAs(self: *Grid, row: u16, blank: Cell) void {
         if (row >= self.rows) return;
         var c: u16 = 0;
         while (c < self.cols) : (c += 1) {
-            self.cells[row][c] = Cell{};
+            self.cells[row][c] = blank;
         }
         self.dirty[row] = 1;
     }
 
     pub fn clearRange(self: *Grid, row: u16, start_col: u16, end_col: u16) void {
+        self.clearRangeAs(row, start_col, end_col, Cell{});
+    }
+
+    pub fn clearRangeAs(self: *Grid, row: u16, start_col: u16, end_col: u16, blank: Cell) void {
         if (row >= self.rows) return;
         const end = if (end_col > self.cols) self.cols else end_col;
         var c = start_col;
         while (c < end) : (c += 1) {
-            self.cells[row][c] = Cell{};
+            self.cells[row][c] = blank;
         }
         self.dirty[row] = 1;
     }
 
-    pub fn scrollUp(self: *Grid, top: u16, bottom: u16, count: u16) void {
+    pub fn scrollUp(self: *Grid, top: u16, bottom: u16, count: u16, blank: Cell) void {
         if (count == 0 or top >= bottom) return;
         const n = if (count > bottom - top) bottom - top else count;
 
@@ -69,11 +77,11 @@ pub const Grid = struct {
             self.dirty[row] = 1;
         }
         while (row < bottom) : (row += 1) {
-            self.clearRow(row);
+            self.clearRowAs(row, blank);
         }
     }
 
-    pub fn scrollDown(self: *Grid, top: u16, bottom: u16, count: u16) void {
+    pub fn scrollDown(self: *Grid, top: u16, bottom: u16, count: u16, blank: Cell) void {
         if (count == 0 or top >= bottom) return;
         const n = if (count > bottom - top) bottom - top else count;
         const span = bottom - top - n;
@@ -87,7 +95,7 @@ pub const Grid = struct {
         }
         var row = top;
         while (row < top + n) : (row += 1) {
-            self.clearRow(row);
+            self.clearRowAs(row, blank);
         }
     }
 

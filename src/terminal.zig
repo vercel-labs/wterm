@@ -70,6 +70,12 @@ pub const Terminal = struct {
         };
     }
 
+    /// A space cell with the current SGR background — used for erase operations
+    /// per VT100 spec (erased cells inherit the active bg color).
+    fn blankCell(self: *const Terminal) Cell {
+        return Cell{ .bg = self.current_bg };
+    }
+
     /// Reset in-place without creating large stack temporaries.
     /// Preserves scrollback and alt_grid pointers (set by the host layer).
     pub fn reset(self: *Terminal, cols: u16, rows: u16) void {
@@ -261,7 +267,7 @@ pub const Terminal = struct {
                     sb.push(&self.grid.cells[self.scroll_top], self.cols);
                 }
             }
-            self.grid.scrollUp(self.scroll_top, self.scroll_bottom, 1);
+            self.grid.scrollUp(self.scroll_top, self.scroll_bottom, 1, self.blankCell());
         } else {
             self.cursor_row += 1;
         }
@@ -336,7 +342,7 @@ pub const Terminal = struct {
 
     fn reverseIndex(self: *Terminal) void {
         if (self.cursor_row == self.scroll_top) {
-            self.grid.scrollDown(self.scroll_top, self.scroll_bottom, 1);
+            self.grid.scrollDown(self.scroll_top, self.scroll_bottom, 1, self.blankCell());
         } else if (self.cursor_row > 0) {
             self.cursor_row -= 1;
         }
@@ -555,26 +561,33 @@ pub const Terminal = struct {
     // -- Erase operations --
 
     fn eraseInDisplay(self: *Terminal, mode: u16) void {
+        const blank = self.blankCell();
         switch (mode) {
             0 => {
-                self.grid.clearRange(self.cursor_row, self.cursor_col, self.cols);
+                self.grid.clearRangeAs(self.cursor_row, self.cursor_col, self.cols, blank);
                 var r = self.cursor_row + 1;
                 while (r < self.rows) : (r += 1) {
-                    self.grid.clearRow(r);
+                    self.grid.clearRowAs(r, blank);
                 }
             },
             1 => {
                 var r: u16 = 0;
                 while (r < self.cursor_row) : (r += 1) {
-                    self.grid.clearRow(r);
+                    self.grid.clearRowAs(r, blank);
                 }
-                self.grid.clearRange(self.cursor_row, 0, self.cursor_col + 1);
+                self.grid.clearRangeAs(self.cursor_row, 0, self.cursor_col + 1, blank);
             },
             2 => {
-                self.grid.clear();
+                var r: u16 = 0;
+                while (r < self.rows) : (r += 1) {
+                    self.grid.clearRowAs(r, blank);
+                }
             },
             3 => {
-                self.grid.clear();
+                var r: u16 = 0;
+                while (r < self.rows) : (r += 1) {
+                    self.grid.clearRowAs(r, blank);
+                }
                 if (self.scrollback) |sb| sb.reset();
             },
             else => {},
@@ -582,10 +595,11 @@ pub const Terminal = struct {
     }
 
     fn eraseInLine(self: *Terminal, mode: u16) void {
+        const blank = self.blankCell();
         switch (mode) {
-            0 => self.grid.clearRange(self.cursor_row, self.cursor_col, self.cols),
-            1 => self.grid.clearRange(self.cursor_row, 0, self.cursor_col + 1),
-            2 => self.grid.clearRow(self.cursor_row),
+            0 => self.grid.clearRangeAs(self.cursor_row, self.cursor_col, self.cols, blank),
+            1 => self.grid.clearRangeAs(self.cursor_row, 0, self.cursor_col + 1, blank),
+            2 => self.grid.clearRowAs(self.cursor_row, blank),
             else => {},
         }
     }
@@ -593,37 +607,39 @@ pub const Terminal = struct {
     fn eraseChars(self: *Terminal, n: u16) void {
         const count = if (n == 0) 1 else n;
         const end = if (self.cursor_col + count > self.cols) self.cols else self.cursor_col + count;
-        self.grid.clearRange(self.cursor_row, self.cursor_col, end);
+        self.grid.clearRangeAs(self.cursor_row, self.cursor_col, end, self.blankCell());
     }
 
     // -- Insert / delete --
 
     fn insertLines(self: *Terminal, n: u16) void {
         if (self.cursor_row < self.scroll_top or self.cursor_row >= self.scroll_bottom) return;
-        self.grid.scrollDown(self.cursor_row, self.scroll_bottom, if (n == 0) 1 else n);
+        self.grid.scrollDown(self.cursor_row, self.scroll_bottom, if (n == 0) 1 else n, self.blankCell());
     }
 
     fn deleteLines(self: *Terminal, n: u16) void {
         if (self.cursor_row < self.scroll_top or self.cursor_row >= self.scroll_bottom) return;
-        self.grid.scrollUp(self.cursor_row, self.scroll_bottom, if (n == 0) 1 else n);
+        self.grid.scrollUp(self.cursor_row, self.scroll_bottom, if (n == 0) 1 else n, self.blankCell());
     }
 
     fn deleteChars(self: *Terminal, n: u16) void {
         const count = if (n == 0) 1 else n;
+        const blank = self.blankCell();
         var col = self.cursor_col;
         while (col + count < self.cols) : (col += 1) {
             self.grid.cells[self.cursor_row][col] = self.grid.cells[self.cursor_row][col + count];
         }
         while (col < self.cols) : (col += 1) {
-            self.grid.cells[self.cursor_row][col] = Cell{};
+            self.grid.cells[self.cursor_row][col] = blank;
         }
         self.grid.dirty[self.cursor_row] = 1;
     }
 
     fn insertBlanks(self: *Terminal, n: u16) void {
         const count = if (n == 0) 1 else n;
+        const blank = self.blankCell();
         if (self.cursor_col + count >= self.cols) {
-            self.grid.clearRange(self.cursor_row, self.cursor_col, self.cols);
+            self.grid.clearRangeAs(self.cursor_row, self.cursor_col, self.cols, blank);
             return;
         }
         var col = self.cols - 1;
@@ -634,7 +650,7 @@ pub const Terminal = struct {
         var c = self.cursor_col;
         const end = if (self.cursor_col + count > self.cols) self.cols else self.cursor_col + count;
         while (c < end) : (c += 1) {
-            self.grid.cells[self.cursor_row][c] = Cell{};
+            self.grid.cells[self.cursor_row][c] = blank;
         }
         self.grid.dirty[self.cursor_row] = 1;
     }
@@ -649,11 +665,11 @@ pub const Terminal = struct {
                 }
             }
         }
-        self.grid.scrollUp(self.scroll_top, self.scroll_bottom, count);
+        self.grid.scrollUp(self.scroll_top, self.scroll_bottom, count, self.blankCell());
     }
 
     fn scrollDownN(self: *Terminal, n: u16) void {
-        self.grid.scrollDown(self.scroll_top, self.scroll_bottom, if (n == 0) 1 else n);
+        self.grid.scrollDown(self.scroll_top, self.scroll_bottom, if (n == 0) 1 else n, self.blankCell());
     }
 
     // -- Scroll region --

@@ -271,6 +271,18 @@ export class Renderer {
       }
     }
     flushRun(this.cols);
+
+    if (lineLen >= this.cols && this.cols > 0) {
+      const lastCell = getCell(this.cols - 1);
+      let bgC = lastCell.bg;
+      if (lastCell.flags & FLAG_REVERSE) {
+        bgC = lastCell.fg;
+        if (bgC === DEFAULT_COLOR) bgC = 7;
+      }
+      rowEl.style.background = colorToCSS(bgC) || "";
+    } else {
+      rowEl.style.background = "";
+    }
   }
 
   private _buildScrollbackRowEl(
@@ -354,6 +366,14 @@ export class Renderer {
 
     this.prevCursorRow = cursor.row;
     this.prevCursorCol = cursor.col;
+
+    const bottomRight = bridge.getCell(this.rows - 1, this.cols - 1);
+    let gridBg = bottomRight.bg;
+    if (bottomRight.flags & FLAG_REVERSE) {
+      gridBg = bottomRight.fg;
+      if (gridBg === DEFAULT_COLOR) gridBg = 7;
+    }
+    this.container.style.background = colorToCSS(gridBg) || "";
 
     bridge.clearDirty();
   }

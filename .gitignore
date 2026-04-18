@@ -13,3 +13,7 @@ packages/@wterm/core/src/wasm-inline.ts
 coverage/
 test-results/
 playwright-report/
+
+# env files
+.env*
+!.env.example

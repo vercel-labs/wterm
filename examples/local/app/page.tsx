@@ -2,27 +2,35 @@
 
 import { useCallback, useRef } from "react";
 import { Terminal, useTerminal } from "@wterm/react";
+import type { WTerm } from "@wterm/dom";
 import "@wterm/react/css";
 
 export default function LocalTerminal() {
   const { ref, write } = useTerminal();
   const wsRef = useRef<WebSocket | null>(null);
 
-  const handleReady = useCallback(() => {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${proto}//${window.location.host}/api/terminal`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+  const handleReady = useCallback(
+    (wt: WTerm) => {
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${proto}//${window.location.host}/api/terminal`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-    ws.onmessage = (event: MessageEvent) => {
-      write(event.data as string);
-    };
+      ws.onopen = () => {
+        ws.send(`\x1b[RESIZE:${wt.cols};${wt.rows}]`);
+      };
 
-    ws.onclose = () => {
-      write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
-      wsRef.current = null;
-    };
-  }, [write]);
+      ws.onmessage = (event: MessageEvent) => {
+        write(event.data as string);
+      };
+
+      ws.onclose = () => {
+        write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
+        wsRef.current = null;
+      };
+    },
+    [write],
+  );
 
   const handleData = useCallback((data: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -48,7 +56,7 @@ export default function LocalTerminal() {
         onData={handleData}
         onResize={handleResize}
         className="flex-1"
-        style={{ borderRadius: 0, boxShadow: "none" }}
+        style={{ borderRadius: 0, boxShadow: "none", padding: 0 }}
       />
     </div>
   );
