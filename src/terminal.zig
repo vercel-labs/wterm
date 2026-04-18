@@ -9,6 +9,16 @@ const Parser = parser_mod.Parser;
 const Action = parser_mod.Action;
 const Scrollback = scrollback_mod.Scrollback;
 
+pub const DEBUG_LOG_MAX: u8 = 32;
+
+pub const DebugLogEntry = struct {
+    final_byte: u8 = 0,
+    private_marker: u8 = 0,
+    param_count: u8 = 0,
+    _pad: u8 = 0,
+    params: [4]u16 = [_]u16{0} ** 4,
+};
+
 pub const Terminal = struct {
     grid: Grid,
     parser: Parser = .{},
@@ -59,6 +69,11 @@ pub const Terminal = struct {
     response_buf: [64]u8 = undefined,
     response_len: u8 = 0,
 
+    // Ring buffer of unhandled/ignored CSI sequences for debug introspection
+    debug_log: [DEBUG_LOG_MAX]DebugLogEntry = [_]DebugLogEntry{.{}} ** DEBUG_LOG_MAX,
+    debug_log_idx: u8 = 0,
+    debug_log_count: u32 = 0,
+
     tab_stops: [grid_mod.MAX_COLS]u8 = initTabStops(),
 
     pub fn init(cols: u16, rows: u16) Terminal {
@@ -74,6 +89,22 @@ pub const Terminal = struct {
     /// per VT100 spec (erased cells inherit the active bg color).
     fn blankCell(self: *const Terminal) Cell {
         return Cell{ .bg = self.current_bg };
+    }
+
+    fn logUnhandled(self: *Terminal, final: u8, private_marker: u8) void {
+        var entry = DebugLogEntry{
+            .final_byte = final,
+            .private_marker = private_marker,
+        };
+        const count = if (self.parser.param_count == 0) @as(u8, 0) else self.parser.param_count;
+        entry.param_count = if (count > 4) 4 else count;
+        var i: u8 = 0;
+        while (i < entry.param_count) : (i += 1) {
+            entry.params[i] = self.parser.params[i];
+        }
+        self.debug_log[self.debug_log_idx] = entry;
+        self.debug_log_idx = (self.debug_log_idx + 1) % DEBUG_LOG_MAX;
+        self.debug_log_count +|= 1;
     }
 
     /// Reset in-place without creating large stack temporaries.
@@ -365,7 +396,10 @@ pub const Terminal = struct {
             self.softReset();
             return;
         }
-        if (self.parser.csi_private == '>') return;
+        if (self.parser.csi_private == '>') {
+            self.logUnhandled(final, '>');
+            return;
+        }
 
         switch (final) {
             'A' => self.cursorUp(self.parser.getParam(0, 1)),
@@ -402,7 +436,7 @@ pub const Terminal = struct {
             'u' => self.restoreCursor(),
             '@' => self.insertBlanks(self.parser.getParam(0, 1)),
             '`' => self.cursorToColumn(self.parser.getParam(0, 1)),
-            else => {},
+            else => self.logUnhandled(final, 0),
         }
     }
 
@@ -410,7 +444,7 @@ pub const Terminal = struct {
         switch (final) {
             'h' => self.setPrivateMode(true),
             'l' => self.setPrivateMode(false),
-            else => {},
+            else => self.logUnhandled(final, '?'),
         }
     }
 

@@ -9,7 +9,7 @@ import { WTerm } from "@wterm/dom";
 
 export interface TerminalProps extends Omit<
   HTMLAttributes<HTMLDivElement>,
-  "onResize"
+  "onResize" | "onError"
 > {
   cols?: number;
   rows?: number;
@@ -17,6 +17,7 @@ export interface TerminalProps extends Omit<
   theme?: string;
   autoResize?: boolean;
   cursorBlink?: boolean;
+  debug?: boolean;
   onData?: (data: string) => void;
   onTitle?: (title: string) => void;
   onResize?: (cols: number, rows: number) => void;
@@ -32,13 +33,17 @@ export interface TerminalHandle {
 }
 
 const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
-  {
+  props,
+  ref,
+) {
+  const {
     cols = 80,
     rows = 24,
     wasmUrl,
     theme,
     autoResize = false,
     cursorBlink = false,
+    debug = false,
     onData,
     onTitle,
     onResize,
@@ -47,9 +52,15 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     className,
     style,
     ...rest
-  },
-  ref,
-) {
+  } = props;
+  // Strip any WTerm-specific keys that the bundler might leave in rest
+  const {
+    cols: _c, rows: _r, wasmUrl: _w, theme: _t, autoResize: _ar,
+    cursorBlink: _cb, debug: _d, onData: _od, onTitle: _ot,
+    onResize: _ore, onReady: _ory, onError: _oe,
+    ...htmlProps
+  } = props as Record<string, unknown>;
+
   const wtermRef = useRef<WTerm | null>(null);
   const callbacksRef = useRef({ onData, onTitle, onResize, onReady, onError });
   const autoResizeRef = useRef(autoResize);
@@ -84,6 +95,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         wasmUrl,
         autoResize: autoResizeRef.current,
         cursorBlink,
+        debug,
         onData: callbacksRef.current.onData
           ? (data: string) => callbacksRef.current.onData?.(data)
           : undefined,
@@ -152,7 +164,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
       aria-label="Terminal"
       aria-multiline="true"
       aria-roledescription="terminal"
-      {...rest}
+      {...htmlProps}
     />
   );
 });

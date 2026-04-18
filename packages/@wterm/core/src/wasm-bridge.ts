@@ -39,6 +39,15 @@ interface WasmExports {
   clearResponse(): void;
   getCellSize(): number;
   getMaxCols(): number;
+  getDebugLogPtr(): number;
+  getDebugLogCount(): number;
+}
+
+export interface UnhandledSequence {
+  final: string;
+  private: string;
+  paramCount: number;
+  params: number[];
 }
 
 import { WASM_BASE64 } from "./wasm-inline.js";
@@ -194,6 +203,35 @@ export class WasmBridge {
 
   getScrollbackLineLen(offset: number): number {
     return this.exports.getScrollbackLineLen(offset);
+  }
+
+  getUnhandledSequences(): UnhandledSequence[] {
+    const count = this.exports.getDebugLogCount();
+    if (count === 0) return [];
+    const ptr = this.exports.getDebugLogPtr();
+    const entrySize = 12; // final(1) + private(1) + param_count(1) + pad(1) + params(4*2)
+    const maxEntries = 32;
+    const total = Math.min(count, maxEntries);
+    const dv = new DataView(this.memory.buffer);
+    const entries: UnhandledSequence[] = [];
+    for (let i = 0; i < total; i++) {
+      const off = ptr + i * entrySize;
+      const finalByte = dv.getUint8(off);
+      if (finalByte === 0) continue;
+      const privateByte = dv.getUint8(off + 1);
+      const paramCount = dv.getUint8(off + 2);
+      const params: number[] = [];
+      for (let p = 0; p < Math.min(paramCount, 4); p++) {
+        params.push(dv.getUint16(off + 4 + p * 2, true));
+      }
+      entries.push({
+        final: String.fromCharCode(finalByte),
+        private: privateByte ? String.fromCharCode(privateByte) : "",
+        paramCount,
+        params,
+      });
+    }
+    return entries;
   }
 
   resize(cols: number, rows: number): void {
