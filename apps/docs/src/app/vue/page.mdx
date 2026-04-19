@@ -1,0 +1,76 @@
+# Vue 3
+
+The `@wterm/vue` package provides a Vue 3 `<Terminal>` component plus a `useTerminal` composable for imperative access.
+
+## Install
+
+```bash
+npm install @wterm/dom @wterm/vue vue
+```
+
+## Basic Usage
+
+```vue
+<script setup lang="ts">
+import { Terminal } from "@wterm/vue";
+import "@wterm/vue/css";
+</script>
+
+<template>
+  <Terminal />
+</template>
+```
+
+## Custom Input Handling
+
+By default, typed input is echoed back to the terminal. Pass `onData` when you need to send it somewhere else:
+
+```vue
+<script setup lang="ts">
+import { Terminal } from "@wterm/vue";
+import "@wterm/vue/css";
+
+function handleData(data: string) {
+  socket.send(data);
+}
+</script>
+
+<template>
+  <Terminal :on-data="handleData" />
+</template>
+```
+
+## Props and Forwarded Attributes
+
+The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `wasmUrl`, `autoResize`, `cursorBlink`, `onData`, `onTitle`, `onResize`) plus [Vue-only props](/api-reference#vue-only-props) (`theme`, `onReady`, `onError`).
+
+Additional attributes (`class`, `style`, `id`, `data-*`, etc.) are forwarded to the root terminal element.
+
+## `useTerminal`
+
+Returns an imperative handle ref plus convenience helpers:
+
+```vue
+<script setup lang="ts">
+import { Terminal, useTerminal } from "@wterm/vue";
+import "@wterm/vue/css";
+
+const terminal = useTerminal();
+</script>
+
+<template>
+  <Terminal :ref="terminal.attach" />
+</template>
+```
+
+See [Vue composable](/api-reference#useTerminal-vue) and [Vue terminal handle](/api-reference#terminal-handle-vue) for the full API.
+
+## Themes
+
+Import the stylesheet and switch themes via the `theme` prop:
+
+```vue
+<Terminal theme="monokai" />
+```
+
+Built-in themes: `solarized-dark`, `monokai`, `light`. Define custom themes with CSS custom properties (`--term-fg`, `--term-bg`, `--term-color-0` through `--term-color-15`).

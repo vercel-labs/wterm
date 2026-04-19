@@ -1,0 +1,70 @@
+# Svelte
+
+The `@wterm/svelte` package provides a `wterm` action plus `createTerminalController()` for imperative access.
+
+## Install
+
+```bash
+npm install @wterm/dom @wterm/svelte svelte
+```
+
+## Basic Usage
+
+```svelte
+<script lang="ts">
+  import { wterm } from "@wterm/svelte";
+  import "@wterm/svelte/css";
+</script>
+
+<div use:wterm></div>
+```
+
+## Custom Input Handling
+
+By default, typed input is echoed back to the terminal. Pass `onData` in the action options when you need to send it somewhere else:
+
+```svelte
+<script lang="ts">
+  import { wterm } from "@wterm/svelte";
+  import "@wterm/svelte/css";
+
+  const options = {
+    onData(data: string) {
+      socket.send(data);
+    },
+  };
+</script>
+
+<div use:wterm={options}></div>
+```
+
+## Action Options
+
+The `wterm` action accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `wasmUrl`, `autoResize`, `cursorBlink`, `onData`, `onTitle`, `onResize`) plus [Svelte-only action options](/api-reference#svelte-only-options) (`theme`, `controller`, `onReady`, `onError`).
+
+## `createTerminalController`
+
+Use a controller when you want to write to or focus the terminal from other UI elements:
+
+```svelte
+<script lang="ts">
+  import { createTerminalController, wterm } from "@wterm/svelte";
+
+  const terminal = createTerminalController();
+</script>
+
+<div use:wterm={{ controller: terminal }}></div>
+<button onclick={() => terminal.focus()}>Focus</button>
+```
+
+See [Svelte controller](/api-reference#terminal-controller-svelte) for the full API.
+
+## Themes
+
+Import the stylesheet and switch themes through the action options:
+
+```svelte
+<div use:wterm={{ theme: "monokai" }}></div>
+```
+
+Built-in themes: `solarized-dark`, `monokai`, `light`. Define custom themes with CSS custom properties (`--term-fg`, `--term-bg`, `--term-color-0` through `--term-color-15`).

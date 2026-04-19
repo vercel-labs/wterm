@@ -1,0 +1,23 @@
+{
+  "name": "vue-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "command -v portless >/dev/null 2>&1 || (echo '\nportless is required but not installed. Run: npm i -g portless\nSee: https://github.com/vercel-labs/portless\n' && exit 1)",
+    "dev": "portless vue-example.wterm vite",
+    "build": "vite build",
+    "type-check": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@wterm/just-bash": "workspace:*",
+    "@wterm/vue": "workspace:*",
+    "vue": "^3.5.32"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.6",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.8",
+    "vue-tsc": "^3.2.6"
+  }
+}

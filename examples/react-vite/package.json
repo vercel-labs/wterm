@@ -1,0 +1,25 @@
+{
+  "name": "react-vite-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "command -v portless >/dev/null 2>&1 || (echo '\nportless is required but not installed. Run: npm i -g portless\nSee: https://github.com/vercel-labs/portless\n' && exit 1)",
+    "dev": "portless react-vite-example.wterm vite",
+    "build": "vite build",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@wterm/just-bash": "workspace:*",
+    "@wterm/react": "workspace:*",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.0",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.8"
+  }
+}
