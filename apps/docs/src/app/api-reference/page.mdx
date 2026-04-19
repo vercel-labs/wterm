@@ -47,6 +47,12 @@ Both the React `<Terminal>` component and the vanilla `WTerm` constructor accept
       <td>Enable cursor blinking animation</td>
     </tr>
     <tr>
+      <td><code>debug</code></td>
+      <td><code>boolean</code></td>
+      <td><code>false</code></td>
+      <td>Enable debug mode. Exposes a <code>DebugAdapter</code> on the <code>WTerm</code> instance (<code>wt.debug</code>) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences.</td>
+    </tr>
+    <tr>
       <td><code>onData</code></td>
       <td><code>(data: string) =&gt; void</code></td>
       <td>—</td>

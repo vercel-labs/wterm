@@ -5,15 +5,13 @@ import { Terminal, useTerminal } from "@wterm/react";
 import type { WTerm } from "@wterm/dom";
 import "@wterm/react/css";
 
-function getDebugParam(): boolean {
-  if (typeof window === "undefined") return false;
-  return new URLSearchParams(window.location.search).has("debug");
-}
+const DEBUG_ENABLED =
+  typeof window !== "undefined" &&
+  new URLSearchParams(window.location.search).has("debug");
 
 export default function LocalTerminal() {
   const { ref, write } = useTerminal();
   const wsRef = useRef<WebSocket | null>(null);
-  const debugEnabled = getDebugParam();
 
   const handleReady = useCallback(
     (wt: WTerm) => {
@@ -57,7 +55,7 @@ export default function LocalTerminal() {
         cols={80}
         rows={24}
         autoResize
-        debug={debugEnabled}
+        debug={DEBUG_ENABLED}
         wasmUrl="/wterm.wasm"
         onReady={handleReady}
         onData={handleData}

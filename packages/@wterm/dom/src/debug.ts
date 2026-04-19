@@ -64,27 +64,45 @@ function scanSequences(data: string): TraceEntry[] {
       // CSI sequence
       i++;
       let priv = "";
-      if (i < data.length && (data[i] === "?" || data[i] === ">" || data[i] === "!")) {
+      if (
+        i < data.length &&
+        (data[i] === "?" || data[i] === ">" || data[i] === "!")
+      ) {
         priv = data[i];
         i++;
       }
       let paramStr = "";
-      while (i < data.length && ((data.charCodeAt(i) >= 0x30 && data.charCodeAt(i) <= 0x3b) || data[i] === ":")) {
+      while (
+        i < data.length &&
+        ((data.charCodeAt(i) >= 0x30 && data.charCodeAt(i) <= 0x3b) ||
+          data[i] === ":")
+      ) {
         paramStr += data[i];
         i++;
       }
       // skip intermediates
-      while (i < data.length && data.charCodeAt(i) >= 0x20 && data.charCodeAt(i) <= 0x2f) {
+      while (
+        i < data.length &&
+        data.charCodeAt(i) >= 0x20 &&
+        data.charCodeAt(i) <= 0x2f
+      ) {
         i++;
       }
       let final = "";
-      if (i < data.length && data.charCodeAt(i) >= 0x40 && data.charCodeAt(i) <= 0x7e) {
+      if (
+        i < data.length &&
+        data.charCodeAt(i) >= 0x40 &&
+        data.charCodeAt(i) <= 0x7e
+      ) {
         final = data[i];
         i++;
       }
       const raw = data.slice(seqStart, i);
       const params = paramStr
-        ? paramStr.split(/[;:]/).map(Number).filter((n) => !isNaN(n))
+        ? paramStr
+            .split(/[;:]/)
+            .map(Number)
+            .filter((n) => !isNaN(n))
         : [];
 
       const type = final === "m" ? "sgr" : "csi";
@@ -99,7 +117,15 @@ function scanSequences(data: string): TraceEntry[] {
     } else if (next === "]") {
       // OSC sequence
       i++;
-      while (i < data.length && data.charCodeAt(i) !== 0x07 && !(data.charCodeAt(i) === ESC && i + 1 < data.length && data[i + 1] === "\\")) {
+      while (
+        i < data.length &&
+        data.charCodeAt(i) !== 0x07 &&
+        !(
+          data.charCodeAt(i) === ESC &&
+          i + 1 < data.length &&
+          data[i + 1] === "\\"
+        )
+      ) {
         i++;
       }
       if (i < data.length) {
@@ -190,9 +216,7 @@ export class DebugAdapter {
 
   traceWrite(data: string | Uint8Array): void {
     const str =
-      typeof data === "string"
-        ? data
-        : new TextDecoder().decode(data);
+      typeof data === "string" ? data : new TextDecoder().decode(data);
     const entries = scanSequences(str);
     for (const entry of entries) {
       this._traces.push(entry);
@@ -205,8 +229,7 @@ export class DebugAdapter {
   recordRender(renderMs: number, dirtyRows: number): void {
     this._perf.frameCount++;
     this._perf.totalRenderMs += renderMs;
-    this._perf.avgRenderMs =
-      this._perf.totalRenderMs / this._perf.frameCount;
+    this._perf.avgRenderMs = this._perf.totalRenderMs / this._perf.frameCount;
     if (renderMs > this._perf.maxRenderMs) {
       this._perf.maxRenderMs = renderMs;
     }

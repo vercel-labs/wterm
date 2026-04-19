@@ -122,7 +122,7 @@ export class WTerm {
   write(data: string | Uint8Array): void {
     if (!this.bridge) return;
     if (this.debug) this.debug.traceWrite(data);
-    this._shouldScrollToBottom = true;
+    this._shouldScrollToBottom = this._isScrolledToBottom();
     if (typeof data === "string") {
       this.bridge.writeString(data);
     } else {
@@ -267,7 +267,10 @@ export class WTerm {
     if (this.input) this.input.destroy();
     this.element.removeEventListener("click", this._onClickFocus);
     this.element.innerHTML = "";
-    if (this.debug && (globalThis as Record<string, unknown>).__wterm === this) {
+    if (
+      this.debug &&
+      (globalThis as Record<string, unknown>).__wterm === this
+    ) {
       delete (globalThis as Record<string, unknown>).__wterm;
     }
     this.debug = null;

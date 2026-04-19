@@ -41,6 +41,8 @@ interface WasmExports {
   getMaxCols(): number;
   getDebugLogPtr(): number;
   getDebugLogCount(): number;
+  getDebugLogEntrySize(): number;
+  getDebugLogMax(): number;
 }
 
 export interface UnhandledSequence {
@@ -209,14 +211,12 @@ export class WasmBridge {
     const count = this.exports.getDebugLogCount();
     if (count === 0) return [];
     const ptr = this.exports.getDebugLogPtr();
-    const entrySize = 12; // final(1) + private(1) + param_count(1) + pad(1) + params(4*2)
-    const maxEntries = 32;
+    const entrySize = this.exports.getDebugLogEntrySize();
+    const maxEntries = this.exports.getDebugLogMax();
     const total = Math.min(count, maxEntries);
     const dv = new DataView(this.memory.buffer);
     const entries: UnhandledSequence[] = [];
-    const startIdx = count >= maxEntries
-      ? count % maxEntries
-      : 0;
+    const startIdx = count >= maxEntries ? count % maxEntries : 0;
     for (let i = 0; i < total; i++) {
       const idx = (startIdx + i) % maxEntries;
       const off = ptr + idx * entrySize;

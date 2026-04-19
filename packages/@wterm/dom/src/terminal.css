@@ -54,6 +54,9 @@
   display: block;
   height: var(--term-row-height);
   line-height: var(--term-row-height);
+  /* Paint containment excluded so row-level background and boxShadow
+     (used to fill sub-pixel gaps at fractional zoom) can extend beyond
+     the content box. */
   contain: layout style;
 }
 

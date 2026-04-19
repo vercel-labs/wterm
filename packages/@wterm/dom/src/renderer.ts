@@ -371,6 +371,10 @@ export class Renderer {
     this.prevCursorRow = cursor.row;
     this.prevCursorCol = cursor.col;
 
+    // Fill the term-grid background with the bottom-right cell's bg color.
+    // This covers any sub-pixel gaps or padding below the last row, matching
+    // the behavior of full-screen TUI apps (vim, htop) that paint the entire
+    // screen with a uniform background.
     const bottomRight = bridge.getCell(this.rows - 1, this.cols - 1);
     let gridBg = bottomRight.bg;
     if (bottomRight.flags & FLAG_REVERSE) {

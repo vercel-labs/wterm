@@ -51,6 +51,7 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 | `theme` | `string` | — | Theme name (e.g. `"solarized-dark"`, `"monokai"`, `"light"`) |
 | `autoResize` | `boolean` | `false` | Auto-resize based on container dimensions |
 | `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
+| `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the underlying `WTerm` instance for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |

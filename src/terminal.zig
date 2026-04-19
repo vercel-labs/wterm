@@ -19,6 +19,11 @@ pub const DebugLogEntry = struct {
     params: [4]u16 = [_]u16{0} ** 4,
 };
 
+comptime {
+    if (@sizeOf(DebugLogEntry) != 12)
+        @compileError("DebugLogEntry size changed — update wasm-bridge.ts entrySize");
+}
+
 pub const Terminal = struct {
     grid: Grid,
     parser: Parser = .{},
