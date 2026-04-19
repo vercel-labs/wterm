@@ -116,7 +116,18 @@ export class WTerm {
   }
 
   private _scrollToBottom(): void {
-    this.element.scrollTop = this.element.scrollHeight;
+    const el = this.element;
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    if (maxScroll <= 0) {
+      el.scrollTop = 0;
+      return;
+    }
+    const rowHeight =
+      parseFloat(getComputedStyle(el).getPropertyValue("--term-row-height")) ||
+      17;
+    // Snap to a row boundary so the first visible row is never clipped.
+    // Any fractional leftover appears as empty space at the bottom.
+    el.scrollTop = Math.floor(maxScroll / rowHeight) * rowHeight;
   }
 
   write(data: string | Uint8Array): void {
@@ -185,6 +196,8 @@ export class WTerm {
 
     if (this._shouldScrollToBottom) {
       this._scrollToBottom();
+    } else if (!hasScrollback && this.element.scrollTop !== 0) {
+      this.element.scrollTop = 0;
     }
 
     const title = this.bridge.getTitle();
