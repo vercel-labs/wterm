@@ -7,12 +7,8 @@ import {
 } from "react";
 import { WTerm } from "@wterm/dom";
 
-const WTERM_KEYS = new Set([
-  "cols", "rows", "wasmUrl", "theme", "autoResize",
-  "cursorBlink", "debug", "onData", "onTitle", "onResize",
-  "onReady", "onError",
-]);
-
+// onResize and onError are omitted from HTMLAttributes because we redefine
+// them with different signatures (terminal dimensions / WASM init errors).
 export interface TerminalProps extends Omit<
   HTMLAttributes<HTMLDivElement>,
   "onResize" | "onError"
@@ -23,6 +19,7 @@ export interface TerminalProps extends Omit<
   theme?: string;
   autoResize?: boolean;
   cursorBlink?: boolean;
+  /** Enable debug mode (init-only — changing after mount has no effect). */
   debug?: boolean;
   onData?: (data: string) => void;
   onTitle?: (title: string) => void;
@@ -39,8 +36,8 @@ export interface TerminalHandle {
 }
 
 const Terminal = forwardRef<TerminalHandle, TerminalProps>(
-  function Terminal(props, ref) {
-    const {
+  function Terminal(
+    {
       cols = 80,
       rows = 24,
       wasmUrl,
@@ -55,15 +52,10 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       onError,
       className,
       style,
-    } = props;
-
-    const htmlProps: Record<string, unknown> = {};
-    for (const key of Object.keys(props)) {
-      if (!WTERM_KEYS.has(key) && key !== "className" && key !== "style") {
-        htmlProps[key] = (props as Record<string, unknown>)[key];
-      }
-    }
-
+      ...htmlProps
+    }: TerminalProps,
+    ref: React.ForwardedRef<TerminalHandle>,
+  ) {
     const wtermRef = useRef<WTerm | null>(null);
     const callbacksRef = useRef({
       onData,

@@ -276,6 +276,9 @@ export class Renderer {
     }
     flushRun(this.cols);
 
+    // Extend the row background when the line fills the full width.
+    // When lineLen < cols, bgCss stays "" which clears any stale bg
+    // via the prevRowBg comparison below.
     let bgCss = "";
     if (lineLen >= this.cols && this.cols > 0) {
       const lastCell = getCell(this.cols - 1);
@@ -286,13 +289,16 @@ export class Renderer {
       }
       bgCss = colorToCSS(bgC) || "";
     }
+    const boxShadow = bgCss ? `0 1px 0 ${bgCss}` : "";
     if (rowIndex >= 0) {
       if (bgCss !== (this.prevRowBg[rowIndex] ?? "")) {
         rowEl.style.background = bgCss;
+        rowEl.style.boxShadow = boxShadow;
         this.prevRowBg[rowIndex] = bgCss;
       }
     } else {
       rowEl.style.background = bgCss;
+      rowEl.style.boxShadow = boxShadow;
     }
   }
 
@@ -380,20 +386,21 @@ export class Renderer {
     this.prevCursorRow = cursor.row;
     this.prevCursorCol = cursor.col;
 
-    // Fill the term-grid background with the bottom-right cell's bg color.
-    // This covers any sub-pixel gaps or padding below the last row, matching
-    // the behavior of full-screen TUI apps (vim, htop) that paint the entire
-    // screen with a uniform background.
-    const bottomRight = bridge.getCell(this.rows - 1, this.cols - 1);
-    let gridBg = bottomRight.bg;
-    if (bottomRight.flags & FLAG_REVERSE) {
-      gridBg = bottomRight.fg;
-      if (gridBg === DEFAULT_COLOR) gridBg = 7;
-    }
-    const containerBg = colorToCSS(gridBg) || "";
-    if (containerBg !== this.prevContainerBg) {
-      this.container.style.background = containerBg;
-      this.prevContainerBg = containerBg;
+    // Update the container background only when the last row was actually
+    // repainted, avoiding stale reads during partial mid-redraw frames.
+    const lastRowDirty = resized || bridge.isDirtyRow(this.rows - 1);
+    if (lastRowDirty) {
+      const bottomRight = bridge.getCell(this.rows - 1, this.cols - 1);
+      let gridBg = bottomRight.bg;
+      if (bottomRight.flags & FLAG_REVERSE) {
+        gridBg = bottomRight.fg;
+        if (gridBg === DEFAULT_COLOR) gridBg = 7;
+      }
+      const containerBg = colorToCSS(gridBg) || "";
+      if (containerBg !== this.prevContainerBg) {
+        this.container.style.background = containerBg;
+        this.prevContainerBg = containerBg;
+      }
     }
 
     bridge.clearDirty();

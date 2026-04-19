@@ -90,8 +90,9 @@ pub const Terminal = struct {
         };
     }
 
-    /// A space cell with the current SGR background — used for erase operations
-    /// per VT100 spec (erased cells inherit the active bg color).
+    /// Returns a blank (space) cell carrying only the current SGR background.
+    /// Foreground and flags are intentionally omitted: ECMA-48 BCE specifies
+    /// that erased cells inherit only the background color, not other attrs.
     fn blankCell(self: *const Terminal) Cell {
         return Cell{ .bg = self.current_bg };
     }
@@ -101,9 +102,10 @@ pub const Terminal = struct {
             .final_byte = final,
             .private_marker = private_marker,
         };
-        entry.param_count = if (self.parser.param_count > 4) 4 else self.parser.param_count;
+        entry.param_count = self.parser.param_count;
+        const copy_count: u8 = if (self.parser.param_count > 4) 4 else self.parser.param_count;
         var i: u8 = 0;
-        while (i < entry.param_count) : (i += 1) {
+        while (i < copy_count) : (i += 1) {
             entry.params[i] = self.parser.params[i];
         }
         self.debug_log[self.debug_log_idx] = entry;
@@ -616,18 +618,14 @@ pub const Terminal = struct {
                 }
                 self.grid.clearRangeAs(self.cursor_row, 0, self.cursor_col + 1, blank);
             },
-            2 => {
+            2, 3 => {
                 var r: u16 = 0;
                 while (r < self.rows) : (r += 1) {
                     self.grid.clearRowAs(r, blank);
                 }
-            },
-            3 => {
-                var r: u16 = 0;
-                while (r < self.rows) : (r += 1) {
-                    self.grid.clearRowAs(r, blank);
+                if (mode == 3) {
+                    if (self.scrollback) |sb| sb.reset();
                 }
-                if (self.scrollback) |sb| sb.reset();
             },
             else => {},
         }

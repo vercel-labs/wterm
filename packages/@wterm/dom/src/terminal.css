@@ -54,19 +54,7 @@
   display: block;
   height: var(--term-row-height);
   line-height: var(--term-row-height);
-  contain: layout style;
-  position: relative;
-}
-
-.term-row::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 1px;
-  background: inherit;
-  pointer-events: none;
+  contain: content;
 }
 
 .term-block {
