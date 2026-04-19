@@ -177,7 +177,10 @@ export class InputHandler {
 
     const bridge = this.getBridge();
     if (bridge && bridge.bracketedPaste()) {
-      this.onData("\x1b[200~" + text + "\x1b[201~");
+      // Strip ESC bytes so clipboard payloads cannot inject \x1b[201~ to
+      // break out of bracketed paste mode and smuggle commands to the PTY.
+      const safe = text.replace(/\x1b/g, "");
+      this.onData("\x1b[200~" + safe + "\x1b[201~");
     } else {
       this.onData(text);
     }
