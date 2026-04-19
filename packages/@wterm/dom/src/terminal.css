@@ -57,11 +57,14 @@
   contain: layout style;
 }
 
-.term-block {
+.term-row > span {
   display: inline-block;
-  width: 1ch;
   height: var(--term-row-height);
   vertical-align: top;
+}
+
+.term-block {
+  width: 1ch;
   overflow: hidden;
 }
 

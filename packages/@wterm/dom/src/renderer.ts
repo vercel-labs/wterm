@@ -54,14 +54,10 @@ function buildCellStyle(fg: number, bg: number, flags: number): string {
 }
 
 function appendRun(parent: HTMLElement, text: string, style: string): void {
-  if (style) {
-    const span = document.createElement("span");
-    span.style.cssText = style;
-    span.textContent = text;
-    parent.appendChild(span);
-  } else {
-    parent.appendChild(document.createTextNode(text));
-  }
+  const span = document.createElement("span");
+  if (style) span.style.cssText = style;
+  span.textContent = text;
+  parent.appendChild(span);
 }
 
 function resolveColors(

@@ -76,6 +76,8 @@ export class WTerm {
         (globalThis as Record<string, unknown>).__wterm = this;
       }
 
+      this._setRowHeight();
+
       this.renderer = new Renderer(this._container);
       this.renderer.setup(this.cols, this.rows);
 
@@ -224,6 +226,19 @@ export class WTerm {
         (parseFloat(cs.borderBottomWidth) || 0);
     }
     this.element.style.height = `${gridHeight + extra}px`;
+  }
+
+  private _setRowHeight(): void {
+    const probe = document.createElement("div");
+    probe.style.visibility = "hidden";
+    probe.style.position = "absolute";
+    probe.textContent = "W";
+    this._container.appendChild(probe);
+    const h = probe.getBoundingClientRect().height;
+    probe.remove();
+    if (h > 0) {
+      this.element.style.setProperty("--term-row-height", `${Math.ceil(h)}px`);
+    }
   }
 
   private _measureCharSize(): {
