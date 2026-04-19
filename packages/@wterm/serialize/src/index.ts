@@ -48,9 +48,10 @@ export function restore(term: WTerm, snapshot: TerminalSnapshot): void {
     throw new Error(`wterm: unsupported snapshot version ${snapshot.version}`);
   }
 
-  const parts = [snapshot.payload];
+  const parts: string[] = [];
 
   if (snapshot.modes.altScreen) parts.push("\x1b[?1049h");
+  parts.push(snapshot.payload);
   if (snapshot.modes.cursorKeysApp) parts.push("\x1b[?1h");
   if (snapshot.modes.bracketedPaste) parts.push("\x1b[?2004h");
 
