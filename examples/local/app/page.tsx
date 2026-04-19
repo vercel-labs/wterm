@@ -6,9 +6,10 @@ import type { WTerm } from "@wterm/dom";
 import "@wterm/react/css";
 
 export default function LocalTerminal() {
-  const [debugEnabled] = useState(() =>
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).has("debug"),
+  const [debugEnabled] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).has("debug"),
   );
   const { ref, write } = useTerminal();
   const wsRef = useRef<WebSocket | null>(null);

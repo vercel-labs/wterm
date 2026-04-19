@@ -54,7 +54,7 @@
   display: block;
   height: var(--term-row-height);
   line-height: var(--term-row-height);
-  contain: content;
+  contain: layout style;
 }
 
 .term-block {
