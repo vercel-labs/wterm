@@ -7,6 +7,12 @@ import {
 } from "react";
 import { WTerm } from "@wterm/dom";
 
+const WTERM_KEYS = new Set([
+  "cols", "rows", "wasmUrl", "theme", "autoResize",
+  "cursorBlink", "debug", "onData", "onTitle", "onResize",
+  "onReady", "onError",
+]);
+
 export interface TerminalProps extends Omit<
   HTMLAttributes<HTMLDivElement>,
   "onResize" | "onError"
@@ -50,22 +56,13 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       className,
       style,
     } = props;
-    // Strip any WTerm-specific keys that the bundler might leave in rest
-    const {
-      cols: _c,
-      rows: _r,
-      wasmUrl: _w,
-      theme: _t,
-      autoResize: _ar,
-      cursorBlink: _cb,
-      debug: _d,
-      onData: _od,
-      onTitle: _ot,
-      onResize: _ore,
-      onReady: _ory,
-      onError: _oe,
-      ...htmlProps
-    } = props as Record<string, unknown>;
+
+    const htmlProps: Record<string, unknown> = {};
+    for (const key of Object.keys(props)) {
+      if (!WTERM_KEYS.has(key) && key !== "className" && key !== "style") {
+        htmlProps[key] = (props as Record<string, unknown>)[key];
+      }
+    }
 
     const wtermRef = useRef<WTerm | null>(null);
     const callbacksRef = useRef({

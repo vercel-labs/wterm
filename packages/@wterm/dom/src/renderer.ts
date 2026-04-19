@@ -167,6 +167,8 @@ export class Renderer {
   private rowEls: HTMLDivElement[] = [];
   private prevCursorRow = -1;
   private prevCursorCol = -1;
+  private prevContainerBg = "";
+  private prevRowBg: string[] = [];
 
   private _scrollbackRowEls: HTMLDivElement[] = [];
   private _renderedScrollbackCount = 0;
@@ -180,6 +182,7 @@ export class Renderer {
     this.rows = rows;
     this.container.innerHTML = "";
     this.rowEls = [];
+    this.prevRowBg = [];
     this._scrollbackRowEls = [];
     this._renderedScrollbackCount = 0;
 
@@ -205,6 +208,7 @@ export class Renderer {
     },
     lineLen: number,
     cursorCol: number,
+    rowIndex: number,
   ): void {
     rowEl.textContent = "";
 
@@ -272,6 +276,7 @@ export class Renderer {
     }
     flushRun(this.cols);
 
+    let bgCss = "";
     if (lineLen >= this.cols && this.cols > 0) {
       const lastCell = getCell(this.cols - 1);
       let bgC = lastCell.bg;
@@ -279,13 +284,15 @@ export class Renderer {
         bgC = lastCell.fg;
         if (bgC === DEFAULT_COLOR) bgC = 7;
       }
-      const css = colorToCSS(bgC) || "";
-      rowEl.style.background = css;
-      // Extend bg 1px below to cover sub-pixel gaps between rows at fractional zoom
-      rowEl.style.boxShadow = css ? `0 1px 0 0 ${css}` : "";
+      bgCss = colorToCSS(bgC) || "";
+    }
+    if (rowIndex >= 0) {
+      if (bgCss !== (this.prevRowBg[rowIndex] ?? "")) {
+        rowEl.style.background = bgCss;
+        this.prevRowBg[rowIndex] = bgCss;
+      }
     } else {
-      rowEl.style.background = "";
-      rowEl.style.boxShadow = "";
+      rowEl.style.background = bgCss;
     }
   }
 
@@ -301,6 +308,7 @@ export class Renderer {
       rowEl,
       (col) => bridge.getScrollbackCell(sbOffset, col),
       lineLen,
+      -1,
       -1,
     );
     return rowEl;
@@ -364,6 +372,7 @@ export class Renderer {
           (col) => bridge.getCell(r, col),
           this.cols,
           cCol,
+          r,
         );
       }
     }
@@ -381,7 +390,11 @@ export class Renderer {
       gridBg = bottomRight.fg;
       if (gridBg === DEFAULT_COLOR) gridBg = 7;
     }
-    this.container.style.background = colorToCSS(gridBg) || "";
+    const containerBg = colorToCSS(gridBg) || "";
+    if (containerBg !== this.prevContainerBg) {
+      this.container.style.background = containerBg;
+      this.prevContainerBg = containerBg;
+    }
 
     bridge.clearDirty();
   }

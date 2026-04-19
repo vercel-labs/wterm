@@ -1,15 +1,15 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Terminal, useTerminal } from "@wterm/react";
 import type { WTerm } from "@wterm/dom";
 import "@wterm/react/css";
 
-const DEBUG_ENABLED =
-  typeof window !== "undefined" &&
-  new URLSearchParams(window.location.search).has("debug");
-
 export default function LocalTerminal() {
+  const [debugEnabled] = useState(() =>
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("debug"),
+  );
   const { ref, write } = useTerminal();
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -55,7 +55,7 @@ export default function LocalTerminal() {
         cols={80}
         rows={24}
         autoResize
-        debug={DEBUG_ENABLED}
+        debug={debugEnabled}
         wasmUrl="/wterm.wasm"
         onReady={handleReady}
         onData={handleData}

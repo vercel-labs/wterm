@@ -101,8 +101,7 @@ pub const Terminal = struct {
             .final_byte = final,
             .private_marker = private_marker,
         };
-        const count = if (self.parser.param_count == 0) @as(u8, 0) else self.parser.param_count;
-        entry.param_count = if (count > 4) 4 else count;
+        entry.param_count = if (self.parser.param_count > 4) 4 else self.parser.param_count;
         var i: u8 = 0;
         while (i < entry.param_count) : (i += 1) {
             entry.params[i] = self.parser.params[i];
