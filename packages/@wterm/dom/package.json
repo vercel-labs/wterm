@@ -1,6 +1,6 @@
 {
   "name": "@wterm/dom",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "DOM renderer, input handler, and orchestrator for wterm",
   "type": "module",
   "main": "dist/index.js",

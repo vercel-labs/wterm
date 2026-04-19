@@ -1,8 +1,23 @@
 # Changelog
 
-## 0.1.8
+## 0.1.9
 
 <!-- release:start -->
+
+### Bug Fixes
+
+- Fixed **background rendering** not applying correctly (#34)
+- Fixed **bracketed paste security** — ESC bytes are now stripped from pasted content to prevent escape sequence injection (#33)
+- Fixed **Zig version** in build configuration (#28)
+
+### Contributors
+
+- @aaronjmars
+- @ctate
+
+<!-- release:end -->
+
+## 0.1.8
 
 ### New Features
 
@@ -28,8 +43,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.1.7
 

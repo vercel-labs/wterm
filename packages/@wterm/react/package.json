@@ -1,6 +1,6 @@
 {
   "name": "@wterm/react",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "React component for wterm — a terminal emulator for the web",
   "type": "module",
   "main": "dist/index.js",
