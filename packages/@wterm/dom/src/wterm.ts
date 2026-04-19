@@ -31,6 +31,7 @@ export class WTerm {
   private resizeObserver: ResizeObserver | null = null;
   private _destroyed = false;
   private _shouldScrollToBottom = false;
+  private _rowHeight = 0;
   private _onClickFocus: () => void;
 
   onData: ((data: string) => void) | null;
@@ -124,12 +125,8 @@ export class WTerm {
       el.scrollTop = 0;
       return;
     }
-    const rowHeight =
-      parseFloat(getComputedStyle(el).getPropertyValue("--term-row-height")) ||
-      17;
-    // Snap to a row boundary so the first visible row is never clipped.
-    // Any fractional leftover appears as empty space at the bottom.
-    el.scrollTop = Math.floor(maxScroll / rowHeight) * rowHeight;
+    const rh = this._rowHeight || 17;
+    el.scrollTop = Math.floor(maxScroll / rh) * rh;
   }
 
   write(data: string | Uint8Array): void {
@@ -214,10 +211,9 @@ export class WTerm {
   }
 
   private _lockHeight(): void {
+    const rh = this._rowHeight || 17;
+    const gridHeight = this.rows * rh;
     const cs = getComputedStyle(this.element);
-    const rowHeight =
-      parseFloat(cs.getPropertyValue("--term-row-height")) || 17;
-    const gridHeight = this.rows * rowHeight;
     let extra =
       (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
     if (cs.boxSizing === "border-box") {
@@ -230,6 +226,7 @@ export class WTerm {
 
   private _setRowHeight(): void {
     const probe = document.createElement("div");
+    probe.className = "term-row";
     probe.style.visibility = "hidden";
     probe.style.position = "absolute";
     probe.textContent = "W";
@@ -237,7 +234,9 @@ export class WTerm {
     const h = probe.getBoundingClientRect().height;
     probe.remove();
     if (h > 0) {
-      this.element.style.setProperty("--term-row-height", `${Math.ceil(h)}px`);
+      const rh = Math.ceil(h);
+      this._rowHeight = rh;
+      this.element.style.setProperty("--term-row-height", `${rh}px`);
     }
   }
 
@@ -260,6 +259,7 @@ export class WTerm {
     row.remove();
 
     if (charWidth === 0 || rowHeight === 0) return null;
+    this._rowHeight = rowHeight;
     return { charWidth, rowHeight };
   }
 
