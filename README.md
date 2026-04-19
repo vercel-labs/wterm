@@ -13,6 +13,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 | [`@wterm/react`](packages/@wterm/react) | React component + `useTerminal` hook (TypeScript) |
 | [`@wterm/just-bash`](packages/@wterm/just-bash) | In-browser Bash shell powered by just-bash |
 | [`@wterm/markdown`](packages/@wterm/markdown) | Render Markdown in the terminal |
+| [`@wterm/search`](packages/@wterm/search) | Grid and scrollback search |
 
 ## Features
 

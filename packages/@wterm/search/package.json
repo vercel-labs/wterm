@@ -1,0 +1,46 @@
+{
+  "name": "@wterm/search",
+  "version": "0.1.8",
+  "description": "Grid and scrollback search for wterm terminals",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "pnpm build",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@wterm/core": "workspace:*",
+    "@wterm/dom": "workspace:*"
+  },
+  "devDependencies": {
+    "@internal/ts": "workspace:*",
+    "typescript": "^6.0.2"
+  },
+  "keywords": [
+    "terminal",
+    "wterm",
+    "search",
+    "scrollback",
+    "find"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://wterm.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vercel-labs/wterm",
+    "directory": "packages/@wterm/search"
+  }
+}

@@ -8,6 +8,7 @@ export const PAGE_TITLES: Record<string, string> = {
   vanilla: "Vanilla JS",
   "just-bash": "Just Bash",
   markdown: "Markdown",
+  search: "Search",
   core: "Core / Advanced",
   "api-reference": "API Reference",
 };

@@ -1,0 +1,142 @@
+# Search
+
+`@wterm/search` adds grid and scrollback search to wterm terminals. Browser `Ctrl+F` can only search visible DOM rows, but most terminal history lives in WASM scrollback. This package searches both.
+
+## Why
+
+Terminal apps often emit errors above the visible viewport. The browser can only find text already rendered in the DOM, so searching misses history still in scrollback. `@wterm/search` scans scrollback and grid together, in buffer order.
+
+## Install
+
+```bash
+npm install @wterm/search
+```
+
+## Quick Start
+
+### Vanilla JS
+
+```js
+import { WTerm } from "@wterm/dom";
+import { Search } from "@wterm/search";
+import "@wterm/dom/css";
+
+const term = new WTerm(document.getElementById("terminal"));
+await term.init();
+
+term.write("error: db unavailable\\r\\n");
+term.write("info: retrying\\r\\n");
+
+const search = new Search(term);
+const match = search.findNext("error");
+
+if (match) {
+  console.log(match.row, match.col, match.text);
+}
+```
+
+## API Reference
+
+### SearchOptions
+
+<table>
+  <thead>
+    <tr>
+      <th>Option</th>
+      <th>Type</th>
+      <th>Default</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>caseSensitive</code></td>
+      <td><code>boolean</code></td>
+      <td><code>false</code></td>
+      <td>Match case exactly</td>
+    </tr>
+    <tr>
+      <td><code>regex</code></td>
+      <td><code>boolean</code></td>
+      <td><code>false</code></td>
+      <td>Treat <code>query</code> as a regular expression</td>
+    </tr>
+    <tr>
+      <td><code>wholeWord</code></td>
+      <td><code>boolean</code></td>
+      <td><code>false</code></td>
+      <td>Match only whole words</td>
+    </tr>
+  </tbody>
+</table>
+
+### SearchMatch
+
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>row</code></td>
+      <td><code>number</code></td>
+      <td>Match row (<code>-1</code> is most recent scrollback line, <code>0+</code> is grid row)</td>
+    </tr>
+    <tr>
+      <td><code>col</code></td>
+      <td><code>number</code></td>
+      <td>Zero-based column of the match</td>
+    </tr>
+    <tr>
+      <td><code>length</code></td>
+      <td><code>number</code></td>
+      <td>Match length in characters</td>
+    </tr>
+    <tr>
+      <td><code>text</code></td>
+      <td><code>string</code></td>
+      <td>Matched text</td>
+    </tr>
+  </tbody>
+</table>
+
+### Search
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>new Search(term)</code></td>
+      <td>Create a search instance for an initialized terminal</td>
+    </tr>
+    <tr>
+      <td><code>findNext(query, opts?)</code></td>
+      <td>Find the next match after the current cursor position</td>
+    </tr>
+    <tr>
+      <td><code>findPrevious(query, opts?)</code></td>
+      <td>Find the previous match before the current cursor position</td>
+    </tr>
+    <tr>
+      <td><code>findAll(query, opts?)</code></td>
+      <td>Return all matches in oldest-first order (scrollback then grid)</td>
+    </tr>
+    <tr>
+      <td><code>reset()</code></td>
+      <td>Reset the internal cursor so the next <code>findNext</code> starts from the top</td>
+    </tr>
+  </tbody>
+</table>
+
+## Limitations
+
+`@wterm/search` returns match positions and text only. Visual highlighting through the CSS Highlight API is a follow-up PR.
