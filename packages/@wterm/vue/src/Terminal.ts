@@ -9,6 +9,37 @@ import {
 } from "vue";
 import { WTerm } from "@wterm/dom";
 
+/**
+ * Vue wrapper around {@link WTerm} from `@wterm/dom`. Creates a `WTerm` in
+ * `onMounted`, forwards its callbacks as Vue events, and destroys the instance
+ * on unmount.
+ *
+ * `@wterm/vue` re-exports everything from `@wterm/dom`, so a single import
+ * covers both the component and the types.
+ *
+ * @example
+ * ```vue
+ * <script setup lang="ts">
+ * import { useTemplateRef } from 'vue'
+ * import { Terminal, type WTerm } from '@wterm/vue'
+ *
+ * const term = useTemplateRef('term')
+ *
+ * function onReady(wt: WTerm) {
+ *   wt.write('hello\r\n')
+ * }
+ *
+ * function onData(chunk: string) {
+ *   // echo locally; in a real app, forward `chunk` to a PTY/backend
+ *   term.value?.write(chunk)
+ * }
+ * </script>
+ *
+ * <template>
+ *   <Terminal ref="term" :cols="120" :rows="30" @ready="onReady" @data="onData" />
+ * </template>
+ * ```
+ */
 const Terminal = defineComponent({
   name: "Terminal",
 
@@ -17,21 +48,64 @@ const Terminal = defineComponent({
   // inheritAttrs: true,
 
   props: {
+    /**
+     * Column count.
+     * @defaultValue 80
+     */
     cols: { type: Number, default: 80 },
+    /**
+     * Row count.
+     * @defaultValue 24
+     */
     rows: { type: Number, default: 24 },
+    /**
+     * Optional override for the WASM binary URL used by the terminal core.
+     */
     wasmUrl: String,
+    /**
+     * Theme name appended as a `theme-<name>` class on the root element.
+     */
     theme: String,
+    /**
+     * When `true`, the terminal observes its container and reflows on size
+     * changes. Note: `WTerm` itself defaults `autoResize` to `true`, but Vue
+     * Boolean props default to `false` — opt in with `<Terminal auto-resize>`
+     * (or `:auto-resize="true"`).
+     * @defaultValue false
+     */
     autoResize: Boolean,
+    /**
+     * Toggles the `cursor-blink` class on the root element.
+     * @defaultValue false
+     */
     cursorBlink: Boolean,
   },
 
+  // Object form: validator signatures carry emit payload types to
+  // both internal `emit(...)` and external `@event="..."` handlers.
   emits: {
-    // Object form: validator signatures carry emit payload types to
-    // both internal `emit(...)` and external `@event="..."` handlers.
+    /**
+     * Forwards `WTerm`'s `onData` callback: a chunk of input from the
+     * terminal (e.g. keystrokes or paste).
+     */
     data: (_data: string) => true,
+    /**
+     * Forwards `WTerm`'s `onTitle` callback.
+     */
     title: (_title: string) => true,
+    /**
+     * Forwards `WTerm`'s `onResize` callback with the new column and row
+     * counts.
+     */
     resize: (_cols: number, _rows: number) => true,
+    /**
+     * Emitted once after `WTerm.init()` resolves, carrying the `WTerm`
+     * instance.
+     */
     ready: (_wt: WTerm) => true,
+    /**
+     * Emitted if `WTerm.init()` rejects.
+     */
     error: (_err: unknown) => true,
   },
 
@@ -97,14 +171,35 @@ const Terminal = defineComponent({
     // Vue auto-unwraps refs and merges these into InstanceType<typeof Terminal>,
     // so template refs see write/resize/focus/instance with correct types.
     return {
+      /**
+       * Ref to the host `<div>`. Bound by the string `ref: "root"` used in
+       * `render`; consumers normally don't need it.
+       */
       root,
+      /**
+       * Underlying {@link WTerm} instance, reachable through a template ref
+       * (`useTemplateRef('…')`). `null` until the component has mounted, then
+       * set to the instance; the WASM bridge only becomes available once the
+       * `ready` event has fired.
+       */
       instance: wterm,
+      /**
+       * Write bytes/text to the terminal. Safe to call after `ready`; calls
+       * before the component has mounted are ignored.
+       */
       write(data: string | Uint8Array) {
         wterm.value?.write(data);
       },
+      /**
+       * Imperatively resize the terminal. Calls before the component has
+       * mounted are ignored.
+       */
       resize(c: number, r: number) {
         wterm.value?.resize(c, r);
       },
+      /**
+       * Move keyboard focus to the terminal.
+       */
       focus() {
         wterm.value?.focus();
       },
