@@ -1,6 +1,6 @@
 import { describe, it, expectTypeOf } from "vitest";
 import { ref } from "vue";
-import { Terminal, type TerminalHandle } from "../index.js";
+import { Terminal } from "../index.js";
 import type { WTerm } from "@wterm/dom";
 
 describe("Terminal types", () => {
@@ -33,7 +33,12 @@ describe("Terminal types", () => {
 
   it("InstanceType is assignable to TerminalHandle", () => {
     type Instance = NonNullable<InstanceType<typeof Terminal>>;
-    expectTypeOf<Instance>().toMatchTypeOf<TerminalHandle>();
+    expectTypeOf<Instance>().toExtend<{
+      write: (data: string | Uint8Array) => void;
+      resize: (cols: number, rows: number) => void;
+      focus: () => void;
+      instance: WTerm | null;
+    }>();
   });
 
   it("typed props", () => {
@@ -49,7 +54,7 @@ describe("Terminal types", () => {
   it("typed emit signatures", () => {
     // Grab the emit function type from the component options. Vue's
     // emits-as-object-with-validators makes emit overloaded per event.
-    type Opts = typeof Terminal extends { new (...args: any): infer I }
+    type Opts = typeof Terminal extends { new(...args: any): infer I }
       ? I
       : never;
     // $emit is the Vue emit helper on the instance.
