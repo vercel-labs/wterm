@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, shallowRef } from "vue";
+import { ref, computed, shallowRef, useTemplateRef } from "vue";
 import { Terminal } from "@wterm/vue";
 import { BashShell } from "@wterm/just-bash";
 
@@ -26,8 +26,8 @@ const INITIAL_FILES: Record<string, string> = {
     '#!/bin/bash\necho "Hello from wterm!"\necho "Date: $(date)"\necho "Shell: $SHELL"\n',
 };
 
-const bashTerminalRef = ref<InstanceType<typeof Terminal> | null>(null);
-const localTerminalRef = ref<InstanceType<typeof Terminal> | null>(null);
+const bashTerminalRef = useTemplateRef("bashTerminalRef")
+const localTerminalRef = useTemplateRef("localTerminalRef")
 const themeLabel = ref("Default");
 const title = ref("wterm");
 const shell = shallowRef<BashShell | null>(null);
@@ -101,11 +101,8 @@ function handleLocalResize(cols: number, rows: number) {
         <label class="text-sm text-muted-foreground" for="theme-select">
           Theme
         </label>
-        <select
-          id="theme-select"
-          v-model="themeLabel"
-          class="h-9 w-40 rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
-        >
+        <select id="theme-select" v-model="themeLabel"
+          class="h-9 w-40 rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring">
           <option v-for="t in THEMES" :key="t.value" :value="t.value">
             {{ t.value }}
           </option>
@@ -117,33 +114,15 @@ function handleLocalResize(cols: number, rows: number) {
         <h2 class="text-sm font-medium text-muted-foreground px-2">
           In-browser bash (just-bash)
         </h2>
-        <Terminal
-          ref="bashTerminalRef"
-          :cols="80"
-          :rows="24"
-          wasm-url="/wterm.wasm"
-          :theme="theme"
-          class="w-full"
-          @data="handleBashData"
-          @title="handleTitle"
-          @ready="handleBashReady"
-        />
+        <Terminal ref="bashTerminalRef" :cols="80" :rows="24" wasm-url="/wterm.wasm" :theme auto-resize
+          @data="handleBashData" @title="handleTitle" @ready="handleBashReady" />
       </section>
       <section class="flex w-full max-w-225 flex-col gap-2">
         <h2 class="text-sm font-medium text-muted-foreground px-2">
           Local shell (node-pty over WebSocket)
         </h2>
-        <Terminal
-          ref="localTerminalRef"
-          :cols="80"
-          :rows="24"
-          wasm-url="/wterm.wasm"
-          :theme="theme"
-          class="w-full"
-          @data="handleLocalData"
-          @resize="handleLocalResize"
-          @ready="handleLocalReady"
-        />
+        <Terminal ref="localTerminalRef" :cols="80" :rows="24" wasm-url="/wterm.wasm" :theme class="w-full"
+          @data="handleLocalData" @resize="handleLocalResize" @ready="handleLocalReady" />
       </section>
     </main>
   </div>

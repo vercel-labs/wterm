@@ -9,32 +9,13 @@ import {
 } from "vue";
 import { WTerm } from "@wterm/dom";
 
-export interface TerminalProps {
-  cols?: number;
-  rows?: number;
-  wasmUrl?: string;
-  theme?: string;
-  autoResize?: boolean;
-  cursorBlink?: boolean;
-}
-
-export interface TerminalEmits {
-  (e: "data", data: string): void;
-  (e: "title", title: string): void;
-  (e: "resize", cols: number, rows: number): void;
-  (e: "ready", wt: WTerm): void;
-  (e: "error", err: unknown): void;
-}
-
-export interface TerminalHandle {
-  write(data: string | Uint8Array): void;
-  resize(cols: number, rows: number): void;
-  focus(): void;
-  readonly instance: WTerm | null;
-}
-
 const Terminal = defineComponent({
   name: "Terminal",
+
+  // we want to allow passing down classes
+  // true is the default
+  // inheritAttrs: true,
+
   props: {
     cols: { type: Number, default: 80 },
     rows: { type: Number, default: 24 },
@@ -43,6 +24,7 @@ const Terminal = defineComponent({
     autoResize: Boolean,
     cursorBlink: Boolean,
   },
+
   emits: {
     // Object form: validator signatures carry emit payload types to
     // both internal `emit(...)` and external `@event="..."` handlers.
@@ -52,6 +34,7 @@ const Terminal = defineComponent({
     ready: (_wt: WTerm) => true,
     error: (_err: unknown) => true,
   },
+
   setup(props, { emit }) {
     const root = ref<HTMLDivElement | null>(null);
     const wterm = shallowRef<WTerm | null>(null);
