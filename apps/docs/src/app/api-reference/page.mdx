@@ -4,7 +4,7 @@ Complete reference for all wterm options, methods, types, and transport APIs.
 
 ## Terminal Options
 
-Both the React `<Terminal>` component and the vanilla `WTerm` constructor accept these options:
+The React and Vue `<Terminal>` components and the vanilla `WTerm` constructor all accept these options:
 
 <table>
   <thead>
@@ -37,7 +37,7 @@ Both the React `<Terminal>` component and the vanilla `WTerm` constructor accept
     <tr>
       <td><code>autoResize</code></td>
       <td><code>boolean</code></td>
-      <td><code>true</code> (vanilla) / <code>false</code> (React)</td>
+      <td><code>true</code> (vanilla) / <code>false</code> (React, Vue)</td>
       <td>Automatically resize the terminal to fit its container using a <code>ResizeObserver</code></td>
     </tr>
     <tr>
@@ -100,6 +100,66 @@ The React `<Terminal>` component adds these props on top of the shared options a
       <td><code>onError</code></td>
       <td><code>(error: unknown) =&gt; void</code></td>
       <td>Called if WASM loading or initialization fails. When omitted, errors are logged to the console.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Vue-Only Props
+
+The Vue `<Terminal>` component adds these props on top of the shared options above. Vue exposes input callbacks as events (see [Vue Events](#vue-events) below) instead of `onXxx` props. Standard HTML attributes (`class`, `style`, `id`, etc.) are forwarded to the root `div` via the default `inheritAttrs` behavior.
+
+<table>
+  <thead>
+    <tr>
+      <th>Prop</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>theme</code></td>
+      <td><code>string</code></td>
+      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>). Applied as a <code>theme-&lt;name&gt;</code> class on the root element.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Vue Events
+
+<table>
+  <thead>
+    <tr>
+      <th>Event</th>
+      <th>Payload</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>data</code></td>
+      <td><code>(data: string)</code></td>
+      <td>Emitted when the terminal produces data (user input or host response). When no listener is attached, input is echoed back automatically.</td>
+    </tr>
+    <tr>
+      <td><code>title</code></td>
+      <td><code>(title: string)</code></td>
+      <td>Emitted when the terminal title changes via an escape sequence.</td>
+    </tr>
+    <tr>
+      <td><code>resize</code></td>
+      <td><code>(cols: number, rows: number)</code></td>
+      <td>Emitted after the terminal is resized.</td>
+    </tr>
+    <tr>
+      <td><code>ready</code></td>
+      <td><code>(wt: WTerm)</code></td>
+      <td>Emitted once after <code>WTerm.init()</code> resolves, carrying the underlying <code>WTerm</code> instance.</td>
+    </tr>
+    <tr>
+      <td><code>error</code></td>
+      <td><code>(err: unknown)</code></td>
+      <td>Emitted if WASM loading or initialization fails.</td>
     </tr>
   </tbody>
 </table>
@@ -189,6 +249,55 @@ interface TerminalHandle {
   readonly instance: WTerm | null;
 }
 ```
+
+## Template Ref (Vue)
+
+The Vue `<Terminal>` component exposes the same methods directly on its instance — no separate composable. Access them via `useTemplateRef`:
+
+```vue
+<script setup lang="ts">
+import { useTemplateRef } from "vue";
+import { Terminal } from "@wterm/vue";
+
+const term = useTemplateRef("term");
+</script>
+
+<template>
+  <Terminal ref="term" />
+</template>
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Member</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>write</code></td>
+      <td><code>(data: string | Uint8Array) =&gt; void</code></td>
+      <td>Write data to the terminal. Safe to call after the <code>ready</code> event; calls before mount are ignored.</td>
+    </tr>
+    <tr>
+      <td><code>resize</code></td>
+      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>Resize the terminal grid. Calls before mount are ignored.</td>
+    </tr>
+    <tr>
+      <td><code>focus</code></td>
+      <td><code>() =&gt; void</code></td>
+      <td>Focus the terminal input.</td>
+    </tr>
+    <tr>
+      <td><code>instance</code></td>
+      <td><code>WTerm | null</code></td>
+      <td>Underlying <code>WTerm</code> instance. <code>null</code> until the component has mounted; the WASM bridge is only available after the <code>ready</code> event.</td>
+    </tr>
+  </tbody>
+</table>
 
 ## WebSocketTransport
 

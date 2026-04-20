@@ -26,6 +26,7 @@ export const navGroups: NavGroup[] = [
     label: "Frameworks",
     items: [
       { name: "React", href: "/react" },
+      { name: "Vue", href: "/vue" },
       { name: "Vanilla JS", href: "/vanilla" },
     ],
   },
@@ -83,6 +84,11 @@ export const navGroups: NavGroup[] = [
       {
         name: "@wterm/react",
         href: `${GITHUB}/tree/main/packages/@wterm/react`,
+        external: true,
+      },
+      {
+        name: "@wterm/vue",
+        href: `${GITHUB}/tree/main/packages/@wterm/vue`,
         external: true,
       },
       {

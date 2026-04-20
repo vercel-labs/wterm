@@ -8,6 +8,12 @@
 npm install @wterm/dom @wterm/react
 ```
 
+### Vue
+
+```bash
+npm install @wterm/dom @wterm/vue
+```
+
 ### Vanilla JS
 
 ```bash
@@ -27,6 +33,19 @@ import "@wterm/react/css";
 function App() {
   return <Terminal />;
 }
+```
+
+### Vue
+
+```vue
+<script setup lang="ts">
+import { Terminal } from "@wterm/vue";
+import "@wterm/vue/css";
+</script>
+
+<template>
+  <Terminal />
+</template>
 ```
 
 ### Vanilla JS

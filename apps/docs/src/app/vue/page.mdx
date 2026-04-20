@@ -1,0 +1,119 @@
+# Vue
+
+The `@wterm/vue` package provides a `<Terminal>` component for integrating wterm into Vue 3 applications. It re-exports everything from `@wterm/dom`, so a single import covers both the component and its types.
+
+## Install
+
+```bash
+npm install @wterm/dom @wterm/vue
+```
+
+## Basic Usage
+
+```vue
+<script setup lang="ts">
+import { Terminal } from "@wterm/vue";
+import "@wterm/vue/css";
+</script>
+
+<template>
+  <Terminal />
+</template>
+```
+
+## Custom Input Handling
+
+By default, typed input is echoed back to the terminal. Listen to the `data` event when you need control over input — for example, sending it to a server:
+
+```vue
+<script setup lang="ts">
+import { useTemplateRef } from "vue";
+import { Terminal } from "@wterm/vue";
+import "@wterm/vue/css";
+
+const term = useTemplateRef("term");
+
+function onData(chunk: string) {
+  socket.send(chunk);
+}
+</script>
+
+<template>
+  <Terminal ref="term" @data="onData" />
+</template>
+```
+
+## Props
+
+The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `wasmUrl`, `autoResize`, `cursorBlink`) plus [Vue-only props](/api-reference#vue-only-props) (`theme`).
+
+Because `inheritAttrs` is enabled, standard DOM attributes (`class`, `style`, `id`, ARIA props, etc.) are forwarded to the root `<div>`.
+
+## Events
+
+Input callbacks are exposed as Vue events rather than `onXxx` props:
+
+```vue
+<Terminal
+  @data="onData"
+  @title="onTitle"
+  @resize="onResize"
+  @ready="onReady"
+  @error="onError"
+/>
+```
+
+See the full [Vue Events](/api-reference#vue-events) reference for payload types.
+
+## Template Ref
+
+Access imperative methods via a template ref:
+
+```vue
+<script setup lang="ts">
+import { useTemplateRef } from "vue";
+import { Terminal, type WTerm } from "@wterm/vue";
+
+const term = useTemplateRef("term");
+
+function onReady(wt: WTerm) {
+  wt.write("hello\r\n");
+  term.value?.resize(120, 40);
+}
+</script>
+
+<template>
+  <Terminal ref="term" @ready="onReady" />
+</template>
+```
+
+The exposed methods are `write`, `resize`, `focus`, and `instance` (the underlying `WTerm`, or `null` before mount). See the full [Template Ref](/api-reference#template-ref-vue) reference.
+
+## Themes
+
+Import the stylesheet and switch themes via the `theme` prop:
+
+```vue
+<script setup lang="ts">
+import { Terminal } from "@wterm/vue";
+import "@wterm/vue/css";
+</script>
+
+<template>
+  <Terminal theme="monokai" />
+</template>
+```
+
+Built-in themes: `solarized-dark`, `monokai`, `light`. Define custom themes with CSS custom properties (`--term-fg`, `--term-bg`, `--term-color-0` through `--term-color-15`). See [Themes](/themes) for details.
+
+## Nuxt
+
+The component mounts in `onMounted`, so it is SSR-safe out of the box. If you need to guarantee client-only rendering (e.g. for debugging or to skip hydration entirely), wrap it in `<ClientOnly>`:
+
+```vue
+<template>
+  <ClientOnly>
+    <Terminal />
+  </ClientOnly>
+</template>
+```

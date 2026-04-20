@@ -16,7 +16,7 @@ const SYSTEM_PROMPT = `You are a helpful documentation assistant for wterm ("dub
 
 GitHub repository: https://github.com/vercel-labs/wterm
 Documentation: https://wterm.dev
-npm packages: @wterm/core, @wterm/dom, @wterm/react, @wterm/markdown, @wterm/just-bash
+npm packages: @wterm/core, @wterm/dom, @wterm/react, @wterm/vue, @wterm/markdown, @wterm/just-bash
 
 You have access to the full wterm documentation via the bash and readFile tools. The docs are available as markdown files in the /workspace/ directory.
 
