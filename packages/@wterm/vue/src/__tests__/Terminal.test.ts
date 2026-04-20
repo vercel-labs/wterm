@@ -36,7 +36,10 @@ vi.mock("@wterm/dom", () => {
   };
 });
 
-async function mountTerminal(props: Record<string, any> = {}, listeners: Record<string, any> = {}) {
+async function mountTerminal(
+  props: Record<string, any> = {},
+  listeners: Record<string, any> = {},
+) {
   const Terminal = (await import("../Terminal.js")).default;
   return mount(Terminal, { props, attrs: listeners });
 }
@@ -88,7 +91,10 @@ describe("Terminal component", () => {
 
   it("emits error on init failure", async () => {
     const { WTerm } = await import("@wterm/dom");
-    (WTerm as any).mockImplementationOnce(function (this: any, el: HTMLElement) {
+    (WTerm as any).mockImplementationOnce(function (
+      this: any,
+      el: HTMLElement,
+    ) {
       this.element = el;
       this.bridge = null;
       this.cols = 80;
@@ -164,10 +170,14 @@ describe("Terminal component", () => {
     await flushPromises();
     await wrapper.setProps({ cursorBlink: true });
     await nextTick();
-    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(true);
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      true,
+    );
     await wrapper.setProps({ cursorBlink: false });
     await nextTick();
-    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(false);
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      false,
+    );
   });
 
   it("emits data when WTerm onData fires", async () => {
