@@ -1,5 +1,5 @@
 import type { WasmBridge } from "@wterm/core";
-import type { NormalizedLinkify } from "./linkify.js";
+import { DEFAULT_URL_PATTERN, type NormalizedLinkify } from "./linkify.js";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -176,7 +176,7 @@ export class Renderer {
     this.container = container;
     this.linkify = options.linkify ?? {
       enabled: false,
-      pattern: /\bhttps?:\/\/[^\s<>"'`]+/g,
+      pattern: DEFAULT_URL_PATTERN,
       onClick: null,
     };
   }
