@@ -212,19 +212,20 @@ export class Renderer {
     rowEl.textContent = "";
 
     // Pre-pass 1: collect the plain text of the row so the linkify regex can
-    // run against it. Cells outside lineLen or with non-printable codepoints
-    // become spaces (matching the row-fill behavior below).
+    // run against it. One character per column so that URL ranges returned
+    // by findUrls line up 1:1 with grid columns. Block glyphs and non-
+    // printables become a space — a URL-breaking character that also
+    // preserves col→rowText alignment.
     let rowText = "";
     for (let col = 0; col < this.cols; col++) {
       const cell = getCell(col);
       const inBounds = col < lineLen;
       const cp = inBounds ? cell.char : 0;
       const isBlock = inBounds && cp >= 0x2580 && cp <= 0x259f;
-      if (isBlock) {
-        // Block glyphs break URL runs — treat them as a non-URL character.
-        rowText += "";
+      if (isBlock || !inBounds || cp < 32) {
+        rowText += " ";
       } else {
-        rowText += inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ";
+        rowText += String.fromCodePoint(cp);
       }
     }
 
