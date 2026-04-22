@@ -257,6 +257,12 @@ export class Renderer {
       a.href = urlRanges[urlIdx].url;
       a.target = "_blank";
       a.rel = "noopener noreferrer";
+      const onClick = this.linkify.onClick;
+      if (onClick) {
+        a.addEventListener("click", (ev) => {
+          onClick(urlRanges[urlIdx].url, ev);
+        });
+      }
       rowEl.appendChild(a);
       return a;
     };

@@ -277,5 +277,26 @@ describe("Renderer", () => {
       expect(anchor?.getAttribute("href")).toBe(text);
       expect(anchor?.textContent).toBe(text);
     });
+
+    it("invokes onClick before default navigation and respects preventDefault", () => {
+      const bridge = makeLinkifyBridge("go https://example.com/");
+      const seen: string[] = [];
+      const renderer = new Renderer(container, {
+        linkify: {
+          enabled: true,
+          pattern: /\bhttps?:\/\/[^\s<>"'`]+/g,
+          onClick: (url, ev) => {
+            seen.push(url);
+            ev.preventDefault();
+          },
+        },
+      });
+      renderer.render(bridge as any);
+      const anchor = container.querySelector<HTMLAnchorElement>("a.term-link")!;
+      const clickEv = new MouseEvent("click", { bubbles: true, cancelable: true });
+      anchor.dispatchEvent(clickEv);
+      expect(seen).toEqual(["https://example.com/"]);
+      expect(clickEv.defaultPrevented).toBe(true);
+    });
   });
 });
