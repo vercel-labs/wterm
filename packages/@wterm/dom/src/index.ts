@@ -10,4 +10,6 @@ export type {
   PerfStats,
   UnhandledEntry,
 } from "./debug.js";
+export type { LinkifyOption, LinkifyConfig, UrlRange } from "./linkify.js";
+export { DEFAULT_URL_PATTERN, findUrls, trimTrailing } from "./linkify.js";
 export * from "@wterm/core";

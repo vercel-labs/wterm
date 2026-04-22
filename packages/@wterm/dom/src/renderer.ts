@@ -1,4 +1,5 @@
 import type { WasmBridge } from "@wterm/core";
+import type { NormalizedLinkify } from "./linkify.js";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -169,8 +170,15 @@ export class Renderer {
   private _scrollbackRowEls: HTMLDivElement[] = [];
   private _renderedScrollbackCount = 0;
 
-  constructor(container: HTMLElement) {
+  private linkify: NormalizedLinkify;
+
+  constructor(container: HTMLElement, options: { linkify?: NormalizedLinkify } = {}) {
     this.container = container;
+    this.linkify = options.linkify ?? {
+      enabled: false,
+      pattern: /\bhttps?:\/\/[^\s<>"'`]+/g,
+      onClick: null,
+    };
   }
 
   setup(cols: number, rows: number): void {
