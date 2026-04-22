@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+
+- **Clickable links** — `@wterm/dom` now supports an opt-in `linkify` option that renders `http(s)://` URLs in terminal output as real `<a>` anchors (`target="_blank"`, `rel="noopener noreferrer"`), with optional custom regex and click interception. Pure renderer-side change — no wasm or cell-model changes.
+
 ## 0.1.9
 
 <!-- release:start -->

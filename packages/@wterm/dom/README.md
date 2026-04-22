@@ -46,6 +46,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `autoResize` | `boolean` | `true` | Auto-resize based on container dimensions |
 | `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
+| `linkify` | `boolean \| { pattern?: RegExp; onClick?: (url, event) => void }` | `false` | Render URLs as clickable `<a>` anchors — see [Clickable links](#clickable-links). |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
@@ -94,6 +95,37 @@ element.classList.add("theme-monokai");
 ```
 
 All colors use CSS custom properties (`--term-fg`, `--term-bg`, `--term-color-0` through `--term-color-15`, etc.) so you can define your own theme with plain CSS.
+
+## Clickable links
+
+Pass `linkify: true` to turn `http://…` and `https://…` URLs in the output into real `<a>` anchors:
+
+```ts
+import { WTerm } from "@wterm/dom";
+
+const term = new WTerm(container, { linkify: true });
+await term.init();
+term.write("visit https://example.com/ for more\r\n");
+// → <a class="term-link" href="https://example.com/" target="_blank" rel="noopener noreferrer">
+```
+
+Anchors open in a new tab with `rel="noopener noreferrer"`. Default styles (dotted underline on hover, inherit color) are in the stylesheet.
+
+Pass an object to customize:
+
+```ts
+new WTerm(container, {
+  linkify: {
+    pattern: /\bJIRA-\d+\b/g,        // any global regex
+    onClick: (url, ev) => {
+      ev.preventDefault();            // suppress default navigation
+      openInAppRoute(url);
+    },
+  },
+});
+```
+
+**Limitation:** URLs that wrap across terminal lines are treated as two separate (broken) URLs — detection is per rendered row. Either use a wider terminal or have the emitting program hard-break the URL itself.
 
 ## License
 
