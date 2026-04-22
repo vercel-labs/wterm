@@ -122,4 +122,37 @@ describe("Renderer", () => {
       expect(span?.getAttribute("style")).toMatch(/font-weight:\s*bold/);
     });
   });
+
+  describe("linkify", () => {
+    function makeLinkifyBridge(rowText: string, cols?: number) {
+      const width = cols ?? rowText.length;
+      const grid: CellData[][] = [
+        Array.from({ length: width }, (_, i) =>
+          i < rowText.length ? makeCell(rowText[i]) : { char: 0, fg: 256, bg: 256, flags: 0 },
+        ),
+      ];
+      const bridge = createMockBridge(width, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: -1, visible: false });
+      return bridge;
+    }
+
+    it("renders a URL as an anchor when linkify is enabled", () => {
+      const bridge = makeLinkifyBridge("go https://example.com/ now");
+      const renderer = new Renderer(container, {
+        linkify: {
+          enabled: true,
+          pattern: /\bhttps?:\/\/[^\s<>"'`]+/g,
+          onClick: null,
+        },
+      });
+      renderer.render(bridge as any);
+
+      const anchor = container.querySelector("a.term-link");
+      expect(anchor).not.toBeNull();
+      expect(anchor?.getAttribute("href")).toBe("https://example.com/");
+      expect(anchor?.getAttribute("target")).toBe("_blank");
+      expect(anchor?.getAttribute("rel")).toBe("noopener noreferrer");
+      expect(anchor?.textContent).toBe("https://example.com/");
+    });
+  });
 });

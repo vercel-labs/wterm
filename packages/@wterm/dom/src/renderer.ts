@@ -1,5 +1,5 @@
-import type { WasmBridge } from "@wterm/core";
-import { DEFAULT_URL_PATTERN, type NormalizedLinkify } from "./linkify.js";
+import type { CellData, WasmBridge } from "@wterm/core";
+import { DEFAULT_URL_PATTERN, findUrls, type NormalizedLinkify } from "./linkify.js";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -204,42 +204,90 @@ export class Renderer {
 
   private _buildRowContent(
     rowEl: HTMLDivElement,
-    getCell: (col: number) => {
-      char: number;
-      fg: number;
-      bg: number;
-      flags: number;
-    },
+    getCell: (col: number) => CellData,
     lineLen: number,
     cursorCol: number,
     rowIndex: number,
   ): void {
     rowEl.textContent = "";
 
+    // Pre-pass 1: collect the plain text of the row so the linkify regex can
+    // run against it. Cells outside lineLen or with non-printable codepoints
+    // become spaces (matching the row-fill behavior below).
+    let rowText = "";
+    for (let col = 0; col < this.cols; col++) {
+      const cell = getCell(col);
+      const inBounds = col < lineLen;
+      const cp = inBounds ? cell.char : 0;
+      const isBlock = inBounds && cp >= 0x2580 && cp <= 0x259f;
+      if (isBlock) {
+        // Block glyphs break URL runs — treat them as a non-URL character.
+        rowText += "";
+      } else {
+        rowText += inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ";
+      }
+    }
+
+    // Pre-pass 2: find URL ranges (empty when linkify disabled).
+    const urlRanges = this.linkify.enabled ? findUrls(rowText, this.linkify.pattern) : [];
+
+    function urlIdxAt(col: number): number {
+      for (let i = 0; i < urlRanges.length; i++) {
+        const r = urlRanges[i];
+        if (col >= r.start && col < r.end) return i;
+      }
+      return -1;
+    }
+
+    // Render state.
     let runStyle = "";
     let runText = "";
     let runStart = 0;
+    let runUrlIdx = -1;
 
-    const flushRun = (endCol: number) => {
+    // If the current run is inside a URL, `currentAnchor` is the open <a>
+    // that should receive the span(s). When we leave the URL or change to a
+    // different URL, we close (null out) the anchor.
+    let currentAnchor: HTMLAnchorElement | null = null;
+
+    const openAnchor = (urlIdx: number): HTMLAnchorElement => {
+      const a = document.createElement("a");
+      a.className = "term-link";
+      a.href = urlRanges[urlIdx].url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      rowEl.appendChild(a);
+      return a;
+    };
+
+    const appendInto = (parent: HTMLElement, text: string, style: string): void => {
+      const span = document.createElement("span");
+      if (style) span.style.cssText = style;
+      span.textContent = text;
+      parent.appendChild(span);
+    };
+
+    const flushRun = (endCol: number): void => {
       if (!runText) return;
+      const target: HTMLElement =
+        runUrlIdx !== -1
+          ? (currentAnchor ?? (currentAnchor = openAnchor(runUrlIdx)))
+          : rowEl;
 
       if (cursorCol >= runStart && cursorCol < endCol) {
         const offset = cursorCol - runStart;
         const before = runText.slice(0, offset);
         const cursorChar = runText[offset];
         const after = runText.slice(offset + 1);
-
-        if (before) appendRun(rowEl, before, runStyle);
-
+        if (before) appendInto(target, before, runStyle);
         const cursorSpan = document.createElement("span");
         cursorSpan.className = "term-cursor";
         if (runStyle) cursorSpan.style.cssText = runStyle;
         cursorSpan.textContent = cursorChar;
-        rowEl.appendChild(cursorSpan);
-
-        if (after) appendRun(rowEl, after, runStyle);
+        target.appendChild(cursorSpan);
+        if (after) appendInto(target, after, runStyle);
       } else {
-        appendRun(rowEl, runText, runStyle);
+        appendInto(target, runText, runStyle);
       }
     };
 
@@ -249,30 +297,36 @@ export class Renderer {
       const cp = inBounds ? cell.char : 0;
 
       if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
+        // Block glyph — always flushes the current run (same as before), and
+        // block glyphs are never inside anchors (pre-pass 1 filtered them).
         flushRun(col);
-
+        if (currentAnchor) currentAnchor = null;
         const colors = resolveColors(cell.fg, cell.bg, cell.flags);
         const span = document.createElement("span");
-        span.className =
-          col === cursorCol ? "term-block term-cursor" : "term-block";
+        span.className = col === cursorCol ? "term-block term-cursor" : "term-block";
         span.style.background = getBlockBackground(cp, colors.fg, colors.bg);
         if (cell.flags & FLAG_DIM) span.style.opacity = "0.5";
         rowEl.appendChild(span);
-
         runStyle = "";
         runText = "";
         runStart = col + 1;
+        runUrlIdx = -1;
       } else {
         const ch = inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ";
-        const style = inBounds
-          ? buildCellStyle(cell.fg, cell.bg, cell.flags)
-          : "";
+        const style = inBounds ? buildCellStyle(cell.fg, cell.bg, cell.flags) : "";
+        const urlIdx = urlIdxAt(col);
 
-        if (style !== runStyle) {
+        if (style !== runStyle || urlIdx !== runUrlIdx) {
           flushRun(col);
+          if (urlIdx !== runUrlIdx) {
+            // Leaving old URL scope (if any) — close the anchor so the next
+            // URL-internal run opens a fresh one.
+            currentAnchor = null;
+          }
           runStyle = style;
           runText = ch;
           runStart = col;
+          runUrlIdx = urlIdx;
         } else {
           runText += ch;
         }
@@ -281,8 +335,6 @@ export class Renderer {
     flushRun(this.cols);
 
     // Extend the row background when the line fills the full width.
-    // When lineLen < cols, bgCss stays "" which clears any stale bg
-    // via the prevRowBg comparison below.
     let bgCss = "";
     if (lineLen >= this.cols && this.cols > 0) {
       const lastCell = getCell(this.cols - 1);
