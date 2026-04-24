@@ -213,16 +213,18 @@ export class Renderer {
 
     // Pre-pass 1: collect the plain text of the row so the linkify regex can
     // run against it. One character per column so that URL ranges returned
-    // by findUrls line up 1:1 with grid columns. Block glyphs and non-
-    // printables become a space — a URL-breaking character that also
-    // preserves col→rowText alignment.
+    // by findUrls line up 1:1 with grid columns. Block glyphs, non-
+    // printables, and supplementary-plane characters (U+10000+, which
+    // produce surrogate pairs — 2 UTF-16 code units — from a single cell)
+    // become a space, a URL-breaking character that preserves col→rowText
+    // alignment.
     let rowText = "";
     for (let col = 0; col < this.cols; col++) {
       const cell = getCell(col);
       const inBounds = col < lineLen;
       const cp = inBounds ? cell.char : 0;
       const isBlock = inBounds && cp >= 0x2580 && cp <= 0x259f;
-      if (isBlock || !inBounds || cp < 32) {
+      if (isBlock || !inBounds || cp < 32 || cp > 0xffff) {
         rowText += " ";
       } else {
         rowText += String.fromCodePoint(cp);
