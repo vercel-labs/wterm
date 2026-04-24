@@ -486,6 +486,11 @@ pub const Terminal = struct {
             if (save_cursor) self.saveCursorToAlt();
             ag.* = self.grid;
             self.grid.reset(self.cols, self.rows);
+            const blank = self.blankCell();
+            var r: u16 = 0;
+            while (r < self.rows) : (r += 1) {
+                self.grid.clearRowAs(r, blank);
+            }
             self.using_alt_screen = true;
         } else {
             self.grid = ag.*;
@@ -525,6 +530,17 @@ pub const Terminal = struct {
         self.bracketed_paste = false;
         self.scroll_top = 0;
         self.scroll_bottom = self.rows;
+        self.saved_cursor_row = 0;
+        self.saved_cursor_col = 0;
+        self.saved_fg = cell_mod.DEFAULT_COLOR;
+        self.saved_bg = cell_mod.DEFAULT_COLOR;
+        self.saved_flags = 0;
+        self.alt_saved_cursor_row = 0;
+        self.alt_saved_cursor_col = 0;
+        self.alt_saved_fg = cell_mod.DEFAULT_COLOR;
+        self.alt_saved_bg = cell_mod.DEFAULT_COLOR;
+        self.alt_saved_flags = 0;
+        self.wrap_pending = false;
         self.resetStyle();
     }
 
