@@ -411,3 +411,68 @@ interface CursorState {
   visible: boolean;
 }
 ```
+
+## @wterm/search
+
+Search across both terminal grid rows and scrollback rows.
+
+### `Search`
+
+```ts
+import { Search } from "@wterm/search";
+
+const search = new Search(term);
+const match = search.findNext("error");
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>new Search(term)</code></td>
+      <td>Create a search instance for an initialized <code>WTerm</code></td>
+    </tr>
+    <tr>
+      <td><code>findNext(query, opts?)</code></td>
+      <td>Find the next match after the internal cursor</td>
+    </tr>
+    <tr>
+      <td><code>findPrevious(query, opts?)</code></td>
+      <td>Find the previous match before the internal cursor</td>
+    </tr>
+    <tr>
+      <td><code>findAll(query, opts?)</code></td>
+      <td>Return all matches in oldest-first order (scrollback then grid)</td>
+    </tr>
+    <tr>
+      <td><code>reset()</code></td>
+      <td>Clear the internal cursor so the next <code>findNext</code> starts from the top</td>
+    </tr>
+  </tbody>
+</table>
+
+### `SearchOptions`
+
+```ts
+interface SearchOptions {
+  caseSensitive?: boolean;
+  regex?: boolean;
+  wholeWord?: boolean;
+}
+```
+
+### `SearchMatch`
+
+```ts
+interface SearchMatch {
+  row: number;    // negative for scrollback, 0+ for grid
+  col: number;
+  length: number;
+  text: string;
+}
+```

@@ -10,6 +10,7 @@ Headless terminal emulator core for [wterm](https://github.com/vercel-labs/wterm
 | [`@wterm/react`](https://www.npmjs.com/package/@wterm/react) | React component + `useTerminal` hook |
 | [`@wterm/just-bash`](https://www.npmjs.com/package/@wterm/just-bash) | In-browser Bash shell powered by just-bash |
 | [`@wterm/markdown`](https://www.npmjs.com/package/@wterm/markdown) | Streaming Markdown-to-ANSI renderer for terminals |
+| [`@wterm/search`](https://www.npmjs.com/package/@wterm/search) | Grid and scrollback search |
 
 ## Install
 
