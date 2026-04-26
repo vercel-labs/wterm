@@ -89,3 +89,62 @@ export function findUrls(rowText: string, pattern: RegExp = DEFAULT_URL_PATTERN)
   }
   return ranges;
 }
+
+export interface RowInput {
+  /** Exactly `cols` characters: one entry per terminal column (the renderer's
+   *  pre-pass shape). Out-of-bounds and non-printable cells must already be
+   *  spaces — the regex relies on whitespace to terminate matches. */
+  rowText: string;
+  /** True when this row soft-wraps into the next: the URL regex will be run
+   *  on the joined text of all consecutive wrap-eligible rows so a URL split
+   *  across rows yields multiple anchors sharing the same full `url`. */
+  continuesNext: boolean;
+}
+
+// Group consecutive rows where `continuesNext === true`, run the URL regex
+// once on the joined text of each group, and map matches back to per-row
+// column ranges. Each anchor in a wrap group carries the SAME full `url`.
+export function findUrlsAcrossRows(
+  rows: RowInput[],
+  cols: number,
+  pattern: RegExp = DEFAULT_URL_PATTERN,
+): UrlRange[][] {
+  if (!pattern.global) {
+    throw new Error("linkify pattern must be a global (/g) regex");
+  }
+  const out: UrlRange[][] = rows.map(() => []);
+  if (rows.length === 0 || cols <= 0) return out;
+
+  let i = 0;
+  while (i < rows.length) {
+    const groupStart = i;
+    while (i < rows.length - 1 && rows[i].continuesNext) i++;
+    const groupEnd = i;
+
+    let joined = "";
+    for (let r = groupStart; r <= groupEnd; r++) joined += rows[r].rowText;
+
+    pattern.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = pattern.exec(joined)) !== null) {
+      const url = trimTrailing(m[0]);
+      if (!url) {
+        if (m.index === pattern.lastIndex) pattern.lastIndex++;
+        continue;
+      }
+      const matchStart = m.index;
+      const matchEnd = matchStart + url.length;
+      const firstOff = Math.floor(matchStart / cols);
+      const lastOff = Math.floor((matchEnd - 1) / cols);
+      for (let off = firstOff; off <= lastOff; off++) {
+        const rowBase = off * cols;
+        const start = Math.max(0, matchStart - rowBase);
+        const end = Math.min(cols, matchEnd - rowBase);
+        if (end > start) out[groupStart + off].push({ start, end, url });
+      }
+      if (m.index === pattern.lastIndex) pattern.lastIndex++;
+    }
+    i = groupEnd + 1;
+  }
+  return out;
+}

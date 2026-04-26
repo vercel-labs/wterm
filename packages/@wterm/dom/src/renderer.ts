@@ -1,5 +1,11 @@
 import type { CellData, WasmBridge } from "@wterm/core";
-import { DEFAULT_URL_PATTERN, findUrls, type NormalizedLinkify } from "./linkify.js";
+import {
+  DEFAULT_URL_PATTERN,
+  findUrlsAcrossRows,
+  type NormalizedLinkify,
+  type RowInput,
+  type UrlRange,
+} from "./linkify.js";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -59,6 +65,13 @@ function appendRun(parent: HTMLElement, text: string, style: string): void {
   if (style) span.style.cssText = style;
   span.textContent = text;
   parent.appendChild(span);
+}
+
+function serializeUrlRanges(ranges: UrlRange[]): string {
+  if (ranges.length === 0) return "";
+  let out = "";
+  for (const r of ranges) out += `${r.start},${r.end},${r.url}\n`;
+  return out;
 }
 
 function resolveColors(
@@ -166,6 +179,10 @@ export class Renderer {
   private prevCursorCol = -1;
   private prevContainerBg = "";
   private prevRowBg: string[] = [];
+  // Signature of last-rendered URL ranges per grid row. A row is repainted
+  // when its URL ranges change even if the bridge didn't dirty it — needed
+  // because edits in row N+1 can extend a wrapped URL anchor on row N.
+  private prevRowUrlSig: string[] = [];
 
   private _scrollbackRowEls: HTMLDivElement[] = [];
   private _renderedScrollbackCount = 0;
@@ -187,6 +204,7 @@ export class Renderer {
     this.container.innerHTML = "";
     this.rowEls = [];
     this.prevRowBg = [];
+    this.prevRowUrlSig = [];
     this._scrollbackRowEls = [];
     this._renderedScrollbackCount = 0;
 
@@ -202,22 +220,16 @@ export class Renderer {
     this.prevCursorCol = -1;
   }
 
-  private _buildRowContent(
-    rowEl: HTMLDivElement,
+  // Pre-pass: collect the plain text of a row so the linkify regex can run
+  // against it. One character per column so that URL ranges line up 1:1 with
+  // grid columns. Block glyphs, non-printables, out-of-bounds cells, and
+  // supplementary-plane characters (U+10000+, which produce surrogate pairs —
+  // 2 UTF-16 code units — from a single cell) become a space, a URL-breaking
+  // character that preserves col→rowText alignment.
+  private _buildRowText(
     getCell: (col: number) => CellData,
     lineLen: number,
-    cursorCol: number,
-    rowIndex: number,
-  ): void {
-    rowEl.textContent = "";
-
-    // Pre-pass 1: collect the plain text of the row so the linkify regex can
-    // run against it. One character per column so that URL ranges returned
-    // by findUrls line up 1:1 with grid columns. Block glyphs, non-
-    // printables, and supplementary-plane characters (U+10000+, which
-    // produce surrogate pairs — 2 UTF-16 code units — from a single cell)
-    // become a space, a URL-breaking character that preserves col→rowText
-    // alignment.
+  ): string {
     let rowText = "";
     for (let col = 0; col < this.cols; col++) {
       const cell = getCell(col);
@@ -230,9 +242,18 @@ export class Renderer {
         rowText += String.fromCodePoint(cp);
       }
     }
+    return rowText;
+  }
 
-    // Pre-pass 2: find URL ranges (empty when linkify disabled).
-    const urlRanges = this.linkify.enabled ? findUrls(rowText, this.linkify.pattern) : [];
+  private _buildRowContent(
+    rowEl: HTMLDivElement,
+    getCell: (col: number) => CellData,
+    lineLen: number,
+    cursorCol: number,
+    rowIndex: number,
+    urlRanges: UrlRange[],
+  ): void {
+    rowEl.textContent = "";
 
     function urlIdxAt(col: number): number {
       for (let i = 0; i < urlRanges.length; i++) {
@@ -367,24 +388,6 @@ export class Renderer {
     }
   }
 
-  private _buildScrollbackRowEl(
-    bridge: WasmBridge,
-    sbOffset: number,
-  ): HTMLDivElement {
-    const rowEl = document.createElement("div");
-    rowEl.className = "term-row term-scrollback-row";
-    const lineLen = bridge.getScrollbackLineLen(sbOffset);
-
-    this._buildRowContent(
-      rowEl,
-      (col) => bridge.getScrollbackCell(sbOffset, col),
-      lineLen,
-      -1,
-      -1,
-    );
-    return rowEl;
-  }
-
   private syncScrollback(bridge: WasmBridge): void {
     const scrollbackCount = bridge.getScrollbackCount();
 
@@ -395,8 +398,49 @@ export class Renderer {
       const firstGridRow = this.rowEls[0] ?? null;
       const fragment = document.createDocumentFragment();
 
+      // Render newest-to-oldest so they appear in order in the fragment, but
+      // build URL ranges in chronological order across the batch so a URL
+      // soft-wrapped across two scrolled-off rows shares one href.
+      const lineLens: number[] = [];
+      const rowInputs: RowInput[] = [];
       for (let i = newCount - 1; i >= 0; i--) {
-        const rowEl = this._buildScrollbackRowEl(bridge, i);
+        const lineLen = bridge.getScrollbackLineLen(i);
+        const rowText = this._buildRowText(
+          (col) => bridge.getScrollbackCell(i, col),
+          lineLen,
+        );
+        const lastCp =
+          this.cols > 0 ? bridge.getScrollbackCell(i, this.cols - 1).char : 0;
+        lineLens.push(lineLen);
+        rowInputs.push({
+          rowText,
+          continuesNext: lastCp !== 0 && lastCp !== 0x20,
+        });
+      }
+      // The very last row of the batch is adjacent to the grid; we don't
+      // know if the grid's first row continues *from* it, so don't try to
+      // join across the scrollback↔grid boundary. (Same for boundaries with
+      // pre-existing scrollback rows; both are minor v1 gaps.)
+      if (rowInputs.length > 0) {
+        rowInputs[rowInputs.length - 1].continuesNext = false;
+      }
+
+      const ranges = this.linkify.enabled
+        ? findUrlsAcrossRows(rowInputs, this.cols, this.linkify.pattern)
+        : rowInputs.map(() => []);
+
+      for (let k = 0; k < rowInputs.length; k++) {
+        const sbOffset = newCount - 1 - k;
+        const rowEl = document.createElement("div");
+        rowEl.className = "term-row term-scrollback-row";
+        this._buildRowContent(
+          rowEl,
+          (col) => bridge.getScrollbackCell(sbOffset, col),
+          lineLens[k],
+          -1,
+          -1,
+          ranges[k],
+        );
         fragment.appendChild(rowEl);
         this._scrollbackRowEls.push(rowEl);
       }
@@ -431,12 +475,61 @@ export class Renderer {
     const needsCursorUpdate =
       cursor.row !== this.prevCursorRow || cursor.col !== this.prevCursorCol;
 
+    // Compute URL ranges across all grid rows in one pass so a URL soft-
+    // wrapped across rows shares one href. continuesNext uses a heuristic:
+    // a row that wrote into its last column (cell.char != 0 / not space) is
+    // treated as continuing into the next row. Skip the pass entirely on
+    // no-op frames (no resize, no dirty rows, no cursor movement) so cursor-
+    // blink renders stay free.
+    let anyRowDirty = resized;
+    if (!anyRowDirty) {
+      for (let r = 0; r < this.rows; r++) {
+        if (bridge.isDirtyRow(r)) {
+          anyRowDirty = true;
+          break;
+        }
+      }
+    }
+    const runUrlPass = this.linkify.enabled && (anyRowDirty || needsCursorUpdate);
+
+    let urlRangesByRow: UrlRange[][] = [];
+    if (runUrlPass) {
+      const rowInputs: RowInput[] = [];
+      for (let r = 0; r < this.rows; r++) {
+        const rowText = this._buildRowText(
+          (col) => bridge.getCell(r, col),
+          this.cols,
+        );
+        const lastCp =
+          this.cols > 0 ? bridge.getCell(r, this.cols - 1).char : 0;
+        rowInputs.push({
+          rowText,
+          continuesNext: lastCp !== 0 && lastCp !== 0x20,
+        });
+      }
+      urlRangesByRow = findUrlsAcrossRows(
+        rowInputs,
+        this.cols,
+        this.linkify.pattern,
+      );
+    } else {
+      urlRangesByRow = new Array(this.rows).fill(null).map(() => []);
+    }
+
     for (let r = 0; r < this.rows; r++) {
       const isDirty = resized || bridge.isDirtyRow(r);
       const hadCursor = r === this.prevCursorRow && needsCursorUpdate;
       const hasCursor = r === cursor.row;
 
-      if (isDirty || hadCursor || (hasCursor && needsCursorUpdate)) {
+      const sig = runUrlPass ? serializeUrlRanges(urlRangesByRow[r]) : "";
+      const urlChanged = runUrlPass && sig !== (this.prevRowUrlSig[r] ?? "");
+
+      if (
+        isDirty ||
+        hadCursor ||
+        (hasCursor && needsCursorUpdate) ||
+        urlChanged
+      ) {
         const cCol = hasCursor && cursorVisible ? cursor.col : -1;
         this._buildRowContent(
           this.rowEls[r],
@@ -444,7 +537,9 @@ export class Renderer {
           this.cols,
           cCol,
           r,
+          urlRangesByRow[r],
         );
+        if (runUrlPass) this.prevRowUrlSig[r] = sig;
       }
     }
 

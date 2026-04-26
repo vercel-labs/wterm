@@ -278,6 +278,63 @@ describe("Renderer", () => {
       expect(anchor?.textContent).toBe(text);
     });
 
+    it("joins a URL wrapped across two rows into anchors with the same full href", () => {
+      // 20-col grid. Full URL: "https://example.com/page" (24 chars).
+      // Row 0: "https://example.com/" (cols 0..19)
+      // Row 1: "page" + padding
+      const cols = 20;
+      const url = "https://example.com/page";
+      const row0Text = url.slice(0, cols);
+      const row1Text = url.slice(cols);
+      const row0Cells = Array.from(row0Text).map((ch) => makeCell(ch));
+      const row1Cells = Array.from({ length: cols }, (_, i) =>
+        i < row1Text.length
+          ? makeCell(row1Text[i])
+          : { char: 0, fg: 256, bg: 256, flags: 0 },
+      );
+      const bridge = createMockBridge(cols, 2, [row0Cells, row1Cells]);
+      bridge.getCursor = () => ({ row: 0, col: -1, visible: false });
+
+      const renderer = new Renderer(container, {
+        linkify: { enabled: true, pattern: /\bhttps?:\/\/[^\s<>"'`]+/g, onClick: null },
+      });
+      renderer.render(bridge as any);
+
+      const anchors = container.querySelectorAll("a.term-link");
+      expect(anchors).toHaveLength(2);
+      expect(anchors[0].getAttribute("href")).toBe(url);
+      expect(anchors[1].getAttribute("href")).toBe(url);
+      // Visible text on each row matches its segment.
+      expect(anchors[0].textContent).toBe(row0Text);
+      expect(anchors[1].textContent).toBe(row1Text);
+    });
+
+    it("does not join across rows when the boundary row has trailing space", () => {
+      // Row 0 ends with a space (last cell empty), so it should not join.
+      const cols = 20;
+      const row0Text = "https://example.com "; // 20 chars, trailing space
+      const row1Text = "extra";
+      const row0Cells = Array.from(row0Text).map((ch) =>
+        ch === " " ? { char: 0, fg: 256, bg: 256, flags: 0 } : makeCell(ch),
+      );
+      const row1Cells = Array.from({ length: cols }, (_, i) =>
+        i < row1Text.length
+          ? makeCell(row1Text[i])
+          : { char: 0, fg: 256, bg: 256, flags: 0 },
+      );
+      const bridge = createMockBridge(cols, 2, [row0Cells, row1Cells]);
+      bridge.getCursor = () => ({ row: 0, col: -1, visible: false });
+
+      const renderer = new Renderer(container, {
+        linkify: { enabled: true, pattern: /\bhttps?:\/\/[^\s<>"'`]+/g, onClick: null },
+      });
+      renderer.render(bridge as any);
+
+      const anchors = container.querySelectorAll("a.term-link");
+      expect(anchors).toHaveLength(1);
+      expect(anchors[0].getAttribute("href")).toBe("https://example.com");
+    });
+
     it("invokes onClick before default navigation and respects preventDefault", () => {
       const bridge = makeLinkifyBridge("go https://example.com/");
       const seen: string[] = [];
