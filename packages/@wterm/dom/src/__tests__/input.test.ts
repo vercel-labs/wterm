@@ -253,10 +253,76 @@ describe("InputHandler", () => {
     });
   });
 
+  describe("IME composition - overlay", () => {
+    function getCompositionView(): HTMLSpanElement {
+      return container.querySelector(".term-composition") as HTMLSpanElement;
+    }
+
+    it("creates a hidden composition overlay alongside the textarea", () => {
+      const view = getCompositionView();
+      expect(view).not.toBeNull();
+      expect(view.style.display).toBe("none");
+    });
+
+    it("shows the composition overlay on compositionstart", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      expect(getCompositionView().style.display).toBe("inline-block");
+    });
+
+    it("renders uncommitted text into the overlay on compositionupdate", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      ta.dispatchEvent(
+        new CompositionEvent("compositionupdate", { data: "こん" }),
+      );
+      expect(getCompositionView().textContent).toBe("こん");
+      ta.dispatchEvent(
+        new CompositionEvent("compositionupdate", { data: "こんにちは" }),
+      );
+      expect(getCompositionView().textContent).toBe("こんにちは");
+    });
+
+    it("does not send uncommitted text to onData while composing", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      ta.dispatchEvent(
+        new CompositionEvent("compositionupdate", { data: "こんにちは" }),
+      );
+      expect(received).toHaveLength(0);
+    });
+
+    it("commits final text and hides the overlay on compositionend", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      ta.dispatchEvent(
+        new CompositionEvent("compositionupdate", { data: "こんにちは" }),
+      );
+      ta.dispatchEvent(
+        new CompositionEvent("compositionend", { data: "こんにちは" }),
+      );
+      expect(received).toContain("こんにちは");
+      expect(getCompositionView().style.display).toBe("none");
+      expect(getCompositionView().textContent).toBe("");
+    });
+
+    it("emits no data when composition ends with empty data", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      ta.dispatchEvent(new CompositionEvent("compositionend", { data: "" }));
+      expect(received).toHaveLength(0);
+    });
+  });
+
   describe("destroy", () => {
     it("removes textarea from DOM", () => {
       handler.destroy();
       expect(container.querySelector("textarea")).toBeNull();
+    });
+
+    it("removes the composition overlay from DOM", () => {
+      handler.destroy();
+      expect(container.querySelector(".term-composition")).toBeNull();
     });
 
     it("removes focused class", () => {
