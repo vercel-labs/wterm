@@ -55,7 +55,9 @@ export class InputHandler {
   private onData: (data: string) => void;
   private getBridge: () => WasmBridge | null;
   private composing = false;
+  private _charWidth = 0;
   private _cursorObserver: MutationObserver;
+  private _positionRaf: number | null = null;
 
   private _onKeyDown: (e: KeyboardEvent) => void;
   private _onPaste: (e: ClipboardEvent) => void;
@@ -150,23 +152,67 @@ export class InputHandler {
     this.textarea.addEventListener("focus", this._onFocus);
     this.textarea.addEventListener("blur", this._onBlur);
 
-    this._cursorObserver = new MutationObserver(() =>
-      this._positionTextareaAtCursor(),
-    );
+    // Renderer flushes many DOM mutations per render; coalesce observer
+    // callbacks into one rAF tick so we don't force a layout per child.
+    this._cursorObserver = new MutationObserver(() => {
+      if (this._positionRaf !== null) return;
+      this._positionRaf = requestAnimationFrame(() => {
+        this._positionRaf = null;
+        this._positionTextareaAtCursor();
+      });
+    });
     this._cursorObserver.observe(element, { childList: true, subtree: true });
     this._positionTextareaAtCursor();
   }
 
+  private _measureCharWidth(): number {
+    if (this._charWidth) return this._charWidth;
+    const probe = document.createElement("span");
+    const ps = probe.style;
+    ps.font = "inherit";
+    ps.position = "absolute";
+    ps.visibility = "hidden";
+    ps.whiteSpace = "pre";
+    ps.left = "-9999px";
+    probe.textContent = "xxxxxxxxxx";
+    this.element.appendChild(probe);
+    const w = probe.getBoundingClientRect().width / 10;
+    probe.remove();
+    // Cache unconditionally; an unmeasurable layout (e.g. jsdom) would
+    // otherwise re-probe on every observer fire and recurse forever.
+    this._charWidth = w > 0 ? w : 8;
+    return this._charWidth;
+  }
+
   private _getCursorRect(): CursorRect | null {
-    const cursorEl = this.element.querySelector(".term-cursor");
-    if (!cursorEl) return null;
     const elRect = this.element.getBoundingClientRect();
-    const r = cursorEl.getBoundingClientRect();
+    const cursorEl = this.element.querySelector(".term-cursor");
+    if (cursorEl) {
+      const r = cursorEl.getBoundingClientRect();
+      return {
+        left: r.left - elRect.left + this.element.scrollLeft,
+        top: r.top - elRect.top + this.element.scrollTop,
+        width: r.width,
+        height: r.height,
+      };
+    }
+    // TUI apps that hide the cursor (\x1b[?25l) drop the .term-cursor
+    // element from the DOM. Fall back to the WASM-side cursor position
+    // so IME composition still anchors at the prompt.
+    const bridge = this.getBridge();
+    const cur = bridge ? bridge.getCursor() : null;
+    if (!cur) return null;
+    const rows = this.element.querySelectorAll(".term-row");
+    const rowEl = rows[cur.row] as HTMLElement | undefined;
+    if (!rowEl) return null;
+    const rRect = rowEl.getBoundingClientRect();
+    const charW = this._measureCharWidth();
     return {
-      left: r.left - elRect.left + this.element.scrollLeft,
-      top: r.top - elRect.top + this.element.scrollTop,
-      width: r.width,
-      height: r.height,
+      left:
+        rRect.left - elRect.left + this.element.scrollLeft + cur.col * charW,
+      top: rRect.top - elRect.top + this.element.scrollTop,
+      width: charW,
+      height: rRect.height,
     };
   }
 
@@ -186,6 +232,10 @@ export class InputHandler {
 
   destroy(): void {
     this._cursorObserver?.disconnect();
+    if (this._positionRaf !== null) {
+      cancelAnimationFrame(this._positionRaf);
+      this._positionRaf = null;
+    }
     this.textarea.removeEventListener("keydown", this._onKeyDown);
     this.textarea.removeEventListener("paste", this._onPaste as EventListener);
     this.textarea.removeEventListener(

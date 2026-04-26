@@ -312,6 +312,19 @@ describe("InputHandler", () => {
       ta.dispatchEvent(new CompositionEvent("compositionend", { data: "" }));
       expect(received).toHaveLength(0);
     });
+
+    it("falls back to bridge.getCursor when .term-cursor is absent", () => {
+      const row = document.createElement("div");
+      row.className = "term-row";
+      container.appendChild(row);
+      bridgeMock = {
+        getCursor: () => ({ row: 0, col: 0, visible: false }),
+      } as any;
+      // Triggers the focus -> _positionTextareaAtCursor cycle that exercises
+      // the fallback branch. Asserts we don't throw or recurse.
+      handler.focus();
+      expect(getTextarea()).not.toBeNull();
+    });
   });
 
   describe("destroy", () => {
