@@ -26,14 +26,17 @@ pub fn build(b: *std.Build) void {
     });
     b.getInstallStep().dependOn(&copy_to_web.step);
 
+    const native_target = b.standardTargetOptions(.{});
+
     const tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/terminal.zig"),
-            .target = b.standardTargetOptions(.{}),
+            .root_source_file = b.path("src/test.zig"),
+            .target = native_target,
         }),
     });
 
     const run_tests = b.addRunArtifact(tests);
-    const test_step = b.step("test", "Run unit tests");
+
+    const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&run_tests.step);
 }
