@@ -22,18 +22,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Compare version to registry
+      - name: Compare versions to registry
         id: check
         run: |
           LOCAL_VERSION=$(node -p "require('./packages/@wterm/core/package.json').version")
-          NPM_VERSION=$(npm view "@wterm/core" version 2>/dev/null || echo "0.0.0")
-          echo "Local: $LOCAL_VERSION, Registry: $NPM_VERSION"
-
-          if [ "$LOCAL_VERSION" != "$NPM_VERSION" ]; then
-            SHOULD_RELEASE=true
-          else
-            SHOULD_RELEASE=false
-          fi
+          SHOULD_RELEASE=false
+          for pkg in core dom react just-bash markdown; do
+            REGISTRY_VERSION=$(npm view "@wterm/$pkg" version 2>/dev/null || echo "0.0.0")
+            echo "@wterm/$pkg — local: $LOCAL_VERSION, registry: $REGISTRY_VERSION"
+            if [ "$LOCAL_VERSION" != "$REGISTRY_VERSION" ]; then
+              SHOULD_RELEASE=true
+            fi
+          done
 
           echo "should_release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
           echo "version=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
