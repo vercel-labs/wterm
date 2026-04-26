@@ -53,10 +53,4 @@ To prepare a release:
 5. Remove the `<!-- release:start -->` and `<!-- release:end -->` markers from the previous release entry (only the latest release should have markers)
 6. Open a PR and merge to `main`
 
-To publish (run locally after merging):
-
-```bash
-pnpm publish-packages
-```
-
-This builds all packages and publishes every `@wterm/*` package to npm.
+CI compares the version in `packages/@wterm/core/package.json` to what's on npm. If it differs, it builds, publishes all `@wterm/*` packages, and creates the GitHub release automatically. The release body is extracted from the content between the markers.
