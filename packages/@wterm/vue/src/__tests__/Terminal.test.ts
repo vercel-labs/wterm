@@ -181,11 +181,35 @@ describe("Terminal component", () => {
   });
 
   it("emits data when WTerm onData fires", async () => {
-    const wrapper = await mountTerminal();
+    const onData = vi.fn();
+    const wrapper = await mountTerminal({}, { onData });
     await flushPromises();
     lastWTermInstance.onData("hello");
     expect(wrapper.emitted("data")).toBeTruthy();
     expect(wrapper.emitted("data")![0]).toEqual(["hello"]);
+  });
+
+  it("does not set onData on WTerm when no @data listener is provided", async () => {
+    await mountTerminal();
+    await flushPromises();
+    expect(lastWTermInstance.onData).toBeNull();
+  });
+
+  it("sets onData on WTerm when @data listener is provided", async () => {
+    const onData = vi.fn();
+    await mountTerminal({}, { onData });
+    await flushPromises();
+    expect(lastWTermInstance.onData).toBeTypeOf("function");
+  });
+
+  it("passes debug option to WTerm", async () => {
+    const { WTerm } = await import("@wterm/dom");
+    await mountTerminal({ debug: true });
+    await flushPromises();
+    expect(WTerm).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({ debug: true }),
+    );
   });
 
   it("emits title when WTerm onTitle fires", async () => {

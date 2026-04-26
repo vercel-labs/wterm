@@ -570,8 +570,8 @@ importers:
         specifier: ^2.4.6
         version: 2.4.6
       '@wterm/dom':
-        specifier: ^0.1.7
-        version: 0.1.7
+        specifier: workspace:*
+        version: link:../dom
       jsdom:
         specifier: ^29.0.2
         version: 29.0.2(@noble/hashes@1.8.0)
@@ -3419,12 +3419,6 @@ packages:
         optional: true
       vue:
         optional: true
-
-  '@wterm/core@0.1.7':
-    resolution: {integrity: sha512-uP8R/OxO/cZUVOWD2q9SLgRTjqH6Ovd3se3SOJvwTi13yJazUF9hGlTrybLgNi4hmuGTHxHPSDSHvQrgf0KEeg==}
-
-  '@wterm/dom@0.1.7':
-    resolution: {integrity: sha512-235hVbza23+OIYuOror1y7L8MknISTg5yEobNqnNgUmUJ8GjCz5ertTZpZp6zE/1x4Ik2iBd8DjeG5J0g8MR+A==}
 
   abbrev@2.0.0:
     resolution: {integrity: sha512-6/mh1E2u2YgEsCHdY0Yx5oW+61gZU+1vXaoiHHrpKeuRNNgFvS+/jrwHiQhB5apAf5oB7UB7E19ol2R2LKH8hQ==}
@@ -10095,12 +10089,6 @@ snapshots:
     optionalDependencies:
       typescript: 6.0.2
       vue: 3.5.32(typescript@6.0.2)
-
-  '@wterm/core@0.1.7': {}
-
-  '@wterm/dom@0.1.7':
-    dependencies:
-      '@wterm/core': 0.1.7
 
   abbrev@2.0.0: {}
 

@@ -11,6 +11,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 | [`@wterm/core`](packages/@wterm/core) | Headless WASM bridge + WebSocket transport |
 | [`@wterm/dom`](packages/@wterm/dom) | DOM renderer, input handler — vanilla JS terminal |
 | [`@wterm/react`](packages/@wterm/react) | React component + `useTerminal` hook (TypeScript) |
+| [`@wterm/vue`](packages/@wterm/vue) | Vue 3 component + template ref API |
 | [`@wterm/just-bash`](packages/@wterm/just-bash) | In-browser Bash shell powered by just-bash |
 | [`@wterm/markdown`](packages/@wterm/markdown) | Render Markdown in the terminal |
 

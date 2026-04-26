@@ -1,5 +1,6 @@
 import {
   defineComponent,
+  getCurrentInstance,
   h,
   ref,
   shallowRef,
@@ -79,6 +80,12 @@ const Terminal = defineComponent({
      * @defaultValue false
      */
     cursorBlink: Boolean,
+    /**
+     * Enable debug mode (init-only — changing after mount has no effect).
+     * Exposes a `DebugAdapter` on the underlying `WTerm` instance.
+     * @defaultValue false
+     */
+    debug: Boolean,
   },
 
   // Object form: validator signatures carry emit payload types to
@@ -117,13 +124,18 @@ const Terminal = defineComponent({
       const el = root.value;
       if (!el) return;
 
+      const hasDataListener = !!getCurrentInstance()?.vnode.props?.onData;
+
       const wt = new WTerm(el, {
         cols: props.cols,
         rows: props.rows,
         wasmUrl: props.wasmUrl,
         autoResize: props.autoResize,
         cursorBlink: props.cursorBlink,
-        onData: (data: string) => emit("data", data),
+        debug: props.debug,
+        onData: hasDataListener
+          ? (data: string) => emit("data", data)
+          : undefined,
         onTitle: (title: string) => emit("title", title),
         onResize: (c: number, r: number) => emit("resize", c, r),
       });

@@ -49,6 +49,7 @@ describe("Terminal types", () => {
     expectTypeOf<Props["wasmUrl"]>().toEqualTypeOf<string | undefined>();
     expectTypeOf<Props["autoResize"]>().toEqualTypeOf<boolean | undefined>();
     expectTypeOf<Props["cursorBlink"]>().toEqualTypeOf<boolean | undefined>();
+    expectTypeOf<Props["debug"]>().toEqualTypeOf<boolean | undefined>();
   });
 
   it("typed emit signatures", () => {

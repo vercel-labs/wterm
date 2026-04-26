@@ -1,6 +1,6 @@
 {
   "name": "@wterm/vue",
-  "version": "0.1.0",
+  "version": "0.1.9",
   "description": "Vue component for wterm — a terminal emulator for the web",
   "type": "module",
   "main": "dist/index.js",
@@ -30,7 +30,7 @@
   "devDependencies": {
     "@internal/ts": "workspace:*",
     "@vue/test-utils": "^2.4.6",
-    "@wterm/dom": "^0.1.7",
+    "@wterm/dom": "workspace:*",
     "jsdom": "^29.0.2",
     "typescript": "^6.0.2",
     "vitest": "^2.1.9",
