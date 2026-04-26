@@ -1,8 +1,25 @@
 # Changelog
 
-## 0.1.9
+## 0.2.0
 
 <!-- release:start -->
+
+### New Features
+
+- **Vue support** — added `@wterm/vue` package with `<Terminal />` component, `useTerminal` composable, auto-echo when `onData` is omitted, and `debug` prop (#30, #46)
+
+### Improvements
+
+- **Trusted publisher releases** — CI now uses trusted publisher workflow for npm publishing (#45)
+
+### Contributors
+
+- @ctate
+- @posva
+
+<!-- release:end -->
+
+## 0.1.9
 
 ### Bug Fixes
 
@@ -14,8 +31,6 @@
 
 - @aaronjmars
 - @ctate
-
-<!-- release:end -->
 
 ## 0.1.8
 
