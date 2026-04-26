@@ -232,6 +232,27 @@ describe("InputHandler", () => {
     });
   });
 
+  describe("IME composition - keydown gating", () => {
+    it("ignores keydown events whose keyCode is 229 (IME first keystroke)", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(createKeyboardEvent("Process", { keyCode: 229 }));
+      expect(received).toHaveLength(0);
+    });
+
+    it("ignores keydown events flagged as isComposing", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(createKeyboardEvent("a", { isComposing: true }));
+      expect(received).toHaveLength(0);
+    });
+
+    it("ignores ordinary keydown while composing", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      ta.dispatchEvent(createKeyboardEvent("a"));
+      expect(received).toHaveLength(0);
+    });
+  });
+
   describe("destroy", () => {
     it("removes textarea from DOM", () => {
       handler.destroy();

@@ -138,7 +138,9 @@ export class InputHandler {
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
-    if (this.composing) return;
+    // IME first keystroke fires keydown with keyCode 229 before
+    // compositionstart; bail early so the raw key isn't sent to the PTY.
+    if (this.composing || e.isComposing || e.keyCode === 229) return;
 
     if ((e.metaKey || e.ctrlKey) && e.key === "c") {
       const sel = window.getSelection();
