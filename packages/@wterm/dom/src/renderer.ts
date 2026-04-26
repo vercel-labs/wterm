@@ -1,4 +1,11 @@
-import type { WasmBridge } from "@wterm/core";
+import type { CellData, WasmBridge } from "@wterm/core";
+import {
+  DEFAULT_URL_PATTERN,
+  findUrlsAcrossRows,
+  type NormalizedLinkify,
+  type RowInput,
+  type UrlRange,
+} from "./linkify.js";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -58,6 +65,13 @@ function appendRun(parent: HTMLElement, text: string, style: string): void {
   if (style) span.style.cssText = style;
   span.textContent = text;
   parent.appendChild(span);
+}
+
+function serializeUrlRanges(ranges: UrlRange[]): string {
+  if (ranges.length === 0) return "";
+  let out = "";
+  for (const r of ranges) out += `${r.start},${r.end},${r.url}\n`;
+  return out;
 }
 
 function resolveColors(
@@ -165,12 +179,23 @@ export class Renderer {
   private prevCursorCol = -1;
   private prevContainerBg = "";
   private prevRowBg: string[] = [];
+  // Signature of last-rendered URL ranges per grid row. A row is repainted
+  // when its URL ranges change even if the bridge didn't dirty it — needed
+  // because edits in row N+1 can extend a wrapped URL anchor on row N.
+  private prevRowUrlSig: string[] = [];
 
   private _scrollbackRowEls: HTMLDivElement[] = [];
   private _renderedScrollbackCount = 0;
 
-  constructor(container: HTMLElement) {
+  private linkify: NormalizedLinkify;
+
+  constructor(container: HTMLElement, options: { linkify?: NormalizedLinkify } = {}) {
     this.container = container;
+    this.linkify = options.linkify ?? {
+      enabled: false,
+      pattern: DEFAULT_URL_PATTERN,
+      onClick: null,
+    };
   }
 
   setup(cols: number, rows: number): void {
@@ -179,6 +204,7 @@ export class Renderer {
     this.container.innerHTML = "";
     this.rowEls = [];
     this.prevRowBg = [];
+    this.prevRowUrlSig = [];
     this._scrollbackRowEls = [];
     this._renderedScrollbackCount = 0;
 
@@ -194,44 +220,104 @@ export class Renderer {
     this.prevCursorCol = -1;
   }
 
+  // Pre-pass: collect the plain text of a row so the linkify regex can run
+  // against it. One character per column so that URL ranges line up 1:1 with
+  // grid columns. Block glyphs, non-printables, out-of-bounds cells, and
+  // supplementary-plane characters (U+10000+, which produce surrogate pairs —
+  // 2 UTF-16 code units — from a single cell) become a space, a URL-breaking
+  // character that preserves col→rowText alignment.
+  private _buildRowText(
+    getCell: (col: number) => CellData,
+    lineLen: number,
+  ): string {
+    let rowText = "";
+    for (let col = 0; col < this.cols; col++) {
+      const cell = getCell(col);
+      const inBounds = col < lineLen;
+      const cp = inBounds ? cell.char : 0;
+      const isBlock = inBounds && cp >= 0x2580 && cp <= 0x259f;
+      if (isBlock || !inBounds || cp < 32 || cp > 0xffff) {
+        rowText += " ";
+      } else {
+        rowText += String.fromCodePoint(cp);
+      }
+    }
+    return rowText;
+  }
+
   private _buildRowContent(
     rowEl: HTMLDivElement,
-    getCell: (col: number) => {
-      char: number;
-      fg: number;
-      bg: number;
-      flags: number;
-    },
+    getCell: (col: number) => CellData,
     lineLen: number,
     cursorCol: number,
     rowIndex: number,
+    urlRanges: UrlRange[],
   ): void {
     rowEl.textContent = "";
 
+    function urlIdxAt(col: number): number {
+      for (let i = 0; i < urlRanges.length; i++) {
+        const r = urlRanges[i];
+        if (col >= r.start && col < r.end) return i;
+      }
+      return -1;
+    }
+
+    // Render state.
     let runStyle = "";
     let runText = "";
     let runStart = 0;
+    let runUrlIdx = -1;
 
-    const flushRun = (endCol: number) => {
+    // If the current run is inside a URL, `currentAnchor` is the open <a>
+    // that should receive the span(s). When we leave the URL or change to a
+    // different URL, we close (null out) the anchor.
+    let currentAnchor: HTMLAnchorElement | null = null;
+
+    const openAnchor = (urlIdx: number): HTMLAnchorElement => {
+      const a = document.createElement("a");
+      a.className = "term-link";
+      a.href = urlRanges[urlIdx].url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      const onClick = this.linkify.onClick;
+      if (onClick) {
+        a.addEventListener("click", (ev) => {
+          onClick(urlRanges[urlIdx].url, ev);
+        });
+      }
+      rowEl.appendChild(a);
+      return a;
+    };
+
+    const appendInto = (parent: HTMLElement, text: string, style: string): void => {
+      const span = document.createElement("span");
+      if (style) span.style.cssText = style;
+      span.textContent = text;
+      parent.appendChild(span);
+    };
+
+    const flushRun = (endCol: number): void => {
       if (!runText) return;
+      const target: HTMLElement =
+        runUrlIdx !== -1
+          ? (currentAnchor ?? (currentAnchor = openAnchor(runUrlIdx)))
+          : rowEl;
 
       if (cursorCol >= runStart && cursorCol < endCol) {
         const offset = cursorCol - runStart;
         const before = runText.slice(0, offset);
         const cursorChar = runText[offset];
         const after = runText.slice(offset + 1);
-
-        if (before) appendRun(rowEl, before, runStyle);
-
+        if (before) appendInto(target, before, runStyle);
         const cursorSpan = document.createElement("span");
         cursorSpan.className = "term-cursor";
         if (runStyle) cursorSpan.style.cssText = runStyle;
         cursorSpan.textContent = cursorChar;
-        rowEl.appendChild(cursorSpan);
-
-        if (after) appendRun(rowEl, after, runStyle);
+        target.appendChild(cursorSpan);
+        if (after) appendInto(target, after, runStyle);
       } else {
-        appendRun(rowEl, runText, runStyle);
+        appendInto(target, runText, runStyle);
       }
     };
 
@@ -241,30 +327,36 @@ export class Renderer {
       const cp = inBounds ? cell.char : 0;
 
       if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
+        // Block glyph — always flushes the current run (same as before), and
+        // block glyphs are never inside anchors (pre-pass 1 filtered them).
         flushRun(col);
-
+        if (currentAnchor) currentAnchor = null;
         const colors = resolveColors(cell.fg, cell.bg, cell.flags);
         const span = document.createElement("span");
-        span.className =
-          col === cursorCol ? "term-block term-cursor" : "term-block";
+        span.className = col === cursorCol ? "term-block term-cursor" : "term-block";
         span.style.background = getBlockBackground(cp, colors.fg, colors.bg);
         if (cell.flags & FLAG_DIM) span.style.opacity = "0.5";
         rowEl.appendChild(span);
-
         runStyle = "";
         runText = "";
         runStart = col + 1;
+        runUrlIdx = -1;
       } else {
         const ch = inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ";
-        const style = inBounds
-          ? buildCellStyle(cell.fg, cell.bg, cell.flags)
-          : "";
+        const style = inBounds ? buildCellStyle(cell.fg, cell.bg, cell.flags) : "";
+        const urlIdx = urlIdxAt(col);
 
-        if (style !== runStyle) {
+        if (style !== runStyle || urlIdx !== runUrlIdx) {
           flushRun(col);
+          if (urlIdx !== runUrlIdx) {
+            // Leaving old URL scope (if any) — close the anchor so the next
+            // URL-internal run opens a fresh one.
+            currentAnchor = null;
+          }
           runStyle = style;
           runText = ch;
           runStart = col;
+          runUrlIdx = urlIdx;
         } else {
           runText += ch;
         }
@@ -273,8 +365,6 @@ export class Renderer {
     flushRun(this.cols);
 
     // Extend the row background when the line fills the full width.
-    // When lineLen < cols, bgCss stays "" which clears any stale bg
-    // via the prevRowBg comparison below.
     let bgCss = "";
     if (lineLen >= this.cols && this.cols > 0) {
       const lastCell = getCell(this.cols - 1);
@@ -298,24 +388,6 @@ export class Renderer {
     }
   }
 
-  private _buildScrollbackRowEl(
-    bridge: WasmBridge,
-    sbOffset: number,
-  ): HTMLDivElement {
-    const rowEl = document.createElement("div");
-    rowEl.className = "term-row term-scrollback-row";
-    const lineLen = bridge.getScrollbackLineLen(sbOffset);
-
-    this._buildRowContent(
-      rowEl,
-      (col) => bridge.getScrollbackCell(sbOffset, col),
-      lineLen,
-      -1,
-      -1,
-    );
-    return rowEl;
-  }
-
   private syncScrollback(bridge: WasmBridge): void {
     const scrollbackCount = bridge.getScrollbackCount();
 
@@ -326,8 +398,49 @@ export class Renderer {
       const firstGridRow = this.rowEls[0] ?? null;
       const fragment = document.createDocumentFragment();
 
+      // Render newest-to-oldest so they appear in order in the fragment, but
+      // build URL ranges in chronological order across the batch so a URL
+      // soft-wrapped across two scrolled-off rows shares one href.
+      const lineLens: number[] = [];
+      const rowInputs: RowInput[] = [];
       for (let i = newCount - 1; i >= 0; i--) {
-        const rowEl = this._buildScrollbackRowEl(bridge, i);
+        const lineLen = bridge.getScrollbackLineLen(i);
+        const rowText = this._buildRowText(
+          (col) => bridge.getScrollbackCell(i, col),
+          lineLen,
+        );
+        const lastCp =
+          this.cols > 0 ? bridge.getScrollbackCell(i, this.cols - 1).char : 0;
+        lineLens.push(lineLen);
+        rowInputs.push({
+          rowText,
+          continuesNext: lastCp !== 0 && lastCp !== 0x20,
+        });
+      }
+      // The very last row of the batch is adjacent to the grid; we don't
+      // know if the grid's first row continues *from* it, so don't try to
+      // join across the scrollback↔grid boundary. (Same for boundaries with
+      // pre-existing scrollback rows; both are minor v1 gaps.)
+      if (rowInputs.length > 0) {
+        rowInputs[rowInputs.length - 1].continuesNext = false;
+      }
+
+      const ranges = this.linkify.enabled
+        ? findUrlsAcrossRows(rowInputs, this.cols, this.linkify.pattern)
+        : rowInputs.map(() => []);
+
+      for (let k = 0; k < rowInputs.length; k++) {
+        const sbOffset = newCount - 1 - k;
+        const rowEl = document.createElement("div");
+        rowEl.className = "term-row term-scrollback-row";
+        this._buildRowContent(
+          rowEl,
+          (col) => bridge.getScrollbackCell(sbOffset, col),
+          lineLens[k],
+          -1,
+          -1,
+          ranges[k],
+        );
         fragment.appendChild(rowEl);
         this._scrollbackRowEls.push(rowEl);
       }
@@ -362,12 +475,61 @@ export class Renderer {
     const needsCursorUpdate =
       cursor.row !== this.prevCursorRow || cursor.col !== this.prevCursorCol;
 
+    // Compute URL ranges across all grid rows in one pass so a URL soft-
+    // wrapped across rows shares one href. continuesNext uses a heuristic:
+    // a row that wrote into its last column (cell.char != 0 / not space) is
+    // treated as continuing into the next row. Skip the pass entirely on
+    // no-op frames (no resize, no dirty rows, no cursor movement) so cursor-
+    // blink renders stay free.
+    let anyRowDirty = resized;
+    if (!anyRowDirty) {
+      for (let r = 0; r < this.rows; r++) {
+        if (bridge.isDirtyRow(r)) {
+          anyRowDirty = true;
+          break;
+        }
+      }
+    }
+    const runUrlPass = this.linkify.enabled && (anyRowDirty || needsCursorUpdate);
+
+    let urlRangesByRow: UrlRange[][] = [];
+    if (runUrlPass) {
+      const rowInputs: RowInput[] = [];
+      for (let r = 0; r < this.rows; r++) {
+        const rowText = this._buildRowText(
+          (col) => bridge.getCell(r, col),
+          this.cols,
+        );
+        const lastCp =
+          this.cols > 0 ? bridge.getCell(r, this.cols - 1).char : 0;
+        rowInputs.push({
+          rowText,
+          continuesNext: lastCp !== 0 && lastCp !== 0x20,
+        });
+      }
+      urlRangesByRow = findUrlsAcrossRows(
+        rowInputs,
+        this.cols,
+        this.linkify.pattern,
+      );
+    } else {
+      urlRangesByRow = new Array(this.rows).fill(null).map(() => []);
+    }
+
     for (let r = 0; r < this.rows; r++) {
       const isDirty = resized || bridge.isDirtyRow(r);
       const hadCursor = r === this.prevCursorRow && needsCursorUpdate;
       const hasCursor = r === cursor.row;
 
-      if (isDirty || hadCursor || (hasCursor && needsCursorUpdate)) {
+      const sig = runUrlPass ? serializeUrlRanges(urlRangesByRow[r]) : "";
+      const urlChanged = runUrlPass && sig !== (this.prevRowUrlSig[r] ?? "");
+
+      if (
+        isDirty ||
+        hadCursor ||
+        (hasCursor && needsCursorUpdate) ||
+        urlChanged
+      ) {
         const cCol = hasCursor && cursorVisible ? cursor.col : -1;
         this._buildRowContent(
           this.rowEls[r],
@@ -375,7 +537,9 @@ export class Renderer {
           this.cols,
           cCol,
           r,
+          urlRangesByRow[r],
         );
+        if (runUrlPass) this.prevRowUrlSig[r] = sig;
       }
     }
 

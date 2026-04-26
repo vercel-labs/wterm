@@ -164,3 +164,15 @@
   --term-color-14: #0184bc;
   --term-color-15: #ffffff;
 }
+
+/* Clickable URL anchors rendered when the `linkify` option is enabled. */
+.wterm a.term-link {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.wterm a.term-link:hover,
+.wterm a.term-link:focus-visible {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}

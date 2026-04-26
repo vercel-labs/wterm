@@ -2,6 +2,7 @@ import { WasmBridge } from "@wterm/core";
 import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
 import { DebugAdapter } from "./debug.js";
+import { normalizeLinkify, type LinkifyOption, type NormalizedLinkify } from "./linkify.js";
 
 export interface WTermOptions {
   cols?: number;
@@ -10,6 +11,12 @@ export interface WTermOptions {
   autoResize?: boolean;
   cursorBlink?: boolean;
   debug?: boolean;
+  /**
+   * Enable clickable URL anchors in rendered output. `true` uses the default
+   * regex; pass an object to customize. Default: disabled.
+   * Limitation (v1): URLs that wrap across terminal lines are not joined.
+   */
+  linkify?: LinkifyOption;
   onData?: (data: string) => void;
   onTitle?: (title: string) => void;
   onResize?: (cols: number, rows: number) => void;
@@ -25,6 +32,7 @@ export class WTerm {
 
   private wasmUrl: string | undefined;
   private _debugEnabled: boolean;
+  private _linkify: NormalizedLinkify;
   private renderer: Renderer | null = null;
   private input: InputHandler | null = null;
   private rafId: number | null = null;
@@ -47,6 +55,7 @@ export class WTerm {
     this.rows = options.rows || 24;
     this.autoResize = options.autoResize !== false;
     this._debugEnabled = options.debug ?? false;
+    this._linkify = normalizeLinkify(options.linkify);
 
     this.onData = options.onData || null;
     this.onTitle = options.onTitle || null;
@@ -79,7 +88,7 @@ export class WTerm {
 
       this._setRowHeight();
 
-      this.renderer = new Renderer(this._container);
+      this.renderer = new Renderer(this._container, { linkify: this._linkify });
       this.renderer.setup(this.cols, this.rows);
 
       this.input = new InputHandler(

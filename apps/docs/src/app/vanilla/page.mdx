@@ -83,3 +83,27 @@ term.onData = (data) => ws.send(data);
 ```
 
 See the full [WebSocketTransport](/api-reference#websockettransport) reference for all options, methods, and properties.
+
+## Clickable Links
+
+Pass `linkify: true` to render `http(s)://` URLs as clickable `<a>` anchors (new tab, `rel="noopener noreferrer"`):
+
+```js
+const term = new WTerm(document.getElementById("terminal"), { linkify: true });
+```
+
+Customize with an object to swap the regex or intercept clicks:
+
+```js
+new WTerm(el, {
+  linkify: {
+    pattern: /\bJIRA-\d+\b/g,
+    onClick: (url, ev) => {
+      ev.preventDefault();
+      router.push(`/issue/${url}`);
+    },
+  },
+});
+```
+
+Detection is per rendered row — URLs that wrap across terminal lines render as two broken anchors. See the `linkify` row under [Terminal Options](/api-reference#terminal-options) for the full option shape.

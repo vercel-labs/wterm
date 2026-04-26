@@ -122,4 +122,238 @@ describe("Renderer", () => {
       expect(span?.getAttribute("style")).toMatch(/font-weight:\s*bold/);
     });
   });
+
+  describe("linkify", () => {
+    function makeLinkifyBridge(rowText: string, cols?: number) {
+      const width = cols ?? rowText.length;
+      const grid: CellData[][] = [
+        Array.from({ length: width }, (_, i) =>
+          i < rowText.length ? makeCell(rowText[i]) : { char: 0, fg: 256, bg: 256, flags: 0 },
+        ),
+      ];
+      const bridge = createMockBridge(width, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: -1, visible: false });
+      return bridge;
+    }
+
+    it("renders a URL as an anchor when linkify is enabled", () => {
+      const bridge = makeLinkifyBridge("go https://example.com/ now");
+      const renderer = new Renderer(container, {
+        linkify: {
+          enabled: true,
+          pattern: /\bhttps?:\/\/[^\s<>"'`]+/g,
+          onClick: null,
+        },
+      });
+      renderer.render(bridge as any);
+
+      const anchor = container.querySelector("a.term-link");
+      expect(anchor).not.toBeNull();
+      expect(anchor?.getAttribute("href")).toBe("https://example.com/");
+      expect(anchor?.getAttribute("target")).toBe("_blank");
+      expect(anchor?.getAttribute("rel")).toBe("noopener noreferrer");
+      expect(anchor?.textContent).toBe("https://example.com/");
+    });
+
+    it("renders multiple URLs on one row as separate anchors", () => {
+      const bridge = makeLinkifyBridge("see http://a.com and https://b.com/x");
+      const renderer = new Renderer(container, {
+        linkify: { enabled: true, pattern: /\bhttps?:\/\/[^\s<>"'`]+/g, onClick: null },
+      });
+      renderer.render(bridge as any);
+      const anchors = container.querySelectorAll("a.term-link");
+      expect(anchors).toHaveLength(2);
+      expect(anchors[0].getAttribute("href")).toBe("http://a.com");
+      expect(anchors[1].getAttribute("href")).toBe("https://b.com/x");
+    });
+
+    it("wraps a styled URL span in a single anchor", () => {
+      const FLAG_BOLD = 0x01;
+      const text = "https://example.com";
+      const cells = Array.from(text).map((ch, i) =>
+        // Make the last 7 chars (".com") bold to force a style split inside
+        // the URL. Cols 12..18 bold.
+        i >= 12 ? makeCell(ch, 256, 256, FLAG_BOLD) : makeCell(ch),
+      );
+      const bridge = createMockBridge(text.length, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: -1, visible: false });
+      const renderer = new Renderer(container, {
+        linkify: { enabled: true, pattern: /\bhttps?:\/\/[^\s<>"'`]+/g, onClick: null },
+      });
+      renderer.render(bridge as any);
+      const anchors = container.querySelectorAll("a.term-link");
+      expect(anchors).toHaveLength(1);
+      expect(anchors[0].getAttribute("href")).toBe(text);
+      // Both styled and unstyled spans must live inside the anchor.
+      expect(anchors[0].querySelectorAll("span").length).toBeGreaterThanOrEqual(2);
+      expect(anchors[0].textContent).toBe(text);
+    });
+
+    it("strips trailing punctuation from href", () => {
+      const bridge = makeLinkifyBridge("see https://example.com.");
+      const renderer = new Renderer(container, {
+        linkify: { enabled: true, pattern: /\bhttps?:\/\/[^\s<>"'`]+/g, onClick: null },
+      });
+      renderer.render(bridge as any);
+      const anchor = container.querySelector("a.term-link");
+      expect(anchor?.getAttribute("href")).toBe("https://example.com");
+      // The trailing '.' must still be rendered (outside the anchor) as plain text.
+      expect(container.textContent).toContain("https://example.com.");
+    });
+
+    it("emits no anchors when linkify is disabled (default)", () => {
+      const bridge = makeLinkifyBridge("see https://example.com");
+      const renderer = new Renderer(container); // no linkify passed
+      renderer.render(bridge as any);
+      expect(container.querySelector("a.term-link")).toBeNull();
+    });
+
+    it("accepts a custom /g regex pattern", () => {
+      const bridge = makeLinkifyBridge("see JIRA-42 please");
+      const renderer = new Renderer(container, {
+        linkify: { enabled: true, pattern: /\bJIRA-\d+\b/g, onClick: null },
+      });
+      renderer.render(bridge as any);
+      const anchor = container.querySelector("a.term-link");
+      // Default href is the raw match — users can provide onClick to override nav.
+      expect(anchor?.getAttribute("href")).toBe("JIRA-42");
+    });
+
+    it("renders the cursor inside a URL anchor correctly", () => {
+      const text = "https://example.com";
+      const cells = Array.from(text).map((ch) => makeCell(ch));
+      const bridge = createMockBridge(text.length, 1, [cells]);
+      // Cursor on 'x' at col 9
+      bridge.getCursor = () => ({ row: 0, col: 9, visible: true });
+      const renderer = new Renderer(container, {
+        linkify: { enabled: true, pattern: /\bhttps?:\/\/[^\s<>"'`]+/g, onClick: null },
+      });
+      renderer.render(bridge as any);
+      const anchor = container.querySelector("a.term-link");
+      const cursor = anchor?.querySelector(".term-cursor");
+      expect(cursor).not.toBeNull();
+      expect(cursor?.textContent).toBe("x");
+    });
+
+    it("renders URLs inside scrollback rows as anchors", () => {
+      const text = "see https://scroll.example";
+      const sbLen = text.length;
+      const bridge = createMockBridge(sbLen, 1, []);
+      bridge.getScrollbackCount = () => 1;
+      bridge.getScrollbackLineLen = () => sbLen;
+      bridge.getScrollbackCell = (_o: number, col: number): CellData =>
+        col < text.length
+          ? makeCell(text[col])
+          : { char: 0, fg: 256, bg: 256, flags: 0 };
+
+      const renderer = new Renderer(container, {
+        linkify: { enabled: true, pattern: /\bhttps?:\/\/[^\s<>"'`]+/g, onClick: null },
+      });
+      renderer.render(bridge as any);
+
+      const scrollbackRow = container.querySelector(".term-scrollback-row");
+      expect(scrollbackRow).not.toBeNull();
+      const anchor = scrollbackRow!.querySelector("a.term-link");
+      expect(anchor?.getAttribute("href")).toBe("https://scroll.example");
+    });
+
+    it("keeps URL ranges aligned when a block glyph precedes the URL", () => {
+      // Regression test for the pre-pass: block glyphs must emit a space
+      // placeholder into rowText so findUrls ranges line up with grid cols.
+      const text = "https://a.com";
+      const blockCp = 0x2588; // FULL BLOCK
+      const cells = [
+        { char: blockCp, fg: 256, bg: 256, flags: 0 },
+        makeCell(" "),
+        ...Array.from(text).map((ch) => makeCell(ch)),
+      ];
+      const bridge = createMockBridge(cells.length, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: -1, visible: false });
+      const renderer = new Renderer(container, {
+        linkify: { enabled: true, pattern: /\bhttps?:\/\/[^\s<>"'`]+/g, onClick: null },
+      });
+      renderer.render(bridge as any);
+      const anchor = container.querySelector("a.term-link");
+      expect(anchor?.getAttribute("href")).toBe(text);
+      expect(anchor?.textContent).toBe(text);
+    });
+
+    it("joins a URL wrapped across two rows into anchors with the same full href", () => {
+      // 20-col grid. Full URL: "https://example.com/page" (24 chars).
+      // Row 0: "https://example.com/" (cols 0..19)
+      // Row 1: "page" + padding
+      const cols = 20;
+      const url = "https://example.com/page";
+      const row0Text = url.slice(0, cols);
+      const row1Text = url.slice(cols);
+      const row0Cells = Array.from(row0Text).map((ch) => makeCell(ch));
+      const row1Cells = Array.from({ length: cols }, (_, i) =>
+        i < row1Text.length
+          ? makeCell(row1Text[i])
+          : { char: 0, fg: 256, bg: 256, flags: 0 },
+      );
+      const bridge = createMockBridge(cols, 2, [row0Cells, row1Cells]);
+      bridge.getCursor = () => ({ row: 0, col: -1, visible: false });
+
+      const renderer = new Renderer(container, {
+        linkify: { enabled: true, pattern: /\bhttps?:\/\/[^\s<>"'`]+/g, onClick: null },
+      });
+      renderer.render(bridge as any);
+
+      const anchors = container.querySelectorAll("a.term-link");
+      expect(anchors).toHaveLength(2);
+      expect(anchors[0].getAttribute("href")).toBe(url);
+      expect(anchors[1].getAttribute("href")).toBe(url);
+      // Visible text on each row matches its segment.
+      expect(anchors[0].textContent).toBe(row0Text);
+      expect(anchors[1].textContent).toBe(row1Text);
+    });
+
+    it("does not join across rows when the boundary row has trailing space", () => {
+      // Row 0 ends with a space (last cell empty), so it should not join.
+      const cols = 20;
+      const row0Text = "https://example.com "; // 20 chars, trailing space
+      const row1Text = "extra";
+      const row0Cells = Array.from(row0Text).map((ch) =>
+        ch === " " ? { char: 0, fg: 256, bg: 256, flags: 0 } : makeCell(ch),
+      );
+      const row1Cells = Array.from({ length: cols }, (_, i) =>
+        i < row1Text.length
+          ? makeCell(row1Text[i])
+          : { char: 0, fg: 256, bg: 256, flags: 0 },
+      );
+      const bridge = createMockBridge(cols, 2, [row0Cells, row1Cells]);
+      bridge.getCursor = () => ({ row: 0, col: -1, visible: false });
+
+      const renderer = new Renderer(container, {
+        linkify: { enabled: true, pattern: /\bhttps?:\/\/[^\s<>"'`]+/g, onClick: null },
+      });
+      renderer.render(bridge as any);
+
+      const anchors = container.querySelectorAll("a.term-link");
+      expect(anchors).toHaveLength(1);
+      expect(anchors[0].getAttribute("href")).toBe("https://example.com");
+    });
+
+    it("invokes onClick before default navigation and respects preventDefault", () => {
+      const bridge = makeLinkifyBridge("go https://example.com/");
+      const seen: string[] = [];
+      const renderer = new Renderer(container, {
+        linkify: {
+          enabled: true,
+          pattern: /\bhttps?:\/\/[^\s<>"'`]+/g,
+          onClick: (url, ev) => {
+            seen.push(url);
+            ev.preventDefault();
+          },
+        },
+      });
+      renderer.render(bridge as any);
+      const anchor = container.querySelector<HTMLAnchorElement>("a.term-link")!;
+      const clickEv = new MouseEvent("click", { bubbles: true, cancelable: true });
+      anchor.dispatchEvent(clickEv);
+      expect(seen).toEqual(["https://example.com/"]);
+      expect(clickEv.defaultPrevented).toBe(true);
+    });
+  });
 });
