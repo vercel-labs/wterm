@@ -5,6 +5,7 @@ export const PAGE_TITLES: Record<string, string> = {
   configuration: "Configuration",
   themes: "Themes",
   react: "React",
+  svelte: "Svelte",
   vue: "Vue",
   vanilla: "Vanilla JS",
   ghostty: "Ghostty Core",

@@ -11,6 +11,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 | [`@wterm/core`](packages/@wterm/core) | Headless WASM bridge, `TerminalCore` interface, WebSocket transport |
 | [`@wterm/dom`](packages/@wterm/dom) | DOM renderer, input handler — vanilla JS terminal |
 | [`@wterm/react`](packages/@wterm/react) | React component + `useTerminal` hook (TypeScript) |
+| [`@wterm/svelte`](packages/@wterm/svelte) | Svelte 5 component + `bind:this` API |
 | [`@wterm/vue`](packages/@wterm/vue) | Vue 3 component + template ref API |
 | [`@wterm/ghostty`](packages/@wterm/ghostty) | Full-featured VT emulation core powered by libghostty |
 | [`@wterm/just-bash`](packages/@wterm/just-bash) | In-browser Bash shell powered by just-bash |
@@ -76,6 +77,12 @@ All dev servers use [portless](https://github.com/vercel-labs/portless) to avoid
 ```bash
 cp web/wterm.wasm examples/nextjs/public/
 pnpm --filter nextjs dev
+```
+
+### Run the Svelte example
+
+```bash
+pnpm --filter svelte-example dev
 ```
 
 ### Run Zig tests

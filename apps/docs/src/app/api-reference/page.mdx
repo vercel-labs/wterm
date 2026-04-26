@@ -4,7 +4,7 @@ Complete reference for all wterm options, methods, types, and transport APIs.
 
 ## Terminal Options
 
-The React and Vue `<Terminal>` components and the vanilla `WTerm` constructor all accept these options:
+The React, Svelte, and Vue `<Terminal>` components and the vanilla `WTerm` constructor all accept these options:
 
 <table>
   <thead>
@@ -17,62 +17,132 @@ The React and Vue `<Terminal>` components and the vanilla `WTerm` constructor al
   </thead>
   <tbody>
     <tr>
-      <td><code>cols</code></td>
-      <td><code>number</code></td>
-      <td><code>80</code></td>
+      <td>
+        <code>cols</code>
+      </td>
+      <td>
+        <code>number</code>
+      </td>
+      <td>
+        <code>80</code>
+      </td>
       <td>Initial column count</td>
     </tr>
     <tr>
-      <td><code>rows</code></td>
-      <td><code>number</code></td>
-      <td><code>24</code></td>
+      <td>
+        <code>rows</code>
+      </td>
+      <td>
+        <code>number</code>
+      </td>
+      <td>
+        <code>24</code>
+      </td>
       <td>Initial row count</td>
     </tr>
     <tr>
-      <td><code>core</code></td>
-      <td><code>TerminalCore</code></td>
+      <td>
+        <code>core</code>
+      </td>
+      <td>
+        <code>TerminalCore</code>
+      </td>
       <td>—</td>
-      <td>A pre-constructed terminal core instance. When provided, <code>wasmUrl</code> is ignored and this core is used instead of loading the built-in Zig WASM binary. See <a href="/ghostty">Ghostty Core</a> for an example.</td>
+      <td>
+        A pre-constructed terminal core instance. When provided,{" "}
+        <code>wasmUrl</code> is ignored and this core is used instead of loading
+        the built-in Zig WASM binary. See{" "}
+        <a href="/ghostty">Ghostty Core</a> for an example.
+      </td>
     </tr>
     <tr>
-      <td><code>wasmUrl</code></td>
-      <td><code>string</code></td>
+      <td>
+        <code>wasmUrl</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
       <td>—</td>
-      <td>URL to serve the WASM binary separately. When omitted, the ~12 KB binary is decoded from an inlined base64 string. Ignored when <code>core</code> is provided.</td>
+      <td>
+        URL to serve the WASM binary separately. When omitted, the ~12 KB binary
+        is decoded from an inlined base64 string. Ignored when{" "}
+        <code>core</code> is provided.
+      </td>
     </tr>
     <tr>
-      <td><code>autoResize</code></td>
-      <td><code>boolean</code></td>
-      <td><code>true</code> (vanilla) / <code>false</code> (React, Vue)</td>
-      <td>Automatically resize the terminal to fit its container using a <code>ResizeObserver</code></td>
+      <td>
+        <code>autoResize</code>
+      </td>
+      <td>
+        <code>boolean</code>
+      </td>
+      <td>
+        <code>true</code> (vanilla) / <code>false</code> (React, Svelte, Vue)
+      </td>
+      <td>
+        Automatically resize the terminal to fit its container using a{" "}
+        <code>ResizeObserver</code>
+      </td>
     </tr>
     <tr>
-      <td><code>cursorBlink</code></td>
-      <td><code>boolean</code></td>
-      <td><code>false</code></td>
+      <td>
+        <code>cursorBlink</code>
+      </td>
+      <td>
+        <code>boolean</code>
+      </td>
+      <td>
+        <code>false</code>
+      </td>
       <td>Enable cursor blinking animation</td>
     </tr>
     <tr>
-      <td><code>debug</code></td>
-      <td><code>boolean</code></td>
-      <td><code>false</code></td>
-      <td>Enable debug mode. Exposes a <code>DebugAdapter</code> on the <code>WTerm</code> instance (<code>wt.debug</code>) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences.</td>
+      <td>
+        <code>debug</code>
+      </td>
+      <td>
+        <code>boolean</code>
+      </td>
+      <td>
+        <code>false</code>
+      </td>
+      <td>
+        Enable debug mode. Exposes a <code>DebugAdapter</code> on the{" "}
+        <code>WTerm</code> instance (<code>wt.debug</code>) for inspecting
+        escape sequences, cell data, render performance, and unhandled CSI
+        sequences.
+      </td>
     </tr>
     <tr>
-      <td><code>onData</code></td>
-      <td><code>(data: string) =&gt; void</code></td>
+      <td>
+        <code>onData</code>
+      </td>
+      <td>
+        <code>(data: string) =&gt; void</code>
+      </td>
       <td>—</td>
-      <td>Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically.</td>
+      <td>
+        Called when the terminal produces data (user input or host response).
+        When omitted, input is echoed back automatically.
+      </td>
     </tr>
     <tr>
-      <td><code>onTitle</code></td>
-      <td><code>(title: string) =&gt; void</code></td>
+      <td>
+        <code>onTitle</code>
+      </td>
+      <td>
+        <code>(title: string) =&gt; void</code>
+      </td>
       <td>—</td>
       <td>Called when the terminal title changes via an escape sequence</td>
     </tr>
     <tr>
-      <td><code>onResize</code></td>
-      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>
+        <code>onResize</code>
+      </td>
+      <td>
+        <code>(cols: number, rows: number) =&gt; void</code>
+      </td>
       <td>—</td>
       <td>Called after the terminal is resized</td>
     </tr>
@@ -93,19 +163,39 @@ The React `<Terminal>` component adds these props on top of the shared options a
   </thead>
   <tbody>
     <tr>
-      <td><code>theme</code></td>
-      <td><code>string</code></td>
-      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>)</td>
+      <td>
+        <code>theme</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
+      <td>
+        Name of a built-in or custom theme (see <a href="/themes">Themes</a>)
+      </td>
     </tr>
     <tr>
-      <td><code>onReady</code></td>
-      <td><code>(wt: WTerm) =&gt; void</code></td>
-      <td>Called with the underlying <code>WTerm</code> instance after WASM loads and initialization completes</td>
+      <td>
+        <code>onReady</code>
+      </td>
+      <td>
+        <code>(wt: WTerm) =&gt; void</code>
+      </td>
+      <td>
+        Called with the underlying <code>WTerm</code> instance after WASM loads
+        and initialization completes
+      </td>
     </tr>
     <tr>
-      <td><code>onError</code></td>
-      <td><code>(error: unknown) =&gt; void</code></td>
-      <td>Called if WASM loading or initialization fails. When omitted, errors are logged to the console.</td>
+      <td>
+        <code>onError</code>
+      </td>
+      <td>
+        <code>(error: unknown) =&gt; void</code>
+      </td>
+      <td>
+        Called if WASM loading or initialization fails. When omitted, errors are
+        logged to the console.
+      </td>
     </tr>
   </tbody>
 </table>
@@ -124,9 +214,112 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
   </thead>
   <tbody>
     <tr>
-      <td><code>theme</code></td>
-      <td><code>string</code></td>
-      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>). Applied as a <code>theme-&lt;name&gt;</code> class on the root element.</td>
+      <td>
+        <code>theme</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
+      <td>
+        Name of a built-in or custom theme (see <a href="/themes">Themes</a>).
+        Applied as a <code>theme-&lt;name&gt;</code> class on the root element.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+## Svelte-Only Props
+
+The Svelte `<Terminal>` component adds these props on top of the shared options above. Svelte exposes callbacks as component props (see [Svelte Callback Props](#svelte-callback-props) below). Standard HTML attributes (`class`, `style`, `id`, etc.) are forwarded to the root `div`.
+
+<table>
+  <thead>
+    <tr>
+      <th>Prop</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <code>theme</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
+      <td>
+        Name of a built-in or custom theme (see <a href="/themes">Themes</a>).
+        Applied as a <code>theme-&lt;name&gt;</code> class on the root element.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+## Svelte Callback Props
+
+<table>
+  <thead>
+    <tr>
+      <th>Prop</th>
+      <th>Payload</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <code>onData</code>
+      </td>
+      <td>
+        <code>(data: string)</code>
+      </td>
+      <td>
+        Called when the terminal produces data (user input or host response).
+        When no callback is attached, input is echoed back automatically.
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>onTitle</code>
+      </td>
+      <td>
+        <code>(title: string)</code>
+      </td>
+      <td>Called when the terminal title changes via an escape sequence.</td>
+    </tr>
+    <tr>
+      <td>
+        <code>onResize</code>
+      </td>
+      <td>
+        <code>(cols: number, rows: number)</code>
+      </td>
+      <td>Called after the terminal is resized.</td>
+    </tr>
+    <tr>
+      <td>
+        <code>onReady</code>
+      </td>
+      <td>
+        <code>(wt: WTerm)</code>
+      </td>
+      <td>
+        Called once after <code>WTerm.init()</code> resolves, carrying the
+        underlying <code>WTerm</code> instance.
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>onError</code>
+      </td>
+      <td>
+        <code>(err: unknown)</code>
+      </td>
+      <td>
+        Called if WASM loading or initialization fails. When omitted, errors are
+        logged to the console.
+      </td>
     </tr>
   </tbody>
 </table>
@@ -143,28 +336,54 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
   </thead>
   <tbody>
     <tr>
-      <td><code>data</code></td>
-      <td><code>(data: string)</code></td>
-      <td>Emitted when the terminal produces data (user input or host response). When no listener is attached, input is echoed back automatically.</td>
+      <td>
+        <code>data</code>
+      </td>
+      <td>
+        <code>(data: string)</code>
+      </td>
+      <td>
+        Emitted when the terminal produces data (user input or host response).
+        When no listener is attached, input is echoed back automatically.
+      </td>
     </tr>
     <tr>
-      <td><code>title</code></td>
-      <td><code>(title: string)</code></td>
+      <td>
+        <code>title</code>
+      </td>
+      <td>
+        <code>(title: string)</code>
+      </td>
       <td>Emitted when the terminal title changes via an escape sequence.</td>
     </tr>
     <tr>
-      <td><code>resize</code></td>
-      <td><code>(cols: number, rows: number)</code></td>
+      <td>
+        <code>resize</code>
+      </td>
+      <td>
+        <code>(cols: number, rows: number)</code>
+      </td>
       <td>Emitted after the terminal is resized.</td>
     </tr>
     <tr>
-      <td><code>ready</code></td>
-      <td><code>(wt: WTerm)</code></td>
-      <td>Emitted once after <code>WTerm.init()</code> resolves, carrying the underlying <code>WTerm</code> instance.</td>
+      <td>
+        <code>ready</code>
+      </td>
+      <td>
+        <code>(wt: WTerm)</code>
+      </td>
+      <td>
+        Emitted once after <code>WTerm.init()</code> resolves, carrying the
+        underlying <code>WTerm</code> instance.
+      </td>
     </tr>
     <tr>
-      <td><code>error</code></td>
-      <td><code>(err: unknown)</code></td>
+      <td>
+        <code>error</code>
+      </td>
+      <td>
+        <code>(err: unknown)</code>
+      </td>
       <td>Emitted if WASM loading or initialization fails.</td>
     </tr>
   </tbody>
@@ -183,23 +402,33 @@ Instance methods on the vanilla `WTerm` class:
   </thead>
   <tbody>
     <tr>
-      <td><code>init(): Promise&lt;WTerm&gt;</code></td>
+      <td>
+        <code>init(): Promise&lt;WTerm&gt;</code>
+      </td>
       <td>Load WASM and start rendering</td>
     </tr>
     <tr>
-      <td><code>write(data: string | Uint8Array)</code></td>
+      <td>
+        <code>write(data: string | Uint8Array)</code>
+      </td>
       <td>Write data to the terminal</td>
     </tr>
     <tr>
-      <td><code>resize(cols, rows)</code></td>
+      <td>
+        <code>resize(cols, rows)</code>
+      </td>
       <td>Resize the terminal grid</td>
     </tr>
     <tr>
-      <td><code>focus()</code></td>
+      <td>
+        <code>focus()</code>
+      </td>
       <td>Focus the terminal input</td>
     </tr>
     <tr>
-      <td><code>destroy()</code></td>
+      <td>
+        <code>destroy()</code>
+      </td>
       <td>Clean up event listeners, observers, and DOM</td>
     </tr>
   </tbody>
@@ -223,23 +452,41 @@ const { ref, write, resize, focus } = useTerminal();
   </thead>
   <tbody>
     <tr>
-      <td><code>ref</code></td>
-      <td><code>RefObject&lt;TerminalHandle&gt;</code></td>
-      <td>Pass to <code>&lt;Terminal ref=&#123;ref&#125;&gt;</code></td>
+      <td>
+        <code>ref</code>
+      </td>
+      <td>
+        <code>RefObject&lt;TerminalHandle&gt;</code>
+      </td>
+      <td>
+        Pass to <code>&lt;Terminal ref=&#123;ref&#125;&gt;</code>
+      </td>
     </tr>
     <tr>
-      <td><code>write</code></td>
-      <td><code>(data: string | Uint8Array) =&gt; void</code></td>
+      <td>
+        <code>write</code>
+      </td>
+      <td>
+        <code>(data: string | Uint8Array) =&gt; void</code>
+      </td>
       <td>Write data to the terminal</td>
     </tr>
     <tr>
-      <td><code>resize</code></td>
-      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>
+        <code>resize</code>
+      </td>
+      <td>
+        <code>(cols: number, rows: number) =&gt; void</code>
+      </td>
       <td>Resize the terminal grid</td>
     </tr>
     <tr>
-      <td><code>focus</code></td>
-      <td><code>() =&gt; void</code></td>
+      <td>
+        <code>focus</code>
+      </td>
+      <td>
+        <code>() =&gt; void</code>
+      </td>
       <td>Focus the terminal input</td>
     </tr>
   </tbody>
@@ -255,6 +502,75 @@ interface TerminalHandle {
   readonly instance: WTerm | null;
 }
 ```
+
+## Component Ref (Svelte)
+
+The Svelte `<Terminal>` component exposes imperative methods through `bind:this`:
+
+```svelte
+<script lang="ts">
+  import { Terminal } from "@wterm/svelte";
+
+  let term: Terminal;
+</script>
+
+<Terminal bind:this={term} />
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Member</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <code>write</code>
+      </td>
+      <td>
+        <code>(data: string | Uint8Array) =&gt; void</code>
+      </td>
+      <td>
+        Write data to the terminal. Safe to call after the <code>onReady</code>{" "}
+        callback; calls before mount are ignored.
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>resize</code>
+      </td>
+      <td>
+        <code>(cols: number, rows: number) =&gt; void</code>
+      </td>
+      <td>Resize the terminal grid. Calls before mount are ignored.</td>
+    </tr>
+    <tr>
+      <td>
+        <code>focus</code>
+      </td>
+      <td>
+        <code>() =&gt; void</code>
+      </td>
+      <td>Focus the terminal input.</td>
+    </tr>
+    <tr>
+      <td>
+        <code>instance</code>
+      </td>
+      <td>
+        <code>() =&gt; WTerm | null</code>
+      </td>
+      <td>
+        Returns the underlying <code>WTerm</code> instance, or <code>null</code>{" "}
+        before mount. The WASM bridge is only available after the{" "}
+        <code>onReady</code> callback.
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 ## Template Ref (Vue)
 
@@ -283,24 +599,47 @@ const term = useTemplateRef("term");
   </thead>
   <tbody>
     <tr>
-      <td><code>write</code></td>
-      <td><code>(data: string | Uint8Array) =&gt; void</code></td>
-      <td>Write data to the terminal. Safe to call after the <code>ready</code> event; calls before mount are ignored.</td>
+      <td>
+        <code>write</code>
+      </td>
+      <td>
+        <code>(data: string | Uint8Array) =&gt; void</code>
+      </td>
+      <td>
+        Write data to the terminal. Safe to call after the <code>ready</code>{" "}
+        event; calls before mount are ignored.
+      </td>
     </tr>
     <tr>
-      <td><code>resize</code></td>
-      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>
+        <code>resize</code>
+      </td>
+      <td>
+        <code>(cols: number, rows: number) =&gt; void</code>
+      </td>
       <td>Resize the terminal grid. Calls before mount are ignored.</td>
     </tr>
     <tr>
-      <td><code>focus</code></td>
-      <td><code>() =&gt; void</code></td>
+      <td>
+        <code>focus</code>
+      </td>
+      <td>
+        <code>() =&gt; void</code>
+      </td>
       <td>Focus the terminal input.</td>
     </tr>
     <tr>
-      <td><code>instance</code></td>
-      <td><code>WTerm | null</code></td>
-      <td>Underlying <code>WTerm</code> instance. <code>null</code> until the component has mounted; the WASM bridge is only available after the <code>ready</code> event.</td>
+      <td>
+        <code>instance</code>
+      </td>
+      <td>
+        <code>WTerm | null</code>
+      </td>
+      <td>
+        Underlying <code>WTerm</code> instance. <code>null</code> until the
+        component has mounted; the WASM bridge is only available after the{" "}
+        <code>ready</code> event.
+      </td>
     </tr>
   </tbody>
 </table>
@@ -322,44 +661,76 @@ Connect to a PTY backend over WebSocket with automatic reconnection and send buf
   </thead>
   <tbody>
     <tr>
-      <td><code>url</code></td>
-      <td><code>string</code></td>
+      <td>
+        <code>url</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
       <td>—</td>
       <td>WebSocket server URL</td>
     </tr>
     <tr>
-      <td><code>reconnect</code></td>
-      <td><code>boolean</code></td>
-      <td><code>true</code></td>
+      <td>
+        <code>reconnect</code>
+      </td>
+      <td>
+        <code>boolean</code>
+      </td>
+      <td>
+        <code>true</code>
+      </td>
       <td>Automatically reconnect on disconnect with exponential backoff</td>
     </tr>
     <tr>
-      <td><code>maxReconnectDelay</code></td>
-      <td><code>number</code></td>
-      <td><code>30000</code></td>
+      <td>
+        <code>maxReconnectDelay</code>
+      </td>
+      <td>
+        <code>number</code>
+      </td>
+      <td>
+        <code>30000</code>
+      </td>
       <td>Maximum delay between reconnection attempts (ms)</td>
     </tr>
     <tr>
-      <td><code>onData</code></td>
-      <td><code>(data: Uint8Array | string) =&gt; void</code></td>
+      <td>
+        <code>onData</code>
+      </td>
+      <td>
+        <code>(data: Uint8Array | string) =&gt; void</code>
+      </td>
       <td>—</td>
       <td>Called when data is received from the server</td>
     </tr>
     <tr>
-      <td><code>onOpen</code></td>
-      <td><code>() =&gt; void</code></td>
+      <td>
+        <code>onOpen</code>
+      </td>
+      <td>
+        <code>() =&gt; void</code>
+      </td>
       <td>—</td>
       <td>Called when the connection opens</td>
     </tr>
     <tr>
-      <td><code>onClose</code></td>
-      <td><code>() =&gt; void</code></td>
+      <td>
+        <code>onClose</code>
+      </td>
+      <td>
+        <code>() =&gt; void</code>
+      </td>
       <td>—</td>
       <td>Called when the connection closes</td>
     </tr>
     <tr>
-      <td><code>onError</code></td>
-      <td><code>(event: Event) =&gt; void</code></td>
+      <td>
+        <code>onError</code>
+      </td>
+      <td>
+        <code>(event: Event) =&gt; void</code>
+      </td>
       <td>—</td>
       <td>Called when a WebSocket error occurs</td>
     </tr>
@@ -377,15 +748,24 @@ Connect to a PTY backend over WebSocket with automatic reconnection and send buf
   </thead>
   <tbody>
     <tr>
-      <td><code>connect(url?)</code></td>
+      <td>
+        <code>connect(url?)</code>
+      </td>
       <td>Open the WebSocket connection. Optionally override the URL.</td>
     </tr>
     <tr>
-      <td><code>send(data: string | Uint8Array)</code></td>
-      <td>Send data to the server. If the socket is not yet open, data is buffered and flushed on connect.</td>
+      <td>
+        <code>send(data: string | Uint8Array)</code>
+      </td>
+      <td>
+        Send data to the server. If the socket is not yet open, data is buffered
+        and flushed on connect.
+      </td>
     </tr>
     <tr>
-      <td><code>close()</code></td>
+      <td>
+        <code>close()</code>
+      </td>
       <td>Close the connection and stop reconnection attempts.</td>
     </tr>
   </tbody>
@@ -403,8 +783,12 @@ Connect to a PTY backend over WebSocket with automatic reconnection and send buf
   </thead>
   <tbody>
     <tr>
-      <td><code>connected</code></td>
-      <td><code>boolean</code></td>
+      <td>
+        <code>connected</code>
+      </td>
+      <td>
+        <code>boolean</code>
+      </td>
       <td>Whether the WebSocket is currently open</td>
     </tr>
   </tbody>
@@ -436,75 +820,121 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
   </thead>
   <tbody>
     <tr>
-      <td><code>WasmBridge.load(url?): Promise&lt;WasmBridge&gt;</code></td>
+      <td>
+        <code>WasmBridge.load(url?): Promise&lt;WasmBridge&gt;</code>
+      </td>
       <td>Load the WASM binary and return a new bridge instance</td>
     </tr>
     <tr>
-      <td><code>init(cols, rows)</code></td>
+      <td>
+        <code>init(cols, rows)</code>
+      </td>
       <td>Initialize the terminal grid</td>
     </tr>
     <tr>
-      <td><code>writeString(str)</code></td>
+      <td>
+        <code>writeString(str)</code>
+      </td>
       <td>Write a UTF-8 string (including escape sequences) to the terminal</td>
     </tr>
     <tr>
-      <td><code>writeRaw(data: Uint8Array)</code></td>
-      <td>Write raw bytes to the terminal (chunked to 8192 bytes internally)</td>
+      <td>
+        <code>writeRaw(data: Uint8Array)</code>
+      </td>
+      <td>
+        Write raw bytes to the terminal (chunked to 8192 bytes internally)
+      </td>
     </tr>
     <tr>
-      <td><code>resize(cols, rows)</code></td>
+      <td>
+        <code>resize(cols, rows)</code>
+      </td>
       <td>Resize the terminal grid</td>
     </tr>
     <tr>
-      <td><code>getCell(row, col): CellData</code></td>
+      <td>
+        <code>getCell(row, col): CellData</code>
+      </td>
       <td>Get cell data at a grid position</td>
     </tr>
     <tr>
-      <td><code>getCursor(): CursorState</code></td>
+      <td>
+        <code>getCursor(): CursorState</code>
+      </td>
       <td>Get current cursor position and visibility</td>
     </tr>
     <tr>
-      <td><code>getCols() / getRows()</code></td>
+      <td>
+        <code>getCols() / getRows()</code>
+      </td>
       <td>Get current grid dimensions</td>
     </tr>
     <tr>
-      <td><code>isDirtyRow(row): boolean</code></td>
-      <td>Check if a row has changed since last <code>clearDirty()</code></td>
+      <td>
+        <code>isDirtyRow(row): boolean</code>
+      </td>
+      <td>
+        Check if a row has changed since last <code>clearDirty()</code>
+      </td>
     </tr>
     <tr>
-      <td><code>clearDirty()</code></td>
+      <td>
+        <code>clearDirty()</code>
+      </td>
       <td>Reset all dirty-row flags</td>
     </tr>
     <tr>
-      <td><code>getTitle(): string | null</code></td>
-      <td>Get pending title change (via OSC escape), or <code>null</code> if unchanged</td>
+      <td>
+        <code>getTitle(): string | null</code>
+      </td>
+      <td>
+        Get pending title change (via OSC escape), or <code>null</code> if
+        unchanged
+      </td>
     </tr>
     <tr>
-      <td><code>getResponse(): string | null</code></td>
-      <td>Get pending host response (e.g. DSR), or <code>null</code>. Reading clears the buffer.</td>
+      <td>
+        <code>getResponse(): string | null</code>
+      </td>
+      <td>
+        Get pending host response (e.g. DSR), or <code>null</code>. Reading
+        clears the buffer.
+      </td>
     </tr>
     <tr>
-      <td><code>getScrollbackCount(): number</code></td>
+      <td>
+        <code>getScrollbackCount(): number</code>
+      </td>
       <td>Number of lines in the scrollback buffer</td>
     </tr>
     <tr>
-      <td><code>getScrollbackCell(offset, col): CellData</code></td>
+      <td>
+        <code>getScrollbackCell(offset, col): CellData</code>
+      </td>
       <td>Get cell data from a scrollback line</td>
     </tr>
     <tr>
-      <td><code>getScrollbackLineLen(offset): number</code></td>
+      <td>
+        <code>getScrollbackLineLen(offset): number</code>
+      </td>
       <td>Get the length of a scrollback line</td>
     </tr>
     <tr>
-      <td><code>cursorKeysApp(): boolean</code></td>
+      <td>
+        <code>cursorKeysApp(): boolean</code>
+      </td>
       <td>Whether cursor keys are in application mode</td>
     </tr>
     <tr>
-      <td><code>bracketedPaste(): boolean</code></td>
+      <td>
+        <code>bracketedPaste(): boolean</code>
+      </td>
       <td>Whether bracketed paste mode is active</td>
     </tr>
     <tr>
-      <td><code>usingAltScreen(): boolean</code></td>
+      <td>
+        <code>usingAltScreen(): boolean</code>
+      </td>
       <td>Whether the alternate screen buffer is active</td>
     </tr>
   </tbody>
@@ -514,10 +944,10 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
 
 ```ts
 interface CellData {
-  char: number;   // Unicode code point
-  fg: number;     // Foreground color index (256 = default)
-  bg: number;     // Background color index (256 = default)
-  flags: number;  // Style flags (bold, italic, underline, etc.)
+  char: number; // Unicode code point
+  fg: number; // Foreground color index (256 = default)
+  bg: number; // Background color index (256 = default)
+  flags: number; // Style flags (bold, italic, underline, etc.)
 }
 
 interface CursorState {
