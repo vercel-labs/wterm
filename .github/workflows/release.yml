@@ -26,20 +26,17 @@ jobs:
         id: check
         run: |
           LOCAL_VERSION=$(node -p "require('./packages/@wterm/core/package.json').version")
-          echo "Local version: $LOCAL_VERSION"
+          NPM_VERSION=$(npm view "@wterm/core" version 2>/dev/null || echo "0.0.0")
+          echo "Local: $LOCAL_VERSION, Registry: $NPM_VERSION"
 
-          SHOULD_RELEASE=false
-          for pkg in core dom react just-bash markdown; do
-            NPM_VERSION=$(npm view "@wterm/$pkg" version 2>/dev/null || echo "0.0.0")
-            echo "@wterm/$pkg: registry=$NPM_VERSION local=$LOCAL_VERSION"
-            if [ "$LOCAL_VERSION" != "$NPM_VERSION" ]; then
-              SHOULD_RELEASE=true
-            fi
-          done
+          if [ "$LOCAL_VERSION" != "$NPM_VERSION" ]; then
+            SHOULD_RELEASE=true
+          else
+            SHOULD_RELEASE=false
+          fi
 
           echo "should_release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
           echo "version=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Should release: $SHOULD_RELEASE"
 
   publish:
     name: Publish
@@ -72,14 +69,8 @@ jobs:
 
       - name: Publish packages
         run: |
-          LOCAL_VERSION=$(node -p "require('./packages/@wterm/core/package.json').version")
           for pkg in core dom react just-bash markdown; do
-            NPM_VERSION=$(npm view "@wterm/$pkg" version 2>/dev/null || echo "0.0.0")
-            if [ "$LOCAL_VERSION" = "$NPM_VERSION" ]; then
-              echo "@wterm/$pkg@$LOCAL_VERSION already published, skipping"
-              continue
-            fi
-            echo "Publishing @wterm/$pkg@$LOCAL_VERSION..."
+            echo "Publishing @wterm/$pkg..."
             (cd "packages/@wterm/$pkg" && npm publish --provenance)
           done
 
@@ -118,6 +109,7 @@ jobs:
             echo "Creating release $TAG..."
             gh release create "$TAG" \
               --title "$TAG" \
+              --target ${{ github.sha }} \
               --notes-file /tmp/release-notes.md
           fi
         env:
