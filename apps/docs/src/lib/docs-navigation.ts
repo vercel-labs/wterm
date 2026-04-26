@@ -34,6 +34,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { name: "Just Bash", href: "/just-bash" },
       { name: "Markdown", href: "/markdown" },
+      { name: "Serialize", href: "/serialize" },
       { name: "Core / Advanced", href: "/core" },
     ],
   },

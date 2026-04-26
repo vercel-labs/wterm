@@ -503,6 +503,22 @@ importers:
         specifier: ^6.0.2
         version: 6.0.2
 
+  packages/@wterm/serialize:
+    dependencies:
+      '@wterm/core':
+        specifier: workspace:*
+        version: link:../core
+      '@wterm/dom':
+        specifier: workspace:*
+        version: link:../dom
+    devDependencies:
+      '@internal/ts':
+        specifier: workspace:*
+        version: link:../../@internal/ts
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+
 packages:
 
   '@adobe/css-tools@4.4.4':

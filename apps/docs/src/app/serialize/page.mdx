@@ -1,0 +1,118 @@
+# Serialize
+
+Persist and restore terminal sessions with `@wterm/serialize`. Capture a snapshot of terminal content and replay it on the next page load.
+
+## Install
+
+```bash
+npm install @wterm/serialize
+```
+
+## Why Persistence
+
+Session persistence is useful when:
+
+- You want terminal output to survive page refreshes.
+- You need to resume a session after navigation.
+- You want fast restoration of UI state without replaying backend logs.
+
+## Quick Start
+
+### Vanilla JS
+
+```js
+import { WTerm } from "@wterm/dom";
+import { serialize, restore } from "@wterm/serialize";
+import "@wterm/dom/css";
+
+const STORAGE_KEY = "wterm:snapshot";
+
+const term = new WTerm(document.getElementById("terminal"));
+await term.init();
+
+const saved = localStorage.getItem(STORAGE_KEY);
+if (saved) {
+  try {
+    restore(term, JSON.parse(saved));
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+}
+
+window.addEventListener("beforeunload", () => {
+  const snapshot = serialize(term);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+});
+```
+
+## API
+
+### `TerminalSnapshot`
+
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>version</code></td>
+      <td><code>1</code></td>
+      <td>Snapshot format version</td>
+    </tr>
+    <tr>
+      <td><code>cols</code></td>
+      <td><code>number</code></td>
+      <td>Terminal column count when serialized</td>
+    </tr>
+    <tr>
+      <td><code>rows</code></td>
+      <td><code>number</code></td>
+      <td>Terminal row count when serialized</td>
+    </tr>
+    <tr>
+      <td><code>payload</code></td>
+      <td><code>string</code></td>
+      <td>ANSI payload containing screen + scrollback content</td>
+    </tr>
+    <tr>
+      <td><code>cursor</code></td>
+      <td><code>&#123; row, col, visible &#125;</code></td>
+      <td>Cursor position and visibility</td>
+    </tr>
+    <tr>
+      <td><code>modes</code></td>
+      <td><code>&#123; altScreen, cursorKeysApp, bracketedPaste &#125;</code></td>
+      <td>Terminal mode flags restored after payload</td>
+    </tr>
+  </tbody>
+</table>
+
+### Functions
+
+<table>
+  <thead>
+    <tr>
+      <th>Function</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>serialize(term: WTerm): TerminalSnapshot</code></td>
+      <td>Captures terminal content, cursor state, and mode flags.</td>
+    </tr>
+    <tr>
+      <td><code>restore(term: WTerm, snapshot: TerminalSnapshot): void</code></td>
+      <td>Replays payload and restores mode/cursor state.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Limitations
+
+- Partial parser state in the middle of an escape sequence is not captured.
+- Terminal title state is not captured in v1.

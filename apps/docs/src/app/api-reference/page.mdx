@@ -411,3 +411,35 @@ interface CursorState {
   visible: boolean;
 }
 ```
+
+## @wterm/serialize
+
+Serialize and restore terminal sessions for persistence across reloads.
+
+### API
+
+```ts
+import { serialize, restore } from "@wterm/serialize";
+
+interface TerminalSnapshot {
+  version: 1;
+  cols: number;
+  rows: number;
+  payload: string;
+  cursor: { row: number; col: number; visible: boolean };
+  modes: {
+    altScreen: boolean;
+    cursorKeysApp: boolean;
+    bracketedPaste: boolean;
+  };
+}
+
+function serialize(term: WTerm): TerminalSnapshot;
+function restore(term: WTerm, snapshot: TerminalSnapshot): void;
+```
+
+### Notes
+
+- `serialize()` throws if called before `term.init()`.
+- `restore()` throws for unsupported snapshot versions.
+- v1 snapshots do not capture partial parser state or terminal title state.
