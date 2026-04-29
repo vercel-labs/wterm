@@ -1,8 +1,21 @@
 # Changelog
 
-## 0.2.0
+## 0.2.1
 
 <!-- release:start -->
+
+### Bug Fixes
+
+- Fixed **npm publish** — `workspace:*` peer dependencies are now resolved to real version ranges in published tarballs (#58)
+- Fixed **Vue package missing from releases** — `@wterm/vue` is now included in the release workflow (#58)
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.2.0
 
 ### New Features
 
@@ -16,8 +29,6 @@
 
 - @ctate
 - @posva
-
-<!-- release:end -->
 
 ## 0.1.9
 
