@@ -27,7 +27,7 @@ jobs:
         run: |
           LOCAL_VERSION=$(node -p "require('./packages/@wterm/core/package.json').version")
           SHOULD_RELEASE=false
-          for pkg in core dom react just-bash markdown; do
+          for pkg in core dom react vue just-bash markdown; do
             REGISTRY_VERSION=$(npm view "@wterm/$pkg" version 2>/dev/null || echo "0.0.0")
             echo "@wterm/$pkg — local: $LOCAL_VERSION, registry: $REGISTRY_VERSION"
             if [ "$LOCAL_VERSION" != "$REGISTRY_VERSION" ]; then
@@ -71,17 +71,27 @@ jobs:
         run: |
           LOCAL_VERSION="${{ needs.check-release.outputs.version }}"
           FAILED=""
-          for pkg in core dom react just-bash markdown; do
-            REGISTRY_VERSION=$(npm view "@wterm/$pkg" version 2>/dev/null || echo "0.0.0")
+
+          # pnpm pack resolves workspace:* protocols in the tarball;
+          # npm publish handles OIDC trusted-publisher auth.
+          publish_pkg() {
+            local dir="$1" name="$2"
+            REGISTRY_VERSION=$(npm view "$name" version 2>/dev/null || echo "0.0.0")
             if [ "$LOCAL_VERSION" = "$REGISTRY_VERSION" ]; then
-              echo "@wterm/$pkg@$LOCAL_VERSION already published, skipping"
-              continue
+              echo "$name@$LOCAL_VERSION already published, skipping"
+              return 0
             fi
-            echo "Publishing @wterm/$pkg@$LOCAL_VERSION..."
-            if ! (cd "packages/@wterm/$pkg" && npm publish --provenance); then
-              FAILED="$FAILED @wterm/$pkg"
+            echo "Publishing $name@$LOCAL_VERSION..."
+            TARBALL=$(cd "$dir" && pnpm pack --pack-destination /tmp | tail -1)
+            if ! npm publish "$TARBALL" --provenance --access public; then
+              FAILED="$FAILED $name"
             fi
+          }
+
+          for pkg in core dom react vue just-bash markdown; do
+            publish_pkg "packages/@wterm/$pkg" "@wterm/$pkg"
           done
+
           if [ -n "$FAILED" ]; then
             echo "Failed to publish:$FAILED"
             exit 1
