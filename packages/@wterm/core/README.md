@@ -9,6 +9,7 @@ Headless terminal emulator core for [wterm](https://github.com/vercel-labs/wterm
 | [`@wterm/dom`](https://www.npmjs.com/package/@wterm/dom) | DOM renderer, input handler — vanilla JS terminal |
 | [`@wterm/react`](https://www.npmjs.com/package/@wterm/react) | React component + `useTerminal` hook |
 | [`@wterm/vue`](https://www.npmjs.com/package/@wterm/vue) | Vue 3 component + template ref API |
+| [`@wterm/ghostty`](https://www.npmjs.com/package/@wterm/ghostty) | Full-featured VT emulation core powered by libghostty |
 | [`@wterm/just-bash`](https://www.npmjs.com/package/@wterm/just-bash) | In-browser Bash shell powered by just-bash |
 | [`@wterm/markdown`](https://www.npmjs.com/package/@wterm/markdown) | Streaming Markdown-to-ANSI renderer for terminals |
 
@@ -18,11 +19,27 @@ Headless terminal emulator core for [wterm](https://github.com/vercel-labs/wterm
 npm install @wterm/core
 ```
 
+## Pluggable Cores
+
+`@wterm/core` defines a `TerminalCore` interface that any terminal emulation backend can implement. The built-in `WasmBridge` implements it using wterm's lightweight Zig WASM binary (~12 KB). For full-featured emulation (Kitty protocols, proper grapheme handling, mouse tracking, etc.), use [`@wterm/ghostty`](https://www.npmjs.com/package/@wterm/ghostty) which implements the same interface using libghostty (~400 KB).
+
+```ts
+import { WTerm } from "@wterm/dom";
+import { GhosttyCore } from "@wterm/ghostty";
+
+// Default — uses built-in lightweight core
+const term = new WTerm(el);
+
+// Opt-in — uses libghostty for full VT emulation
+const core = await GhosttyCore.load();
+const term = new WTerm(el, { core });
+```
+
 ## API
 
 ### `WasmBridge`
 
-Low-level interface to the Zig/WASM terminal state machine.
+Low-level interface to the Zig/WASM terminal state machine. Implements the `TerminalCore` interface.
 
 ```ts
 import { WasmBridge } from "@wterm/core";

@@ -7,8 +7,9 @@ import {
   onMounted,
   onBeforeUnmount,
   watch,
+  type PropType,
 } from "vue";
-import { WTerm } from "@wterm/dom";
+import { WTerm, type TerminalCore } from "@wterm/dom";
 
 /**
  * Vue wrapper around {@link WTerm} from `@wterm/dom`. Creates a `WTerm` in
@@ -59,6 +60,11 @@ const Terminal = defineComponent({
      * @defaultValue 24
      */
     rows: { type: Number, default: 24 },
+    /**
+     * A pre-constructed terminal core. When provided, `wasmUrl` is ignored and
+     * this core is used instead of loading the built-in Zig WASM binary.
+     */
+    core: { type: Object as PropType<TerminalCore>, default: undefined },
     /**
      * Optional override for the WASM binary URL used by the terminal core.
      */
@@ -129,6 +135,7 @@ const Terminal = defineComponent({
       const wt = new WTerm(el, {
         cols: props.cols,
         rows: props.rows,
+        core: props.core,
         wasmUrl: props.wasmUrl,
         autoResize: props.autoResize,
         cursorBlink: props.cursorBlink,

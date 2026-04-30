@@ -43,7 +43,7 @@ function App() {
 
 ## Props
 
-The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `wasmUrl`, `autoResize`, `cursorBlink`, `onData`, `onTitle`, `onResize`) plus [React-only props](/api-reference#react-only-props) (`theme`, `onReady`, `onError`).
+The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `cursorBlink`, `onData`, `onTitle`, `onResize`) plus [React-only props](/api-reference#react-only-props) (`theme`, `onReady`, `onError`). Pass a [`TerminalCore`](/ghostty) instance to the `core` prop to use an alternative emulation backend.
 
 Standard `div` props (`className`, `style`, `id`, etc.) are forwarded to the container element.
 

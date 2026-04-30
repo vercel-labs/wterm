@@ -1,4 +1,4 @@
-import type { WasmBridge, CellData } from "@wterm/core";
+import type { TerminalCore, CellData } from "@wterm/core";
 
 const FLAG_NAMES: Record<number, string> = {
   0x01: "bold",
@@ -193,7 +193,7 @@ const MAX_TRACES = 500;
 
 export class DebugAdapter {
   private _traces: TraceEntry[] = [];
-  private _bridge: WasmBridge | null = null;
+  private _bridge: TerminalCore | null = null;
   private _perf: PerfStats = {
     frameCount: 0,
     totalRenderMs: 0,
@@ -210,7 +210,7 @@ export class DebugAdapter {
     return this._perf;
   }
 
-  setBridge(bridge: WasmBridge): void {
+  setBridge(bridge: TerminalCore): void {
     this._bridge = bridge;
   }
 

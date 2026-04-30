@@ -33,6 +33,7 @@ yarn-error.log*
 
 # wasm build artifact
 /public/wterm.wasm
+/public/ghostty-vt.wasm
 
 # vercel
 .vercel

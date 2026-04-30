@@ -1,0 +1,149 @@
+# Ghostty Core
+
+The `@wterm/ghostty` package provides a full-featured terminal emulation core powered by [libghostty](https://ghostty.org) built directly from upstream source. It implements the same `TerminalCore` interface as wterm's built-in Zig core, so it's a drop-in replacement.
+
+## Why use it?
+
+wterm ships with a lightweight built-in core (~12 KB WASM) that covers basic VT100/VT220/xterm escape sequences. For apps that need comprehensive terminal emulation — full Unicode grapheme clusters, all SGR attributes, terminal modes, and more — `@wterm/ghostty` provides all of that via Ghostty's battle-tested VT parser (~400 KB WASM).
+
+## Install
+
+```bash
+npm install @wterm/ghostty
+```
+
+## Usage
+
+Load the Ghostty core and pass it to `WTerm` via the `core` option. Everything else stays the same.
+
+### Vanilla JS
+
+```ts
+import { WTerm } from "@wterm/dom";
+import { GhosttyCore } from "@wterm/ghostty";
+import "@wterm/dom/css";
+
+const core = await GhosttyCore.load();
+const term = new WTerm(document.getElementById("terminal"), { core });
+await term.init();
+```
+
+### React
+
+```tsx
+import { Terminal } from "@wterm/react";
+import { GhosttyCore } from "@wterm/ghostty";
+import "@wterm/dom/css";
+
+const core = await GhosttyCore.load();
+
+function App() {
+  return <Terminal core={core} />;
+}
+```
+
+### Vue
+
+```vue
+<script setup lang="ts">
+import { Terminal } from "@wterm/vue";
+import { GhosttyCore } from "@wterm/ghostty";
+
+const core = await GhosttyCore.load();
+</script>
+
+<template>
+  <Terminal :core="core" />
+</template>
+```
+
+## Options
+
+`GhosttyCore.load()` accepts an optional options object:
+
+<table>
+  <thead>
+    <tr>
+      <th>Option</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>wasmPath</code></td>
+      <td><code>string</code></td>
+      <td>Custom path to the ghostty-vt WASM binary. By default it resolves to the committed binary inside the package.</td>
+    </tr>
+    <tr>
+      <td><code>scrollbackLimit</code></td>
+      <td><code>number</code></td>
+      <td>Maximum scrollback lines (default: 10000).</td>
+    </tr>
+  </tbody>
+</table>
+
+## How it works
+
+`@wterm/ghostty` builds libghostty directly from [ghostty-org/ghostty](https://github.com/ghostty-org/ghostty) source — no third-party npm packages or pre-built binaries from other projects. The architecture:
+
+1. **Zig package dependency**: ghostty v1.3.1 is declared as a URL dependency in `zig/build.zig.zon`. Zig's package manager fetches it automatically.
+2. **WASM compatibility patches**: ghostty's `Terminal` uses `posix.mmap` and Mach VM allocators internally, which don't exist on `wasm32-freestanding`. The build script applies small, targeted patches to replace these with `std.heap.wasm_allocator` behind comptime `isWasm()` checks. The patches only touch `page.zig` and `PageList.zig`.
+3. **Thin WASM export layer**: `zig/src/wasm_api.zig` (~300 lines) imports ghostty's `Terminal` and `RenderState` APIs and exports ~20 functions to JavaScript.
+4. **Committed WASM binary**: The built `wasm/ghostty-vt.wasm` is checked into the repo so consumers never need Zig installed.
+5. **TypeScript bindings**: `wasm-bindings.ts` loads the WASM module and provides typed accessors for the exported functions.
+6. **TerminalCore adapter**: `ghostty-core.ts` implements the `TerminalCore` interface by calling the WASM bindings, converting ghostty's pre-resolved 24-bit RGB colors to wterm's `CellData` format via the `fgRgb`/`bgRgb` fields.
+
+The `TerminalCore` interface means the DOM renderer, input handler, and framework bindings don't need to know which core they're talking to.
+
+## Rebuilding the WASM
+
+Only needed by maintainers. Requires [Zig 0.15.x](https://ziglang.org/download/) (ghostty's required Zig version, separate from wterm's Zig 0.16.x):
+
+```bash
+pnpm --filter @wterm/ghostty rebuild-wasm
+```
+
+## Comparison
+
+<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th>Built-in (default)</th>
+      <th><code>@wterm/ghostty</code></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Bundle size</td>
+      <td>~12 KB WASM (inlined)</td>
+      <td>~400 KB WASM (fetched)</td>
+    </tr>
+    <tr>
+      <td>VT compliance</td>
+      <td>Basic VT100/VT220/xterm</td>
+      <td>Comprehensive</td>
+    </tr>
+    <tr>
+      <td>Unicode</td>
+      <td>Single codepoints</td>
+      <td>Full grapheme clusters</td>
+    </tr>
+    <tr>
+      <td>Color model</td>
+      <td>256-color palette indices</td>
+      <td>Pre-resolved 24-bit RGB</td>
+    </tr>
+    <tr>
+      <td>Dependencies</td>
+      <td>None</td>
+      <td>None (WASM built from source)</td>
+    </tr>
+    <tr>
+      <td>Setup</td>
+      <td>Zero-config</td>
+      <td>Requires <code>@wterm/ghostty</code> install</td>
+    </tr>
+  </tbody>
+</table>

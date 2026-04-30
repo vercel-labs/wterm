@@ -2,6 +2,7 @@ zig-out/
 .zig-cache/
 *.wasm
 !packages/@wterm/core/wasm/wterm.wasm
+!packages/@wterm/ghostty/wasm/ghostty-vt.wasm
 .DS_Store
 node_modules/
 dist/

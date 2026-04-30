@@ -1,4 +1,4 @@
-import type { WasmBridge } from "@wterm/core";
+import type { TerminalCore } from "@wterm/core";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -8,6 +8,13 @@ const FLAG_UNDERLINE = 0x08;
 const FLAG_REVERSE = 0x20;
 const FLAG_INVISIBLE = 0x40;
 const FLAG_STRIKETHROUGH = 0x80;
+
+function rgbToCSS(packed: number): string {
+  const r = (packed >> 16) & 0xff;
+  const g = (packed >> 8) & 0xff;
+  const b = packed & 0xff;
+  return `rgb(${r},${g},${b})`;
+}
 
 function colorToCSS(index: number): string | null {
   if (index === DEFAULT_COLOR) return null;
@@ -23,19 +30,47 @@ function colorToCSS(index: number): string | null {
   return `rgb(${level},${level},${level})`;
 }
 
-function buildCellStyle(fg: number, bg: number, flags: number): string {
-  let fgC = fg,
-    bgC = bg;
+function cellFgCSS(
+  fg: number,
+  fgRgb: number | undefined,
+): string | null {
+  if (fgRgb !== undefined) return rgbToCSS(fgRgb);
+  return colorToCSS(fg);
+}
+
+function cellBgCSS(
+  bg: number,
+  bgRgb: number | undefined,
+): string | null {
+  if (bgRgb !== undefined) return rgbToCSS(bgRgb);
+  return colorToCSS(bg);
+}
+
+function buildCellStyle(
+  fg: number,
+  bg: number,
+  flags: number,
+  fgRgb?: number,
+  bgRgb?: number,
+): string {
+  let fgIdx = fg,
+    bgIdx = bg,
+    fgR = fgRgb,
+    bgR = bgRgb;
+
   if (flags & FLAG_REVERSE) {
-    const tmp = fgC;
-    fgC = bgC;
-    bgC = tmp;
-    if (fgC === DEFAULT_COLOR) fgC = 0;
-    if (bgC === DEFAULT_COLOR) bgC = 7;
+    const tmpIdx = fgIdx;
+    fgIdx = bgIdx;
+    bgIdx = tmpIdx;
+    const tmpR = fgR;
+    fgR = bgR;
+    bgR = tmpR;
+    if (fgR === undefined && fgIdx === DEFAULT_COLOR) fgIdx = 0;
+    if (bgR === undefined && bgIdx === DEFAULT_COLOR) bgIdx = 7;
   }
 
-  const fgCSS = colorToCSS(fgC);
-  const bgCSS = colorToCSS(bgC);
+  const fgCSS = cellFgCSS(fgIdx, fgR);
+  const bgCSS = cellBgCSS(bgIdx, bgR);
 
   let style = "";
   if (fgCSS) style += `color:${fgCSS};`;
@@ -64,17 +99,23 @@ function resolveColors(
   fg: number,
   bg: number,
   flags: number,
+  fgRgb?: number,
+  bgRgb?: number,
 ): { fg: string; bg: string } {
-  let fgC = fg,
-    bgC = bg;
+  let fgIdx = fg,
+    bgIdx = bg,
+    fgR = fgRgb,
+    bgR = bgRgb;
+
   if (flags & FLAG_REVERSE) {
-    [fgC, bgC] = [bgC, fgC];
-    if (fgC === DEFAULT_COLOR) fgC = 0;
-    if (bgC === DEFAULT_COLOR) bgC = 7;
+    [fgIdx, bgIdx] = [bgIdx, fgIdx];
+    [fgR, bgR] = [bgR, fgR];
+    if (fgR === undefined && fgIdx === DEFAULT_COLOR) fgIdx = 0;
+    if (bgR === undefined && bgIdx === DEFAULT_COLOR) bgIdx = 7;
   }
   return {
-    fg: colorToCSS(fgC) || "var(--term-fg)",
-    bg: colorToCSS(bgC) || "var(--term-bg)",
+    fg: cellFgCSS(fgIdx, fgR) || "var(--term-fg)",
+    bg: cellBgCSS(bgIdx, bgR) || "var(--term-bg)",
   };
 }
 
@@ -201,6 +242,8 @@ export class Renderer {
       fg: number;
       bg: number;
       flags: number;
+      fgRgb?: number;
+      bgRgb?: number;
     },
     lineLen: number,
     cursorCol: number,
@@ -243,7 +286,7 @@ export class Renderer {
       if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
         flushRun(col);
 
-        const colors = resolveColors(cell.fg, cell.bg, cell.flags);
+        const colors = resolveColors(cell.fg, cell.bg, cell.flags, cell.fgRgb, cell.bgRgb);
         const span = document.createElement("span");
         span.className =
           col === cursorCol ? "term-block term-cursor" : "term-block";
@@ -257,7 +300,7 @@ export class Renderer {
       } else {
         const ch = inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ";
         const style = inBounds
-          ? buildCellStyle(cell.fg, cell.bg, cell.flags)
+          ? buildCellStyle(cell.fg, cell.bg, cell.flags, cell.fgRgb, cell.bgRgb)
           : "";
 
         if (style !== runStyle) {
@@ -272,18 +315,17 @@ export class Renderer {
     }
     flushRun(this.cols);
 
-    // Extend the row background when the line fills the full width.
-    // When lineLen < cols, bgCss stays "" which clears any stale bg
-    // via the prevRowBg comparison below.
     let bgCss = "";
     if (lineLen >= this.cols && this.cols > 0) {
       const lastCell = getCell(this.cols - 1);
-      let bgC = lastCell.bg;
+      let bgIdx = lastCell.bg;
+      let bgR = lastCell.bgRgb;
       if (lastCell.flags & FLAG_REVERSE) {
-        bgC = lastCell.fg;
-        if (bgC === DEFAULT_COLOR) bgC = 7;
+        bgIdx = lastCell.fg;
+        bgR = lastCell.fgRgb;
+        if (bgR === undefined && bgIdx === DEFAULT_COLOR) bgIdx = 7;
       }
-      bgCss = colorToCSS(bgC) || "";
+      bgCss = cellBgCSS(bgIdx, bgR) || "";
     }
     const boxShadow = bgCss ? `0 1px 0 ${bgCss}` : "";
     if (rowIndex >= 0) {
@@ -299,16 +341,16 @@ export class Renderer {
   }
 
   private _buildScrollbackRowEl(
-    bridge: WasmBridge,
+    core: TerminalCore,
     sbOffset: number,
   ): HTMLDivElement {
     const rowEl = document.createElement("div");
     rowEl.className = "term-row term-scrollback-row";
-    const lineLen = bridge.getScrollbackLineLen(sbOffset);
+    const lineLen = core.getScrollbackLineLen(sbOffset);
 
     this._buildRowContent(
       rowEl,
-      (col) => bridge.getScrollbackCell(sbOffset, col),
+      (col) => core.getScrollbackCell(sbOffset, col),
       lineLen,
       -1,
       -1,
@@ -316,8 +358,8 @@ export class Renderer {
     return rowEl;
   }
 
-  private syncScrollback(bridge: WasmBridge): void {
-    const scrollbackCount = bridge.getScrollbackCount();
+  private syncScrollback(core: TerminalCore): void {
+    const scrollbackCount = core.getScrollbackCount();
 
     if (scrollbackCount === this._renderedScrollbackCount) return;
 
@@ -327,7 +369,7 @@ export class Renderer {
       const fragment = document.createDocumentFragment();
 
       for (let i = newCount - 1; i >= 0; i--) {
-        const rowEl = this._buildScrollbackRowEl(bridge, i);
+        const rowEl = this._buildScrollbackRowEl(core, i);
         fragment.appendChild(rowEl);
         this._scrollbackRowEls.push(rowEl);
       }
@@ -344,9 +386,9 @@ export class Renderer {
     this._renderedScrollbackCount = scrollbackCount;
   }
 
-  render(bridge: WasmBridge): void {
-    const rows = bridge.getRows();
-    const cols = bridge.getCols();
+  render(core: TerminalCore): void {
+    const rows = core.getRows();
+    const cols = core.getCols();
 
     let resized = false;
     if (rows !== this.rows || cols !== this.cols) {
@@ -354,16 +396,16 @@ export class Renderer {
       resized = true;
     }
 
-    this.syncScrollback(bridge);
+    this.syncScrollback(core);
 
-    const cursor = bridge.getCursor();
+    const cursor = core.getCursor();
     const cursorVisible = cursor.visible;
 
     const needsCursorUpdate =
       cursor.row !== this.prevCursorRow || cursor.col !== this.prevCursorCol;
 
     for (let r = 0; r < this.rows; r++) {
-      const isDirty = resized || bridge.isDirtyRow(r);
+      const isDirty = resized || core.isDirtyRow(r);
       const hadCursor = r === this.prevCursorRow && needsCursorUpdate;
       const hasCursor = r === cursor.row;
 
@@ -371,7 +413,7 @@ export class Renderer {
         const cCol = hasCursor && cursorVisible ? cursor.col : -1;
         this._buildRowContent(
           this.rowEls[r],
-          (col) => bridge.getCell(r, col),
+          (col) => core.getCell(r, col),
           this.cols,
           cCol,
           r,
@@ -382,23 +424,23 @@ export class Renderer {
     this.prevCursorRow = cursor.row;
     this.prevCursorCol = cursor.col;
 
-    // Update the container background only when the last row was actually
-    // repainted, avoiding stale reads during partial mid-redraw frames.
-    const lastRowDirty = resized || bridge.isDirtyRow(this.rows - 1);
+    const lastRowDirty = resized || core.isDirtyRow(this.rows - 1);
     if (lastRowDirty) {
-      const bottomRight = bridge.getCell(this.rows - 1, this.cols - 1);
-      let gridBg = bottomRight.bg;
+      const bottomRight = core.getCell(this.rows - 1, this.cols - 1);
+      let gridBgIdx = bottomRight.bg;
+      let gridBgRgb = bottomRight.bgRgb;
       if (bottomRight.flags & FLAG_REVERSE) {
-        gridBg = bottomRight.fg;
-        if (gridBg === DEFAULT_COLOR) gridBg = 7;
+        gridBgIdx = bottomRight.fg;
+        gridBgRgb = bottomRight.fgRgb;
+        if (gridBgRgb === undefined && gridBgIdx === DEFAULT_COLOR) gridBgIdx = 7;
       }
-      const containerBg = colorToCSS(gridBg) || "";
+      const containerBg = cellBgCSS(gridBgIdx, gridBgRgb) || "";
       if (containerBg !== this.prevContainerBg) {
         this.container.style.background = containerBg;
         this.prevContainerBg = containerBg;
       }
     }
 
-    bridge.clearDirty();
+    core.clearDirty();
   }
 }

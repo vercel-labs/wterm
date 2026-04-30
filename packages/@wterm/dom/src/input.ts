@@ -1,4 +1,4 @@
-import type { WasmBridge } from "@wterm/core";
+import type { TerminalCore } from "@wterm/core";
 
 const NORMAL_KEYS: Record<string, string> = {
   ArrowUp: "\x1b[A",
@@ -45,7 +45,7 @@ export class InputHandler {
   private element: HTMLElement;
   private textarea: HTMLTextAreaElement;
   private onData: (data: string) => void;
-  private getBridge: () => WasmBridge | null;
+  private getBridge: () => TerminalCore | null;
   private composing = false;
 
   private _onKeyDown: (e: KeyboardEvent) => void;
@@ -59,7 +59,7 @@ export class InputHandler {
   constructor(
     element: HTMLElement,
     onData: (data: string) => void,
-    getBridge: () => WasmBridge | null,
+    getBridge: () => TerminalCore | null,
   ) {
     this.element = element;
     this.onData = onData;

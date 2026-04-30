@@ -7,6 +7,7 @@ export const PAGE_TITLES: Record<string, string> = {
   react: "React",
   vue: "Vue",
   vanilla: "Vanilla JS",
+  ghostty: "Ghostty Core",
   "just-bash": "Just Bash",
   markdown: "Markdown",
   core: "Core / Advanced",

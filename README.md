@@ -8,15 +8,17 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 
 | Package | Description |
 |---|---|
-| [`@wterm/core`](packages/@wterm/core) | Headless WASM bridge + WebSocket transport |
+| [`@wterm/core`](packages/@wterm/core) | Headless WASM bridge, `TerminalCore` interface, WebSocket transport |
 | [`@wterm/dom`](packages/@wterm/dom) | DOM renderer, input handler — vanilla JS terminal |
 | [`@wterm/react`](packages/@wterm/react) | React component + `useTerminal` hook (TypeScript) |
 | [`@wterm/vue`](packages/@wterm/vue) | Vue 3 component + template ref API |
+| [`@wterm/ghostty`](packages/@wterm/ghostty) | Full-featured VT emulation core powered by libghostty |
 | [`@wterm/just-bash`](packages/@wterm/just-bash) | In-browser Bash shell powered by just-bash |
 | [`@wterm/markdown`](packages/@wterm/markdown) | Render Markdown in the terminal |
 
 ## Features
 
+- **Pluggable cores** — built-in lightweight Zig core (~12 KB) or opt-in [libghostty](packages/@wterm/ghostty) backend (~400 KB) for full VT compliance
 - **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~12 KB `.wasm` binary (release build)
 - **DOM rendering** — native text selection, clipboard, browser find, and screen reader support
 - **Dirty-row tracking** — only touched rows are re-rendered each frame via `requestAnimationFrame`

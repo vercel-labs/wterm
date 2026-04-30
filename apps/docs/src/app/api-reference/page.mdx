@@ -29,10 +29,16 @@ The React and Vue `<Terminal>` components and the vanilla `WTerm` constructor al
       <td>Initial row count</td>
     </tr>
     <tr>
+      <td><code>core</code></td>
+      <td><code>TerminalCore</code></td>
+      <td>—</td>
+      <td>A pre-constructed terminal core instance. When provided, <code>wasmUrl</code> is ignored and this core is used instead of loading the built-in Zig WASM binary. See <a href="/ghostty">Ghostty Core</a> for an example.</td>
+    </tr>
+    <tr>
       <td><code>wasmUrl</code></td>
       <td><code>string</code></td>
       <td>—</td>
-      <td>URL to serve the WASM binary separately. When omitted, the ~12 KB binary is decoded from an inlined base64 string.</td>
+      <td>URL to serve the WASM binary separately. When omitted, the ~12 KB binary is decoded from an inlined base64 string. Ignored when <code>core</code> is provided.</td>
     </tr>
     <tr>
       <td><code>autoResize</code></td>

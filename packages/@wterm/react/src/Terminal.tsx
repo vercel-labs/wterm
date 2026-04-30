@@ -5,7 +5,7 @@ import {
   forwardRef,
   type HTMLAttributes,
 } from "react";
-import { WTerm } from "@wterm/dom";
+import { WTerm, type TerminalCore } from "@wterm/dom";
 
 // onResize and onError are omitted from HTMLAttributes because we redefine
 // them with different signatures (terminal dimensions / WASM init errors).
@@ -15,6 +15,11 @@ export interface TerminalProps extends Omit<
 > {
   cols?: number;
   rows?: number;
+  /**
+   * A pre-constructed terminal core. When provided, `wasmUrl` is ignored and
+   * this core is used instead of loading the built-in Zig WASM binary.
+   */
+  core?: TerminalCore;
   wasmUrl?: string;
   theme?: string;
   autoResize?: boolean;
@@ -39,6 +44,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
   {
     cols = 80,
     rows = 24,
+    core,
     wasmUrl,
     theme,
     autoResize = false,
@@ -92,6 +98,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
       const wt = new WTerm(el, {
         cols,
         rows,
+        core,
         wasmUrl,
         autoResize: autoResizeRef.current,
         cursorBlink,
@@ -125,7 +132,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     },
     // Re-run only when the WASM source changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [wasmUrl],
+    [core, wasmUrl],
   );
 
   // Sync props to the existing instance (render-time checks)

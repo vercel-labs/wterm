@@ -1,15 +1,4 @@
-export interface CellData {
-  char: number;
-  fg: number;
-  bg: number;
-  flags: number;
-}
-
-export interface CursorState {
-  row: number;
-  col: number;
-  visible: boolean;
-}
+import type { CellData, CursorState, UnhandledSequence, TerminalCore } from "./terminal-core.js";
 
 interface WasmExports {
   memory: WebAssembly.Memory;
@@ -45,13 +34,6 @@ interface WasmExports {
   getDebugLogMax(): number;
 }
 
-export interface UnhandledSequence {
-  final: string;
-  private: string;
-  paramCount: number;
-  params: number[];
-}
-
 import { WASM_BASE64 } from "./wasm-inline.js";
 
 function decodeBase64(base64: string): ArrayBuffer {
@@ -61,7 +43,7 @@ function decodeBase64(base64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-export class WasmBridge {
+export class WasmBridge implements TerminalCore {
   private exports: WasmExports;
   private memory: WebAssembly.Memory;
   private gridPtr = 0;

@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "mkdir -p public && cp node_modules/@wterm/core/wasm/wterm.wasm public/wterm.wasm && chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null; (command -v portless >/dev/null 2>&1 || (echo '\\nportless is required but not installed. Run: npm i -g portless\\nSee: https://github.com/vercel-labs/portless\\n' && exit 1))",
+    "predev": "mkdir -p public && cp node_modules/@wterm/core/wasm/wterm.wasm public/wterm.wasm && cp node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm public/ghostty-vt.wasm && chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null; (command -v portless >/dev/null 2>&1 || (echo '\\nportless is required but not installed. Run: npm i -g portless\\nSee: https://github.com/vercel-labs/portless\\n' && exit 1))",
     "dev": "portless local-example.wterm tsx server.ts",
-    "prebuild": "mkdir -p public && cp node_modules/@wterm/core/wasm/wterm.wasm public/wterm.wasm && chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null",
+    "prebuild": "mkdir -p public && cp node_modules/@wterm/core/wasm/wterm.wasm public/wterm.wasm && cp node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm public/ghostty-vt.wasm && chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -15,6 +15,7 @@
     "@tailwindcss/postcss": "^4.2.2",
     "@wterm/core": "workspace:*",
     "@wterm/dom": "workspace:*",
+    "@wterm/ghostty": "workspace:*",
     "@wterm/react": "workspace:*",
     "lucide-react": "^1.8.0",
     "next": "16.2.3",
@@ -22,17 +23,17 @@
     "postcss": "^8.5.9",
     "react": "19.2.5",
     "react-dom": "19.2.5",
-    "ws": "^8.18.2",
-    "tailwindcss": "^4.2.2"
+    "tailwindcss": "^4.2.2",
+    "ws": "^8.18.2"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
-    "tsx": "^4.19.4",
     "eslint": "^9.39.4",
     "eslint-config-next": "16.2.3",
+    "tsx": "^4.19.4",
     "typescript": "^6.0.2"
   }
 }

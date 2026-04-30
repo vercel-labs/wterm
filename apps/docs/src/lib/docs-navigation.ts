@@ -33,6 +33,7 @@ export const navGroups: NavGroup[] = [
   {
     label: "Packages",
     items: [
+      { name: "Ghostty Core", href: "/ghostty" },
       { name: "Just Bash", href: "/just-bash" },
       { name: "Markdown", href: "/markdown" },
       { name: "Core / Advanced", href: "/core" },
@@ -66,6 +67,11 @@ export const navGroups: NavGroup[] = [
         href: `${GITHUB}/tree/main/examples/markdown-streaming`,
         external: true,
       },
+      {
+        name: "Ghostty Core",
+        href: `${GITHUB}/tree/main/examples/ghostty`,
+        external: true,
+      },
     ],
   },
   {
@@ -89,6 +95,11 @@ export const navGroups: NavGroup[] = [
       {
         name: "@wterm/vue",
         href: `${GITHUB}/tree/main/packages/@wterm/vue`,
+        external: true,
+      },
+      {
+        name: "@wterm/ghostty",
+        href: `${GITHUB}/tree/main/packages/@wterm/ghostty`,
         external: true,
       },
       {
