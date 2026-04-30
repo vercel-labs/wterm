@@ -89,6 +89,13 @@ function appendRun(parent: HTMLElement, text: string, style: string): void {
   parent.appendChild(span);
 }
 
+function escapeHTML(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function resolveColors(
   fg: number,
   bg: number,
@@ -243,32 +250,39 @@ export class Renderer {
     cursorCol: number,
     rowIndex: number,
   ): void {
-    rowEl.textContent = "";
-
+    let html = "";
     let runStyle = "";
     let runText = "";
     let runStart = 0;
 
     const flushRun = (endCol: number) => {
       if (!runText) return;
+      const escaped = escapeHTML(runText);
 
       if (cursorCol >= runStart && cursorCol < endCol) {
         const offset = cursorCol - runStart;
-        const before = runText.slice(0, offset);
-        const cursorChar = runText[offset];
-        const after = runText.slice(offset + 1);
+        const chars = [...runText];
+        const before = chars.slice(0, offset).join("");
+        const cursorChar = chars[offset] || " ";
+        const after = chars.slice(offset + 1).join("");
 
-        if (before) appendRun(rowEl, before, runStyle);
-
-        const cursorSpan = document.createElement("span");
-        cursorSpan.className = "term-cursor";
-        if (runStyle) cursorSpan.style.cssText = runStyle;
-        cursorSpan.textContent = cursorChar;
-        rowEl.appendChild(cursorSpan);
-
-        if (after) appendRun(rowEl, after, runStyle);
+        if (before) {
+          html += runStyle
+            ? `<span style="${runStyle}">${escapeHTML(before)}</span>`
+            : `<span>${escapeHTML(before)}</span>`;
+        }
+        html += runStyle
+          ? `<span class="term-cursor" style="${runStyle}">${escapeHTML(cursorChar)}</span>`
+          : `<span class="term-cursor">${escapeHTML(cursorChar)}</span>`;
+        if (after) {
+          html += runStyle
+            ? `<span style="${runStyle}">${escapeHTML(after)}</span>`
+            : `<span>${escapeHTML(after)}</span>`;
+        }
       } else {
-        appendRun(rowEl, runText, runStyle);
+        html += runStyle
+          ? `<span style="${runStyle}">${escaped}</span>`
+          : `<span>${escaped}</span>`;
       }
     };
 
@@ -287,12 +301,10 @@ export class Renderer {
           cell.fgRgb,
           cell.bgRgb,
         );
-        const span = document.createElement("span");
-        span.className =
-          col === cursorCol ? "term-block term-cursor" : "term-block";
-        span.style.background = getBlockBackground(cp, colors.fg, colors.bg);
-        if (cell.flags & FLAG_DIM) span.style.opacity = "0.5";
-        rowEl.appendChild(span);
+        const cls = col === cursorCol ? "term-block term-cursor" : "term-block";
+        const bg = getBlockBackground(cp, colors.fg, colors.bg);
+        const dim = cell.flags & FLAG_DIM ? "opacity:0.5;" : "";
+        html += `<span class="${cls}" style="background:${bg};${dim}"></span>`;
 
         runStyle = "";
         runText = "";
@@ -314,6 +326,8 @@ export class Renderer {
       }
     }
     flushRun(this.cols);
+
+    rowEl.innerHTML = html;
 
     let bgCss = "";
     if (lineLen >= this.cols && this.cols > 0) {
