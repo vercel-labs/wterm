@@ -152,8 +152,10 @@ export class GhosttyCore implements TerminalCore {
       bg: DEFAULT_COLOR,
       flags: cell.flags,
     };
-    if (cell.colorFlags & 1) result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
-    if (cell.colorFlags & 2) result.bgRgb = packRgb(cell.bgR, cell.bgG, cell.bgB);
+    if (cell.colorFlags & 1)
+      result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
+    if (cell.colorFlags & 2)
+      result.bgRgb = packRgb(cell.bgR, cell.bgG, cell.bgB);
     return result;
   }
 
@@ -213,20 +215,12 @@ export class GhosttyCore implements TerminalCore {
     const bufSize = 4096;
     const bufPtr = allocBuffer(this.wasm, bufSize);
     if (bufPtr === 0) return null;
-    const len = this.wasm.exports.read_response(
-      this.termPtr,
-      bufPtr,
-      bufSize,
-    );
+    const len = this.wasm.exports.read_response(this.termPtr, bufPtr, bufSize);
     if (len === 0) {
       freeBuffer(this.wasm, bufPtr, bufSize);
       return null;
     }
-    const bytes = new Uint8Array(
-      this.wasm.exports.memory.buffer,
-      bufPtr,
-      len,
-    );
+    const bytes = new Uint8Array(this.wasm.exports.memory.buffer, bufPtr, len);
     const text = new TextDecoder().decode(bytes);
     freeBuffer(this.wasm, bufPtr, bufSize);
     return text;

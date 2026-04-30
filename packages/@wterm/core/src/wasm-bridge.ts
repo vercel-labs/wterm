@@ -1,4 +1,9 @@
-import type { CellData, CursorState, UnhandledSequence, TerminalCore } from "./terminal-core.js";
+import type {
+  CellData,
+  CursorState,
+  UnhandledSequence,
+  TerminalCore,
+} from "./terminal-core.js";
 
 interface WasmExports {
   memory: WebAssembly.Memory;

@@ -30,18 +30,12 @@ function colorToCSS(index: number): string | null {
   return `rgb(${level},${level},${level})`;
 }
 
-function cellFgCSS(
-  fg: number,
-  fgRgb: number | undefined,
-): string | null {
+function cellFgCSS(fg: number, fgRgb: number | undefined): string | null {
   if (fgRgb !== undefined) return rgbToCSS(fgRgb);
   return colorToCSS(fg);
 }
 
-function cellBgCSS(
-  bg: number,
-  bgRgb: number | undefined,
-): string | null {
+function cellBgCSS(bg: number, bgRgb: number | undefined): string | null {
   if (bgRgb !== undefined) return rgbToCSS(bgRgb);
   return colorToCSS(bg);
 }
@@ -286,7 +280,13 @@ export class Renderer {
       if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
         flushRun(col);
 
-        const colors = resolveColors(cell.fg, cell.bg, cell.flags, cell.fgRgb, cell.bgRgb);
+        const colors = resolveColors(
+          cell.fg,
+          cell.bg,
+          cell.flags,
+          cell.fgRgb,
+          cell.bgRgb,
+        );
         const span = document.createElement("span");
         span.className =
           col === cursorCol ? "term-block term-cursor" : "term-block";
@@ -432,7 +432,8 @@ export class Renderer {
       if (bottomRight.flags & FLAG_REVERSE) {
         gridBgIdx = bottomRight.fg;
         gridBgRgb = bottomRight.fgRgb;
-        if (gridBgRgb === undefined && gridBgIdx === DEFAULT_COLOR) gridBgIdx = 7;
+        if (gridBgRgb === undefined && gridBgIdx === DEFAULT_COLOR)
+          gridBgIdx = 7;
       }
       const containerBg = cellBgCSS(gridBgIdx, gridBgRgb) || "";
       if (containerBg !== this.prevContainerBg) {

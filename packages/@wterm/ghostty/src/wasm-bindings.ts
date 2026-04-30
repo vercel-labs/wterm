@@ -73,9 +73,7 @@ const DEFAULT_WASM_PATH = new URL("../wasm/ghostty-vt.wasm", import.meta.url)
  * @param wasmUrl - URL or path to the .wasm file. Defaults to the
  *   committed binary at `../wasm/ghostty-vt.wasm`.
  */
-export async function loadGhosttyWasm(
-  wasmUrl?: string,
-): Promise<GhosttyWasm> {
+export async function loadGhosttyWasm(wasmUrl?: string): Promise<GhosttyWasm> {
   const url = wasmUrl ?? DEFAULT_WASM_PATH;
   const response = await fetch(url);
   const bytes = await response.arrayBuffer();
@@ -144,11 +142,7 @@ export function allocBuffer(wasm: GhosttyWasm, size: number): number {
 }
 
 /** Free a buffer previously allocated with allocBuffer. */
-export function freeBuffer(
-  wasm: GhosttyWasm,
-  ptr: number,
-  size: number,
-): void {
+export function freeBuffer(wasm: GhosttyWasm, ptr: number, size: number): void {
   wasm.exports.free_buffer(ptr, size);
 }
 
