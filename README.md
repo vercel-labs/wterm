@@ -36,7 +36,6 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - [Zig](https://ziglang.org/) 0.16.0+
 - [Node.js](https://nodejs.org/) 20+
 - [pnpm](https://pnpm.io/) 10+
-- [portless](https://github.com/vercel-labs/portless) — `npm i -g portless`
 
 ### Setup
 
