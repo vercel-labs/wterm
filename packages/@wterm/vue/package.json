@@ -1,6 +1,6 @@
 {
   "name": "@wterm/vue",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Vue component for wterm — a terminal emulator for the web",
   "type": "module",
   "main": "dist/index.js",

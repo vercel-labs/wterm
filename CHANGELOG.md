@@ -1,8 +1,30 @@
 # Changelog
 
-## 0.2.1
+## 0.3.0
 
 <!-- release:start -->
+
+### New Features
+
+- **Ghostty core** — new `@wterm/ghostty` package with `GhosttyCore` implementing `TerminalCore` via libghostty compiled to WASM, providing an alternative terminal rendering engine (#62)
+- **`TerminalCore` interface** — extracted into a standalone module in `@wterm/core` so custom cores (like Ghostty) can be swapped in cleanly (#62)
+- **Ghostty example** — minimal vanilla TypeScript example using `@wterm/ghostty` and `@wterm/dom` (#62)
+- **Ghostty docs page** — install, quick start, how it works, and switching cores guide (#62)
+
+### Improvements
+
+- **Write coalescing** — output writes are now batched with `setTimeout` in the DOM renderer to reduce animation flashing (#62)
+- **innerHTML renderer** — switched to `innerHTML` for fewer DOM operations per frame (#62)
+- **Deferred PTY spawn** — PTY is now spawned on first `RESIZE` event to eliminate the stray `zsh %` artifact (#62)
+- **Local example routes** — split into `/` (built-in core) and `/ghostty` with a core toggle (#62)
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.2.1
 
 ### Bug Fixes
 
@@ -12,8 +34,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.2.0
 

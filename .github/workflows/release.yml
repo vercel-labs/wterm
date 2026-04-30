@@ -27,7 +27,7 @@ jobs:
         run: |
           LOCAL_VERSION=$(node -p "require('./packages/@wterm/core/package.json').version")
           SHOULD_RELEASE=false
-          for pkg in core dom react vue just-bash markdown; do
+          for pkg in core dom react vue just-bash markdown ghostty; do
             REGISTRY_VERSION=$(npm view "@wterm/$pkg" version 2>/dev/null || echo "0.0.0")
             echo "@wterm/$pkg — local: $LOCAL_VERSION, registry: $REGISTRY_VERSION"
             if [ "$LOCAL_VERSION" != "$REGISTRY_VERSION" ]; then
@@ -88,7 +88,7 @@ jobs:
             fi
           }
 
-          for pkg in core dom react vue just-bash markdown; do
+          for pkg in core dom react vue just-bash markdown ghostty; do
             publish_pkg "packages/@wterm/$pkg" "@wterm/$pkg"
           done
 
