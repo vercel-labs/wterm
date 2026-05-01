@@ -41,16 +41,28 @@ const FIXED_KEYS: Record<string, string> = {
   F12: "\x1b[24~",
 };
 
+interface CursorRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 export class InputHandler {
   private element: HTMLElement;
   private textarea: HTMLTextAreaElement;
+  private compositionView: HTMLSpanElement;
   private onData: (data: string) => void;
   private getBridge: () => TerminalCore | null;
   private composing = false;
+  private _charWidth = 0;
+  private _cursorObserver: MutationObserver;
+  private _positionRaf: number | null = null;
 
   private _onKeyDown: (e: KeyboardEvent) => void;
   private _onPaste: (e: ClipboardEvent) => void;
   private _onCompositionStart: () => void;
+  private _onCompositionUpdate: (e: CompositionEvent) => void;
   private _onCompositionEnd: (e: CompositionEvent) => void;
   private _onInput: () => void;
   private _onFocus: () => void;
@@ -75,11 +87,12 @@ export class InputHandler {
     this.textarea.setAttribute("aria-hidden", "true");
     const s = this.textarea.style;
     s.position = "absolute";
-    s.left = "-9999px";
+    s.left = "0";
     s.top = "0";
-    s.width = "1px";
-    s.height = "1px";
+    s.width = "1ch";
+    s.height = "1.2em";
     s.opacity = "0";
+    s.zIndex = "10";
     s.overflow = "hidden";
     s.border = "0";
     s.padding = "0";
@@ -92,12 +105,33 @@ export class InputHandler {
     s.background = "transparent";
     element.appendChild(this.textarea);
 
+    this.compositionView = document.createElement("span");
+    this.compositionView.className = "term-composition";
+    const cs = this.compositionView.style;
+    cs.position = "absolute";
+    cs.font = "inherit";
+    cs.color = "inherit";
+    cs.background = "var(--term-bg, #1e1e1e)";
+    cs.whiteSpace = "pre";
+    cs.textDecoration = "underline";
+    cs.zIndex = "50";
+    cs.pointerEvents = "none";
+    cs.padding = "0";
+    cs.margin = "0";
+    cs.border = "0";
+    cs.display = "none";
+    element.appendChild(this.compositionView);
+
     this._onKeyDown = this.handleKeyDown.bind(this);
     this._onPaste = this.handlePaste.bind(this);
     this._onCompositionStart = this.handleCompositionStart.bind(this);
+    this._onCompositionUpdate = this.handleCompositionUpdate.bind(this);
     this._onCompositionEnd = this.handleCompositionEnd.bind(this);
     this._onInput = this.handleInput.bind(this);
-    this._onFocus = () => this.element.classList.add("focused");
+    this._onFocus = () => {
+      this.element.classList.add("focused");
+      this._positionTextareaAtCursor();
+    };
     this._onBlur = () => this.element.classList.remove("focused");
 
     this.textarea.addEventListener("keydown", this._onKeyDown);
@@ -107,12 +141,89 @@ export class InputHandler {
       this._onCompositionStart,
     );
     this.textarea.addEventListener(
+      "compositionupdate",
+      this._onCompositionUpdate as EventListener,
+    );
+    this.textarea.addEventListener(
       "compositionend",
       this._onCompositionEnd as EventListener,
     );
     this.textarea.addEventListener("input", this._onInput);
     this.textarea.addEventListener("focus", this._onFocus);
     this.textarea.addEventListener("blur", this._onBlur);
+
+    // Renderer flushes many DOM mutations per render; coalesce observer
+    // callbacks into one rAF tick so we don't force a layout per child.
+    this._cursorObserver = new MutationObserver(() => {
+      if (this._positionRaf !== null) return;
+      this._positionRaf = requestAnimationFrame(() => {
+        this._positionRaf = null;
+        this._positionTextareaAtCursor();
+      });
+    });
+    this._cursorObserver.observe(element, { childList: true, subtree: true });
+    this._positionTextareaAtCursor();
+  }
+
+  private _measureCharWidth(): number {
+    if (this._charWidth) return this._charWidth;
+    const probe = document.createElement("span");
+    const ps = probe.style;
+    ps.font = "inherit";
+    ps.position = "absolute";
+    ps.visibility = "hidden";
+    ps.whiteSpace = "pre";
+    ps.left = "-9999px";
+    probe.textContent = "xxxxxxxxxx";
+    this.element.appendChild(probe);
+    const w = probe.getBoundingClientRect().width / 10;
+    probe.remove();
+    // Cache unconditionally; an unmeasurable layout (e.g. jsdom) would
+    // otherwise re-probe on every observer fire and recurse forever.
+    this._charWidth = w > 0 ? w : 8;
+    return this._charWidth;
+  }
+
+  private _getCursorRect(): CursorRect | null {
+    const elRect = this.element.getBoundingClientRect();
+    const cursorEl = this.element.querySelector(".term-cursor");
+    if (cursorEl) {
+      const r = cursorEl.getBoundingClientRect();
+      return {
+        left: r.left - elRect.left + this.element.scrollLeft,
+        top: r.top - elRect.top + this.element.scrollTop,
+        width: r.width,
+        height: r.height,
+      };
+    }
+    // TUI apps that hide the cursor (\x1b[?25l) drop the .term-cursor
+    // element from the DOM. Fall back to the WASM-side cursor position
+    // so IME composition still anchors at the prompt.
+    const bridge = this.getBridge();
+    const cur = bridge ? bridge.getCursor() : null;
+    if (!cur) return null;
+    const rows = this.element.querySelectorAll(".term-row");
+    const rowEl = rows[cur.row] as HTMLElement | undefined;
+    if (!rowEl) return null;
+    const rRect = rowEl.getBoundingClientRect();
+    const charW = this._measureCharWidth();
+    return {
+      left:
+        rRect.left - elRect.left + this.element.scrollLeft + cur.col * charW,
+      top: rRect.top - elRect.top + this.element.scrollTop,
+      width: charW,
+      height: rRect.height,
+    };
+  }
+
+  private _positionTextareaAtCursor(): void {
+    const rect = this._getCursorRect();
+    if (!rect) return;
+    const s = this.textarea.style;
+    s.left = rect.left + "px";
+    s.top = rect.top + "px";
+    s.width = Math.max(1, rect.width) + "px";
+    s.height = Math.max(1, rect.height) + "px";
   }
 
   focus(): void {
@@ -120,11 +231,20 @@ export class InputHandler {
   }
 
   destroy(): void {
+    this._cursorObserver?.disconnect();
+    if (this._positionRaf !== null) {
+      cancelAnimationFrame(this._positionRaf);
+      this._positionRaf = null;
+    }
     this.textarea.removeEventListener("keydown", this._onKeyDown);
     this.textarea.removeEventListener("paste", this._onPaste as EventListener);
     this.textarea.removeEventListener(
       "compositionstart",
       this._onCompositionStart,
+    );
+    this.textarea.removeEventListener(
+      "compositionupdate",
+      this._onCompositionUpdate as EventListener,
     );
     this.textarea.removeEventListener(
       "compositionend",
@@ -135,10 +255,13 @@ export class InputHandler {
     this.textarea.removeEventListener("blur", this._onBlur);
     this.element.classList.remove("focused");
     this.textarea.remove();
+    this.compositionView.remove();
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
-    if (this.composing) return;
+    // IME first keystroke fires keydown with keyCode 229 before
+    // compositionstart; bail early so the raw key isn't sent to the PTY.
+    if (this.composing || e.isComposing || e.keyCode === 229) return;
 
     if ((e.metaKey || e.ctrlKey) && e.key === "c") {
       const sel = window.getSelection();
@@ -188,12 +311,36 @@ export class InputHandler {
 
   private handleCompositionStart(): void {
     this.composing = true;
+    this._positionTextareaAtCursor();
+    this._showCompositionView();
+  }
+
+  private handleCompositionUpdate(e: CompositionEvent): void {
+    this.compositionView.textContent = e.data || "";
   }
 
   private handleCompositionEnd(e: CompositionEvent): void {
     this.composing = false;
+    this._hideCompositionView();
     if (e.data) this.onData(e.data);
     this.textarea.value = "";
+  }
+
+  private _showCompositionView(): void {
+    const rect = this._getCursorRect();
+    const cs = this.compositionView.style;
+    if (rect) {
+      cs.left = rect.left + "px";
+      cs.top = rect.top + "px";
+      cs.height = rect.height + "px";
+      cs.lineHeight = rect.height + "px";
+    }
+    cs.display = "inline-block";
+  }
+
+  private _hideCompositionView(): void {
+    this.compositionView.style.display = "none";
+    this.compositionView.textContent = "";
   }
 
   private handleInput(): void {
