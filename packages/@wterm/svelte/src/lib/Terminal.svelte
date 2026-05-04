@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type { SvelteHTMLElements } from "svelte/elements";
-  import { WTerm } from "@wterm/dom";
+  import { WTerm, type TerminalCore } from "@wterm/dom";
 
   type DivAttributes = SvelteHTMLElements["div"];
 
@@ -11,6 +11,11 @@
     cols?: number;
     /** Row count. */
     rows?: number;
+    /**
+     * A pre-constructed terminal core. When provided, `wasmUrl` is ignored and
+     * this core is used instead of loading the built-in Zig WASM binary.
+     */
+    core?: TerminalCore;
     /** Optional override for the WASM binary URL used by the terminal core. */
     wasmUrl?: string;
     /** Theme name appended as a `theme-<name>` class on the root element. */
@@ -39,6 +44,7 @@
   let {
     cols = 80,
     rows = 24,
+    core,
     wasmUrl,
     theme,
     autoResize = false,
@@ -89,6 +95,7 @@
     const wt = new WTerm(root, {
       cols,
       rows,
+      core,
       wasmUrl,
       autoResize,
       cursorBlink,

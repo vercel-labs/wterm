@@ -1,7 +1,7 @@
 import { describe, it, expectTypeOf } from "vitest";
 import type Terminal from "../Terminal.svelte";
 import type { ComponentProps } from "svelte";
-import type { WTerm } from "@wterm/dom";
+import type { TerminalCore, WTerm } from "@wterm/dom";
 
 describe("Terminal types", () => {
   it("bind:this carries the imperative handle", () => {
@@ -35,6 +35,7 @@ describe("Terminal types", () => {
     type Props = ComponentProps<typeof Terminal>;
     expectTypeOf<Props["cols"]>().toEqualTypeOf<number | undefined>();
     expectTypeOf<Props["rows"]>().toEqualTypeOf<number | undefined>();
+    expectTypeOf<Props["core"]>().toEqualTypeOf<TerminalCore | undefined>();
     expectTypeOf<Props["theme"]>().toEqualTypeOf<string | undefined>();
     expectTypeOf<Props["wasmUrl"]>().toEqualTypeOf<string | undefined>();
     expectTypeOf<Props["autoResize"]>().toEqualTypeOf<boolean | undefined>();

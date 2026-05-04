@@ -21,7 +21,7 @@ npm install @wterm/dom @wterm/svelte
 
 ## Props
 
-`Terminal` accepts all shared terminal options: `cols`, `rows`, `wasmUrl`, `autoResize`, `cursorBlink`, and `debug`.
+`Terminal` accepts all shared terminal options: `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `cursorBlink`, and `debug`.
 
 It also accepts a `theme` prop, which applies a `theme-<name>` class to the root element. Standard `div` attributes like `class`, `style`, `id`, and ARIA props are forwarded to the root element.
 

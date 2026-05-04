@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mount, unmount, tick } from "svelte";
 import Terminal from "../Terminal.svelte";
+import TerminalHarness from "./TerminalHarness.svelte";
 
 let lastWTermInstance: any = null;
 
@@ -143,6 +144,37 @@ describe("Terminal component", () => {
     expect(lastWTermInstance.focus).toHaveBeenCalled();
   });
 
+  it("syncs cols/rows on prop change", async () => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    const component = mount(TerminalHarness, { target });
+    await flushPromises();
+
+    component.setSize(120, 40);
+    await tick();
+
+    expect(lastWTermInstance.resize).toHaveBeenCalledWith(120, 40);
+  });
+
+  it("toggles cursor-blink class on prop change", async () => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    const component = mount(TerminalHarness, { target });
+    await flushPromises();
+
+    component.setCursorBlink(true);
+    await tick();
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      true,
+    );
+
+    component.setCursorBlink(false);
+    await tick();
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      false,
+    );
+  });
+
   it("wires callback props to WTerm callbacks", async () => {
     const onData = vi.fn();
     const onTitle = vi.fn();
@@ -172,6 +204,17 @@ describe("Terminal component", () => {
     expect(WTerm).toHaveBeenCalledWith(
       expect.any(HTMLElement),
       expect.objectContaining({ debug: true }),
+    );
+  });
+
+  it("passes core option to WTerm", async () => {
+    const { WTerm } = await import("@wterm/dom");
+    const core = { init: vi.fn() };
+    mountTerminal({ core });
+    await flushPromises();
+    expect(WTerm).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({ core }),
     );
   });
 });
