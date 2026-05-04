@@ -66,6 +66,36 @@ function App() {
 }
 ```
 
+### Svelte
+
+```svelte
+<script lang="ts">
+  import { Terminal } from "@wterm/svelte";
+  import { MarkdownRenderer } from "@wterm/markdown";
+  import "@wterm/svelte/css";
+
+  let term: Terminal;
+  const md = new MarkdownRenderer();
+
+  async function onReady() {
+    const response = await fetch("/api/chat", { method: "POST" });
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const rendered = md.push(decoder.decode(value));
+      if (rendered) term.write(rendered);
+    }
+
+    term.write(md.flush());
+  }
+</script>
+
+<Terminal bind:this={term} {onReady} />
+```
+
 ## Options
 
 <table>

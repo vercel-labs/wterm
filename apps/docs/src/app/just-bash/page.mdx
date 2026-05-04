@@ -48,6 +48,34 @@ function App() {
 
 Use a ref to hold the `BashShell` instance so it's accessible from both the `onReady` and `onData` callbacks.
 
+### Svelte
+
+```svelte
+<script lang="ts">
+  import { Terminal } from "@wterm/svelte";
+  import { BashShell } from "@wterm/just-bash";
+  import "@wterm/svelte/css";
+
+  let shell: BashShell | null = null;
+  let term: Terminal;
+
+  function onReady() {
+    if (shell) return;
+    shell = new BashShell({
+      files: { "/home/user/hello.txt": "Hello, world!\n" },
+      greeting: "Welcome to wterm!",
+    });
+    shell.attach(term.write.bind(term));
+  }
+
+  function onData(data: string) {
+    shell?.handleInput(data);
+  }
+</script>
+
+<Terminal bind:this={term} {onReady} {onData} />
+```
+
 ## Options
 
 <table>
