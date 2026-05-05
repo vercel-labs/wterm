@@ -38,6 +38,7 @@ export class WebSocketTransport {
     if (!this.url) throw new Error("No WebSocket URL provided");
 
     this._closed = false;
+    this._reconnectDelay = 1000;
     this._ws = new WebSocket(this.url);
     this._ws.binaryType = "arraybuffer";
 
