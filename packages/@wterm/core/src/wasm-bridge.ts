@@ -102,10 +102,10 @@ export class WasmBridge implements TerminalCore {
   }
 
   writeRaw(data: Uint8Array): void {
-    const buf = new Uint8Array(this.memory.buffer, this.writeBufferPtr, 8192);
     let offset = 0;
     while (offset < data.length) {
       const chunk = Math.min(data.length - offset, 8192);
+      const buf = new Uint8Array(this.memory.buffer, this.writeBufferPtr, 8192);
       buf.set(data.subarray(offset, offset + chunk));
       this.exports.writeBytes(chunk);
       offset += chunk;
