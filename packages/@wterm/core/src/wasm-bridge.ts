@@ -58,7 +58,6 @@ export class WasmBridge implements TerminalCore {
   private maxCols = 256;
   private encoder = new TextEncoder();
   private decoder = new TextDecoder();
-  private _dv!: DataView;
 
   constructor(instance: WebAssembly.Instance) {
     this.exports = instance.exports as unknown as WasmExports;
@@ -93,7 +92,6 @@ export class WasmBridge implements TerminalCore {
     this.writeBufferPtr = this.exports.getWriteBuffer();
     this.cellSize = this.exports.getCellSize();
     this.maxCols = this.exports.getMaxCols();
-    this._dv = new DataView(this.memory.buffer);
   }
 
   writeString(str: string): void {
@@ -114,7 +112,7 @@ export class WasmBridge implements TerminalCore {
 
   getCell(row: number, col: number): CellData {
     const offset = this.gridPtr + (row * this.maxCols + col) * this.cellSize;
-    const dv = this._dv;
+    const dv = new DataView(this.memory.buffer);
     return {
       char: dv.getUint32(offset, true),
       fg: dv.getUint16(offset + 4, true),
@@ -181,7 +179,7 @@ export class WasmBridge implements TerminalCore {
   getScrollbackCell(offset: number, col: number): CellData {
     const ptr = this.exports.getScrollbackLine(offset);
     const off = ptr + col * this.cellSize;
-    const dv = this._dv;
+    const dv = new DataView(this.memory.buffer);
     return {
       char: dv.getUint32(off, true),
       fg: dv.getUint16(off + 4, true),
