@@ -257,14 +257,17 @@ export class GhosttyCore implements TerminalCore {
     const cell = parseCell(view, col * CELL_BYTES);
     freeBuffer(this.wasm, bufPtr, lineSize);
 
-    return {
+    const result: CellData = {
       char: cell.codepoint || 32,
       fg: DEFAULT_COLOR,
       bg: DEFAULT_COLOR,
       flags: cell.flags,
-      fgRgb: packRgb(cell.fgR, cell.fgG, cell.fgB),
-      bgRgb: packRgb(cell.bgR, cell.bgG, cell.bgB),
     };
+    if (cell.colorFlags & 1)
+      result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
+    if (cell.colorFlags & 2)
+      result.bgRgb = packRgb(cell.bgR, cell.bgG, cell.bgB);
+    return result;
   }
 
   getScrollbackLineLen(offset: number): number {
