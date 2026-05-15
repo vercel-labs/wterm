@@ -3,6 +3,8 @@ export interface CellData {
   fg: number;
   bg: number;
   flags: number;
+  /** Display width in terminal columns. Width 0 marks a continuation cell for a wide glyph. */
+  width?: 0 | 1 | 2;
   /** Resolved 24-bit foreground color (0xRRGGBB). Present when the core provides true color. */
   fgRgb?: number;
   /** Resolved 24-bit background color (0xRRGGBB). Present when the core provides true color. */

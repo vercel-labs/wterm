@@ -66,6 +66,41 @@ describe("Renderer", () => {
       expect(text).toContain("i");
     });
 
+    it("skips wide-character continuation cells", () => {
+      const grid = [
+        [
+          makeCell("A"),
+          { ...makeCell("あ"), width: 2 as const },
+          { char: 32, fg: 256, bg: 256, flags: 0, width: 0 as const },
+          makeCell("B"),
+        ],
+      ];
+      const bridge = createMockBridge(4, 1, grid);
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+
+      expect(container.textContent).toContain("AあB");
+      expect(container.textContent).not.toContain("あ B");
+    });
+
+    it("keeps cursor placement after a wide-character continuation cell", () => {
+      const grid = [
+        [
+          makeCell("A"),
+          { ...makeCell("あ"), width: 2 as const },
+          { char: 32, fg: 256, bg: 256, flags: 0, width: 0 as const },
+          makeCell("B"),
+        ],
+      ];
+      const bridge = createMockBridge(4, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 3, visible: true });
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+
+      const cursor = container.querySelector(".term-cursor");
+      expect(cursor?.textContent).toBe("B");
+    });
+
     it("applies cursor class to cursor position", () => {
       const grid = [[makeCell("A"), makeCell("B")]];
       const bridge = createMockBridge(2, 1, grid);

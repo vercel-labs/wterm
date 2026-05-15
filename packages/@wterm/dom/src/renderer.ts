@@ -1,4 +1,4 @@
-import type { TerminalCore } from "@wterm/core";
+import type { CellData, TerminalCore } from "@wterm/core";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -238,14 +238,7 @@ export class Renderer {
 
   private _buildRowContent(
     rowEl: HTMLDivElement,
-    getCell: (col: number) => {
-      char: number;
-      fg: number;
-      bg: number;
-      flags: number;
-      fgRgb?: number;
-      bgRgb?: number;
-    },
+    getCell: (col: number) => CellData,
     lineLen: number,
     cursorCol: number,
     rowIndex: number,
@@ -290,6 +283,13 @@ export class Renderer {
       const cell = getCell(col);
       const inBounds = col < lineLen;
       const cp = inBounds ? cell.char : 0;
+      if (inBounds && cell.width === 0) {
+        flushRun(col);
+        runStyle = "";
+        runText = "";
+        runStart = col + 1;
+        continue;
+      }
 
       if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
         flushRun(col);
