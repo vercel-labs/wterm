@@ -46,11 +46,25 @@ function packRgb(r: number, g: number, b: number): number {
   return (r << 16) | (g << 8) | b;
 }
 
+function toCellData(cell: ReturnType<typeof parseCell>): CellData {
+  const result: CellData = {
+    char: cell.codepoint || 32,
+    fg: DEFAULT_COLOR,
+    bg: DEFAULT_COLOR,
+    flags: cell.flags,
+    width: cell.width === 0 || cell.width === 2 ? cell.width : 1,
+  };
+  if (cell.colorFlags & 1) result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
+  if (cell.colorFlags & 2) result.bgRgb = packRgb(cell.bgR, cell.bgG, cell.bgB);
+  return result;
+}
+
 const BLANK_CELL: CellData = {
   char: 32,
   fg: DEFAULT_COLOR,
   bg: DEFAULT_COLOR,
   flags: 0,
+  width: 1,
 };
 
 export interface GhosttyOptions {
@@ -143,20 +157,15 @@ export class GhosttyCore implements TerminalCore {
     if (byteOffset + CELL_BYTES > this._viewportBufSize) return BLANK_CELL;
 
     const cell = parseCell(view, byteOffset);
-    if (cell.codepoint === 0 && cell.flags === 0 && cell.colorFlags === 0)
+    if (
+      cell.codepoint === 0 &&
+      cell.flags === 0 &&
+      cell.colorFlags === 0 &&
+      cell.width !== 0
+    )
       return BLANK_CELL;
 
-    const result: CellData = {
-      char: cell.codepoint || 32,
-      fg: DEFAULT_COLOR,
-      bg: DEFAULT_COLOR,
-      flags: cell.flags,
-    };
-    if (cell.colorFlags & 1)
-      result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
-    if (cell.colorFlags & 2)
-      result.bgRgb = packRgb(cell.bgR, cell.bgG, cell.bgB);
-    return result;
+    return toCellData(cell);
   }
 
   isDirtyRow(row: number): boolean {
@@ -262,6 +271,7 @@ export class GhosttyCore implements TerminalCore {
       fg: DEFAULT_COLOR,
       bg: DEFAULT_COLOR,
       flags: cell.flags,
+      width: cell.width === 0 || cell.width === 2 ? cell.width : 1,
       fgRgb: packRgb(cell.fgR, cell.fgG, cell.fgB),
       bgRgb: packRgb(cell.bgR, cell.bgG, cell.bgB),
     };

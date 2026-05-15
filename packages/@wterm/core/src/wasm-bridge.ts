@@ -120,6 +120,7 @@ export class WasmBridge implements TerminalCore {
       fg: dv.getUint16(offset + 4, true),
       bg: dv.getUint16(offset + 6, true),
       flags: dv.getUint8(offset + 8),
+      width: 1,
     };
   }
 
@@ -187,6 +188,7 @@ export class WasmBridge implements TerminalCore {
       fg: dv.getUint16(off + 4, true),
       bg: dv.getUint16(off + 6, true),
       flags: dv.getUint8(off + 8),
+      width: 1,
     };
   }
 
