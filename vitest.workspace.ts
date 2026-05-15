@@ -5,5 +5,7 @@ export default defineWorkspace([
   "packages/@wterm/core",
   "packages/@wterm/dom",
   "packages/@wterm/react",
+  "packages/@wterm/svelte",
+  "packages/@wterm/vue",
   "packages/@wterm/just-bash",
 ]);
