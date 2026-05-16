@@ -48,7 +48,7 @@ const bridge = await WasmBridge.load();
 bridge.init(80, 24);
 bridge.writeString("Hello, world!\r\n");
 
-const cell = bridge.getCell(0, 0); // { char, fg, bg, flags }
+const cell = bridge.getCell(0, 0); // { char, fg, bg, flags, width }
 const cursor = bridge.getCursor();  // { row, col, visible }
 ```
 
@@ -59,7 +59,7 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 | `writeString(str)` | Write a UTF-8 string to the terminal |
 | `writeRaw(data: Uint8Array)` | Write raw bytes to the terminal |
 | `resize(cols, rows)` | Resize the terminal grid |
-| `getCell(row, col)` | Get cell data (`{ char, fg, bg, flags }`) |
+| `getCell(row, col)` | Get cell data (`{ char, fg, bg, flags, width }`) |
 | `getCursor()` | Get cursor state (`{ row, col, visible }`) |
 | `getCols()` / `getRows()` | Get current grid dimensions |
 | `isDirtyRow(row)` | Check if a row needs re-rendering |

@@ -25,8 +25,14 @@ function createMockBridge(cols: number, rows: number, grid: CellData[][] = []) {
   };
 }
 
-function makeCell(char: string, fg = 256, bg = 256, flags = 0): CellData {
-  return { char: char.codePointAt(0)!, fg, bg, flags };
+function makeCell(
+  char: string,
+  fg = 256,
+  bg = 256,
+  flags = 0,
+  width = 1,
+): CellData {
+  return { char: char.codePointAt(0)!, fg, bg, flags, width };
 }
 
 describe("Renderer", () => {
@@ -64,6 +70,43 @@ describe("Renderer", () => {
       const text = container.textContent;
       expect(text).toContain("H");
       expect(text).toContain("i");
+    });
+
+    it("renders wide cells once and skips continuation cells", () => {
+      const grid = [
+        [
+          makeCell(String.fromCodePoint(0x1f4c1), 256, 256, 0, 2),
+          { char: 0, fg: 256, bg: 256, flags: 0, width: 0 },
+          makeCell("a"),
+          makeCell("b"),
+        ],
+      ];
+      const bridge = createMockBridge(4, 1, grid);
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+
+      const row = container.querySelector(".term-row");
+      expect(row?.textContent).toBe(`${String.fromCodePoint(0x1f4c1)}ab`);
+      expect(container.querySelector(".term-wide")?.textContent).toBe(
+        String.fromCodePoint(0x1f4c1),
+      );
+    });
+
+    it("places the cursor correctly after a wide cell", () => {
+      const grid = [
+        [
+          makeCell(String.fromCodePoint(0x1f4c1), 256, 256, 0, 2),
+          { char: 0, fg: 256, bg: 256, flags: 0, width: 0 },
+          makeCell("a"),
+          makeCell("b"),
+        ],
+      ];
+      const bridge = createMockBridge(4, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 3, visible: true });
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+
+      expect(container.querySelector(".term-cursor")?.textContent).toBe("b");
     });
 
     it("applies cursor class to cursor position", () => {

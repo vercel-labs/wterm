@@ -1,4 +1,4 @@
-import type { TerminalCore } from "@wterm/core";
+import type { CellData, TerminalCore } from "@wterm/core";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -238,14 +238,7 @@ export class Renderer {
 
   private _buildRowContent(
     rowEl: HTMLDivElement,
-    getCell: (col: number) => {
-      char: number;
-      fg: number;
-      bg: number;
-      flags: number;
-      fgRgb?: number;
-      bgRgb?: number;
-    },
+    getCell: (col: number) => CellData,
     lineLen: number,
     cursorCol: number,
     rowIndex: number,
@@ -286,10 +279,55 @@ export class Renderer {
       }
     };
 
+    const appendStyledSpan = (
+      className: string,
+      style: string,
+      text: string,
+    ) => {
+      const classAttr = className ? ` class="${className}"` : "";
+      const styleAttr = style ? ` style="${style}"` : "";
+      html += `<span${classAttr}${styleAttr}>${escapeHTML(text)}</span>`;
+    };
+
     for (let col = 0; col < this.cols; col++) {
       const cell = getCell(col);
       const inBounds = col < lineLen;
       const cp = inBounds ? cell.char : 0;
+      const width = inBounds ? (cell.width ?? 1) : 1;
+
+      if (inBounds && width === 0) {
+        flushRun(col);
+        if (col === cursorCol) {
+          appendStyledSpan("term-cursor", "", " ");
+        }
+        runStyle = "";
+        runText = "";
+        runStart = col + 1;
+        continue;
+      }
+
+      if (inBounds && width === 2) {
+        flushRun(col);
+
+        const ch = cp >= 32 ? String.fromCodePoint(cp) : " ";
+        const style = buildCellStyle(
+          cell.fg,
+          cell.bg,
+          cell.flags,
+          cell.fgRgb,
+          cell.bgRgb,
+        );
+        const cls =
+          cursorCol >= col && cursorCol < col + 2
+            ? "term-wide term-cursor"
+            : "term-wide";
+        appendStyledSpan(cls, style, ch);
+
+        runStyle = "";
+        runText = "";
+        runStart = col + 2;
+        continue;
+      }
 
       if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
         flushRun(col);

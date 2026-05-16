@@ -518,6 +518,7 @@ interface CellData {
   fg: number;     // Foreground color index (256 = default)
   bg: number;     // Background color index (256 = default)
   flags: number;  // Style flags (bold, italic, underline, etc.)
+  width?: number; // 1 = narrow, 2 = wide leading cell, 0 = continuation
 }
 
 interface CursorState {

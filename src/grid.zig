@@ -1,4 +1,5 @@
-const Cell = @import("cell.zig").Cell;
+const cell_mod = @import("cell.zig");
+const Cell = cell_mod.Cell;
 
 pub const MAX_COLS: u16 = 256;
 pub const MAX_ROWS: u16 = 256;
@@ -59,8 +60,21 @@ pub const Grid = struct {
 
     pub fn clearRangeAs(self: *Grid, row: u16, start_col: u16, end_col: u16, blank: Cell) void {
         if (row >= self.rows) return;
-        const end = if (end_col > self.cols) self.cols else end_col;
-        var c = start_col;
+        var start = if (start_col > self.cols) self.cols else start_col;
+        var end = if (end_col > self.cols) self.cols else end_col;
+
+        if (start < end) {
+            if (start < self.cols and self.cells[row][start].width == cell_mod.WIDTH_CONTINUATION and start > 0) {
+                start -= 1;
+            }
+            if (end < self.cols and self.cells[row][end].width == cell_mod.WIDTH_CONTINUATION) {
+                end += 1;
+            } else if (end > 0 and end < self.cols and self.cells[row][end - 1].width == cell_mod.WIDTH_WIDE) {
+                end += 1;
+            }
+        }
+
+        var c = start;
         while (c < end) : (c += 1) {
             self.cells[row][c] = blank;
         }
