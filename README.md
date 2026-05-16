@@ -25,6 +25,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Themes** — CSS custom properties with built-in Default, Solarized Dark, Monokai, and Light themes
 - **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly
 - **Scrollback history** — configurable ring buffer
+- **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws aligned
 - **24-bit color** — full RGB SGR support
 - **Auto-resize** — `ResizeObserver`-based terminal resizing
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
