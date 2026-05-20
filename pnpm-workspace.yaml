@@ -4,3 +4,19 @@ packages:
   - "packages/@internal/*"
   - "apps/*"
   - "examples/*"
+
+minimumReleaseAge: 2880
+
+allowBuilds:
+  "@mongodb-js/zstd": false
+  "cpu-features": false
+  "esbuild": false
+  "msw": false
+  "node-pty": false
+  "node-liblzma": false
+  "sharp": false
+  "ssh2": false
+  "unrs-resolver": false
+
+patchedDependencies:
+  "next-themes@0.4.6": "patches/next-themes@0.4.6.patch"

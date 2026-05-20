@@ -7,6 +7,10 @@
     "type": "git",
     "url": "https://github.com/vercel-labs/wterm"
   },
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=11.0.0"
+  },
   "scripts": {
     "build": "turbo run build",
     "predev": "command -v portless >/dev/null 2>&1 || (echo '\\nportless is required but not installed. Run: npm i -g portless\\nSee: https://github.com/vercel-labs/portless\\n' && exit 1)",
@@ -27,16 +31,5 @@
     "turbo": "^2.9.6",
     "vitest": "^4.1.4"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "cpu-features",
-      "esbuild",
-      "node-pty",
-      "ssh2"
-    ],
-    "patchedDependencies": {
-      "next-themes@0.4.6": "patches/next-themes@0.4.6.patch"
-    }
-  },
-  "packageManager": "pnpm@10.11.0"
+  "packageManager": "pnpm@11.1.3"
 }
