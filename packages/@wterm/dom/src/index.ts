@@ -10,4 +10,11 @@ export type {
   PerfStats,
   UnhandledEntry,
 } from "./debug.js";
+export {
+  KittyGraphicsFilter,
+  type KittyGraphicsEvent,
+  type KittyControl,
+  type StreamEvent,
+} from "./kitty-graphics.js";
+export { ImageOverlay } from "./image-overlay.js";
 export * from "@wterm/core";

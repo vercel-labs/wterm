@@ -6,15 +6,15 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 
 ## Packages
 
-| Package | Description |
-|---|---|
-| [`@wterm/core`](packages/@wterm/core) | Headless WASM bridge, `TerminalCore` interface, WebSocket transport |
-| [`@wterm/dom`](packages/@wterm/dom) | DOM renderer, input handler — vanilla JS terminal |
-| [`@wterm/react`](packages/@wterm/react) | React component + `useTerminal` hook (TypeScript) |
-| [`@wterm/vue`](packages/@wterm/vue) | Vue 3 component + template ref API |
-| [`@wterm/ghostty`](packages/@wterm/ghostty) | Full-featured VT emulation core powered by libghostty |
-| [`@wterm/just-bash`](packages/@wterm/just-bash) | In-browser Bash shell powered by just-bash |
-| [`@wterm/markdown`](packages/@wterm/markdown) | Render Markdown in the terminal |
+| Package                                         | Description                                                         |
+| ----------------------------------------------- | ------------------------------------------------------------------- |
+| [`@wterm/core`](packages/@wterm/core)           | Headless WASM bridge, `TerminalCore` interface, WebSocket transport |
+| [`@wterm/dom`](packages/@wterm/dom)             | DOM renderer, input handler — vanilla JS terminal                   |
+| [`@wterm/react`](packages/@wterm/react)         | React component + `useTerminal` hook (TypeScript)                   |
+| [`@wterm/vue`](packages/@wterm/vue)             | Vue 3 component + template ref API                                  |
+| [`@wterm/ghostty`](packages/@wterm/ghostty)     | Full-featured VT emulation core powered by libghostty               |
+| [`@wterm/just-bash`](packages/@wterm/just-bash) | In-browser Bash shell powered by just-bash                          |
+| [`@wterm/markdown`](packages/@wterm/markdown)   | Render Markdown in the terminal                                     |
 
 ## Features
 
@@ -28,6 +28,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **24-bit color** — full RGB SGR support
 - **Auto-resize** — `ResizeObserver`-based terminal resizing
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
+- **Inline images** — render PNGs via the [Kitty terminal graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) as `<img>` overlays aligned to the cell grid
 
 ## Development
 

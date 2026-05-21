@@ -92,6 +92,12 @@ const Terminal = defineComponent({
      * @defaultValue false
      */
     debug: Boolean,
+    /**
+     * Enable inline image rendering via the Kitty terminal graphics protocol
+     * (init-only — changing after mount has no effect).
+     * @defaultValue true
+     */
+    images: { type: Boolean, default: true },
   },
 
   // Object form: validator signatures carry emit payload types to
@@ -140,6 +146,7 @@ const Terminal = defineComponent({
         autoResize: props.autoResize,
         cursorBlink: props.cursorBlink,
         debug: props.debug,
+        images: props.images,
         onData: hasDataListener
           ? (data: string) => emit("data", data)
           : undefined,

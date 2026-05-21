@@ -2,6 +2,9 @@ import { WasmBridge, type TerminalCore } from "@wterm/core";
 import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
 import { DebugAdapter } from "./debug.js";
+import { KittyGraphicsFilter } from "./kitty-graphics.js";
+import { ImageOverlay } from "./image-overlay.js";
+import { pngDimensions } from "./png.js";
 
 export interface WTermOptions {
   cols?: number;
@@ -15,6 +18,12 @@ export interface WTermOptions {
   autoResize?: boolean;
   cursorBlink?: boolean;
   debug?: boolean;
+  /**
+   * Enable inline image rendering via the Kitty terminal graphics protocol.
+   * Defaults to `true`. Set to `false` to pass APC `_G` sequences through
+   * to the core unchanged.
+   */
+  images?: boolean;
   onData?: (data: string) => void;
   onTitle?: (title: string) => void;
   onResize?: (cols: number, rows: number) => void;
@@ -39,7 +48,12 @@ export class WTerm {
   private _destroyed = false;
   private _shouldScrollToBottom = false;
   private _rowHeight = 0;
+  private _charWidth = 0;
   private _onClickFocus: () => void;
+  private _imagesEnabled: boolean;
+  private _kittyFilter: KittyGraphicsFilter | null = null;
+  private _imageOverlay: ImageOverlay | null = null;
+  private _textEncoder = new TextEncoder();
 
   onData: ((data: string) => void) | null;
   onTitle: ((title: string) => void) | null;
@@ -55,6 +69,7 @@ export class WTerm {
     this.rows = options.rows || 24;
     this.autoResize = options.autoResize !== false;
     this._debugEnabled = options.debug ?? false;
+    this._imagesEnabled = options.images !== false;
 
     this.onData = options.onData || null;
     this.onTitle = options.onTitle || null;
@@ -93,6 +108,20 @@ export class WTerm {
 
       this.renderer = new Renderer(this._container);
       this.renderer.setup(this.cols, this.rows);
+
+      if (this._imagesEnabled) {
+        this._kittyFilter = new KittyGraphicsFilter();
+        this._imageOverlay = new ImageOverlay(this._container);
+        const cellSize = this._measureCharSize();
+        if (cellSize) {
+          this._charWidth = cellSize.charWidth;
+          this._rowHeight = cellSize.rowHeight;
+          this._imageOverlay.setCellMetrics(
+            cellSize.charWidth,
+            cellSize.rowHeight,
+          );
+        }
+      }
 
       this.input = new InputHandler(
         this.element,
@@ -145,12 +174,55 @@ export class WTerm {
     if (!this.bridge) return;
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._isScrolledToBottom();
-    if (typeof data === "string") {
+
+    if (this._kittyFilter && this._imageOverlay) {
+      const bytes =
+        typeof data === "string" ? this._textEncoder.encode(data) : data;
+      const events = this._kittyFilter.push(bytes);
+      for (const ev of events) {
+        if (ev.type === "text") {
+          this.bridge.writeRaw(ev.bytes);
+          continue;
+        }
+        const cursor = this.bridge.getCursor();
+        const scrollbackCount = this.bridge.getScrollbackCount();
+        this._imageOverlay.handle(ev.event, {
+          row: cursor.row,
+          col: cursor.col,
+          scrollbackCount,
+        });
+        this._advanceCursorForImage(ev.event);
+      }
+    } else if (typeof data === "string") {
       this.bridge.writeString(data);
     } else {
       this.bridge.writeRaw(data);
     }
     this._scheduleRender();
+  }
+
+  private _advanceCursorForImage(event: {
+    control: Record<string, number | string | undefined>;
+    data: Uint8Array;
+  }): void {
+    if (!this.bridge) return;
+    const action = String(event.control.a ?? "T");
+    if (action !== "T" && action !== "p") return;
+    if (event.control.C === 1) return;
+
+    let cellRows: number | null = null;
+    if (typeof event.control.r === "number" && event.control.r > 0) {
+      cellRows = event.control.r;
+    } else if (event.data.length > 0 && this._rowHeight > 0) {
+      const dims = pngDimensions(event.data);
+      if (dims) {
+        cellRows = Math.max(1, Math.ceil(dims.height / this._rowHeight));
+      }
+    }
+
+    if (cellRows == null) return;
+    const newlines = "\n".repeat(cellRows);
+    this.bridge.writeRaw(this._textEncoder.encode(newlines));
   }
 
   resize(cols: number, rows: number): void {
@@ -290,6 +362,9 @@ export class WTerm {
       if (measured) {
         charWidth = measured.charWidth;
         rowHeight = measured.rowHeight;
+        this._charWidth = charWidth;
+        this._rowHeight = rowHeight;
+        this._imageOverlay?.setCellMetrics(charWidth, rowHeight);
       }
 
       for (const entry of entries) {
@@ -310,6 +385,9 @@ export class WTerm {
     if (this.rafId != null) cancelAnimationFrame(this.rafId);
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.input) this.input.destroy();
+    if (this._imageOverlay) this._imageOverlay.destroy();
+    this._imageOverlay = null;
+    this._kittyFilter = null;
     this.element.removeEventListener("click", this._onClickFocus);
     this.element.innerHTML = "";
     if (
