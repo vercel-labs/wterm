@@ -188,6 +188,26 @@ describe("WTerm", () => {
       expect(mockBridge.writeString).not.toHaveBeenCalled();
       expect(mockBridge.writeRaw).not.toHaveBeenCalled();
     });
+
+    it("intercepts Kitty APC sequences when images are enabled", async () => {
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.writeRaw).mockClear();
+      const prefix = "hello ";
+      const suffix = " world";
+      // a=d delete-all APC — control-only, no payload to decode
+      const apc = "\x1b_Ga=d,d=a\x1b\\";
+      term.write(prefix + apc + suffix);
+      const encoder = new TextEncoder();
+      const allBytes = vi
+        .mocked(mockBridge.writeRaw)
+        .mock.calls.flatMap((c) => Array.from(c[0]));
+      // Every byte the bridge saw must come from prefix + suffix only.
+      const expected = Array.from(encoder.encode(prefix + suffix));
+      expect(allBytes).toEqual(expected);
+      // And ESC (0x1b) / underscore (0x5f) sequence should never reach the bridge.
+      expect(allBytes.includes(0x1b)).toBe(false);
+    });
   });
 
   describe("resize", () => {

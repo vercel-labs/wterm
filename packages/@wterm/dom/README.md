@@ -85,7 +85,9 @@ term.onData = (data) => ws.send(data);
 When `images: true` (default), wterm intercepts Kitty graphics protocol APC sequences and renders the transmitted PNG as an absolutely-positioned `<img>` overlay aligned to the cell grid. Supports inline base64 transfers (`f=100`) and multi-chunk `m=1`/`m=0` payloads. Actions: `t` (transmit), `T` (transmit + display), `p` (put placement), `d` (delete).
 
 ```ts
-const png = await fetch("/icon.png").then((r) => r.bytes());
+const png = new Uint8Array(
+  await fetch("/icon.png").then((r) => r.arrayBuffer()),
+);
 const b64 = btoa(String.fromCharCode(...png));
 term.write(`\x1b_Ga=T,f=100,i=1,c=20,r=5;${b64}\x1b\\`);
 ```

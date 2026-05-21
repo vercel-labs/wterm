@@ -85,6 +85,11 @@ interface PendingChunk {
   payload: string;
 }
 
+/** Maximum number of simultaneously-buffered chunked transfers. */
+export const MAX_PENDING_CHUNKS = 8;
+/** Maximum total base64 bytes held across all in-flight chunked transfers. */
+export const MAX_PENDING_BASE64_BYTES = 32 * 1024 * 1024;
+
 /**
  * Stateful streaming filter. Feed it raw bytes via {@link push}, receive
  * an ordered list of pass-through and graphics events.
@@ -95,6 +100,8 @@ export class KittyGraphicsFilter {
   private apcBuf: number[] = [];
   /** Pending chunked transfers keyed by image id (i=) or image number (-I=). */
   private pendingChunks = new Map<string, PendingChunk>();
+  /** Running total of buffered base64 bytes across all pending chunks. */
+  private pendingBytes = 0;
 
   /**
    * Push a chunk of bytes through the filter. Returns the ordered list of
@@ -200,6 +207,7 @@ export class KittyGraphicsFilter {
     this.state = State.Idle;
     this.apcBuf = [];
     this.pendingChunks.clear();
+    this.pendingBytes = 0;
   }
 
   private _completeApc(events: StreamEvent[]): void {
@@ -226,15 +234,33 @@ export class KittyGraphicsFilter {
     if (more || this.pendingChunks.has(key)) {
       const existing = this.pendingChunks.get(key);
       if (existing) {
+        if (this.pendingBytes + payloadB64.length > MAX_PENDING_BASE64_BYTES) {
+          this.pendingBytes -= existing.payload.length;
+          this.pendingChunks.delete(key);
+          return;
+        }
         existing.payload += payloadB64;
+        this.pendingBytes += payloadB64.length;
         // Merge controls — later chunks may omit fields. Keep first-chunk
         // values, but `m` reflects the latest.
         existing.control.m = control.m;
       } else {
+        if (payloadB64.length > MAX_PENDING_BASE64_BYTES) {
+          return;
+        }
+        if (this.pendingChunks.size >= MAX_PENDING_CHUNKS) {
+          const oldestKey = this.pendingChunks.keys().next().value;
+          if (oldestKey !== undefined) {
+            const oldest = this.pendingChunks.get(oldestKey);
+            if (oldest) this.pendingBytes -= oldest.payload.length;
+            this.pendingChunks.delete(oldestKey);
+          }
+        }
         this.pendingChunks.set(key, {
           control: { ...control },
           payload: payloadB64,
         });
+        this.pendingBytes += payloadB64.length;
       }
 
       if (more) return;
@@ -242,21 +268,34 @@ export class KittyGraphicsFilter {
       const completed = this.pendingChunks.get(key);
       this.pendingChunks.delete(key);
       if (!completed) return;
+      this.pendingBytes -= completed.payload.length;
+      let data: Uint8Array;
+      try {
+        data = decodeBase64(completed.payload);
+      } catch {
+        return;
+      }
       events.push({
         type: "graphics",
         event: {
           control: completed.control,
-          data: decodeBase64(completed.payload),
+          data,
         },
       });
       return;
     }
 
+    let data: Uint8Array;
+    try {
+      data = decodeBase64(payloadB64);
+    } catch {
+      return;
+    }
     events.push({
       type: "graphics",
       event: {
         control,
-        data: decodeBase64(payloadB64),
+        data,
       },
     });
   }
@@ -286,10 +325,10 @@ function chunkKey(control: KittyControl): string {
   return "default";
 }
 
+const LATIN1 = new TextDecoder("latin1");
+
 function decodeAscii(bytes: number[]): string {
-  let s = "";
-  for (const b of bytes) s += String.fromCharCode(b);
-  return s;
+  return LATIN1.decode(new Uint8Array(bytes));
 }
 
 function parseControl(s: string): KittyControl {

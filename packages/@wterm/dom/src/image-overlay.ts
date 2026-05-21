@@ -13,6 +13,8 @@ interface Placement {
   col: number;
   /** Pixel offset from the top of `term-grid` to the image's top edge. */
   topPx: number;
+  /** Object URL backing `el.src`; revoked when the placement is dropped. */
+  objectUrl: string;
 }
 
 const FMT_PNG = 100;
@@ -74,7 +76,10 @@ export class ImageOverlay {
   /** Remove everything. Used on terminal reset / destroy. */
   clear(): void {
     this.images.clear();
-    for (const p of this.placements.values()) p.el.remove();
+    for (const p of this.placements.values()) {
+      URL.revokeObjectURL(p.objectUrl);
+      p.el.remove();
+    }
     this.placements.clear();
   }
 
@@ -90,7 +95,6 @@ export class ImageOverlay {
       return;
     }
     const key = imageKey(event.control);
-    if (!key) return;
     this.images.set(key, { data: event.data });
   }
 
@@ -99,14 +103,16 @@ export class ImageOverlay {
     anchor: { row: number; col: number; scrollbackCount: number },
   ): void {
     const key = imageKey(control);
-    if (!key) return;
     const stored = this.images.get(key);
     if (!stored || stored.data.length === 0) return;
 
     const placementId = typeof control.p === "number" ? control.p : 0;
     const dedupeKey = `${key}#${placementId}`;
     const existing = this.placements.get(dedupeKey);
-    if (existing) existing.el.remove();
+    if (existing) {
+      URL.revokeObjectURL(existing.objectUrl);
+      existing.el.remove();
+    }
 
     const col = anchor.col + (typeof control.X === "number" ? control.X : 0);
     const totalRow =
@@ -119,10 +125,11 @@ export class ImageOverlay {
     img.draggable = false;
     img.alt = "";
     const blob = new Blob([new Uint8Array(stored.data)], { type: "image/png" });
-    img.src = URL.createObjectURL(blob);
-    img.addEventListener("load", () => URL.revokeObjectURL(img.src), {
-      once: true,
-    });
+    const objectUrl = URL.createObjectURL(blob);
+    img.src = objectUrl;
+    const revoke = (): void => URL.revokeObjectURL(objectUrl);
+    img.addEventListener("load", revoke, { once: true });
+    img.addEventListener("error", revoke, { once: true });
 
     const topPx = totalRow * this.rowHeightPx;
     const leftPx = col * this.charWidthPx;
@@ -147,6 +154,7 @@ export class ImageOverlay {
       imageId: key,
       col,
       topPx,
+      objectUrl,
     });
   }
 
@@ -161,6 +169,7 @@ export class ImageOverlay {
     const removeMatching = (pred: (p: Placement) => boolean): void => {
       for (const [k, p] of this.placements) {
         if (pred(p)) {
+          URL.revokeObjectURL(p.objectUrl);
           p.el.remove();
           this.placements.delete(k);
         }
@@ -173,7 +182,6 @@ export class ImageOverlay {
         break;
       case "i": {
         const key = imageKey(control);
-        if (!key) return;
         removeMatching((p) => p.imageId === key);
         if (spec === "I") this.images.delete(key);
         break;
@@ -185,7 +193,7 @@ export class ImageOverlay {
   }
 }
 
-function imageKey(control: KittyControl): string | null {
+function imageKey(control: KittyControl): string {
   if (typeof control.i === "number") return `i:${control.i}`;
   if (typeof control.I === "number") return `I:${control.I}`;
   return "i:0";

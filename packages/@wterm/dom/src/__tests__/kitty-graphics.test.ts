@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { KittyGraphicsFilter, type StreamEvent } from "../kitty-graphics.js";
+import {
+  KittyGraphicsFilter,
+  MAX_PENDING_CHUNKS,
+  type StreamEvent,
+} from "../kitty-graphics.js";
 
 const enc = new TextEncoder();
 
@@ -143,5 +147,52 @@ describe("KittyGraphicsFilter", () => {
     const events = feed(f, "hi");
     expect(events).toHaveLength(1);
     expect(textOf(events[0])).toBe("hi");
+  });
+
+  it("silently drops an APC whose payload is invalid base64", () => {
+    const f = new KittyGraphicsFilter();
+    // "abcde" survives the strip regex but has length 5 — invalid base64
+    // (length must be a multiple of 4), so `atob` throws.
+    const events = feed(f, `before\x1b_Ga=T,f=100,i=1;abcde\x1b\\after`);
+    // No graphics event emitted; surrounding text still passes through.
+    const graphics = events.filter((e) => e.type === "graphics");
+    expect(graphics).toHaveLength(0);
+    const text = events
+      .filter((e) => e.type === "text")
+      .map(textOf)
+      .join("");
+    expect(text).toBe("beforeafter");
+  });
+
+  it("evicts the oldest pending chunk when exceeding the chunk-count cap", () => {
+    const f = new KittyGraphicsFilter();
+    // Start MAX_PENDING_CHUNKS + 1 distinct in-flight transfers (m=1, never closed).
+    for (let i = 0; i < MAX_PENDING_CHUNKS + 1; i++) {
+      const events = feed(
+        f,
+        `\x1b_Ga=T,f=100,i=${100 + i},m=1;${base64([i])}\x1b\\`,
+      );
+      // Each chunk-with-more emits nothing.
+      expect(events).toHaveLength(0);
+    }
+    // The oldest entry (i=100) was evicted. Closing it now should not produce
+    // a graphics event because no pending entry remains and m=0 is treated as
+    // a fresh standalone APC with empty payload.
+    const closeOldest = feed(f, `\x1b_Gi=100,m=0;\x1b\\`);
+    const oldestGraphics = closeOldest.filter((e) => e.type === "graphics");
+    // A fresh standalone APC still emits one graphics event (with empty data),
+    // but it must NOT contain the originally-buffered byte.
+    expect(oldestGraphics).toHaveLength(1);
+    if (oldestGraphics[0].type === "graphics") {
+      expect(Array.from(oldestGraphics[0].event.data)).toEqual([]);
+    }
+    // The newest entry (i=100 + MAX_PENDING_CHUNKS) is still pending — closing
+    // it should yield the originally-buffered byte.
+    const newestId = 100 + MAX_PENDING_CHUNKS;
+    const closeNewest = feed(f, `\x1b_Gi=${newestId},m=0;\x1b\\`);
+    expect(closeNewest).toHaveLength(1);
+    if (closeNewest[0].type === "graphics") {
+      expect(Array.from(closeNewest[0].event.data)).toEqual([MAX_PENDING_CHUNKS]);
+    }
   });
 });
