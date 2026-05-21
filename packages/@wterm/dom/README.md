@@ -38,28 +38,28 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 
 **Options:**
 
-| Option        | Type                                   | Default | Description                                                                                                                                                                                                                                                                                                     |
-| ------------- | -------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cols`        | `number`                               | `80`    | Initial column count                                                                                                                                                                                                                                                                                            |
-| `rows`        | `number`                               | `24`    | Initial row count                                                                                                                                                                                                                                                                                               |
-| `wasmUrl`     | `string`                               | —       | Optional URL to serve the WASM binary separately (embedded by default)                                                                                                                                                                                                                                          |
-| `autoResize`  | `boolean`                              | `true`  | Auto-resize based on container dimensions                                                                                                                                                                                                                                                                       |
-| `cursorBlink` | `boolean`                              | `false` | Enable cursor blinking animation                                                                                                                                                                                                                                                                                |
-| `debug`       | `boolean`                              | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences.                                                                                                                                           |
-| `images`      | `boolean`                              | `true`  | Enable inline image rendering via the [Kitty terminal graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/). When enabled, `\x1b_G…\x1b\\` APC sequences are intercepted and rendered as `<img>` overlays above the cell grid. Set to `false` to pass the bytes through to the core unchanged. |
-| `onData`      | `(data: string) => void`               | —       | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically.                                                                                                                                                                                         |
-| `onTitle`     | `(title: string) => void`              | —       | Called when the terminal title changes                                                                                                                                                                                                                                                                          |
-| `onResize`    | `(cols: number, rows: number) => void` | —       | Called on resize                                                                                                                                                                                                                                                                                                |
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `cols` | `number` | `80` | Initial column count |
+| `rows` | `number` | `24` | Initial row count |
+| `wasmUrl` | `string` | — | Optional URL to serve the WASM binary separately (embedded by default) |
+| `autoResize` | `boolean` | `true` | Auto-resize based on container dimensions |
+| `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
+| `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
+| `images` | `boolean` | `true` | Enable inline image rendering via the [Kitty terminal graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/). When enabled, `\x1b_G…\x1b\\` APC sequences are intercepted and rendered as `<img>` overlays above the cell grid. Set to `false` to pass the bytes through to the core unchanged. |
+| `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
+| `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
+| `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
 
 **Methods:**
 
-| Method                              | Description                      |
-| ----------------------------------- | -------------------------------- |
-| `init(): Promise<WTerm>`            | Load WASM and start rendering    |
-| `write(data: string \| Uint8Array)` | Write data to the terminal       |
-| `resize(cols, rows)`                | Resize the terminal grid         |
-| `focus()`                           | Focus the terminal element       |
-| `destroy()`                         | Clean up event listeners and DOM |
+| Method | Description |
+|---|---|
+| `init(): Promise<WTerm>` | Load WASM and start rendering |
+| `write(data: string \| Uint8Array)` | Write data to the terminal |
+| `resize(cols, rows)` | Resize the terminal grid |
+| `focus()` | Focus the terminal element |
+| `destroy()` | Clean up event listeners and DOM |
 
 ### `WebSocketTransport`
 
