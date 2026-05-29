@@ -46,6 +46,8 @@
 .term-grid {
   display: block;
   white-space: pre;
+  min-height: 100%;
+  background: var(--term-bg);
   contain: layout paint style;
   will-change: contents;
 }

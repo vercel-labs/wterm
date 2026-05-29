@@ -205,7 +205,6 @@ export class Renderer {
   private rowEls: HTMLDivElement[] = [];
   private prevCursorRow = -1;
   private prevCursorCol = -1;
-  private prevContainerBg = "";
   private prevRowBg: string[] = [];
 
   private _scrollbackRowEls: HTMLDivElement[] = [];
@@ -437,24 +436,6 @@ export class Renderer {
 
     this.prevCursorRow = cursor.row;
     this.prevCursorCol = cursor.col;
-
-    const lastRowDirty = resized || core.isDirtyRow(this.rows - 1);
-    if (lastRowDirty) {
-      const bottomRight = core.getCell(this.rows - 1, this.cols - 1);
-      let gridBgIdx = bottomRight.bg;
-      let gridBgRgb = bottomRight.bgRgb;
-      if (bottomRight.flags & FLAG_REVERSE) {
-        gridBgIdx = bottomRight.fg;
-        gridBgRgb = bottomRight.fgRgb;
-        if (gridBgRgb === undefined && gridBgIdx === DEFAULT_COLOR)
-          gridBgIdx = 7;
-      }
-      const containerBg = cellBgCSS(gridBgIdx, gridBgRgb) || "";
-      if (containerBg !== this.prevContainerBg) {
-        this.container.style.background = containerBg;
-        this.prevContainerBg = containerBg;
-      }
-    }
 
     core.clearDirty();
   }

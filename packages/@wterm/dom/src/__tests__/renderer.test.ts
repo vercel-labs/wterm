@@ -121,5 +121,20 @@ describe("Renderer", () => {
       const span = container.querySelector("span[style]");
       expect(span?.getAttribute("style")).toMatch(/font-weight:\s*bold/);
     });
+
+    it("does not leak the bottom-right cell background to the container", () => {
+      const grid = [
+        [makeCell("A", 256, 256), makeCell("B", 256, 2)],
+      ];
+      const bridge = createMockBridge(2, 1, grid);
+      const renderer = new Renderer(container);
+
+      renderer.render(bridge as any);
+
+      expect(container.style.background).toBe("");
+      expect(container.querySelector(".term-row")?.getAttribute("style")).toContain(
+        "background",
+      );
+    });
   });
 });
