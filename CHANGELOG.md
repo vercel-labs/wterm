@@ -1,8 +1,18 @@
 # Changelog
 
-## 0.3.0
+## 0.3.1
 
 <!-- release:start -->
+
+### Improvements
+
+- **Embeddable focus control** — added `autoFocus` and `focusOnClick` options so hosts can own terminal focus behavior on touch devices.
+- **Public textarea access** — exposed the hidden textarea via `WTerm.textarea` for integrations that need to bridge DOM input events.
+- **Public scroll helper** — exposed `WTerm.scrollToBottom()` for host-managed scroll behavior.
+
+<!-- release:end -->
+
+## 0.3.0
 
 ### New Features
 
@@ -21,8 +31,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.2.1
 

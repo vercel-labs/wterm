@@ -13,6 +13,8 @@ export interface WTermOptions {
   core?: TerminalCore;
   wasmUrl?: string;
   autoResize?: boolean;
+  autoFocus?: boolean;
+  focusOnClick?: boolean;
   cursorBlink?: boolean;
   debug?: boolean;
   onData?: (data: string) => void;
@@ -31,6 +33,7 @@ export class WTerm {
   private _coreOption: TerminalCore | undefined;
   private wasmUrl: string | undefined;
   private _debugEnabled: boolean;
+  private _autoFocus: boolean;
   private renderer: Renderer | null = null;
   private input: InputHandler | null = null;
   private rafId: number | null = null;
@@ -39,7 +42,7 @@ export class WTerm {
   private _destroyed = false;
   private _shouldScrollToBottom = false;
   private _rowHeight = 0;
-  private _onClickFocus: () => void;
+  private _onClickFocus: (() => void) | null = null;
 
   onData: ((data: string) => void) | null;
   onTitle: ((title: string) => void) | null;
@@ -54,6 +57,7 @@ export class WTerm {
     this.cols = options.cols || 80;
     this.rows = options.rows || 24;
     this.autoResize = options.autoResize !== false;
+    this._autoFocus = options.autoFocus !== false;
     this._debugEnabled = options.debug ?? false;
 
     this.onData = options.onData || null;
@@ -66,11 +70,13 @@ export class WTerm {
     this.element.classList.add("wterm");
     if (options.cursorBlink) this.element.classList.add("cursor-blink");
 
-    this._onClickFocus = () => {
-      const sel = window.getSelection();
-      if (!sel || sel.isCollapsed) this.input?.focus();
-    };
-    this.element.addEventListener("click", this._onClickFocus);
+    if (options.focusOnClick !== false) {
+      this._onClickFocus = () => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed) this.input?.focus();
+      };
+      this.element.addEventListener("click", this._onClickFocus);
+    }
   }
 
   async init(): Promise<this> {
@@ -97,7 +103,7 @@ export class WTerm {
       this.input = new InputHandler(
         this.element,
         (data) => {
-          this._scrollToBottom();
+          this.scrollToBottom();
           if (this.onData) {
             this.onData(data);
           } else {
@@ -113,7 +119,7 @@ export class WTerm {
         this._lockHeight();
       }
 
-      this.input.focus();
+      if (this._autoFocus) this.input.focus();
       this._initialRender();
     } catch (err) {
       this.destroy();
@@ -130,7 +136,7 @@ export class WTerm {
     return el.scrollHeight - el.scrollTop - el.clientHeight < 5;
   }
 
-  private _scrollToBottom(): void {
+  scrollToBottom(): void {
     const el = this.element;
     const maxScroll = el.scrollHeight - el.clientHeight;
     if (maxScroll <= 0) {
@@ -172,6 +178,10 @@ export class WTerm {
     }
   }
 
+  get textarea(): HTMLTextAreaElement | null {
+    return this.input?.textarea ?? null;
+  }
+
   private _scheduleRender(): void {
     if (this._renderTimer != null) return;
     this._renderTimer = setTimeout(() => {
@@ -210,7 +220,7 @@ export class WTerm {
     this.element.classList.toggle("has-scrollback", hasScrollback);
 
     if (this._shouldScrollToBottom) {
-      this._scrollToBottom();
+      this.scrollToBottom();
     } else if (!hasScrollback && this.element.scrollTop !== 0) {
       this.element.scrollTop = 0;
     }
@@ -310,7 +320,9 @@ export class WTerm {
     if (this.rafId != null) cancelAnimationFrame(this.rafId);
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.input) this.input.destroy();
-    this.element.removeEventListener("click", this._onClickFocus);
+    if (this._onClickFocus) {
+      this.element.removeEventListener("click", this._onClickFocus);
+    }
     this.element.innerHTML = "";
     if (
       this.debug &&

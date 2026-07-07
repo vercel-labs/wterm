@@ -82,6 +82,16 @@ const Terminal = defineComponent({
      */
     autoResize: Boolean,
     /**
+     * Focus the hidden textarea after initialization.
+     * @defaultValue true
+     */
+    autoFocus: { type: Boolean, default: true },
+    /**
+     * Focus the hidden textarea when the terminal is clicked.
+     * @defaultValue true
+     */
+    focusOnClick: { type: Boolean, default: true },
+    /**
      * Toggles the `cursor-blink` class on the root element.
      * @defaultValue false
      */
@@ -138,6 +148,8 @@ const Terminal = defineComponent({
         core: props.core,
         wasmUrl: props.wasmUrl,
         autoResize: props.autoResize,
+        autoFocus: props.autoFocus,
+        focusOnClick: props.focusOnClick,
         cursorBlink: props.cursorBlink,
         debug: props.debug,
         onData: hasDataListener

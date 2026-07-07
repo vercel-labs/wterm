@@ -43,19 +43,21 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 
 ## `<Terminal>` Props
 
-| Prop | Type | Default | Description |
-|---|---|---|---|
-| `cols` | `number` | `80` | Initial column count |
-| `rows` | `number` | `24` | Initial row count |
-| `wasmUrl` | `string` | — | Optional URL to serve the WASM binary separately (embedded by default) |
-| `theme` | `string` | — | Theme name (e.g. `"solarized-dark"`, `"monokai"`, `"light"`) |
-| `autoResize` | `boolean` | `false` | Auto-resize based on container dimensions |
-| `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
-| `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the underlying `WTerm` instance for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
-| `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
-| `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
-| `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
-| `onReady` | `(wt: WTerm) => void` | — | Called after WASM is loaded and the terminal is initialized |
+| Prop           | Type                                   | Default | Description                                                                                                                                                                 |
+| -------------- | -------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cols`         | `number`                               | `80`    | Initial column count                                                                                                                                                        |
+| `rows`         | `number`                               | `24`    | Initial row count                                                                                                                                                           |
+| `wasmUrl`      | `string`                               | —       | Optional URL to serve the WASM binary separately (embedded by default)                                                                                                      |
+| `theme`        | `string`                               | —       | Theme name (e.g. `"solarized-dark"`, `"monokai"`, `"light"`)                                                                                                                |
+| `autoResize`   | `boolean`                              | `false` | Auto-resize based on container dimensions                                                                                                                                   |
+| `autoFocus`    | `boolean`                              | `true`  | Focus the hidden textarea after initialization                                                                                                                              |
+| `focusOnClick` | `boolean`                              | `true`  | Focus the hidden textarea when the terminal is clicked                                                                                                                      |
+| `cursorBlink`  | `boolean`                              | `false` | Enable cursor blinking animation                                                                                                                                            |
+| `debug`        | `boolean`                              | `false` | Enable debug mode. Exposes a `DebugAdapter` on the underlying `WTerm` instance for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
+| `onData`       | `(data: string) => void`               | —       | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically.                                                     |
+| `onTitle`      | `(title: string) => void`              | —       | Called when the terminal title changes                                                                                                                                      |
+| `onResize`     | `(cols: number, rows: number) => void` | —       | Called on resize                                                                                                                                                            |
+| `onReady`      | `(wt: WTerm) => void`                  | —       | Called after WASM is loaded and the terminal is initialized                                                                                                                 |
 
 Standard `div` props (`className`, `style`, `id`, etc.) are forwarded to the container element.
 
@@ -67,12 +69,12 @@ Returns a ref and imperative helpers for controlling the terminal:
 const { ref, write, resize, focus } = useTerminal();
 ```
 
-| Return | Type | Description |
-|---|---|---|
-| `ref` | `React.RefObject<TerminalHandle>` | Pass to `<Terminal ref={ref}>` |
-| `write` | `(data: string \| Uint8Array) => void` | Write data to the terminal |
-| `resize` | `(cols: number, rows: number) => void` | Resize the terminal |
-| `focus` | `() => void` | Focus the terminal |
+| Return   | Type                                   | Description                    |
+| -------- | -------------------------------------- | ------------------------------ |
+| `ref`    | `React.RefObject<TerminalHandle>`      | Pass to `<Terminal ref={ref}>` |
+| `write`  | `(data: string \| Uint8Array) => void` | Write data to the terminal     |
+| `resize` | `(cols: number, rows: number) => void` | Resize the terminal            |
+| `focus`  | `() => void`                           | Focus the terminal             |
 
 ## `TerminalHandle`
 

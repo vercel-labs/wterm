@@ -43,7 +43,7 @@ const FIXED_KEYS: Record<string, string> = {
 
 export class InputHandler {
   private element: HTMLElement;
-  private textarea: HTMLTextAreaElement;
+  readonly textarea: HTMLTextAreaElement;
   private onData: (data: string) => void;
   private getBridge: () => TerminalCore | null;
   private composing = false;

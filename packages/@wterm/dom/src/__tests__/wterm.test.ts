@@ -128,6 +128,26 @@ describe("WTerm", () => {
       expect(textarea).not.toBeNull();
     });
 
+    it("exposes the hidden textarea after init", async () => {
+      const term = new WTerm(element);
+      await term.init();
+      expect(term.textarea).toBe(element.querySelector("textarea"));
+    });
+
+    it("focuses the hidden textarea on init by default", async () => {
+      const focusSpy = vi.spyOn(HTMLTextAreaElement.prototype, "focus");
+      const term = new WTerm(element);
+      await term.init();
+      expect(focusSpy).toHaveBeenCalled();
+    });
+
+    it("does not focus the hidden textarea on init when autoFocus is false", async () => {
+      const focusSpy = vi.spyOn(HTMLTextAreaElement.prototype, "focus");
+      const term = new WTerm(element, { autoFocus: false });
+      await term.init();
+      expect(focusSpy).not.toHaveBeenCalled();
+    });
+
     it("calls destroy and throws on WASM load failure", async () => {
       vi.mocked(MockedWasmBridge.load).mockRejectedValue(
         new Error("fetch failed"),
@@ -220,6 +240,36 @@ describe("WTerm", () => {
       const focusSpy = vi.spyOn(textarea, "focus");
       term.focus();
       expect(focusSpy).toHaveBeenCalled();
+    });
+
+    it("focuses on click by default", async () => {
+      const term = new WTerm(element, { autoFocus: false, autoResize: false });
+      await term.init();
+      const textarea = element.querySelector("textarea")!;
+      const focusSpy = vi.spyOn(textarea, "focus");
+
+      element.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+
+      expect(focusSpy).toHaveBeenCalled();
+    });
+
+    it("does not focus on click when focusOnClick is false", async () => {
+      const term = new WTerm(element, {
+        autoFocus: false,
+        autoResize: false,
+        focusOnClick: false,
+      });
+      await term.init();
+      const textarea = element.querySelector("textarea")!;
+      const focusSpy = vi.spyOn(textarea, "focus");
+
+      element.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+
+      expect(focusSpy).not.toHaveBeenCalled();
     });
 
     it("focuses the element itself before init", () => {
@@ -317,6 +367,22 @@ describe("WTerm", () => {
       await term.init();
 
       expect(element.classList.contains("has-scrollback")).toBe(false);
+    });
+  });
+
+  describe("scrollToBottom", () => {
+    it("exposes the bottom scroll helper", async () => {
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+
+      Object.defineProperties(element, {
+        scrollHeight: { value: 1000, configurable: true },
+        clientHeight: { value: 100, configurable: true },
+      });
+      (term as unknown as { _rowHeight: number })._rowHeight = 20;
+      term.scrollToBottom();
+
+      expect(element.scrollTop).toBe(900);
     });
   });
 

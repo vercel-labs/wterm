@@ -23,6 +23,8 @@ export interface TerminalProps extends Omit<
   wasmUrl?: string;
   theme?: string;
   autoResize?: boolean;
+  autoFocus?: boolean;
+  focusOnClick?: boolean;
   cursorBlink?: boolean;
   /** Enable debug mode (init-only — changing after mount has no effect). */
   debug?: boolean;
@@ -48,6 +50,8 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     wasmUrl,
     theme,
     autoResize = false,
+    autoFocus = true,
+    focusOnClick = true,
     cursorBlink = false,
     debug = false,
     onData,
@@ -101,6 +105,8 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         core,
         wasmUrl,
         autoResize: autoResizeRef.current,
+        autoFocus,
+        focusOnClick,
         cursorBlink,
         debug,
         onData: callbacksRef.current.onData
@@ -132,7 +138,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     },
     // Re-run only when the WASM source changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [core, wasmUrl],
+    [core, wasmUrl, autoFocus, focusOnClick],
   );
 
   // Sync props to the existing instance (render-time checks)

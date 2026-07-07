@@ -75,6 +75,15 @@ describe("Terminal component", () => {
     expect(WTerm).toHaveBeenCalled();
   });
 
+  it("passes focus options to WTerm", async () => {
+    const { WTerm } = await import("@wterm/dom");
+    await mountTerminal({ autoFocus: false, focusOnClick: false });
+    expect(WTerm).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({ autoFocus: false, focusOnClick: false }),
+    );
+  });
+
   it("calls init on mount", async () => {
     await mountTerminal();
     await flushPromises();

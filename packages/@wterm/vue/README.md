@@ -45,27 +45,29 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 
 ## `<Terminal>` Props
 
-| Prop | Type | Default | Description |
-|---|---|---|---|
-| `cols` | `number` | `80` | Initial column count |
-| `rows` | `number` | `24` | Initial row count |
-| `wasmUrl` | `string` | — | Optional URL to serve the WASM binary separately (embedded by default) |
-| `theme` | `string` | — | Theme name (e.g. `"solarized-dark"`, `"monokai"`, `"light"`) |
-| `autoResize` | `boolean` | `false` | Auto-resize based on container dimensions |
-| `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
-| `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the underlying `WTerm` instance for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
+| Prop           | Type      | Default | Description                                                                                                                                                                 |
+| -------------- | --------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cols`         | `number`  | `80`    | Initial column count                                                                                                                                                        |
+| `rows`         | `number`  | `24`    | Initial row count                                                                                                                                                           |
+| `wasmUrl`      | `string`  | —       | Optional URL to serve the WASM binary separately (embedded by default)                                                                                                      |
+| `theme`        | `string`  | —       | Theme name (e.g. `"solarized-dark"`, `"monokai"`, `"light"`)                                                                                                                |
+| `autoResize`   | `boolean` | `false` | Auto-resize based on container dimensions                                                                                                                                   |
+| `autoFocus`    | `boolean` | `true`  | Focus the hidden textarea after initialization                                                                                                                              |
+| `focusOnClick` | `boolean` | `true`  | Focus the hidden textarea when the terminal is clicked                                                                                                                      |
+| `cursorBlink`  | `boolean` | `false` | Enable cursor blinking animation                                                                                                                                            |
+| `debug`        | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the underlying `WTerm` instance for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 
 Standard DOM attributes (`class`, `style`, `id`, ARIA props, etc.) are forwarded to the root `<div>` via `inheritAttrs`.
 
 ## Events
 
-| Event | Payload | Description |
-|---|---|---|
-| `data` | `(data: string)` | Emitted when the terminal produces data (user input or host response). When no listener is attached, input is echoed back automatically. |
-| `title` | `(title: string)` | Emitted when the terminal title changes via an escape sequence. |
-| `resize` | `(cols: number, rows: number)` | Emitted after the terminal is resized. |
-| `ready` | `(wt: WTerm)` | Emitted once after `WTerm.init()` resolves, carrying the underlying `WTerm` instance. |
-| `error` | `(err: unknown)` | Emitted if WASM loading or initialization fails. |
+| Event    | Payload                        | Description                                                                                                                              |
+| -------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `data`   | `(data: string)`               | Emitted when the terminal produces data (user input or host response). When no listener is attached, input is echoed back automatically. |
+| `title`  | `(title: string)`              | Emitted when the terminal title changes via an escape sequence.                                                                          |
+| `resize` | `(cols: number, rows: number)` | Emitted after the terminal is resized.                                                                                                   |
+| `ready`  | `(wt: WTerm)`                  | Emitted once after `WTerm.init()` resolves, carrying the underlying `WTerm` instance.                                                    |
+| `error`  | `(err: unknown)`               | Emitted if WASM loading or initialization fails.                                                                                         |
 
 ## Template Ref
 
@@ -89,12 +91,12 @@ function onReady(wt: WTerm) {
 </template>
 ```
 
-| Member | Type | Description |
-|---|---|---|
-| `write` | `(data: string \| Uint8Array) => void` | Write data to the terminal |
-| `resize` | `(cols: number, rows: number) => void` | Resize the terminal |
-| `focus` | `() => void` | Focus the terminal |
-| `instance` | `WTerm \| null` | Underlying `WTerm` instance (`null` before mount) |
+| Member     | Type                                   | Description                                       |
+| ---------- | -------------------------------------- | ------------------------------------------------- |
+| `write`    | `(data: string \| Uint8Array) => void` | Write data to the terminal                        |
+| `resize`   | `(cols: number, rows: number) => void` | Resize the terminal                               |
+| `focus`    | `() => void`                           | Focus the terminal                                |
+| `instance` | `WTerm \| null`                        | Underlying `WTerm` instance (`null` before mount) |
 
 ## Themes
 
