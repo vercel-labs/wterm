@@ -168,7 +168,11 @@ export fn get_viewport(ptr: usize, buf_ptr: [*]u8) u32 {
                 continue;
             }
             const raw = raw_cells[x];
-            const style = style_cells[x];
+            // RenderState.Cell.style is undefined unless the raw cell carries a
+            // non-default style_id. The style array is reused across render
+            // passes, so reading it unconditionally resurfaces the style of
+            // whatever occupied this cell before, including a different screen.
+            const style: Style = if (raw.style_id != 0) style_cells[x] else .{};
 
             const cp: u32 = switch (raw.content_tag) {
                 .codepoint, .codepoint_grapheme => raw.content.codepoint,
