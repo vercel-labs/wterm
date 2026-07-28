@@ -59,6 +59,15 @@ export class WasmBridge implements TerminalCore {
   private encoder = new TextEncoder();
   private decoder = new TextDecoder();
   private _dv!: DataView;
+  private _dvBuffer: ArrayBuffer | null = null;
+
+  private get dv(): DataView {
+    if (this._dvBuffer !== this.memory.buffer) {
+      this._dvBuffer = this.memory.buffer;
+      this._dv = new DataView(this.memory.buffer);
+    }
+    return this._dv;
+  }
 
   constructor(instance: WebAssembly.Instance) {
     this.exports = instance.exports as unknown as WasmExports;
@@ -93,7 +102,6 @@ export class WasmBridge implements TerminalCore {
     this.writeBufferPtr = this.exports.getWriteBuffer();
     this.cellSize = this.exports.getCellSize();
     this.maxCols = this.exports.getMaxCols();
-    this._dv = new DataView(this.memory.buffer);
   }
 
   writeString(str: string): void {
@@ -102,10 +110,10 @@ export class WasmBridge implements TerminalCore {
   }
 
   writeRaw(data: Uint8Array): void {
-    const buf = new Uint8Array(this.memory.buffer, this.writeBufferPtr, 8192);
     let offset = 0;
     while (offset < data.length) {
       const chunk = Math.min(data.length - offset, 8192);
+      const buf = new Uint8Array(this.memory.buffer, this.writeBufferPtr, 8192);
       buf.set(data.subarray(offset, offset + chunk));
       this.exports.writeBytes(chunk);
       offset += chunk;
@@ -114,7 +122,7 @@ export class WasmBridge implements TerminalCore {
 
   getCell(row: number, col: number): CellData {
     const offset = this.gridPtr + (row * this.maxCols + col) * this.cellSize;
-    const dv = this._dv;
+    const dv = this.dv;
     return {
       char: dv.getUint32(offset, true),
       fg: dv.getUint16(offset + 4, true),
@@ -181,7 +189,7 @@ export class WasmBridge implements TerminalCore {
   getScrollbackCell(offset: number, col: number): CellData {
     const ptr = this.exports.getScrollbackLine(offset);
     const off = ptr + col * this.cellSize;
-    const dv = this._dv;
+    const dv = this.dv;
     return {
       char: dv.getUint32(off, true),
       fg: dv.getUint16(off + 4, true),
