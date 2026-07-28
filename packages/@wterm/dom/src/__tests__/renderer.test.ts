@@ -121,5 +121,35 @@ describe("Renderer", () => {
       const span = container.querySelector("span[style]");
       expect(span?.getAttribute("style")).toMatch(/font-weight:\s*bold/);
     });
+
+    it("escapes double quotes before assigning to innerHTML", () => {
+      const grid = [[makeCell('"')]];
+      const bridge = createMockBridge(1, 1, grid);
+      const renderer = new Renderer(container);
+
+      let proto = Object.getPrototypeOf(container);
+      while (proto && !Object.getOwnPropertyDescriptor(proto, "innerHTML")) {
+        proto = Object.getPrototypeOf(proto);
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(proto, "innerHTML")!;
+      const assignedValues: string[] = [];
+      Object.defineProperty(proto, "innerHTML", {
+        ...descriptor,
+        set(value: string) {
+          assignedValues.push(value);
+          descriptor.set!.call(this, value);
+        },
+      });
+
+      try {
+        renderer.render(bridge as any);
+      } finally {
+        Object.defineProperty(proto, "innerHTML", descriptor);
+      }
+
+      const rowHtml = assignedValues.find((v) => v.includes('">'));
+      expect(rowHtml).toContain("&quot;");
+      expect(container.querySelector(".term-row")?.textContent).toBe('"');
+    });
   });
 });
