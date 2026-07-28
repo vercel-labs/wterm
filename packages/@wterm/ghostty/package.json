@@ -19,6 +19,7 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "pnpm build",
+    "test": "vitest run",
     "type-check": "tsc --noEmit",
     "rebuild-wasm": "bash scripts/build-wasm.sh"
   },
