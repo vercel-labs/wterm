@@ -168,6 +168,31 @@ pub const Terminal = struct {
 
         if (cols == old_cols and rows == old_rows) return;
 
+        // Vertical shrink: keep the cursor on screen. Rows that scroll off the
+        // TOP become real scrollback history; trailing rows BELOW the cursor are
+        // simply discarded (they hold no content at a shell prompt). We only
+        // scroll when the cursor would otherwise fall outside the smaller
+        // viewport — so shrinking at a fresh/cleared prompt (cursor near the
+        // top) adds NO phantom blank lines above the prompt. The alt screen has
+        // no scrollback and its running app repaints on SIGWINCH, so we leave
+        // its top rows in place and only clamp the cursor (done further below).
+        if (rows < old_rows and !self.using_alt_screen) {
+            const scroll: u16 = if (self.cursor_row >= rows) self.cursor_row - rows + 1 else 0;
+            if (scroll > 0) {
+                if (self.scrollback != null) {
+                    var sr: u16 = 0;
+                    while (sr < scroll) : (sr += 1) {
+                        self.scrollback.?.push(&self.grid.cells[sr], old_cols);
+                    }
+                }
+                var mr: u16 = 0;
+                while (mr < rows) : (mr += 1) {
+                    self.grid.cells[mr] = self.grid.cells[mr + scroll];
+                }
+                self.cursor_row -= scroll;
+            }
+        }
+
         // Clear cells beyond the new column width for each preserved row
         if (cols < old_cols) {
             const preserve_rows = if (rows < old_rows) rows else old_rows;
@@ -176,16 +201,6 @@ pub const Terminal = struct {
                 var c: u16 = cols;
                 while (c < old_cols) : (c += 1) {
                     self.grid.cells[r][c] = Cell{};
-                }
-            }
-        }
-
-        // Push excess bottom rows into scrollback when shrinking vertically
-        if (rows < old_rows) {
-            if (!self.using_alt_screen and self.scrollback != null) {
-                var r: u16 = rows;
-                while (r < old_rows) : (r += 1) {
-                    self.scrollback.?.push(&self.grid.cells[r], if (cols < old_cols) cols else old_cols);
                 }
             }
         }
@@ -1018,4 +1033,44 @@ test "scrollback" {
     const line0 = sb.getLine(0).?;
     try testing.expectEqual(@as(u32, 'L'), line0.cells[0].char);
     try testing.expectEqual(@as(u32, '2'), line0.cells[1].char);
+}
+
+test "resize shrink at top-of-screen prompt adds no phantom scrollback" {
+    const testing = @import("std").testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    var t = Terminal.init(80, 24);
+    t.scrollback = sb;
+    // A fresh prompt on the first row, everything below blank (cursor at top).
+    t.write("$ ");
+    try testing.expectEqual(@as(u16, 0), t.cursor_row);
+    // Shrinking must NOT push the trailing blank rows into scrollback.
+    t.resize(80, 8);
+    try testing.expectEqual(@as(u32, 0), sb.count);
+    try testing.expectEqual(@as(u16, 0), t.cursor_row);
+    try testing.expectEqual(@as(u32, '$'), t.grid.getCell(0, 0).char);
+}
+
+test "resize shrink at bottom scrolls top rows into scrollback" {
+    const testing = @import("std").testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    var t = Terminal.init(80, 4);
+    t.scrollback = sb;
+    // Fill the screen; cursor ends on the last row.
+    t.write("L1\r\nL2\r\nL3\r\nL4");
+    try testing.expectEqual(@as(u16, 3), t.cursor_row);
+    // Shrink to 2 rows: the 2 top rows scroll off into scrollback, the cursor
+    // stays visible on the new bottom row, and the bottom rows are kept.
+    t.resize(80, 2);
+    try testing.expectEqual(@as(u32, 2), sb.count);
+    try testing.expectEqual(@as(u16, 1), t.cursor_row);
+    try testing.expectEqual(@as(u32, 'L'), t.grid.getCell(0, 0).char);
+    try testing.expectEqual(@as(u32, '3'), t.grid.getCell(0, 1).char);
+    try testing.expectEqual(@as(u32, '4'), t.grid.getCell(1, 1).char);
+    // Oldest visible-pushed line is L1.
+    const oldest = sb.getLine(1).?;
+    try testing.expectEqual(@as(u32, '1'), oldest.cells[1].char);
 }
