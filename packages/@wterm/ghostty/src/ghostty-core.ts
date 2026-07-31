@@ -86,6 +86,14 @@ export class GhosttyCore implements TerminalCore {
   private _cols = 0;
   private _rows = 0;
 
+  // One decoded scrollback row, reused across the per-column reads the
+  // renderer does for that row.
+  private _scrollbackBufPtr = 0;
+  private _scrollbackBufSize = 0;
+  private _scrollbackView: DataView | null = null;
+  private _scrollbackOffset = -1;
+  private _scrollbackLen = 0;
+
   private constructor(wasm: GhosttyWasm, options: GhosttyOptions) {
     this.wasm = wasm;
     this._options = options;
@@ -233,30 +241,11 @@ export class GhosttyCore implements TerminalCore {
   }
 
   getScrollbackCell(offset: number, col: number): CellData {
-    const maxCols = this._cols;
-    const lineSize = maxCols * CELL_BYTES;
-    const bufPtr = allocBuffer(this.wasm, lineSize);
-    if (bufPtr === 0) return BLANK_CELL;
+    const len = this._ensureScrollbackLine(offset);
+    const view = this._scrollbackView;
+    if (!view || col >= len) return BLANK_CELL;
 
-    const len = this.wasm.exports.get_scrollback_line(
-      this.termPtr,
-      offset,
-      bufPtr,
-      maxCols,
-    );
-    if (len === 0 || col >= len) {
-      freeBuffer(this.wasm, bufPtr, lineSize);
-      return BLANK_CELL;
-    }
-
-    const view = new DataView(
-      this.wasm.exports.memory.buffer,
-      bufPtr,
-      lineSize,
-    );
     const cell = parseCell(view, col * CELL_BYTES);
-    freeBuffer(this.wasm, bufPtr, lineSize);
-
     const result: CellData = {
       char: cell.codepoint || 32,
       fg: DEFAULT_COLOR,
@@ -271,19 +260,7 @@ export class GhosttyCore implements TerminalCore {
   }
 
   getScrollbackLineLen(offset: number): number {
-    const maxCols = this._cols;
-    const lineSize = maxCols * CELL_BYTES;
-    const bufPtr = allocBuffer(this.wasm, lineSize);
-    if (bufPtr === 0) return 0;
-
-    const len = this.wasm.exports.get_scrollback_line(
-      this.termPtr,
-      offset,
-      bufPtr,
-      maxCols,
-    );
-    freeBuffer(this.wasm, bufPtr, lineSize);
-    return len;
+    return this._ensureScrollbackLine(offset);
   }
 
   // -- Debug --
@@ -296,6 +273,7 @@ export class GhosttyCore implements TerminalCore {
 
   private _invalidate(): void {
     this._viewportStale = true;
+    this._scrollbackOffset = -1;
   }
 
   private _allocViewportBuffer(): void {
@@ -306,6 +284,39 @@ export class GhosttyCore implements TerminalCore {
     this._viewportBufPtr = allocBuffer(this.wasm, this._viewportBufSize);
     this._viewportView = null;
     this._viewportStale = true;
+
+    if (this._scrollbackBufPtr !== 0) {
+      freeBuffer(this.wasm, this._scrollbackBufPtr, this._scrollbackBufSize);
+    }
+    this._scrollbackBufSize = this._cols * CELL_BYTES;
+    this._scrollbackBufPtr = allocBuffer(this.wasm, this._scrollbackBufSize);
+    this._scrollbackView = null;
+    this._scrollbackOffset = -1;
+  }
+
+  /**
+   * Decode one scrollback row into the shared buffer, at most once per row
+   * per invalidation, and return its length. The renderer reads a row column
+   * by column, so without this each cell would cost a page-list walk.
+   */
+  private _ensureScrollbackLine(offset: number): number {
+    if (this._scrollbackOffset === offset) return this._scrollbackLen;
+    if (this._scrollbackBufPtr === 0) return 0;
+
+    this._scrollbackLen = this.wasm.exports.get_scrollback_line(
+      this.termPtr,
+      offset,
+      this._scrollbackBufPtr,
+      this._cols,
+    );
+    this._scrollbackOffset = offset;
+    // Rebuilt every fill: growing WASM memory detaches the old buffer.
+    this._scrollbackView = new DataView(
+      this.wasm.exports.memory.buffer,
+      this._scrollbackBufPtr,
+      this._scrollbackBufSize,
+    );
+    return this._scrollbackLen;
   }
 
   private _ensureViewport(): void {

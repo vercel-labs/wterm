@@ -138,6 +138,53 @@ fn cellWidth(cell: vt.Cell) u8 {
     };
 }
 
+/// Encode one cell into the 16-byte layout described above.
+///
+/// This mirrors the packing get_viewport does inline. The two are kept
+/// separate because get_viewport reads RenderState, which only covers the
+/// active area, while scrollback reads page memory directly. Changes to the
+/// cell contract belong in both.
+fn encodeCell(
+    raw: *const vt.Cell,
+    style: Style,
+    palette: *const color.Palette,
+    out: *[CELL_BYTES]u8,
+) void {
+    const cp: u32 = switch (raw.content_tag) {
+        .codepoint, .codepoint_grapheme => raw.content.codepoint,
+        else => 0,
+    };
+
+    const has_fg = style.fg_color != .none;
+    const has_bg_style = style.bg_color != .none;
+    const has_bg_cell = raw.content_tag == .bg_color_palette or raw.content_tag == .bg_color_rgb;
+    const has_bg = has_bg_style or has_bg_cell;
+
+    const fg = if (has_fg) resolveRgb(style.fg_color, palette) else color.RGB{};
+    const bg = if (has_bg_cell) switch (raw.content_tag) {
+        .bg_color_palette => palette[raw.content.color_palette],
+        .bg_color_rgb => blk: {
+            const c = raw.content.color_rgb;
+            break :blk color.RGB{ .r = c.r, .g = c.g, .b = c.b };
+        },
+        else => unreachable,
+    } else if (has_bg_style) resolveRgb(style.bg_color, palette) else color.RGB{};
+
+    std.mem.writeInt(u32, out[0..4], cp, .little);
+    out[4] = fg.r;
+    out[5] = fg.g;
+    out[6] = fg.b;
+    out[7] = bg.r;
+    out[8] = bg.g;
+    out[9] = bg.b;
+    out[10] = packFlags(style);
+    out[11] = cellWidth(raw.*);
+    out[12] = (if (has_fg) @as(u8, 1) else 0) | (if (has_bg) @as(u8, 2) else 0);
+    out[13] = 0;
+    out[14] = 0;
+    out[15] = 0;
+}
+
 /// Write the entire viewport into a JS-provided flat buffer.
 /// Returns the number of cells written (rows * cols).
 export fn get_viewport(ptr: usize, buf_ptr: [*]u8) u32 {
@@ -303,15 +350,37 @@ export fn get_scrollback_count(ptr: usize) u32 {
     return @intCast(total - state.terminal.rows);
 }
 
+/// Write one scrollback row into a JS-provided buffer, using the same cell
+/// layout as get_viewport.
+///
+/// Offset 0 is the row directly above the active area (the newest retained
+/// row) and offset get_scrollback_count() - 1 is the oldest, matching the
+/// order the renderer inserts rows in and the built-in core's readback.
+///
+/// Returns the number of cells written, which is the row's grid width capped
+/// at max_cols, or 0 when the offset is out of range. This reads the page list
+/// rather than RenderState, which only covers the active area.
 export fn get_scrollback_line(ptr: usize, offset: u32, buf_ptr: [*]u8, max_cols: u32) u32 {
-    _ = ptr;
-    _ = offset;
-    _ = buf_ptr;
-    _ = max_cols;
-    // TODO: scrollback line reading requires navigating the page list
-    // backwards. This is a complex operation that will be implemented
-    // when scrollback support is prioritized.
-    return 0;
+    const state = stateFromPtr(ptr);
+    const screen: *Screen = state.terminal.screens.active;
+
+    // Walking up from the active top means small offsets, the ones the
+    // renderer asks for while scrolling, traverse the fewest pages.
+    const pin = screen.pages.getTopLeft(.active).up(offset + 1) orelse return 0;
+
+    const palette = &state.terminal.colors.palette.current;
+    const cells = pin.cells(.all);
+    const count = @min(cells.len, max_cols);
+
+    var buf_offset: usize = 0;
+    for (cells[0..count]) |*raw| {
+        // Pin.style applies the same style_id gating get_viewport relies on.
+        const style = pin.style(raw);
+        encodeCell(raw, style, palette, buf_ptr[buf_offset..][0..CELL_BYTES]);
+        buf_offset += CELL_BYTES;
+    }
+
+    return @intCast(count);
 }
 
 // -- Responses --------------------------------------------------

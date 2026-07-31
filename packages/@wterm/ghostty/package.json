@@ -21,7 +21,8 @@
     "prepublishOnly": "pnpm build",
     "test": "vitest run",
     "type-check": "tsc --noEmit",
-    "rebuild-wasm": "bash scripts/build-wasm.sh"
+    "rebuild-wasm": "bash scripts/build-wasm.sh",
+    "rebuild-wasm:docker": "bash scripts/build-wasm-docker.sh"
   },
   "dependencies": {
     "@wterm/core": "workspace:*"
