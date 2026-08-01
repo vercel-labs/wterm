@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>wterm — scrollback before/after (#91)</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        background: #14141f;
+        color: #e6e6f0;
+        font:
+          13px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        padding: 10px 14px;
+        border-bottom: 1px solid #2b2b3d;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      h1 {
+        font-size: 13px;
+        font-weight: 600;
+        margin-right: auto;
+      }
+      h1 small {
+        font-weight: 400;
+        color: #8b8ba7;
+      }
+      button {
+        font: inherit;
+        background: #24243a;
+        color: #e6e6f0;
+        border: 1px solid #38385a;
+        border-radius: 5px;
+        padding: 5px 10px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #2e2e4a;
+      }
+      main {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1px;
+        background: #2b2b3d;
+        min-height: 0;
+      }
+      section {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        /* Without this a grid item floors at its content height, and the
+           terminal's ResizeObserver then sizes rows to the whole output. */
+        min-height: 0;
+        background: #14141f;
+      }
+      .label {
+        padding: 7px 12px;
+        display: flex;
+        gap: 10px;
+        align-items: baseline;
+        border-bottom: 1px solid #2b2b3d;
+      }
+      .label b {
+        font-size: 12px;
+      }
+      .before b {
+        color: #ff8080;
+      }
+      .after b {
+        color: #7ee787;
+      }
+      .stat {
+        margin-left: auto;
+        color: #8b8ba7;
+        font-size: 11px;
+      }
+      .term {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+      }
+      kbd {
+        background: #24243a;
+        border: 1px solid #38385a;
+        border-radius: 3px;
+        padding: 1px 5px;
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>
+        @wterm/ghostty scrollback
+        <small>— issue #91, same input into both cores</small>
+      </h1>
+      <button data-lines="200">write 200 lines</button>
+      <button data-lines="50">+50</button>
+      <button data-colored="1">colored block</button>
+      <button data-reset="1">reset</button>
+      <span class="stat">scroll up with <kbd>wheel</kbd> over a pane</span>
+    </header>
+    <main>
+      <section class="before">
+        <div class="label">
+          <b>before</b>
+          <span>get_scrollback_line returns 0</span>
+          <span class="stat" id="stat-before"></span>
+        </div>
+        <div class="term" id="term-before"></div>
+      </section>
+      <section class="after">
+        <div class="label">
+          <b>after</b>
+          <span>page-list read</span>
+          <span class="stat" id="stat-after"></span>
+        </div>
+        <div class="term" id="term-after"></div>
+      </section>
+    </main>
+    <script type="module" src="/src/compare.ts"></script>
+  </body>
+</html>

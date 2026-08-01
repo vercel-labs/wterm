@@ -1,8 +1,28 @@
 # Changelog
 
-## 0.3.1
+## 0.3.2
 
 <!-- release:start -->
+
+### Bug Fixes
+
+- **Blank scrollback in `@wterm/ghostty`** — `get_scrollback_line` was an unimplemented stub returning 0, so every scrolled-back row rendered empty even though the row count was correct (#98)
+- **Style leaking across screens** — `get_viewport` read `RenderState.Cell.style` without checking `style_id`, resurfacing the style of whatever occupied the cell in an earlier render pass, including one against the alternate screen (#96)
+- **`GhosttyCore.load()` under bundlers that inline modules** — Bun's dev server resolves `import.meta.url` to a path on the build machine, so a `file:` URL reached the browser and `fetch` reported only `Failed to fetch`. The loader now names the cause and points at `wasmPath`, and reports a non-OK response or a non-WASM body instead of failing inside `WebAssembly.instantiate` (#99)
+- **`scrollbackLimit` documented as lines** — ghostty reads it as a byte budget, so an 80-column terminal retains about 1150 rows at the 10000 default, not 10000 (#98)
+
+### Improvements
+
+- **`@wterm/ghostty/ghostty-vt.wasm` subpath export** — the binary is now addressable through the package, so apps on bundlers that cannot resolve the default can serve it themselves (#99)
+- **Container WASM build** — `rebuild-wasm:docker` runs the existing build script in Linux, for hosts where Zig 0.15.x cannot link a native build runner. Output is byte-identical to a host build (#98)
+
+### Contributors
+
+- @Railly
+
+<!-- release:end -->
+
+## 0.3.1
 
 ### Bug Fixes
 
@@ -18,8 +38,6 @@
 
 - @hobostay
 - @Railly
-
-<!-- release:end -->
 
 ## 0.3.0
 
