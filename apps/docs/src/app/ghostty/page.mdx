@@ -83,6 +83,55 @@ const core = await GhosttyCore.load();
   </tbody>
 </table>
 
+## Bundlers
+
+The WASM binary is fetched at runtime rather than inlined, so the default has to resolve to a URL your app serves. `GhosttyCore.load()` resolves it with `new URL("../wasm/ghostty-vt.wasm", import.meta.url)`. Bundlers that implement that asset pattern emit the binary and rewrite the URL. Ones that do not leave `import.meta.url` pointing at the machine that built the bundle, and `load()` throws an error saying so.
+
+<table>
+  <thead>
+    <tr>
+      <th>Bundler</th>
+      <th>
+        Default <code>GhosttyCore.load()</code>
+      </th>
+      <th>Verified</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Vite (dev and build)</td>
+      <td>Works, emits a hashed asset.</td>
+      <td>Yes</td>
+    </tr>
+    <tr>
+      <td>Bun dev server</td>
+      <td>
+        Fails, pass <code>wasmPath</code>.
+      </td>
+      <td>Yes</td>
+    </tr>
+    <tr>
+      <td>Others</td>
+      <td>
+        Untested. Use <code>wasmPath</code> if the default throws.
+      </td>
+      <td>No</td>
+    </tr>
+  </tbody>
+</table>
+
+When the default cannot work, serve the binary yourself and point at it:
+
+```bash
+cp node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm public/ghostty-vt.wasm
+```
+
+```ts
+const core = await GhosttyCore.load({ wasmPath: "/ghostty-vt.wasm" });
+```
+
+The binary is also addressable as `@wterm/ghostty/ghostty-vt.wasm`, so a bundler with a URL import can take it directly.
+
 ## How it works
 
 `@wterm/ghostty` builds libghostty directly from [ghostty-org/ghostty](https://github.com/ghostty-org/ghostty) source — no third-party npm packages or pre-built binaries from other projects. The architecture:

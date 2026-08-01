@@ -62,6 +62,34 @@ const core = await GhosttyCore.load();
 | `wasmPath` | `string` | Custom path to the ghostty-vt WASM binary |
 | `scrollbackLimit` | `number` | Maximum scrollback lines (default: 10000) |
 
+## Bundlers
+
+The WASM binary is fetched at runtime, not inlined, so the default has to resolve to a URL your app actually serves. `GhosttyCore.load()` resolves it with `new URL("../wasm/ghostty-vt.wasm", import.meta.url)`. Bundlers that implement that asset pattern emit the binary and rewrite the URL; ones that do not leave `import.meta.url` pointing at the machine that built the bundle.
+
+| Bundler | Default `GhosttyCore.load()` | Verified |
+|---|---|---|
+| Vite (dev and build) | works, emits a hashed asset | yes |
+| Bun dev server | fails, pass `wasmPath` | yes |
+| Others | untested, use `wasmPath` if the default throws | no |
+
+When the default cannot work, serve the binary yourself and point at it:
+
+```bash
+cp node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm public/ghostty-vt.wasm
+```
+
+```ts
+const core = await GhosttyCore.load({ wasmPath: "/ghostty-vt.wasm" });
+```
+
+The binary is also addressable as `@wterm/ghostty/ghostty-vt.wasm`, so a bundler with a URL import can take it directly:
+
+```ts
+import wasmPath from "@wterm/ghostty/ghostty-vt.wasm?url";
+
+const core = await GhosttyCore.load({ wasmPath });
+```
+
 ## Architecture
 
 The WASM binary is built from upstream [ghostty-org/ghostty](https://github.com/ghostty-org/ghostty) (v1.3.1) using it as a Zig package dependency — no third-party npm packages or pre-built binaries from other projects.

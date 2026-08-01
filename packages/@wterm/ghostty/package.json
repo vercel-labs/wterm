@@ -10,7 +10,8 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
-    }
+    },
+    "./ghostty-vt.wasm": "./wasm/ghostty-vt.wasm"
   },
   "files": [
     "dist",
