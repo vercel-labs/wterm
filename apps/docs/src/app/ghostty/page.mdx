@@ -71,14 +71,29 @@ const core = await GhosttyCore.load();
   </thead>
   <tbody>
     <tr>
-      <td><code>wasmPath</code></td>
-      <td><code>string</code></td>
-      <td>Custom path to the ghostty-vt WASM binary. By default it resolves to the committed binary inside the package.</td>
+      <td>
+        <code>wasmPath</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
+      <td>
+        Custom path to the ghostty-vt WASM binary. By default it resolves to the
+        committed binary inside the package.
+      </td>
     </tr>
     <tr>
-      <td><code>scrollbackLimit</code></td>
-      <td><code>number</code></td>
-      <td>Maximum scrollback lines (default: 10000).</td>
+      <td>
+        <code>scrollbackLimit</code>
+      </td>
+      <td>
+        <code>number</code>
+      </td>
+      <td>
+        Scrollback budget in bytes, not lines (default: 10000). ghostty
+        allocates history in pages, so the retained row count depends on the
+        terminal width.
+      </td>
     </tr>
   </tbody>
 </table>
@@ -104,6 +119,12 @@ Only needed by maintainers. Requires [Zig 0.15.x](https://ziglang.org/download/)
 pnpm --filter @wterm/ghostty rebuild-wasm
 ```
 
+Zig 0.15.x cannot link a native build runner on macOS 26, and Zig 0.16 fails inside ghostty's vendored build files. When the host toolchain cannot build, run the same script in a Linux container:
+
+```bash
+pnpm --filter @wterm/ghostty rebuild-wasm:docker
+```
+
 ## Comparison
 
 <table>
@@ -111,7 +132,9 @@ pnpm --filter @wterm/ghostty rebuild-wasm
     <tr>
       <th></th>
       <th>Built-in (default)</th>
-      <th><code>@wterm/ghostty</code></th>
+      <th>
+        <code>@wterm/ghostty</code>
+      </th>
     </tr>
   </thead>
   <tbody>
@@ -143,7 +166,9 @@ pnpm --filter @wterm/ghostty rebuild-wasm
     <tr>
       <td>Setup</td>
       <td>Zero-config</td>
-      <td>Requires <code>@wterm/ghostty</code> install</td>
+      <td>
+        Requires <code>@wterm/ghostty</code> install
+      </td>
     </tr>
   </tbody>
 </table>

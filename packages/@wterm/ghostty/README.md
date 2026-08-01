@@ -60,7 +60,7 @@ const core = await GhosttyCore.load();
 | Option | Type | Description |
 |---|---|---|
 | `wasmPath` | `string` | Custom path to the ghostty-vt WASM binary |
-| `scrollbackLimit` | `number` | Maximum scrollback lines (default: 10000) |
+| `scrollbackLimit` | `number` | Scrollback budget in bytes, not lines (default: 10000). ghostty allocates history in pages, so the retained row count depends on the terminal width |
 
 ## Architecture
 
@@ -83,6 +83,14 @@ pnpm --filter @wterm/ghostty rebuild-wasm
 ```
 
 This fetches the ghostty source via Zig's package manager, applies WASM compatibility patches, compiles our export layer to `wasm32-freestanding`, and copies the binary to `wasm/`.
+
+If the host toolchain cannot build, run the same script in a Linux container:
+
+```bash
+pnpm --filter @wterm/ghostty rebuild-wasm:docker
+```
+
+Zig 0.15.x cannot link a native build runner on macOS 26, and Zig 0.16 fails inside ghostty's vendored build files, so neither drives `rebuild-wasm` there. The wasm target itself is unaffected. Container output is byte-identical to a host build.
 
 ### Upgrading ghostty
 

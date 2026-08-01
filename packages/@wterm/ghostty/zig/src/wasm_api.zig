@@ -366,7 +366,10 @@ export fn get_scrollback_line(ptr: usize, offset: u32, buf_ptr: [*]u8, max_cols:
 
     // Walking up from the active top means small offsets, the ones the
     // renderer asks for while scrolling, traverse the fewest pages.
-    const pin = screen.pages.getTopLeft(.active).up(offset + 1) orelse return 0;
+    // usize is 32-bit on wasm32, so offset is caller-supplied input that can
+    // overflow this increment and wrap to the newest row.
+    const rows_up = std.math.add(usize, offset, 1) catch return 0;
+    const pin = screen.pages.getTopLeft(.active).up(rows_up) orelse return 0;
 
     const palette = &state.terminal.colors.palette.current;
     const cells = pin.cells(.all);

@@ -191,6 +191,37 @@ describe("GhosttyCore scrollback isolation", () => {
     expect(rowText(core, 0)).toBe(`line-${EXPECTED_COUNT}`);
   });
 
+  it("returns nothing for an out-of-range u32 offset", async () => {
+    const core = await newGhostty();
+    fill(core);
+
+    // Offset is widened before the + 1 that walks past the active area, so
+    // the maximum u32 cannot wrap around to the newest row.
+    expect(core.getScrollbackLineLen(0xffffffff)).toBe(0);
+    expect(core.getScrollbackCell(0xffffffff, 0).char).toBe(32);
+  });
+
+  it("reads a wrapped logical line back after it reflows", async () => {
+    const core = await newGhostty();
+    // Longer than COLS, so shrinking has to rewrap it rather than move it.
+    // Parity with the built-in core is not asserted here: it keeps the old
+    // row width on resize instead of reflowing.
+    const long = "W".repeat(100) + "END";
+    core.writeString(`${long}\r\n`);
+    fill(core, 40);
+    core.resize(40, 12);
+
+    // The logical line now occupies the three oldest rows at the new width.
+    const last = core.getScrollbackCount() - 1;
+    const rows = [last, last - 1, last - 2].map((offset) => ({
+      len: core.getScrollbackLineLen(offset),
+      text: rowText(core, offset),
+    }));
+
+    expect(rows.map((r) => r.len)).toEqual([40, 40, 40]);
+    expect(rows.map((r) => r.text).join("")).toBe(long);
+  });
+
   it("keeps scrollback readable across a resize", async () => {
     const core = await newGhostty();
     fill(core);
