@@ -300,22 +300,27 @@ export class GhosttyCore implements TerminalCore {
    * by column, so without this each cell would cost a page-list walk.
    */
   private _ensureScrollbackLine(offset: number): number {
-    if (this._scrollbackOffset === offset) return this._scrollbackLen;
     if (this._scrollbackBufPtr === 0) return 0;
 
-    this._scrollbackLen = this.wasm.exports.get_scrollback_line(
-      this.termPtr,
-      offset,
-      this._scrollbackBufPtr,
-      this._cols,
-    );
-    this._scrollbackOffset = offset;
-    // Rebuilt every fill: growing WASM memory detaches the old buffer.
-    this._scrollbackView = new DataView(
-      this.wasm.exports.memory.buffer,
-      this._scrollbackBufPtr,
-      this._scrollbackBufSize,
-    );
+    if (this._scrollbackOffset !== offset) {
+      this._scrollbackLen = this.wasm.exports.get_scrollback_line(
+        this.termPtr,
+        offset,
+        this._scrollbackBufPtr,
+        this._cols,
+      );
+      this._scrollbackOffset = offset;
+    }
+
+    // Growing WASM memory detaches the view, and a cached row outlives any
+    // grow an unrelated read triggers in between, so check on hits too.
+    if (this._scrollbackView?.buffer !== this.wasm.exports.memory.buffer) {
+      this._scrollbackView = new DataView(
+        this.wasm.exports.memory.buffer,
+        this._scrollbackBufPtr,
+        this._scrollbackBufSize,
+      );
+    }
     return this._scrollbackLen;
   }
 

@@ -147,6 +147,22 @@ describe("GhosttyCore scrollback readback", () => {
     expect(calls).toBe(1);
   });
 
+  it("survives a WASM memory grow between reads of the same row", async () => {
+    const core = await newGhostty();
+    fill(core);
+
+    const memory = (
+      core as unknown as { wasm: { exports: { memory: WebAssembly.Memory } } }
+    ).wasm.exports.memory;
+
+    // A cache hit reuses the decoded row, so nothing re-reads the WASM side
+    // and a grow in between would leave the DataView detached.
+    expect(core.getScrollbackLineLen(0)).toBe(COLS);
+    memory.grow(64);
+
+    expect(rowText(core, 0)).toBe(`line-${EXPECTED_COUNT}`);
+  });
+
   it("re-reads a row after new output", async () => {
     const core = await newGhostty();
     fill(core);
