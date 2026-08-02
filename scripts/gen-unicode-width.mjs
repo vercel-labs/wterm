@@ -9,12 +9,11 @@
  * blocks: hand-written block ranges classified 1209 assigned characters as
  * wide that Unicode calls narrow.
  *
- * Usage:
- *   node scripts/gen-unicode-width.mjs           # fetch and write
- *   node scripts/gen-unicode-width.mjs --check   # exit 1 if the table is stale
+ * Run by hand when Unicode publishes a new version: bump UNICODE_VERSION and
+ * regenerate.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -117,18 +116,6 @@ async function main() {
     ([s]) => s <= MAX_CODEPOINT,
   );
   const rendered = render(ranges);
-
-  if (process.argv.includes("--check")) {
-    const current = readFileSync(outPath, "utf8");
-    if (current !== rendered) {
-      console.error(
-        "src/unicode_width_table.zig is stale. Run: node scripts/gen-unicode-width.mjs",
-      );
-      process.exit(1);
-    }
-    console.log(`Unicode width table is current (${ranges.length} ranges)`);
-    return;
-  }
 
   writeFileSync(outPath, rendered);
   console.log(`Wrote ${ranges.length} wide ranges to ${outPath}`);
