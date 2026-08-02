@@ -18,6 +18,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx}\" --ignore-path .gitignore",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx}\" --ignore-path .gitignore",
     "lint": "turbo run lint",
+    "gen-unicode-width": "node scripts/gen-unicode-width.mjs",
     "sync-versions": "node scripts/sync-versions.mjs",
     "test": "turbo run test",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
