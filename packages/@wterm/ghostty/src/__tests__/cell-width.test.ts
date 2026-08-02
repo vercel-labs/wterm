@@ -65,3 +65,17 @@ describe("GhosttyCore cell width", () => {
     expect(core.getCell(0, 1).width).toBe(0);
   });
 });
+
+describe("GhosttyCore spacer heads", () => {
+  it("reports the right-margin blank as narrow, not as a continuation", async () => {
+    // A wide glyph that does not fit wraps, and ghostty marks the column it
+    // left behind as a spacer head. That column is not a continuation.
+    const core = await newCore(5, 3);
+    core.writeString("abcd界");
+
+    expect([0, 1, 2, 3, 4].map((col) => core.getCell(0, col).width)).toEqual([
+      1, 1, 1, 1, 1,
+    ]);
+    expect([0, 1].map((col) => core.getCell(1, col).width)).toEqual([2, 0]);
+  });
+});

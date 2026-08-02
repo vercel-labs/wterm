@@ -41,4 +41,24 @@ describe("wide cell at the clip boundary of a scrollback row", () => {
     expect(sb?.querySelectorAll(".term-wide").length).toBe(0);
     expect(sb?.textContent).toBe("abc ");
   });
+
+  it("keeps a spacer-head column that follows a narrow cell", () => {
+    const HEAD: CellData = { char: 32, fg: 256, bg: 256, flags: 0, width: 0 };
+    const row = [N(49), N(50), N(51), N(52), HEAD];
+    const el = document.createElement("div");
+    const r = new Renderer(el);
+    r.setup(5, 1);
+    r.render({
+      getCols: () => 5,
+      getRows: () => 1,
+      getCell: (_r: number, c: number) => row[c] ?? N(32),
+      isDirtyRow: () => true,
+      clearDirty: () => {},
+      getCursor: (): CursorState => ({ row: 0, col: 0, visible: false }),
+      getScrollbackCount: () => 0,
+      getScrollbackCell: () => N(32),
+      getScrollbackLineLen: () => 0,
+    } as never);
+    expect(el.querySelector(".term-row")?.textContent).toBe("1234 ");
+  });
 });
