@@ -3,6 +3,8 @@ export interface CellData {
   fg: number;
   bg: number;
   flags: number;
+  /** Display width: 1 = narrow, 2 = wide leading cell, 0 = wide continuation cell. */
+  width?: number;
   /** Resolved 24-bit foreground color (0xRRGGBB). Present when the core provides true color. */
   fgRgb?: number;
   /** Resolved 24-bit background color (0xRRGGBB). Present when the core provides true color. */

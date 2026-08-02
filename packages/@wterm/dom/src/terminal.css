@@ -68,6 +68,11 @@
   overflow: hidden;
 }
 
+.term-wide {
+  width: 2ch;
+  overflow: hidden;
+}
+
 .term-cursor {
   outline: 1px solid var(--term-cursor);
   outline-offset: -1px;

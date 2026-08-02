@@ -25,8 +25,14 @@ function createMockBridge(cols: number, rows: number, grid: CellData[][] = []) {
   };
 }
 
-function makeCell(char: string, fg = 256, bg = 256, flags = 0): CellData {
-  return { char: char.codePointAt(0)!, fg, bg, flags };
+function makeCell(
+  char: string,
+  fg = 256,
+  bg = 256,
+  flags = 0,
+  width = 1,
+): CellData {
+  return { char: char.codePointAt(0)!, fg, bg, flags, width };
 }
 
 describe("Renderer", () => {
@@ -64,6 +70,43 @@ describe("Renderer", () => {
       const text = container.textContent;
       expect(text).toContain("H");
       expect(text).toContain("i");
+    });
+
+    it("renders wide cells once and skips continuation cells", () => {
+      const grid = [
+        [
+          makeCell(String.fromCodePoint(0x1f4c1), 256, 256, 0, 2),
+          { char: 0, fg: 256, bg: 256, flags: 0, width: 0 },
+          makeCell("a"),
+          makeCell("b"),
+        ],
+      ];
+      const bridge = createMockBridge(4, 1, grid);
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+
+      const row = container.querySelector(".term-row");
+      expect(row?.textContent).toBe(`${String.fromCodePoint(0x1f4c1)}ab`);
+      expect(container.querySelector(".term-wide")?.textContent).toBe(
+        String.fromCodePoint(0x1f4c1),
+      );
+    });
+
+    it("places the cursor correctly after a wide cell", () => {
+      const grid = [
+        [
+          makeCell(String.fromCodePoint(0x1f4c1), 256, 256, 0, 2),
+          { char: 0, fg: 256, bg: 256, flags: 0, width: 0 },
+          makeCell("a"),
+          makeCell("b"),
+        ],
+      ];
+      const bridge = createMockBridge(4, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 3, visible: true });
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+
+      expect(container.querySelector(".term-cursor")?.textContent).toBe("b");
     });
 
     it("applies cursor class to cursor position", () => {
@@ -120,6 +163,36 @@ describe("Renderer", () => {
 
       const span = container.querySelector("span[style]");
       expect(span?.getAttribute("style")).toMatch(/font-weight:\s*bold/);
+    });
+
+    it("escapes double quotes before assigning to innerHTML", () => {
+      const grid = [[makeCell('"')]];
+      const bridge = createMockBridge(1, 1, grid);
+      const renderer = new Renderer(container);
+
+      let proto = Object.getPrototypeOf(container);
+      while (proto && !Object.getOwnPropertyDescriptor(proto, "innerHTML")) {
+        proto = Object.getPrototypeOf(proto);
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(proto, "innerHTML")!;
+      const assignedValues: string[] = [];
+      Object.defineProperty(proto, "innerHTML", {
+        ...descriptor,
+        set(value: string) {
+          assignedValues.push(value);
+          descriptor.set!.call(this, value);
+        },
+      });
+
+      try {
+        renderer.render(bridge as any);
+      } finally {
+        Object.defineProperty(proto, "innerHTML", descriptor);
+      }
+
+      const rowHtml = assignedValues.find((v) => v.includes('">'));
+      expect(rowHtml).toContain("&quot;");
+      expect(container.querySelector(".term-row")?.textContent).toBe('"');
     });
   });
 });

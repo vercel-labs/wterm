@@ -42,6 +42,24 @@ describe("WasmBridge", () => {
       expect(bridge.getCell(0, 1).char).toBe(105); // 'i'
     });
 
+    it("tracks wide cells and continuation cells", () => {
+      bridge.writeString("📁a");
+      expect(bridge.getCell(0, 0).char).toBe(0x1f4c1);
+      expect(bridge.getCell(0, 0).width).toBe(2);
+      expect(bridge.getCell(0, 1).width).toBe(0);
+      expect(bridge.getCell(0, 2).char).toBe(97); // 'a'
+      expect(bridge.getCursor().col).toBe(3);
+    });
+
+    it("keeps cursor-positioned redraws aligned after wide characters", () => {
+      bridge.writeString("📁abcd");
+      bridge.writeString("\x1b[1;4Hx");
+      expect(bridge.getCell(0, 2).char).toBe(97); // 'a'
+      expect(bridge.getCell(0, 3).char).toBe(120); // 'x'
+      expect(bridge.getCell(0, 4).char).toBe(99); // 'c'
+      expect(bridge.getCell(0, 5).char).toBe(100); // 'd'
+    });
+
     it("writes to correct position after cursor movement", () => {
       bridge.writeString("AB\r\nCD");
       expect(bridge.getCell(0, 0).char).toBe(65); // 'A'

@@ -26,6 +26,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Themes** — CSS custom properties with built-in Default, Solarized Dark, Monokai, and Light themes
 - **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly
 - **Scrollback history** — configurable ring buffer
+- **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws aligned
 - **24-bit color** — full RGB SGR support
 - **Auto-resize** — `ResizeObserver`-based terminal resizing
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
@@ -35,8 +36,8 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 ### Prerequisites
 
 - [Zig](https://ziglang.org/) 0.16.0+
-- [Node.js](https://nodejs.org/) 20+
-- [pnpm](https://pnpm.io/) 10+
+- [Node.js](https://nodejs.org/) 24+
+- [pnpm](https://pnpm.io/) 11+
 
 ### Setup
 
@@ -54,6 +55,16 @@ For a release build:
 
 ```bash
 zig build -Doptimize=ReleaseSmall
+```
+
+The built binary is committed at `packages/@wterm/core/wasm/wterm.wasm` and CI fails if it does not match the Zig sources, so rebuild and commit it with any change under `src/`.
+
+### Regenerate the Unicode width table
+
+`src/unicode_width_table.zig` holds the East Asian Width ranges the core uses to decide cell width. It is generated, not hand-edited. Run this when Unicode publishes a new version, after bumping `UNICODE_VERSION` in the script:
+
+```bash
+node scripts/gen-unicode-width.mjs
 ```
 
 ### Build all packages

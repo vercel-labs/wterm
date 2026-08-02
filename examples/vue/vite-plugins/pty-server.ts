@@ -1,6 +1,6 @@
 import type { Plugin } from "vite";
+import type { IPty } from "node-pty";
 import { WebSocketServer, type WebSocket } from "ws";
-import * as pty from "node-pty";
 import { parse as parseUrl } from "url";
 
 function cleanEnv(): Record<string, string> {
@@ -11,11 +11,12 @@ function cleanEnv(): Record<string, string> {
   return env;
 }
 
-function handlePTYConnection(ws: WebSocket) {
+async function handlePTYConnection(ws: WebSocket) {
   const shell = process.env.SHELL || "/bin/zsh";
 
-  let ptyProcess: pty.IPty;
+  let ptyProcess: IPty;
   try {
+    const pty = await import("node-pty");
     ptyProcess = pty.spawn(shell, ["-l"], {
       name: "xterm-256color",
       cols: 80,
@@ -71,7 +72,7 @@ export function ptyServer(): Plugin {
         if (pathname !== "/api/terminal") return;
 
         wss.handleUpgrade(req, socket, head, (ws) => {
-          handlePTYConnection(ws);
+          void handlePTYConnection(ws);
         });
       });
     },

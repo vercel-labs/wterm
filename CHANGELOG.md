@@ -1,8 +1,50 @@
 # Changelog
 
-## 0.3.0
+## 0.3.2
 
 <!-- release:start -->
+
+### Bug Fixes
+
+- **Wide characters occupied one cell** — CJK, fullwidth forms and emoji painted two columns while the grid gave them one, so every occurrence pushed the rest of the row right and cursor-addressed redraws landed a column early. `CellData` gains `width`, the core advances by it, and the DOM renderer skips continuation cells (#102, #54, #71, #101)
+- **Blank scrollback in `@wterm/ghostty`** — `get_scrollback_line` was an unimplemented stub returning 0, so every scrolled-back row rendered empty even though the row count was correct (#98)
+- **Style leaking across screens** — `get_viewport` read `RenderState.Cell.style` without checking `style_id`, resurfacing the style of whatever occupied the cell in an earlier render pass, including one against the alternate screen (#96)
+- **`GhosttyCore.load()` under bundlers that inline modules** — Bun's dev server resolves `import.meta.url` to a path on the build machine, so a `file:` URL reached the browser and `fetch` reported only `Failed to fetch`. The loader now names the cause and points at `wasmPath`, and reports a non-OK response or a non-WASM body instead of failing inside `WebAssembly.instantiate` (#99)
+- **`scrollbackLimit` documented as lines** — ghostty reads it as a byte budget, so an 80-column terminal retains about 1150 rows at the 10000 default, not 10000 (#98)
+- **Cell width guessed by Unicode block** — hand-written ranges called 1209 assigned characters wide that Unicode calls narrow, including enclosed alphanumerics, domino tiles and several arrow blocks. The table is generated from East Asian Width data now (#102)
+- **Wide pairs split at a narrower width** — a row dropped into scrollback during a resize kept a wide cell whose continuation was left behind, and a scrollback row read into a narrower grid spilled a column past its end (#102)
+
+### Improvements
+
+- **`@wterm/ghostty/ghostty-vt.wasm` subpath export** — the binary is now addressable through the package, so apps on bundlers that cannot resolve the default can serve it themselves (#99)
+- **Container WASM build** — `rebuild-wasm:docker` runs the existing build script in Linux, for hosts where Zig 0.15.x cannot link a native build runner. Output is byte-identical to a host build (#98)
+
+### Contributors
+
+- @ctate
+- @njbrake
+- @Railly
+
+<!-- release:end -->
+
+## 0.3.1
+
+### Bug Fixes
+
+- **WASM view invalidation** — cached `DataView` and `Uint8Array` views over WASM memory became detached when the module grew memory mid-call, throwing on `getCell`, `getScrollbackCell` and multi-chunk `writeRaw` (#92)
+- **Scrollback colors in `@wterm/ghostty`** — `getScrollbackCell()` packed `fgRgb`/`bgRgb` regardless of `colorFlags`, so cells with no explicit color rendered black instead of the terminal default (#93)
+- **`escapeHTML` double quotes** — the DOM renderer's escape helper left `"` unescaped (#94)
+
+### Improvements
+
+- **Test coverage for `@wterm/ghostty`** — the package had no test setup, so `turbo run test` skipped it entirely. It now runs in CI like the other packages (#93)
+
+### Contributors
+
+- @hobostay
+- @Railly
+
+## 0.3.0
 
 ### New Features
 
@@ -21,8 +63,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.2.1
 

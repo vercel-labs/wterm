@@ -1,6 +1,6 @@
 {
   "name": "@wterm/ghostty",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "libghostty-powered terminal core for wterm — full-featured VT emulation via Ghostty's WASM build",
   "type": "module",
   "main": "dist/index.js",
@@ -10,7 +10,8 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
-    }
+    },
+    "./ghostty-vt.wasm": "./wasm/ghostty-vt.wasm"
   },
   "files": [
     "dist",
@@ -19,8 +20,10 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "pnpm build",
+    "test": "vitest run",
     "type-check": "tsc --noEmit",
-    "rebuild-wasm": "bash scripts/build-wasm.sh"
+    "rebuild-wasm": "bash scripts/build-wasm.sh",
+    "rebuild-wasm:docker": "bash scripts/build-wasm-docker.sh"
   },
   "dependencies": {
     "@wterm/core": "workspace:*"
