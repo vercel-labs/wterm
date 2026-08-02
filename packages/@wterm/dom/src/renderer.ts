@@ -121,24 +121,38 @@ function resolveColors(
   };
 }
 
+// Pixel-snapped vertical gradient stops keyed off `--term-row-height` so that
+// every cell paints the eighth-block boundary on the same physical pixel —
+// using raw percentages (e.g. `12.5%`) at the canonical 17px row-height
+// resolves to 2.125px and the browser rounds it differently across cells,
+// producing the per-cell jog Claude Code's horizontal-rule (`▔▔▔▔▔`) makes
+// visible against the row immediately below.
+const SNAP_1_8 = "round(calc(var(--term-row-height) * 0.125), 1px)";
+const SNAP_2_8 = "round(calc(var(--term-row-height) * 0.25), 1px)";
+const SNAP_3_8 = "round(calc(var(--term-row-height) * 0.375), 1px)";
+const SNAP_4_8 = "round(calc(var(--term-row-height) * 0.5), 1px)";
+const SNAP_5_8 = "round(calc(var(--term-row-height) * 0.625), 1px)";
+const SNAP_6_8 = "round(calc(var(--term-row-height) * 0.75), 1px)";
+const SNAP_7_8 = "round(calc(var(--term-row-height) * 0.875), 1px)";
+
 function getBlockBackground(cp: number, fg: string, bg: string): string {
   switch (cp) {
     case 0x2580:
-      return `linear-gradient(${fg} 50%,${bg} 50%)`;
+      return `linear-gradient(${fg} ${SNAP_4_8},${bg} ${SNAP_4_8})`;
     case 0x2581:
-      return `linear-gradient(${bg} 87.5%,${fg} 87.5%)`;
+      return `linear-gradient(${bg} ${SNAP_7_8},${fg} ${SNAP_7_8})`;
     case 0x2582:
-      return `linear-gradient(${bg} 75%,${fg} 75%)`;
+      return `linear-gradient(${bg} ${SNAP_6_8},${fg} ${SNAP_6_8})`;
     case 0x2583:
-      return `linear-gradient(${bg} 62.5%,${fg} 62.5%)`;
+      return `linear-gradient(${bg} ${SNAP_5_8},${fg} ${SNAP_5_8})`;
     case 0x2584:
-      return `linear-gradient(${bg} 50%,${fg} 50%)`;
+      return `linear-gradient(${bg} ${SNAP_4_8},${fg} ${SNAP_4_8})`;
     case 0x2585:
-      return `linear-gradient(${bg} 37.5%,${fg} 37.5%)`;
+      return `linear-gradient(${bg} ${SNAP_3_8},${fg} ${SNAP_3_8})`;
     case 0x2586:
-      return `linear-gradient(${bg} 25%,${fg} 25%)`;
+      return `linear-gradient(${bg} ${SNAP_2_8},${fg} ${SNAP_2_8})`;
     case 0x2587:
-      return `linear-gradient(${bg} 12.5%,${fg} 12.5%)`;
+      return `linear-gradient(${bg} ${SNAP_1_8},${fg} ${SNAP_1_8})`;
     case 0x2588:
       return fg;
     case 0x2589:
@@ -164,7 +178,7 @@ function getBlockBackground(cp: number, fg: string, bg: string): string {
     case 0x2593:
       return `color-mix(in srgb,${fg} 75%,${bg})`;
     case 0x2594:
-      return `linear-gradient(${fg} 12.5%,${bg} 12.5%)`;
+      return `linear-gradient(${fg} ${SNAP_1_8},${bg} ${SNAP_1_8})`;
     case 0x2595:
       return `linear-gradient(to right,${bg} 87.5%,${fg} 87.5%)`;
     default: {
