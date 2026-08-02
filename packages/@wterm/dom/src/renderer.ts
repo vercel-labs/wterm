@@ -298,7 +298,12 @@ export class Renderer {
 
       if (inBounds && width === 0) {
         flushRun(col);
-        if (col === cursorCol) {
+        // The wide cell this continues already covers both its columns,
+        // cursor included, so drawing one here would double it and add a
+        // column. A stray continuation with no wide cell before it still
+        // needs one.
+        const continuesWide = col > 0 && (getCell(col - 1).width ?? 1) === 2;
+        if (col === cursorCol && !continuesWide) {
           appendStyledSpan("term-cursor", "", " ");
         }
         runStyle = "";
