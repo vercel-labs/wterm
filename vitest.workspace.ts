@@ -4,6 +4,7 @@ export default defineWorkspace([
   "packages/@wterm/markdown",
   "packages/@wterm/core",
   "packages/@wterm/dom",
+  "packages/@wterm/ghostty",
   "packages/@wterm/react",
   "packages/@wterm/just-bash",
 ]);

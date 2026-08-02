@@ -64,8 +64,31 @@ export interface GhosttyWasm {
 
 const CELL_BYTES = 16;
 
-const DEFAULT_WASM_PATH = new URL("../wasm/ghostty-vt.wasm", import.meta.url)
-  .href;
+const REMEDY =
+  "Serve the binary from your app and pass its URL: " +
+  'GhosttyCore.load({ wasmPath: "/ghostty-vt.wasm" }). The file ships with ' +
+  "the package as @wterm/ghostty/ghostty-vt.wasm. See the Bundlers section " +
+  "of the @wterm/ghostty README.";
+
+/**
+ * Resolve the binary that ships with the package.
+ *
+ * Bundlers that implement the `new URL(..., import.meta.url)` asset pattern
+ * rewrite this to an emitted asset. Ones that do not leave `import.meta.url`
+ * pointing at the build machine's copy of this file.
+ */
+function defaultWasmUrl(): string {
+  return new URL("../wasm/ghostty-vt.wasm", import.meta.url).href;
+}
+
+/** `\0asm`. A 404 HTML page otherwise dies as "expected magic word". */
+function hasWasmMagic(bytes: ArrayBuffer): boolean {
+  if (bytes.byteLength < 4) return false;
+  const head = new Uint8Array(bytes, 0, 4);
+  return (
+    head[0] === 0x00 && head[1] === 0x61 && head[2] === 0x73 && head[3] === 0x6d
+  );
+}
 
 /**
  * Load the ghostty-vt WASM module.
@@ -74,9 +97,37 @@ const DEFAULT_WASM_PATH = new URL("../wasm/ghostty-vt.wasm", import.meta.url)
  *   committed binary at `../wasm/ghostty-vt.wasm`.
  */
 export async function loadGhosttyWasm(wasmUrl?: string): Promise<GhosttyWasm> {
-  const url = wasmUrl ?? DEFAULT_WASM_PATH;
+  const url = wasmUrl ?? defaultWasmUrl();
+
+  // A file: URL in a browser is a build-machine path that survived bundling.
+  // fetch() reports it as a bare "Failed to fetch", which names neither the
+  // cause nor the fix.
+  if (
+    wasmUrl === undefined &&
+    url.startsWith("file:") &&
+    typeof document !== "undefined"
+  ) {
+    throw new Error(
+      `@wterm/ghostty: your bundler resolved the WASM URL to ${url}, a path ` +
+        `on the machine that built the bundle, so the browser cannot fetch ` +
+        `it. ${REMEDY}`,
+    );
+  }
+
   const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `@wterm/ghostty: fetching ${url} returned ${response.status} ` +
+        `${response.statusText}. ${REMEDY}`,
+    );
+  }
+
   const bytes = await response.arrayBuffer();
+  if (!hasWasmMagic(bytes)) {
+    throw new Error(
+      `@wterm/ghostty: ${url} did not return a WASM module. ${REMEDY}`,
+    );
+  }
 
   let wasmMemory: WebAssembly.Memory;
 

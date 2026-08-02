@@ -35,8 +35,8 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 ### Prerequisites
 
 - [Zig](https://ziglang.org/) 0.16.0+
-- [Node.js](https://nodejs.org/) 20+
-- [pnpm](https://pnpm.io/) 10+
+- [Node.js](https://nodejs.org/) 24+
+- [pnpm](https://pnpm.io/) 11+
 
 ### Setup
 

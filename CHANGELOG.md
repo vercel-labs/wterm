@@ -1,8 +1,27 @@
 # Changelog
 
-## 0.3.0
+## 0.3.1
 
 <!-- release:start -->
+
+### Bug Fixes
+
+- **WASM view invalidation** — cached `DataView` and `Uint8Array` views over WASM memory became detached when the module grew memory mid-call, throwing on `getCell`, `getScrollbackCell` and multi-chunk `writeRaw` (#92)
+- **Scrollback colors in `@wterm/ghostty`** — `getScrollbackCell()` packed `fgRgb`/`bgRgb` regardless of `colorFlags`, so cells with no explicit color rendered black instead of the terminal default (#93)
+- **`escapeHTML` double quotes** — the DOM renderer's escape helper left `"` unescaped (#94)
+
+### Improvements
+
+- **Test coverage for `@wterm/ghostty`** — the package had no test setup, so `turbo run test` skipped it entirely. It now runs in CI like the other packages (#93)
+
+### Contributors
+
+- @hobostay
+- @Railly
+
+<!-- release:end -->
+
+## 0.3.0
 
 ### New Features
 
@@ -21,8 +40,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.2.1
 
