@@ -134,7 +134,12 @@ fn cellWidth(cell: vt.Cell) u8 {
     return switch (cell.wide) {
         .narrow => 1,
         .wide => 2,
-        .spacer_tail, .spacer_head => 0,
+        // Width 0 means "continuation of the wide cell to my left", which the
+        // renderer skips. Only the tail is that. A spacer head is the blank
+        // left at the right margin when a wide glyph wrapped to the next row:
+        // it follows a narrow cell and owns its column.
+        .spacer_tail => 0,
+        .spacer_head => 1,
     };
 }
 

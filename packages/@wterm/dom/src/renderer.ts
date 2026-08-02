@@ -1,4 +1,4 @@
-import type { TerminalCore } from "@wterm/core";
+import type { CellData, TerminalCore } from "@wterm/core";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -239,14 +239,7 @@ export class Renderer {
 
   private _buildRowContent(
     rowEl: HTMLDivElement,
-    getCell: (col: number) => {
-      char: number;
-      fg: number;
-      bg: number;
-      flags: number;
-      fgRgb?: number;
-      bgRgb?: number;
-    },
+    getCell: (col: number) => CellData,
     lineLen: number,
     cursorCol: number,
     rowIndex: number,
@@ -287,10 +280,72 @@ export class Renderer {
       }
     };
 
+    const appendStyledSpan = (
+      className: string,
+      style: string,
+      text: string,
+    ) => {
+      const classAttr = className ? ` class="${className}"` : "";
+      const styleAttr = style ? ` style="${style}"` : "";
+      html += `<span${classAttr}${styleAttr}>${escapeHTML(text)}</span>`;
+    };
+
     for (let col = 0; col < this.cols; col++) {
       const cell = getCell(col);
       const inBounds = col < lineLen;
       const cp = inBounds ? cell.char : 0;
+      const width = inBounds ? (cell.width ?? 1) : 1;
+
+      if (inBounds && width === 0) {
+        flushRun(col);
+        // Skipping is only right when this continues the wide cell to the
+        // left, which already covers both columns and its cursor. A width-0
+        // cell with no wide cell before it owns its column, so dropping it
+        // would shorten the row.
+        const continuesWide = col > 0 && (getCell(col - 1).width ?? 1) === 2;
+        if (!continuesWide) {
+          appendStyledSpan(col === cursorCol ? "term-cursor" : "", "", " ");
+        }
+        runStyle = "";
+        runText = "";
+        runStart = col + 1;
+        continue;
+      }
+
+      if (inBounds && width === 2) {
+        flushRun(col);
+
+        // A scrollback row keeps the width it was stored at, so a narrower
+        // grid can put the last rendered column on a wide lead whose
+        // continuation is outside the row. Drawing the pair here would spill
+        // a second column past the row.
+        if (col + 1 >= this.cols) {
+          appendStyledSpan(col === cursorCol ? "term-cursor" : "", "", " ");
+          runStyle = "";
+          runText = "";
+          runStart = col + 1;
+          continue;
+        }
+
+        const ch = cp >= 32 ? String.fromCodePoint(cp) : " ";
+        const style = buildCellStyle(
+          cell.fg,
+          cell.bg,
+          cell.flags,
+          cell.fgRgb,
+          cell.bgRgb,
+        );
+        const cls =
+          cursorCol >= col && cursorCol < col + 2
+            ? "term-wide term-cursor"
+            : "term-wide";
+        appendStyledSpan(cls, style, ch);
+
+        runStyle = "";
+        runText = "";
+        runStart = col + 2;
+        continue;
+      }
 
       if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
         flushRun(col);

@@ -51,6 +51,8 @@ const cursor = bridge.getCursor();
 // → { row: 1, col: 13, visible: true }
 ```
 
+Wide single-codepoint characters such as CJK, fullwidth forms, and emoji expose `width: 2` on the leading cell and `width: 0` on the continuation cell. Custom renderers should skip continuation cells.
+
 ## WebSocketTransport
 
 Connect to a PTY backend over WebSocket with automatic reconnection and send buffering.

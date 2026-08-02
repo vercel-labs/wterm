@@ -51,6 +51,7 @@ const BLANK_CELL: CellData = {
   fg: DEFAULT_COLOR,
   bg: DEFAULT_COLOR,
   flags: 0,
+  width: 1,
 };
 
 export interface GhosttyOptions {
@@ -151,7 +152,15 @@ export class GhosttyCore implements TerminalCore {
     if (byteOffset + CELL_BYTES > this._viewportBufSize) return BLANK_CELL;
 
     const cell = parseCell(view, byteOffset);
-    if (cell.codepoint === 0 && cell.flags === 0 && cell.colorFlags === 0)
+    // A continuation cell carries no content of its own, so the blank test
+    // matches it. Returning BLANK_CELL would hide the width the renderer
+    // needs to skip it.
+    if (
+      cell.codepoint === 0 &&
+      cell.flags === 0 &&
+      cell.colorFlags === 0 &&
+      cell.width !== 0
+    )
       return BLANK_CELL;
 
     const result: CellData = {
@@ -159,6 +168,7 @@ export class GhosttyCore implements TerminalCore {
       fg: DEFAULT_COLOR,
       bg: DEFAULT_COLOR,
       flags: cell.flags,
+      width: cell.width,
     };
     if (cell.colorFlags & 1)
       result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
@@ -251,6 +261,7 @@ export class GhosttyCore implements TerminalCore {
       fg: DEFAULT_COLOR,
       bg: DEFAULT_COLOR,
       flags: cell.flags,
+      width: cell.width,
     };
     if (cell.colorFlags & 1)
       result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);

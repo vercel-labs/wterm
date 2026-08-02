@@ -17,6 +17,25 @@ test.describe("rendering", () => {
   test("displays greeting text", async ({ page }) => {
     await expect(page.locator(".wterm")).toContainText("Welcome to wterm!");
   });
+
+  test("keeps cursor-addressed redraws aligned after wide characters", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await terminal.click();
+
+    await page.keyboard.type(
+      'printf "\\033[2J\\033[H\\360\\237\\223\\201abcd\\033[1;4Hx"',
+      { delay: 5 },
+    );
+    await page.keyboard.press("Enter");
+
+    await expect(terminal).toContainText("📁axcd", { timeout: 5000 });
+    await expect(terminal).not.toContainText("📁abxd");
+    await expect(
+      terminal.locator(".term-wide").filter({ hasText: "📁" }),
+    ).toHaveCount(1);
+  });
 });
 
 test.describe("keyboard input", () => {
