@@ -315,6 +315,18 @@ export class Renderer {
       if (inBounds && width === 2) {
         flushRun(col);
 
+        // A scrollback row keeps the width it was stored at, so a narrower
+        // grid can put the last rendered column on a wide lead whose
+        // continuation is outside the row. Drawing the pair here would spill
+        // a second column past the row.
+        if (col + 1 >= this.cols) {
+          appendStyledSpan(col === cursorCol ? "term-cursor" : "", "", " ");
+          runStyle = "";
+          runText = "";
+          runStart = col + 1;
+          continue;
+        }
+
         const ch = cp >= 32 ? String.fromCodePoint(cp) : " ";
         const style = buildCellStyle(
           cell.fg,

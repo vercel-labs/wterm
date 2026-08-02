@@ -152,9 +152,20 @@ pub const Terminal = struct {
 
     fn sanitizeWideRow(self: *Terminal, row: u16, blank: Cell) void {
         if (row >= self.rows) return;
+        self.sanitizeWideRowWidth(row, self.cols, blank);
+    }
+
+    /// Repair a row so no wide cell lacks its continuation and no continuation
+    /// lacks its wide cell, considering only the first `width` columns.
+    ///
+    /// The width argument matters when a row is about to be stored at a
+    /// narrower width than the grid it came from: a pair straddling that
+    /// boundary must be blanked before the prefix is copied, or the copy keeps
+    /// a wide cell whose continuation was left behind.
+    fn sanitizeWideRowWidth(self: *Terminal, row: u16, width: u16, blank: Cell) void {
         var c: u16 = 0;
         var changed = false;
-        while (c < self.cols) {
+        while (c < width) {
             const cell = self.grid.cells[row][c];
             if (cell.width == cell_mod.WIDTH_CONTINUATION) {
                 if (c == 0 or self.grid.cells[row][c - 1].width != cell_mod.WIDTH_WIDE) {
@@ -163,7 +174,7 @@ pub const Terminal = struct {
                 }
                 c += 1;
             } else if (cell.width == cell_mod.WIDTH_WIDE) {
-                if (c + 1 >= self.cols or self.grid.cells[row][c + 1].width != cell_mod.WIDTH_CONTINUATION) {
+                if (c + 1 >= width or self.grid.cells[row][c + 1].width != cell_mod.WIDTH_CONTINUATION) {
                     self.grid.cells[row][c] = blank;
                     changed = true;
                     c += 1;
@@ -267,9 +278,15 @@ pub const Terminal = struct {
         // Push excess bottom rows into scrollback when shrinking vertically
         if (rows < old_rows) {
             if (!self.using_alt_screen and self.scrollback != null) {
+                const push_cols = if (cols < old_cols) cols else old_cols;
                 var r: u16 = rows;
                 while (r < old_rows) : (r += 1) {
-                    self.scrollback.?.push(&self.grid.cells[r], if (cols < old_cols) cols else old_cols);
+                    // These rows skipped the truncation loop above, which only
+                    // covers the rows the grid keeps. Repair at the width they
+                    // are stored with, or a pair split by that width survives
+                    // in history as a wide cell with no continuation.
+                    self.sanitizeWideRowWidth(r, push_cols, Cell{});
+                    self.scrollback.?.push(&self.grid.cells[r], push_cols);
                 }
             }
         }
