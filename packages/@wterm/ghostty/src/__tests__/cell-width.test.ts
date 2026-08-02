@@ -1,0 +1,67 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { GhosttyCore } from "../ghostty-core.js";
+
+/**
+ * Runs against the real committed wasm: the width byte comes from the Zig
+ * side, so a mocked core cannot observe it.
+ */
+const WASM_URL = "https://wterm.test/ghostty-vt.wasm";
+const wasmBytes = readFileSync(
+  fileURLToPath(new URL("../../wasm/ghostty-vt.wasm", import.meta.url)),
+);
+
+const realFetch = globalThis.fetch;
+
+beforeAll(() => {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    if (String(input) === WASM_URL) {
+      return new Response(wasmBytes, {
+        headers: { "content-type": "application/wasm" },
+      });
+    }
+    return realFetch(input as RequestInfo);
+  }) as typeof fetch;
+});
+
+afterAll(() => {
+  globalThis.fetch = realFetch;
+});
+
+async function newCore(cols = 20, rows = 4) {
+  const core = await GhosttyCore.load({ wasmPath: WASM_URL });
+  core.init(cols, rows);
+  return core;
+}
+
+describe("GhosttyCore cell width", () => {
+  it("reports 2 for a wide glyph and 0 for its continuation", async () => {
+    const core = await newCore();
+    core.writeString("A界B\r\n");
+
+    expect([0, 1, 2, 3].map((col) => core.getCell(0, col).width)).toEqual([
+      1, 2, 0, 1,
+    ]);
+  });
+
+  it("keeps the width on a scrolled-off row", async () => {
+    const core = await newCore();
+    core.writeString("A界B\r\n");
+    for (let i = 0; i < 40; i++) core.writeString(`f${i}\r\n`);
+
+    const offset = core.getScrollbackCount() - 1;
+    expect(
+      [0, 1, 2, 3].map((col) => core.getScrollbackCell(offset, col).width),
+    ).toEqual([1, 2, 0, 1]);
+  });
+
+  it("does not collapse a continuation cell into a blank", async () => {
+    const core = await newCore();
+    core.writeString("界\r\n");
+
+    // The continuation carries no codepoint, flags or colors, so the blank
+    // test matches it. Collapsing it would drop the width to 1.
+    expect(core.getCell(0, 1).width).toBe(0);
+  });
+});
