@@ -22,6 +22,7 @@
 ### Contributors
 
 - @ctate
+- @njbrake
 - @Railly
 
 <!-- release:end -->
