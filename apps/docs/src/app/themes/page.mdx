@@ -20,6 +20,14 @@ Same `theme` prop:
 <Terminal theme="monokai" />
 ```
 
+### Svelte
+
+Same `theme` prop:
+
+```svelte
+<Terminal theme="monokai" />
+```
+
 ### Vanilla JS
 
 Add the theme class to the terminal element:
@@ -44,9 +52,24 @@ The default dark theme, inspired by VS Code's Dark+ palette.
     </tr>
   </thead>
   <tbody>
-    <tr><td>Background</td><td><code>#1e1e1e</code></td></tr>
-    <tr><td>Foreground</td><td><code>#d4d4d4</code></td></tr>
-    <tr><td>Cursor</td><td><code>#aeafad</code></td></tr>
+    <tr>
+      <td>Background</td>
+      <td>
+        <code>#1e1e1e</code>
+      </td>
+    </tr>
+    <tr>
+      <td>Foreground</td>
+      <td>
+        <code>#d4d4d4</code>
+      </td>
+    </tr>
+    <tr>
+      <td>Cursor</td>
+      <td>
+        <code>#aeafad</code>
+      </td>
+    </tr>
   </tbody>
 </table>
 
@@ -66,9 +89,24 @@ The classic Solarized Dark color scheme by Ethan Schoonover.
     </tr>
   </thead>
   <tbody>
-    <tr><td>Background</td><td><code>#002b36</code></td></tr>
-    <tr><td>Foreground</td><td><code>#839496</code></td></tr>
-    <tr><td>Cursor</td><td><code>#93a1a1</code></td></tr>
+    <tr>
+      <td>Background</td>
+      <td>
+        <code>#002b36</code>
+      </td>
+    </tr>
+    <tr>
+      <td>Foreground</td>
+      <td>
+        <code>#839496</code>
+      </td>
+    </tr>
+    <tr>
+      <td>Cursor</td>
+      <td>
+        <code>#93a1a1</code>
+      </td>
+    </tr>
   </tbody>
 </table>
 
@@ -88,9 +126,24 @@ Based on the Monokai color scheme.
     </tr>
   </thead>
   <tbody>
-    <tr><td>Background</td><td><code>#272822</code></td></tr>
-    <tr><td>Foreground</td><td><code>#f8f8f2</code></td></tr>
-    <tr><td>Cursor</td><td><code>#f8f8f0</code></td></tr>
+    <tr>
+      <td>Background</td>
+      <td>
+        <code>#272822</code>
+      </td>
+    </tr>
+    <tr>
+      <td>Foreground</td>
+      <td>
+        <code>#f8f8f2</code>
+      </td>
+    </tr>
+    <tr>
+      <td>Cursor</td>
+      <td>
+        <code>#f8f8f0</code>
+      </td>
+    </tr>
   </tbody>
 </table>
 
@@ -110,9 +163,24 @@ A clean light theme inspired by Atom's One Light.
     </tr>
   </thead>
   <tbody>
-    <tr><td>Background</td><td><code>#fafafa</code></td></tr>
-    <tr><td>Foreground</td><td><code>#383a42</code></td></tr>
-    <tr><td>Cursor</td><td><code>#526eff</code></td></tr>
+    <tr>
+      <td>Background</td>
+      <td>
+        <code>#fafafa</code>
+      </td>
+    </tr>
+    <tr>
+      <td>Foreground</td>
+      <td>
+        <code>#383a42</code>
+      </td>
+    </tr>
+    <tr>
+      <td>Cursor</td>
+      <td>
+        <code>#526eff</code>
+      </td>
+    </tr>
   </tbody>
 </table>
 
@@ -161,14 +229,64 @@ Then apply it the same way as a built-in theme:
     </tr>
   </thead>
   <tbody>
-    <tr><td><code>--term-bg</code></td><td>Terminal background color</td></tr>
-    <tr><td><code>--term-fg</code></td><td>Default text color</td></tr>
-    <tr><td><code>--term-cursor</code></td><td>Cursor color</td></tr>
-    <tr><td><code>--term-font-family</code></td><td>Font stack (default: Menlo, Consolas, DejaVu Sans Mono, Courier New, monospace)</td></tr>
-    <tr><td><code>--term-font-size</code></td><td>Font size (default: <code>14px</code>)</td></tr>
-    <tr><td><code>--term-line-height</code></td><td>Line height multiplier (default: <code>1.2</code>)</td></tr>
-    <tr><td><code>--term-color-0</code> … <code>--term-color-7</code></td><td>Standard ANSI colors (black, red, green, yellow, blue, magenta, cyan, white)</td></tr>
-    <tr><td><code>--term-color-8</code> … <code>--term-color-15</code></td><td>Bright ANSI colors</td></tr>
+    <tr>
+      <td>
+        <code>--term-bg</code>
+      </td>
+      <td>Terminal background color</td>
+    </tr>
+    <tr>
+      <td>
+        <code>--term-fg</code>
+      </td>
+      <td>Default text color</td>
+    </tr>
+    <tr>
+      <td>
+        <code>--term-cursor</code>
+      </td>
+      <td>Cursor color</td>
+    </tr>
+    <tr>
+      <td>
+        <code>--term-font-family</code>
+      </td>
+      <td>
+        Font stack (default: Menlo, Consolas, DejaVu Sans Mono, Courier New,
+        monospace)
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>--term-font-size</code>
+      </td>
+      <td>
+        Font size (default: <code>14px</code>)
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>--term-line-height</code>
+      </td>
+      <td>
+        Line height multiplier (default: <code>1.2</code>)
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>--term-color-0</code> … <code>--term-color-7</code>
+      </td>
+      <td>
+        Standard ANSI colors (black, red, green, yellow, blue, magenta, cyan,
+        white)
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>--term-color-8</code> … <code>--term-color-15</code>
+      </td>
+      <td>Bright ANSI colors</td>
+    </tr>
   </tbody>
 </table>
 

@@ -1,0 +1,11 @@
+{
+  "extends": "@internal/ts/tsconfig.base.json",
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "types": ["svelte", "vitest/globals"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.svelte", "svelte.config.js"],
+  "exclude": ["dist", "src/lib/__tests__"]
+}

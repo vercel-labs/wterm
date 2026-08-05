@@ -1,0 +1,99 @@
+# Svelte
+
+The `@wterm/svelte` package provides a Svelte 5 `<Terminal>` component for integrating wterm into Svelte applications. It re-exports everything from `@wterm/dom`, so a single import covers both the component and its types.
+
+## Install
+
+```bash
+npm install @wterm/dom @wterm/svelte
+```
+
+## Basic Usage
+
+```svelte
+<script lang="ts">
+  import { Terminal } from "@wterm/svelte";
+  import "@wterm/svelte/css";
+</script>
+
+<Terminal />
+```
+
+## Custom Input Handling
+
+By default, typed input is echoed back to the terminal. Pass `onData` when you need control over input — for example, sending it to a server:
+
+```svelte
+<script lang="ts">
+  import { Terminal } from "@wterm/svelte";
+  import "@wterm/svelte/css";
+
+  function onData(chunk: string) {
+    socket.send(chunk);
+  }
+</script>
+
+<Terminal {onData} />
+```
+
+## Props
+
+The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `cursorBlink`, `debug`) plus [Svelte-only props](/api-reference#svelte-only-props) (`theme`).
+
+Standard DOM attributes (`class`, `style`, `id`, ARIA props, etc.) are forwarded to the root `<div>`.
+
+## Callback Props
+
+Svelte 5 uses callback props for component events:
+
+```svelte
+<Terminal
+  onData={onData}
+  onTitle={onTitle}
+  onResize={onResize}
+  onReady={onReady}
+  onError={onError}
+/>
+```
+
+See the full [Svelte Callback Props](/api-reference#svelte-callback-props) reference for payload types.
+
+## Component Ref
+
+Access imperative methods via `bind:this`:
+
+```svelte
+<script lang="ts">
+  import { Terminal, type WTerm } from "@wterm/svelte";
+
+  let term: Terminal;
+
+  function onReady(wt: WTerm) {
+    wt.write("hello\r\n");
+    term.resize(120, 40);
+  }
+</script>
+
+<Terminal bind:this={term} {onReady} />
+```
+
+The exposed methods are `write`, `resize`, `focus`, and `instance()` (the underlying `WTerm`, or `null` before mount). See the full [Component Ref (Svelte)](/api-reference#component-ref-svelte) reference.
+
+## Themes
+
+Import the stylesheet and switch themes via the `theme` prop:
+
+```svelte
+<script lang="ts">
+  import { Terminal } from "@wterm/svelte";
+  import "@wterm/svelte/css";
+</script>
+
+<Terminal theme="monokai" />
+```
+
+Built-in themes: `solarized-dark`, `monokai`, `light`. Define custom themes with CSS custom properties (`--term-fg`, `--term-bg`, `--term-color-0` through `--term-color-15`). See [Themes](/themes) for details.
+
+## SvelteKit
+
+The component creates `WTerm` in `onMount`, so it is SSR-safe out of the box.
