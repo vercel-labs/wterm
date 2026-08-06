@@ -46,6 +46,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `autoResize` | `boolean` | `true` | Auto-resize based on container dimensions |
 | `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
+| `images` | `boolean` | `true` | Enable inline image rendering via the [Kitty terminal graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/). When enabled, `\x1b_G…\x1b\\` APC sequences are intercepted and rendered as `<img>` overlays above the cell grid. Set to `false` to pass the bytes through to the core unchanged. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
@@ -78,6 +79,20 @@ const ws = new WebSocketTransport({
 ws.connect();
 term.onData = (data) => ws.send(data);
 ```
+
+## Inline images (Kitty graphics protocol)
+
+When `images: true` (default), wterm intercepts Kitty graphics protocol APC sequences and renders the transmitted PNG as an absolutely-positioned `<img>` overlay aligned to the cell grid. Supports inline base64 transfers (`f=100`) and multi-chunk `m=1`/`m=0` payloads. Actions: `t` (transmit), `T` (transmit + display), `p` (put placement), `d` (delete).
+
+```ts
+const png = new Uint8Array(
+  await fetch("/icon.png").then((r) => r.arrayBuffer()),
+);
+const b64 = btoa(String.fromCharCode(...png));
+term.write(`\x1b_Ga=T,f=100,i=1,c=20,r=5;${b64}\x1b\\`);
+```
+
+Not yet supported: raw RGB/RGBA frames (`f=24`/`f=32`), file/shared-memory transports, virtual-placement via Unicode placeholders, animations, Sixel, and iTerm2 inline images.
 
 ## Themes
 

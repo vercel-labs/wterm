@@ -26,6 +26,11 @@ export interface TerminalProps extends Omit<
   cursorBlink?: boolean;
   /** Enable debug mode (init-only — changing after mount has no effect). */
   debug?: boolean;
+  /**
+   * Enable inline image rendering via the Kitty terminal graphics protocol
+   * (init-only). Defaults to `true`.
+   */
+  images?: boolean;
   onData?: (data: string) => void;
   onTitle?: (title: string) => void;
   onResize?: (cols: number, rows: number) => void;
@@ -50,6 +55,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     autoResize = false,
     cursorBlink = false,
     debug = false,
+    images,
     onData,
     onTitle,
     onResize,
@@ -103,6 +109,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         autoResize: autoResizeRef.current,
         cursorBlink,
         debug,
+        images,
         onData: callbacksRef.current.onData
           ? (data: string) => callbacksRef.current.onData?.(data)
           : undefined,

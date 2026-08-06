@@ -2,13 +2,19 @@
 
 ## Options
 
-The React and Vue `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `cursorBlink`, and `debug` — plus event callbacks `onData`, `onTitle`, and `onResize` (exposed as `@data`, `@title`, `@resize` events in Vue).
+The React and Vue `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `cursorBlink`, `debug`, and `images` — plus event callbacks `onData`, `onTitle`, and `onResize` (exposed as `@data`, `@title`, `@resize` events in Vue).
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
 
 ### Pluggable cores
 
 By default, wterm uses its built-in lightweight Zig WASM core (~12 KB). To use a different terminal emulation backend, pass a `TerminalCore` instance via the `core` option. See the [Ghostty Core](/ghostty) page for an example using libghostty.
+
+### Inline images
+
+wterm intercepts [Kitty terminal graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) APC sequences and renders the transmitted PNGs as `<img>` overlays absolutely positioned over the cell grid. Enabled by default — set `images: false` to disable the filter and pass the bytes through to the core unchanged.
+
+Supported actions: `t` (transmit), `T` (transmit + display), `p` (put placement), `d` (delete). Supported format: PNG (`f=100`) via direct base64 transport, including chunked transfers (`m=1`/`m=0`). Not yet supported: raw RGB/RGBA frames, file/shared-memory transports, virtual-placement via Unicode placeholders, animations, Sixel, and iTerm2 inline images.
 
 ### React-only
 

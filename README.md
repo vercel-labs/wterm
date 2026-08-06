@@ -29,6 +29,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **24-bit color** — full RGB SGR support
 - **Auto-resize** — `ResizeObserver`-based terminal resizing
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
+- **Inline images** — render PNGs via the [Kitty terminal graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) as `<img>` overlays aligned to the cell grid
 
 ## Development
 

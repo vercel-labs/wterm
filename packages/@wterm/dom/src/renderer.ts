@@ -233,7 +233,16 @@ export class Renderer {
   setup(cols: number, rows: number): void {
     this.cols = cols;
     this.rows = rows;
-    this.container.innerHTML = "";
+    // Remove only renderer-owned row elements so overlay layers (e.g. inline
+    // image overlay) survive resize.
+    for (const child of Array.from(this.container.children)) {
+      if (
+        (child as HTMLElement).classList.contains("term-row") ||
+        (child as HTMLElement).classList.contains("term-scrollback-row")
+      ) {
+        child.remove();
+      }
+    }
     this.rowEls = [];
     this.prevRowBg = [];
     this._scrollbackRowEls = [];

@@ -59,6 +59,12 @@ The React and Vue `<Terminal>` components and the vanilla `WTerm` constructor al
       <td>Enable debug mode. Exposes a <code>DebugAdapter</code> on the <code>WTerm</code> instance (<code>wt.debug</code>) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences.</td>
     </tr>
     <tr>
+      <td><code>images</code></td>
+      <td><code>boolean</code></td>
+      <td><code>true</code></td>
+      <td>Enable inline image rendering via the <a href="https://sw.kovidgoyal.net/kitty/graphics-protocol/">Kitty terminal graphics protocol</a>. APC <code>{"\\x1b_G…\\x1b\\\\"}</code> sequences are intercepted and rendered as <code>&lt;img&gt;</code> overlays above the cell grid. Set to <code>false</code> to pass the bytes through to the core unchanged.</td>
+    </tr>
+    <tr>
       <td><code>onData</code></td>
       <td><code>(data: string) =&gt; void</code></td>
       <td>—</td>
