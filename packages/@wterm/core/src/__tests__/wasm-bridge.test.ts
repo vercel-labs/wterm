@@ -190,6 +190,18 @@ describe("WasmBridge", () => {
       bridge.init(80, 24);
       expect(bridge.getResponse()).toBeNull();
     });
+
+    it("allows responses to drain between internal write chunks", () => {
+      const responses: string[] = [];
+      bridge.writeString("\x1b[6n".repeat(2049), () => {
+        let response: string | null;
+        while ((response = bridge.getResponse()) !== null) {
+          responses.push(response);
+        }
+      });
+
+      expect(responses).toHaveLength(2049);
+    });
   });
 
   describe("title", () => {

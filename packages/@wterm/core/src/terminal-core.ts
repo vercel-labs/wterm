@@ -35,8 +35,8 @@ export interface TerminalCore {
   resize(cols: number, rows: number): void;
 
   // -- I/O --
-  writeString(str: string): void;
-  writeRaw(data: Uint8Array): void;
+  writeString(str: string, afterChunk?: () => void): void;
+  writeRaw(data: Uint8Array, afterChunk?: () => void): void;
 
   // -- Grid --
   getCell(row: number, col: number): CellData;

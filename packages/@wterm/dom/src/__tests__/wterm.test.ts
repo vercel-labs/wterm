@@ -163,7 +163,10 @@ describe("WTerm", () => {
       const term = new WTerm(element, { autoResize: false });
       await term.init();
       term.write("hello");
-      expect(mockBridge.writeString).toHaveBeenCalledWith("hello");
+      expect(mockBridge.writeString).toHaveBeenCalledWith(
+        "hello",
+        expect.any(Function),
+      );
     });
 
     it("calls bridge.writeRaw for Uint8Array data", async () => {
@@ -171,7 +174,10 @@ describe("WTerm", () => {
       await term.init();
       const bytes = new Uint8Array([0x1b, 0x5b, 0x41]);
       term.write(bytes);
-      expect(mockBridge.writeRaw).toHaveBeenCalledWith(bytes);
+      expect(mockBridge.writeRaw).toHaveBeenCalledWith(
+        bytes,
+        expect.any(Function),
+      );
     });
 
     it("is a no-op before init", () => {
@@ -244,7 +250,10 @@ describe("WTerm", () => {
         }),
       );
 
-      expect(mockBridge.writeString).toHaveBeenCalledWith("a");
+      expect(mockBridge.writeString).toHaveBeenCalledWith(
+        "a",
+        expect.any(Function),
+      );
     });
 
     it("calls onData instead of write when provided", async () => {
@@ -289,16 +298,24 @@ describe("WTerm", () => {
   });
 
   describe("response forwarding", () => {
-    it("forwards bridge response to onData", async () => {
+    it("forwards every queued bridge response to onData", async () => {
       const onData = vi.fn();
       vi.mocked(mockBridge.getResponse)
-        .mockReturnValueOnce("response-data")
+        .mockReturnValueOnce("response-a")
+        .mockReturnValueOnce("response-b")
         .mockReturnValue(null);
 
       const term = new WTerm(element, { autoResize: false, onData });
       await term.init();
 
-      expect(onData).toHaveBeenCalledWith("response-data");
+      onData.mockClear();
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response-a")
+        .mockReturnValueOnce("response-b")
+        .mockReturnValue(null);
+      term.write("query");
+
+      expect(onData.mock.calls).toEqual([["response-a"], ["response-b"]]);
     });
   });
 

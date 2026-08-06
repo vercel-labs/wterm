@@ -481,7 +481,7 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
     </tr>
     <tr>
       <td><code>getResponse(): string | null</code></td>
-      <td>Get pending host response (e.g. DSR), or <code>null</code>. Reading clears the buffer.</td>
+      <td>Dequeue one pending host response (e.g. DSR), or <code>null</code>.</td>
     </tr>
     <tr>
       <td><code>getScrollbackCount(): number</code></td>
