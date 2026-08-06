@@ -133,15 +133,15 @@ export fn getScrollbackLineLen(offset: u32) u32 {
 // -- Response buffer (for DSR replies) --
 
 export fn getResponsePtr() [*]const u8 {
-    return &terminal.response_buf;
+    return terminal.responsePtr();
 }
 
 export fn getResponseLen() u32 {
-    return terminal.response_len;
+    return terminal.responseLen();
 }
 
 export fn clearResponse() void {
-    terminal.response_len = 0;
+    terminal.popResponse();
 }
 
 // -- Debug log (unhandled sequences ring buffer) --

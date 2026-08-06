@@ -177,6 +177,21 @@ describe("WasmBridge", () => {
     });
   });
 
+  describe("terminal responses", () => {
+    it("dequeues consecutive CPR responses in order", () => {
+      bridge.writeString("\x1b[1G\x1b[6n\x1b[2G\x1b[6n");
+      expect(bridge.getResponse()).toBe("\x1b[1;1R");
+      expect(bridge.getResponse()).toBe("\x1b[1;2R");
+      expect(bridge.getResponse()).toBeNull();
+    });
+
+    it("clears queued responses on init", () => {
+      bridge.writeString("\x1b[6n\x1b[6n");
+      bridge.init(80, 24);
+      expect(bridge.getResponse()).toBeNull();
+    });
+  });
+
   describe("title", () => {
     it("returns null when no title set", () => {
       expect(bridge.getTitle()).toBeNull();

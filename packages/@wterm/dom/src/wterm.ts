@@ -3,6 +3,8 @@ import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
 import { DebugAdapter } from "./debug.js";
 
+const MAX_RESPONSES_PER_WRITE = 2048;
+
 export interface WTermOptions {
   cols?: number;
   rows?: number;
@@ -150,6 +152,7 @@ export class WTerm {
     } else {
       this.bridge.writeRaw(data);
     }
+    this._drainResponses();
     this._scheduleRender();
   }
 
@@ -220,9 +223,19 @@ export class WTerm {
       this.onTitle(title);
     }
 
-    const response = this.bridge.getResponse();
-    if (response !== null && this.onData) {
-      this.onData(response);
+    this._drainResponses();
+  }
+
+  private _drainResponses(): void {
+    if (!this.bridge) return;
+    let response: string | null;
+    let count = 0;
+    while (
+      count < MAX_RESPONSES_PER_WRITE &&
+      (response = this.bridge.getResponse()) !== null
+    ) {
+      if (this.onData) this.onData(response);
+      count++;
     }
   }
 

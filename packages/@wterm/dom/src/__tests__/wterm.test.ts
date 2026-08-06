@@ -291,7 +291,9 @@ describe("WTerm", () => {
   describe("response forwarding", () => {
     it("forwards bridge response to onData", async () => {
       const onData = vi.fn();
-      vi.mocked(mockBridge.getResponse).mockReturnValue("response-data");
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response-data")
+        .mockReturnValue(null);
 
       const term = new WTerm(element, { autoResize: false, onData });
       await term.init();
