@@ -266,9 +266,27 @@ export class InputHandler {
     let code: number;
     let final = "M";
     if (kind === "wheel") {
-      code = ((event as WheelEvent).deltaY < 0 ? 64 : 65) | modifiers;
+      const wheel = event as WheelEvent;
+      if (Math.abs(wheel.deltaX) > Math.abs(wheel.deltaY)) {
+        if (wheel.deltaX === 0) return;
+        code = (wheel.deltaX < 0 ? 66 : 67) | modifiers;
+      } else {
+        if (wheel.deltaY === 0) return;
+        code = (wheel.deltaY < 0 ? 64 : 65) | modifiers;
+      }
     } else {
-      const button = event.button === 1 ? 1 : event.button === 2 ? 2 : 0;
+      const button =
+        kind === "move"
+          ? event.buttons & 4
+            ? 1
+            : event.buttons & 2
+              ? 2
+              : 0
+          : event.button === 1
+            ? 1
+            : event.button === 2
+              ? 2
+              : 0;
       code = button | modifiers | (kind === "move" ? 32 : 0);
       if (kind === "release") final = "m";
     }

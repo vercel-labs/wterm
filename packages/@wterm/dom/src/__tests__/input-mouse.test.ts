@@ -71,6 +71,50 @@ describe("InputHandler mouse and focus modes", () => {
     expect(wheel.defaultPrevented).toBe(true);
   });
 
+  it("preserves drag buttons and both wheel axes", () => {
+    container.dispatchEvent(
+      new MouseEvent("mousemove", {
+        buttons: 2,
+        clientX: 105,
+        clientY: 75,
+      }),
+    );
+    container.dispatchEvent(
+      new MouseEvent("mousemove", {
+        buttons: 4,
+        clientX: 105,
+        clientY: 75,
+      }),
+    );
+    container.dispatchEvent(
+      new WheelEvent("wheel", {
+        deltaX: -100,
+        clientX: 105,
+        clientY: 75,
+      }),
+    );
+    container.dispatchEvent(
+      new WheelEvent("wheel", {
+        deltaX: 100,
+        clientX: 105,
+        clientY: 75,
+      }),
+    );
+    container.dispatchEvent(
+      new WheelEvent("wheel", {
+        clientX: 105,
+        clientY: 75,
+      }),
+    );
+
+    expect(received).toEqual([
+      "\x1b[<34;10;6M",
+      "\x1b[<33;10;6M",
+      "\x1b[<66;10;6M",
+      "\x1b[<67;10;6M",
+    ]);
+  });
+
   it("emits focus reports only when mode 1004 is enabled", () => {
     const textarea = container.querySelector("textarea")!;
     textarea.dispatchEvent(new FocusEvent("focus"));
