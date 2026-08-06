@@ -55,6 +55,9 @@ pub const Terminal = struct {
     origin_mode: bool = false,
     cursor_keys_app: bool = false,
     bracketed_paste: bool = false,
+    mouse_tracking: u16 = 0,
+    mouse_sgr: bool = false,
+    focus_events: bool = false,
     linefeed_mode: bool = false,
 
     // Alternate screen buffer (pointer to avoid doubling struct size)
@@ -233,6 +236,9 @@ pub const Terminal = struct {
         self.origin_mode = false;
         self.cursor_keys_app = false;
         self.bracketed_paste = false;
+        self.mouse_tracking = 0;
+        self.mouse_sgr = false;
+        self.focus_events = false;
         self.linefeed_mode = false;
         self.alt_saved_cursor_row = 0;
         self.alt_saved_cursor_col = 0;
@@ -604,6 +610,10 @@ pub const Terminal = struct {
                 20 => self.linefeed_mode = enabled,
                 25 => self.cursor_visible = enabled,
                 47 => self.switchScreen(enabled, false),
+                1000 => self.setMouseTracking(1000, enabled),
+                1002 => self.setMouseTracking(1002, enabled),
+                1004 => self.focus_events = enabled,
+                1006 => self.mouse_sgr = enabled,
                 1047 => self.switchScreen(enabled, false),
                 1048 => {
                     if (enabled) self.saveCursor() else self.restoreCursor();
@@ -612,6 +622,14 @@ pub const Terminal = struct {
                 2004 => self.bracketed_paste = enabled,
                 else => {},
             }
+        }
+    }
+
+    fn setMouseTracking(self: *Terminal, mode: u16, enabled: bool) void {
+        if (enabled) {
+            self.mouse_tracking = mode;
+        } else if (self.mouse_tracking == mode) {
+            self.mouse_tracking = 0;
         }
     }
 
@@ -660,6 +678,9 @@ pub const Terminal = struct {
         self.auto_wrap = true;
         self.cursor_keys_app = false;
         self.bracketed_paste = false;
+        self.mouse_tracking = 0;
+        self.mouse_sgr = false;
+        self.focus_events = false;
         self.scroll_top = 0;
         self.scroll_bottom = self.rows;
         self.resetStyle();
@@ -1197,6 +1218,21 @@ test "alternate screen buffer" {
     t.write("\x1b[?1049l");
     try testing.expect(!t.using_alt_screen);
     try testing.expectEqual(@as(u32, 'm'), t.grid.getCell(0, 0).char);
+}
+
+test "tracks mouse and focus modes across reset" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[?1000h\x1b[?1004h\x1b[?1006h");
+    try testing.expectEqual(@as(u16, 1000), t.mouse_tracking);
+    try testing.expect(t.mouse_sgr);
+    try testing.expect(t.focus_events);
+    t.write("\x1b[?1002h\x1b[?1000l");
+    try testing.expectEqual(@as(u16, 1002), t.mouse_tracking);
+    t.write("\x1b[!p");
+    try testing.expectEqual(@as(u16, 0), t.mouse_tracking);
+    try testing.expect(!t.mouse_sgr);
+    try testing.expect(!t.focus_events);
 }
 
 test "erase inherits current background color" {

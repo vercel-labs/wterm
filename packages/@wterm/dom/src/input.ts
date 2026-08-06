@@ -55,6 +55,10 @@ export class InputHandler {
   private _onInput: () => void;
   private _onFocus: () => void;
   private _onBlur: () => void;
+  private _onMouseDown: (e: MouseEvent) => void;
+  private _onMouseMove: (e: MouseEvent) => void;
+  private _onMouseUp: (e: MouseEvent) => void;
+  private _onWheel: (e: WheelEvent) => void;
 
   constructor(
     element: HTMLElement,
@@ -97,8 +101,18 @@ export class InputHandler {
     this._onCompositionStart = this.handleCompositionStart.bind(this);
     this._onCompositionEnd = this.handleCompositionEnd.bind(this);
     this._onInput = this.handleInput.bind(this);
-    this._onFocus = () => this.element.classList.add("focused");
-    this._onBlur = () => this.element.classList.remove("focused");
+    this._onFocus = () => {
+      this.element.classList.add("focused");
+      if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[I");
+    };
+    this._onBlur = () => {
+      this.element.classList.remove("focused");
+      if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[O");
+    };
+    this._onMouseDown = (event) => this.handleMouse(event, "press");
+    this._onMouseMove = (event) => this.handleMouse(event, "move");
+    this._onMouseUp = (event) => this.handleMouse(event, "release");
+    this._onWheel = (event) => this.handleMouse(event, "wheel");
 
     this.textarea.addEventListener("keydown", this._onKeyDown);
     this.textarea.addEventListener("paste", this._onPaste as EventListener);
@@ -113,6 +127,10 @@ export class InputHandler {
     this.textarea.addEventListener("input", this._onInput);
     this.textarea.addEventListener("focus", this._onFocus);
     this.textarea.addEventListener("blur", this._onBlur);
+    this.element.addEventListener("mousedown", this._onMouseDown);
+    this.element.addEventListener("mousemove", this._onMouseMove);
+    this.element.addEventListener("mouseup", this._onMouseUp);
+    this.element.addEventListener("wheel", this._onWheel, { passive: false });
   }
 
   focus(): void {
@@ -133,6 +151,10 @@ export class InputHandler {
     this.textarea.removeEventListener("input", this._onInput);
     this.textarea.removeEventListener("focus", this._onFocus);
     this.textarea.removeEventListener("blur", this._onBlur);
+    this.element.removeEventListener("mousedown", this._onMouseDown);
+    this.element.removeEventListener("mousemove", this._onMouseMove);
+    this.element.removeEventListener("mouseup", this._onMouseUp);
+    this.element.removeEventListener("wheel", this._onWheel);
     this.element.classList.remove("focused");
     this.textarea.remove();
   }
@@ -203,6 +225,55 @@ export class InputHandler {
       this.onData(value);
       this.textarea.value = "";
     }
+  }
+
+  private handleMouse(
+    event: MouseEvent | WheelEvent,
+    kind: "press" | "move" | "release" | "wheel",
+  ): void {
+    const bridge = this.getBridge();
+    const tracking = bridge?.mouseTracking?.() ?? 0;
+    if (!bridge || tracking === 0 || !bridge.mouseSgr?.()) return;
+    if (kind === "move" && (tracking !== 1002 || event.buttons === 0)) return;
+
+    const rect =
+      this.element
+        .querySelector<HTMLElement>(".term-grid")
+        ?.getBoundingClientRect() ?? this.element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const col = Math.max(
+      1,
+      Math.min(
+        bridge.getCols(),
+        Math.floor(
+          ((event.clientX - rect.left) / rect.width) * bridge.getCols(),
+        ) + 1,
+      ),
+    );
+    const row = Math.max(
+      1,
+      Math.min(
+        bridge.getRows(),
+        Math.floor(
+          ((event.clientY - rect.top) / rect.height) * bridge.getRows(),
+        ) + 1,
+      ),
+    );
+    const modifiers =
+      (event.shiftKey ? 4 : 0) |
+      (event.altKey ? 8 : 0) |
+      (event.ctrlKey ? 16 : 0);
+    let code: number;
+    let final = "M";
+    if (kind === "wheel") {
+      code = ((event as WheelEvent).deltaY < 0 ? 64 : 65) | modifiers;
+    } else {
+      const button = event.button === 1 ? 1 : event.button === 2 ? 2 : 0;
+      code = button | modifiers | (kind === "move" ? 32 : 0);
+      if (kind === "release") final = "m";
+    }
+    event.preventDefault();
+    this.onData(`\x1b[<${code};${col};${row}${final}`);
   }
 
   private keyToSequence(e: KeyboardEvent): string | null {
