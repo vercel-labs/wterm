@@ -79,6 +79,34 @@ ws.connect();
 term.onData = (data) => ws.send(data);
 ```
 
+### `PredictiveEcho`
+
+Mosh-style client-side echo prediction. Paints printable ASCII to the
+terminal at typing latency instead of waiting for the network round-trip,
+then reconciles with the authoritative server stream as bytes arrive.
+Predictions are disabled in alt-screen mode (vim, less, htop, ...).
+
+```ts
+import { WTerm, WebSocketTransport, PredictiveEcho } from "@wterm/dom";
+
+const term = new WTerm(el);
+const ws = new WebSocketTransport({ url: "wss://example.com/pty" });
+
+const echo = new PredictiveEcho({
+  term,
+  send: (data) => ws.send(data),
+});
+
+term.onData = (data) => echo.handleInput(data);
+ws.onData    = (data) => echo.handleServerData(data);
+
+await term.init();
+ws.connect();
+```
+
+Pass a custom `shouldPredict(data, term)` to override the default
+(printable ASCII only, off in alt-screen).
+
 ## Themes
 
 Import the stylesheet and apply a theme class to the terminal element:
