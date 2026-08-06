@@ -36,6 +36,7 @@ export const navGroups: NavGroup[] = [
       { name: "Ghostty Core", href: "/ghostty" },
       { name: "Just Bash", href: "/just-bash" },
       { name: "Markdown", href: "/markdown" },
+      { name: "Search", href: "/search" },
       { name: "Core / Advanced", href: "/core" },
     ],
   },
