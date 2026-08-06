@@ -47,6 +47,7 @@ export class InputHandler {
   private onData: (data: string) => void;
   private getBridge: () => TerminalCore | null;
   private composing = false;
+  private mousePressed = false;
 
   private _onKeyDown: (e: KeyboardEvent) => void;
   private _onPaste: (e: ClipboardEvent) => void;
@@ -107,11 +108,18 @@ export class InputHandler {
     };
     this._onBlur = () => {
       this.element.classList.remove("focused");
+      this.stopMouseCapture();
       if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[O");
     };
     this._onMouseDown = (event) => this.handleMouse(event, "press");
-    this._onMouseMove = (event) => this.handleMouse(event, "move");
-    this._onMouseUp = (event) => this.handleMouse(event, "release");
+    this._onMouseMove = (event) => {
+      if (this.mousePressed) this.handleMouse(event, "move");
+    };
+    this._onMouseUp = (event) => {
+      if (!this.mousePressed) return;
+      this.handleMouse(event, "release");
+      this.stopMouseCapture();
+    };
     this._onWheel = (event) => this.handleMouse(event, "wheel");
 
     this.textarea.addEventListener("keydown", this._onKeyDown);
@@ -128,8 +136,6 @@ export class InputHandler {
     this.textarea.addEventListener("focus", this._onFocus);
     this.textarea.addEventListener("blur", this._onBlur);
     this.element.addEventListener("mousedown", this._onMouseDown);
-    this.element.addEventListener("mousemove", this._onMouseMove);
-    this.element.addEventListener("mouseup", this._onMouseUp);
     this.element.addEventListener("wheel", this._onWheel, { passive: false });
   }
 
@@ -152,8 +158,7 @@ export class InputHandler {
     this.textarea.removeEventListener("focus", this._onFocus);
     this.textarea.removeEventListener("blur", this._onBlur);
     this.element.removeEventListener("mousedown", this._onMouseDown);
-    this.element.removeEventListener("mousemove", this._onMouseMove);
-    this.element.removeEventListener("mouseup", this._onMouseUp);
+    this.stopMouseCapture();
     this.element.removeEventListener("wheel", this._onWheel);
     this.element.classList.remove("focused");
     this.textarea.remove();
@@ -234,12 +239,14 @@ export class InputHandler {
     const bridge = this.getBridge();
     const tracking = bridge?.mouseTracking?.() ?? 0;
     if (!bridge || tracking === 0 || !bridge.mouseSgr?.()) return;
+    if (kind === "press") {
+      this.mousePressed = true;
+      window.addEventListener("mousemove", this._onMouseMove);
+      window.addEventListener("mouseup", this._onMouseUp);
+    }
     if (kind === "move" && (tracking !== 1002 || event.buttons === 0)) return;
 
-    const rect =
-      this.element
-        .querySelector<HTMLElement>(".term-grid")
-        ?.getBoundingClientRect() ?? this.element.getBoundingClientRect();
+    const rect = this.element.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
     const col = Math.max(
       1,
@@ -292,6 +299,12 @@ export class InputHandler {
     }
     event.preventDefault();
     this.onData(`\x1b[<${code};${col};${row}${final}`);
+  }
+
+  private stopMouseCapture(): void {
+    this.mousePressed = false;
+    window.removeEventListener("mousemove", this._onMouseMove);
+    window.removeEventListener("mouseup", this._onMouseUp);
   }
 
   private keyToSequence(e: KeyboardEvent): string | null {

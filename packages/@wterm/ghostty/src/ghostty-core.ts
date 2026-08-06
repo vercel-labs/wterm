@@ -220,6 +220,19 @@ export class GhosttyCore implements TerminalCore {
     return this.wasm.exports.using_alt_screen(this.termPtr) !== 0;
   }
 
+  mouseTracking(): 0 | 1000 | 1002 {
+    const mode = this.wasm.exports.mouse_tracking(this.termPtr);
+    return mode === 1000 || mode === 1002 ? mode : 0;
+  }
+
+  mouseSgr(): boolean {
+    return this.wasm.exports.mouse_sgr(this.termPtr) !== 0;
+  }
+
+  focusEvents(): boolean {
+    return this.wasm.exports.focus_events(this.termPtr) !== 0;
+  }
+
   // -- Side outputs --
 
   getTitle(): string | null {

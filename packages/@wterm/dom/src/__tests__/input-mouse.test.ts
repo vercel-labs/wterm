@@ -48,10 +48,10 @@ describe("InputHandler mouse and focus modes", () => {
         clientY: 65,
       }),
     );
-    container.dispatchEvent(
+    window.dispatchEvent(
       new MouseEvent("mousemove", { buttons: 1, clientX: 105, clientY: 75 }),
     );
-    container.dispatchEvent(
+    window.dispatchEvent(
       new MouseEvent("mouseup", { button: 0, clientX: 105, clientY: 75 }),
     );
     const wheel = new WheelEvent("wheel", {
@@ -73,18 +73,40 @@ describe("InputHandler mouse and focus modes", () => {
 
   it("preserves drag buttons and both wheel axes", () => {
     container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 2,
+        buttons: 2,
+        clientX: 105,
+        clientY: 75,
+      }),
+    );
+    window.dispatchEvent(
       new MouseEvent("mousemove", {
         buttons: 2,
         clientX: 105,
         clientY: 75,
       }),
     );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", { button: 2, clientX: 105, clientY: 75 }),
+    );
     container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 1,
+        buttons: 4,
+        clientX: 105,
+        clientY: 75,
+      }),
+    );
+    window.dispatchEvent(
       new MouseEvent("mousemove", {
         buttons: 4,
         clientX: 105,
         clientY: 75,
       }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", { button: 1, clientX: 105, clientY: 75 }),
     );
     container.dispatchEvent(
       new WheelEvent("wheel", {
@@ -108,11 +130,73 @@ describe("InputHandler mouse and focus modes", () => {
     );
 
     expect(received).toEqual([
+      "\x1b[<2;10;6M",
       "\x1b[<34;10;6M",
+      "\x1b[<2;10;6m",
+      "\x1b[<1;10;6M",
       "\x1b[<33;10;6M",
+      "\x1b[<1;10;6m",
       "\x1b[<66;10;6M",
       "\x1b[<67;10;6M",
     ]);
+  });
+
+  it("captures a drag until release outside the terminal", () => {
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mousemove", {
+        buttons: 1,
+        clientX: 900,
+        clientY: 500,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", { button: 0, clientX: 900, clientY: 500 }),
+    );
+
+    expect(received).toEqual([
+      "\x1b[<0;2;2M",
+      "\x1b[<32;80;40M",
+      "\x1b[<0;80;40m",
+    ]);
+  });
+
+  it("ignores drags that started outside the terminal", () => {
+    container.dispatchEvent(
+      new MouseEvent("mousemove", {
+        buttons: 1,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+    expect(received).toEqual([]);
+  });
+
+  it("uses the visible viewport instead of scrollback geometry", () => {
+    const grid = document.createElement("div");
+    grid.className = "term-grid";
+    Object.defineProperty(grid, "getBoundingClientRect", {
+      value: () => ({ left: 10, top: -380, width: 800, height: 800 }),
+    });
+    container.appendChild(grid);
+
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 105,
+        clientY: 215,
+      }),
+    );
+
+    expect(received).toEqual(["\x1b[<0;10;20M"]);
   });
 
   it("emits focus reports only when mode 1004 is enabled", () => {

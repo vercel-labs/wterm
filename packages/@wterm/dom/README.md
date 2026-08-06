@@ -60,6 +60,8 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `focus()` | Focus the terminal element |
 | `destroy()` | Clean up event listeners and DOM |
 
+When a terminal application enables modes 1000 or 1002 with SGR encoding (1006), pointer input is sent through `onData`. Focus reports are sent when mode 1004 is active.
+
 ### `WebSocketTransport`
 
 Connect to a PTY backend over WebSocket (re-exported from `@wterm/core`).
