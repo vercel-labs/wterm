@@ -3,6 +3,8 @@ import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
 import { DebugAdapter } from "./debug.js";
 
+const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
+
 export interface WTermOptions {
   cols?: number;
   rows?: number;
@@ -35,6 +37,8 @@ export class WTerm {
   private input: InputHandler | null = null;
   private rafId: number | null = null;
   private _renderTimer: ReturnType<typeof setTimeout> | null = null;
+  private _synchronizedOutputTimer: ReturnType<typeof setTimeout> | null = null;
+  private _rendererNeedsSetup = false;
   private resizeObserver: ResizeObserver | null = null;
   private _destroyed = false;
   private _shouldScrollToBottom = false;
@@ -150,9 +154,13 @@ export class WTerm {
     } else {
       this.bridge.writeRaw(data);
     }
+    this._drainResponses();
     if (this.bridge.synchronizedOutput?.()) {
       this._cancelScheduledRender();
+      this._scheduleSynchronizedOutputFallback();
     } else {
+      this._cancelSynchronizedOutputFallback();
+      this._setupRendererIfNeeded();
       this._scheduleRender();
     }
   }
@@ -163,8 +171,14 @@ export class WTerm {
     this.cols = cols;
     this.rows = rows;
     this.bridge.resize(cols, rows);
-    this.renderer?.setup(cols, rows);
-    this._scheduleRender();
+    if (this.bridge.synchronizedOutput?.()) {
+      this._rendererNeedsSetup = true;
+      this._cancelScheduledRender();
+      this._scheduleSynchronizedOutputFallback();
+    } else {
+      this.renderer?.setup(cols, rows);
+      this._scheduleRender();
+    }
     if (this.onResize) this.onResize(cols, rows);
   }
 
@@ -198,6 +212,27 @@ export class WTerm {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
     }
+  }
+
+  private _scheduleSynchronizedOutputFallback(): void {
+    if (this._synchronizedOutputTimer != null) return;
+    this._synchronizedOutputTimer = setTimeout(() => {
+      this._synchronizedOutputTimer = null;
+      this._setupRendererIfNeeded();
+      this._scheduleRender();
+    }, SYNCHRONIZED_OUTPUT_TIMEOUT_MS);
+  }
+
+  private _cancelSynchronizedOutputFallback(): void {
+    if (this._synchronizedOutputTimer == null) return;
+    clearTimeout(this._synchronizedOutputTimer);
+    this._synchronizedOutputTimer = null;
+  }
+
+  private _setupRendererIfNeeded(): void {
+    if (!this._rendererNeedsSetup) return;
+    this.renderer?.setup(this.cols, this.rows);
+    this._rendererNeedsSetup = false;
   }
 
   private _initialRender(): void {
@@ -235,9 +270,14 @@ export class WTerm {
       this.onTitle(title);
     }
 
-    const response = this.bridge.getResponse();
-    if (response !== null && this.onData) {
-      this.onData(response);
+    this._drainResponses();
+  }
+
+  private _drainResponses(): void {
+    if (!this.bridge) return;
+    let response: string | null;
+    while ((response = this.bridge.getResponse()) !== null) {
+      if (this.onData) this.onData(response);
     }
   }
 
@@ -322,6 +362,7 @@ export class WTerm {
   destroy(): void {
     this._destroyed = true;
     this._cancelScheduledRender();
+    this._cancelSynchronizedOutputFallback();
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.input) this.input.destroy();
     this.element.removeEventListener("click", this._onClickFocus);
