@@ -55,6 +55,7 @@ pub const Terminal = struct {
     origin_mode: bool = false,
     cursor_keys_app: bool = false,
     bracketed_paste: bool = false,
+    synchronized_output: bool = false,
     linefeed_mode: bool = false,
 
     // Alternate screen buffer (pointer to avoid doubling struct size)
@@ -233,6 +234,7 @@ pub const Terminal = struct {
         self.origin_mode = false;
         self.cursor_keys_app = false;
         self.bracketed_paste = false;
+        self.synchronized_output = false;
         self.linefeed_mode = false;
         self.alt_saved_cursor_row = 0;
         self.alt_saved_cursor_col = 0;
@@ -610,6 +612,7 @@ pub const Terminal = struct {
                 },
                 1049 => self.switchScreen(enabled, true),
                 2004 => self.bracketed_paste = enabled,
+                2026 => self.synchronized_output = enabled,
                 else => {},
             }
         }
@@ -660,6 +663,7 @@ pub const Terminal = struct {
         self.auto_wrap = true;
         self.cursor_keys_app = false;
         self.bracketed_paste = false;
+        self.synchronized_output = false;
         self.scroll_top = 0;
         self.scroll_bottom = self.rows;
         self.resetStyle();
@@ -1197,6 +1201,21 @@ test "alternate screen buffer" {
     t.write("\x1b[?1049l");
     try testing.expect(!t.using_alt_screen);
     try testing.expectEqual(@as(u32, 'm'), t.grid.getCell(0, 0).char);
+}
+
+test "tracks synchronized output across fragmented writes and reset" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[?20");
+    t.write("26h");
+    try testing.expect(t.synchronized_output);
+    t.write("\x1b[?2026l");
+    try testing.expect(!t.synchronized_output);
+    t.write("\x1b[?2026h\x1b[!p");
+    try testing.expect(!t.synchronized_output);
+    t.write("\x1b[?2026h");
+    t.reset(80, 24);
+    try testing.expect(!t.synchronized_output);
 }
 
 test "erase inherits current background color" {

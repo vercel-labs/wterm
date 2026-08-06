@@ -88,6 +88,10 @@ export fn getUsingAltScreen() u32 {
     return if (terminal.using_alt_screen) 1 else 0;
 }
 
+export fn getSynchronizedOutput() u32 {
+    return if (terminal.synchronized_output) 1 else 0;
+}
+
 // -- Title --
 
 export fn getTitlePtr() [*]const u8 {

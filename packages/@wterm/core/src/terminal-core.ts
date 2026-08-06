@@ -52,6 +52,7 @@ export interface TerminalCore {
   cursorKeysApp(): boolean;
   bracketedPaste(): boolean;
   usingAltScreen(): boolean;
+  synchronizedOutput?(): boolean;
 
   // -- Side outputs --
   getTitle(): string | null;

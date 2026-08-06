@@ -150,7 +150,11 @@ export class WTerm {
     } else {
       this.bridge.writeRaw(data);
     }
-    this._scheduleRender();
+    if (this.bridge.synchronizedOutput?.()) {
+      this._cancelScheduledRender();
+    } else {
+      this._scheduleRender();
+    }
   }
 
   resize(cols: number, rows: number): void {
@@ -183,6 +187,17 @@ export class WTerm {
         });
       }
     }, 0);
+  }
+
+  private _cancelScheduledRender(): void {
+    if (this._renderTimer != null) {
+      clearTimeout(this._renderTimer);
+      this._renderTimer = null;
+    }
+    if (this.rafId != null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
   }
 
   private _initialRender(): void {
@@ -306,8 +321,7 @@ export class WTerm {
 
   destroy(): void {
     this._destroyed = true;
-    if (this._renderTimer != null) clearTimeout(this._renderTimer);
-    if (this.rafId != null) cancelAnimationFrame(this.rafId);
+    this._cancelScheduledRender();
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.input) this.input.destroy();
     this.element.removeEventListener("click", this._onClickFocus);
