@@ -35,6 +35,9 @@ export interface GhosttyExports {
   cursor_keys_app(ptr: number): number;
   bracketed_paste(ptr: number): number;
   using_alt_screen(ptr: number): number;
+  mouse_tracking(ptr: number): number;
+  mouse_sgr(ptr: number): number;
+  focus_events(ptr: number): number;
 
   // Grid
   get_cols(ptr: number): number;

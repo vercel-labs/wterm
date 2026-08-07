@@ -2,6 +2,8 @@
 
 `@wterm/core` provides the headless terminal engine and WebSocket transport. Use it when you need direct access to the WASM bridge for a custom renderer, headless testing, or a server-connected terminal without the DOM layer.
 
+With `@wterm/dom`, terminal applications can enable SGR mouse tracking (modes 1000, 1002, and 1006) and focus reporting (mode 1004). Pointer and focus reports are emitted through `onData`.
+
 ## Install
 
 ```bash

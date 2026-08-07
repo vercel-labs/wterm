@@ -329,6 +329,25 @@ export fn using_alt_screen(ptr: usize) u32 {
     return if (state.terminal.screens.active_key != .primary) 1 else 0;
 }
 
+export fn mouse_tracking(ptr: usize) u32 {
+    const state = stateFromPtr(ptr);
+    return switch (state.terminal.flags.mouse_event) {
+        .normal => 1000,
+        .button => 1002,
+        else => 0,
+    };
+}
+
+export fn mouse_sgr(ptr: usize) u32 {
+    const state = stateFromPtr(ptr);
+    return if (state.terminal.flags.mouse_format == .sgr) 1 else 0;
+}
+
+export fn focus_events(ptr: usize) u32 {
+    const state = stateFromPtr(ptr);
+    return if (state.terminal.modes.get(.focus_event)) 1 else 0;
+}
+
 // -- Grid dimensions --------------------------------------------
 
 export fn get_cols(ptr: usize) u32 {
@@ -414,4 +433,3 @@ export fn free_buffer(buf_ptr: usize, len: u32) void {
     const slice: [*]u8 = @ptrFromInt(buf_ptr);
     allocator.free(slice[0..len]);
 }
-

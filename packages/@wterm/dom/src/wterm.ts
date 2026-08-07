@@ -39,6 +39,7 @@ export class WTerm {
   private _destroyed = false;
   private _shouldScrollToBottom = false;
   private _rowHeight = 0;
+  private _charWidth = 0;
   private _onClickFocus: () => void;
 
   onData: ((data: string) => void) | null;
@@ -90,6 +91,7 @@ export class WTerm {
       }
 
       this._setRowHeight();
+      this._measureCharSize();
 
       this.renderer = new Renderer(this._container);
       this.renderer.setup(this.cols, this.rows);
@@ -105,6 +107,10 @@ export class WTerm {
           }
         },
         () => this.bridge,
+        () =>
+          this._charWidth > 0 && this._rowHeight > 0
+            ? { charWidth: this._charWidth, rowHeight: this._rowHeight }
+            : null,
       );
 
       if (this.autoResize) {
@@ -275,6 +281,7 @@ export class WTerm {
     row.remove();
 
     if (charWidth === 0 || rowHeight === 0) return null;
+    this._charWidth = charWidth;
     this._rowHeight = rowHeight;
     return { charWidth, rowHeight };
   }

@@ -66,6 +66,17 @@ describe("GhosttyCore cell width", () => {
   });
 });
 
+describe("GhosttyCore input modes", () => {
+  it("reads mouse and focus state from the committed WASM", async () => {
+    const core = await newCore();
+    core.writeString("\x1b[?1002h\x1b[?1004h\x1b[?1006h");
+
+    expect(core.mouseTracking()).toBe(1002);
+    expect(core.mouseSgr()).toBe(true);
+    expect(core.focusEvents()).toBe(true);
+  });
+});
+
 describe("GhosttyCore spacer heads", () => {
   it("reports the right-margin blank as narrow, not as a continuation", async () => {
     // A wide glyph that does not fit wraps, and ghostty marks the column it

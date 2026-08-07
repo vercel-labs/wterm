@@ -88,6 +88,18 @@ export fn getUsingAltScreen() u32 {
     return if (terminal.using_alt_screen) 1 else 0;
 }
 
+export fn getMouseTracking() u32 {
+    return terminal.mouse_tracking;
+}
+
+export fn getMouseSgr() u32 {
+    return if (terminal.mouse_sgr) 1 else 0;
+}
+
+export fn getFocusEvents() u32 {
+    return if (terminal.focus_events) 1 else 0;
+}
+
 // -- Title --
 
 export fn getTitlePtr() [*]const u8 {

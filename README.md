@@ -29,6 +29,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **24-bit color** — full RGB SGR support
 - **Auto-resize** — `ResizeObserver`-based terminal resizing
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
+- **Mouse and focus reporting** — DOM input for SGR mouse tracking and terminal focus events
 
 ## Development
 

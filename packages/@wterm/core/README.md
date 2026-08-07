@@ -21,7 +21,7 @@ npm install @wterm/core
 
 ## Pluggable Cores
 
-`@wterm/core` defines a `TerminalCore` interface that any terminal emulation backend can implement. The built-in `WasmBridge` implements it using wterm's lightweight Zig WASM binary (~12 KB). For full-featured emulation (Kitty protocols, proper grapheme handling, mouse tracking, etc.), use [`@wterm/ghostty`](https://www.npmjs.com/package/@wterm/ghostty) which implements the same interface using libghostty (~400 KB).
+`@wterm/core` defines a `TerminalCore` interface that any terminal emulation backend can implement. The built-in `WasmBridge` implements it using wterm's lightweight Zig WASM binary (~12 KB). For additional protocols and proper grapheme handling, use [`@wterm/ghostty`](https://www.npmjs.com/package/@wterm/ghostty), which implements the same interface using libghostty (~400 KB).
 
 ```ts
 import { WTerm } from "@wterm/dom";
@@ -72,6 +72,9 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 | `cursorKeysApp()` | Whether cursor keys are in application mode |
 | `bracketedPaste()` | Whether bracketed paste mode is active |
 | `usingAltScreen()` | Whether the alternate screen buffer is active |
+| `mouseTracking()` | Active mouse tracking mode (`0`, `1000`, or `1002`) |
+| `mouseSgr()` | Whether SGR mouse encoding is active |
+| `focusEvents()` | Whether focus reporting is active |
 
 ### `WebSocketTransport`
 
