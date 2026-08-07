@@ -466,6 +466,31 @@ describe("WTerm", () => {
       vi.useRealTimers();
     });
 
+    it("does not postpone recovery across chained generations", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      let generation = 1;
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      mockBridge.synchronizedOutputGeneration = () => generation;
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("frame 1");
+      for (let elapsed = 100; elapsed < 1000; elapsed += 100) {
+        await vi.advanceTimersByTimeAsync(100);
+        generation++;
+        term.write(`frame ${generation}`);
+      }
+      expect(mockBridge.clearDirty).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(101);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
     it("arms recovery before response delivery", async () => {
       vi.useFakeTimers();
       vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {

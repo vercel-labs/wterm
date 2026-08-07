@@ -230,8 +230,8 @@ export class WTerm {
       this._synchronizedOutputState === "held" &&
       generation !== this._synchronizedOutputGeneration
     ) {
-      this._cancelSynchronizedOutputFallback();
-      this._synchronizedOutputState = "idle";
+      this._synchronizedOutputGeneration = generation;
+      return true;
     } else if (
       this._synchronizedOutputState === "passthrough" &&
       generation !== this._synchronizedOutputGeneration
@@ -245,12 +245,7 @@ export class WTerm {
     this._synchronizedOutputGeneration = generation;
     this._cancelScheduledRender();
     this._synchronizedOutputTimer = setTimeout(() => {
-      if (
-        this._synchronizedOutputState !== "held" ||
-        generation !== this._synchronizedOutputGeneration
-      ) {
-        return;
-      }
+      if (this._synchronizedOutputState !== "held") return;
       this._synchronizedOutputTimer = null;
       this._synchronizedOutputState = "passthrough";
       this._setupRendererIfNeeded();
