@@ -35,6 +35,8 @@ describe("InputHandler mouse and focus modes", () => {
       (data) => received.push(data),
       () => core,
     );
+    container.querySelector("textarea")!.focus({ preventScroll: true });
+    received = [];
   });
 
   afterEach(() => {
@@ -333,21 +335,96 @@ describe("InputHandler mouse and focus modes", () => {
       }),
     );
 
-    expect(iframeReceived).toEqual(["\x1b[<0;2;2M", "\x1b[<0;2;2m"]);
+    expect(iframeReceived).toEqual([
+      "\x1b[I",
+      "\x1b[<0;2;2M",
+      "\x1b[<0;2;2m",
+    ]);
     iframeHandler.destroy();
     iframe.remove();
   });
 
   it("emits focus reports only when mode 1004 is enabled", () => {
     const textarea = container.querySelector("textarea")!;
-    textarea.dispatchEvent(new FocusEvent("focus"));
     textarea.dispatchEvent(new FocusEvent("blur"));
-    expect(received).toEqual(["\x1b[I", "\x1b[O"]);
+    expect(received).toEqual(["\x1b[O"]);
 
     received = [];
     core.focusEvents = () => false;
     textarea.dispatchEvent(new FocusEvent("focus"));
     textarea.dispatchEvent(new FocusEvent("blur"));
     expect(received).toEqual([]);
+  });
+
+  it("preserves native shift selection", () => {
+    const event = new MouseEvent("mousedown", {
+      button: 0,
+      buttons: 1,
+      shiftKey: true,
+      clientX: 25,
+      clientY: 35,
+      cancelable: true,
+    });
+    container.dispatchEvent(event);
+
+    expect(received).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("ignores browser navigation buttons", () => {
+    const event = new MouseEvent("mousedown", {
+      button: 3,
+      buttons: 8,
+      clientX: 25,
+      clientY: 35,
+      cancelable: true,
+    });
+    container.dispatchEvent(event);
+
+    expect(received).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("uses measured cell width when the host has spare width", () => {
+    const row = document.createElement("div");
+    row.className = "term-row";
+    Object.defineProperty(row, "getBoundingClientRect", {
+      value: () => ({ left: 10, top: 20, width: 640, height: 10 }),
+    });
+    container.appendChild(row);
+    const measured = new InputHandler(
+      container,
+      (data) => received.push(data),
+      () => core,
+      () => ({ charWidth: 8, rowHeight: 10 }),
+    );
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 90,
+        clientY: 30,
+      }),
+    );
+
+    expect(received.at(-1)).toBe("\x1b[<0;11;2M");
+    measured.destroy();
+  });
+
+  it("reports focus before the first mouse press after blur", () => {
+    const textarea = container.querySelector("textarea")!;
+    textarea.dispatchEvent(new FocusEvent("blur"));
+    received = [];
+
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+
+    expect(received).toEqual(["\x1b[I", "\x1b[<0;2;1M"]);
   });
 });

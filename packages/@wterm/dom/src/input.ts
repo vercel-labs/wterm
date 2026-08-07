@@ -46,8 +46,13 @@ export class InputHandler {
   private textarea: HTMLTextAreaElement;
   private onData: (data: string) => void;
   private getBridge: () => TerminalCore | null;
+  private getCellSize: () => {
+    charWidth: number;
+    rowHeight: number;
+  } | null;
   private composing = false;
   private mouseButtons = 0;
+  private focused = false;
 
   private _onKeyDown: (e: KeyboardEvent) => void;
   private _onPaste: (e: ClipboardEvent) => void;
@@ -65,10 +70,13 @@ export class InputHandler {
     element: HTMLElement,
     onData: (data: string) => void,
     getBridge: () => TerminalCore | null,
+    getCellSize: () => { charWidth: number; rowHeight: number } | null = () =>
+      null,
   ) {
     this.element = element;
     this.onData = onData;
     this.getBridge = getBridge;
+    this.getCellSize = getCellSize;
 
     this.textarea = document.createElement("textarea");
     this.textarea.setAttribute("autocapitalize", "off");
@@ -103,10 +111,13 @@ export class InputHandler {
     this._onCompositionEnd = this.handleCompositionEnd.bind(this);
     this._onInput = this.handleInput.bind(this);
     this._onFocus = () => {
+      if (this.focused) return;
+      this.focused = true;
       this.element.classList.add("focused");
       if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[I");
     };
     this._onBlur = () => {
+      this.focused = false;
       this.element.classList.remove("focused");
       this.stopMouseCapture();
       if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[O");
@@ -240,28 +251,53 @@ export class InputHandler {
     const bridge = this.getBridge();
     const tracking = bridge?.mouseTracking?.() ?? 0;
     if (!bridge || tracking === 0 || !bridge.mouseSgr?.()) return;
+    if (kind === "press" && (event.shiftKey || event.button > 2)) return;
+    if (kind === "release" && event.button > 2) return;
     if (kind === "move" && (tracking !== 1002 || event.buttons === 0)) return;
 
-    const rect = this.element.getBoundingClientRect();
     const view = this.element.ownerDocument.defaultView;
     if (!view) return;
+    const viewportRow = this.element.querySelector<HTMLElement>(
+      ".term-row:not(.term-scrollback-row)",
+    );
+    const hostRect = this.element.getBoundingClientRect();
+    const rowRect = viewportRow?.getBoundingClientRect();
     const style = view.getComputedStyle(this.element);
-    const borderLeft = parseFloat(style.borderLeftWidth) || 0;
-    const borderRight = parseFloat(style.borderRightWidth) || 0;
-    const borderTop = parseFloat(style.borderTopWidth) || 0;
-    const borderBottom = parseFloat(style.borderBottomWidth) || 0;
-    const paddingLeft = parseFloat(style.paddingLeft) || 0;
-    const paddingRight = parseFloat(style.paddingRight) || 0;
-    const paddingTop = parseFloat(style.paddingTop) || 0;
-    const paddingBottom = parseFloat(style.paddingBottom) || 0;
-    const left = rect.left + borderLeft + paddingLeft;
-    const top = rect.top + borderTop + paddingTop;
-    const width =
-      rect.width - borderLeft - borderRight - paddingLeft - paddingRight;
-    const height =
-      rect.height - borderTop - borderBottom - paddingTop - paddingBottom;
-    if (width <= 0 || height <= 0) return;
+    const left =
+      rowRect?.left ??
+      hostRect.left +
+        (parseFloat(style.borderLeftWidth) || 0) +
+        (parseFloat(style.paddingLeft) || 0);
+    const top =
+      rowRect?.top ??
+      hostRect.top +
+        (parseFloat(style.borderTopWidth) || 0) +
+        (parseFloat(style.paddingTop) || 0);
+    const cellSize = this.getCellSize();
+    const contentWidth =
+      hostRect.width -
+      (parseFloat(style.borderLeftWidth) || 0) -
+      (parseFloat(style.borderRightWidth) || 0) -
+      (parseFloat(style.paddingLeft) || 0) -
+      (parseFloat(style.paddingRight) || 0);
+    const contentHeight =
+      hostRect.height -
+      (parseFloat(style.borderTopWidth) || 0) -
+      (parseFloat(style.borderBottomWidth) || 0) -
+      (parseFloat(style.paddingTop) || 0) -
+      (parseFloat(style.paddingBottom) || 0);
+    const charWidth =
+      rowRect && cellSize
+        ? cellSize.charWidth
+        : contentWidth / bridge.getCols();
+    const rowHeight =
+      rowRect && cellSize
+        ? cellSize.rowHeight
+        : contentHeight / bridge.getRows();
+    if (charWidth <= 0 || rowHeight <= 0) return;
     if (kind === "press") {
+      this.textarea.focus({ preventScroll: true });
+      if (!this.focused) this._onFocus();
       this.mouseButtons =
         event.buttons || (event.button === 1 ? 4 : event.button === 2 ? 2 : 1);
       view.addEventListener("mousemove", this._onMouseMove);
@@ -271,14 +307,14 @@ export class InputHandler {
       1,
       Math.min(
         bridge.getCols(),
-        Math.floor(((event.clientX - left) / width) * bridge.getCols()) + 1,
+        Math.floor((event.clientX - left) / charWidth) + 1,
       ),
     );
     const row = Math.max(
       1,
       Math.min(
         bridge.getRows(),
-        Math.floor(((event.clientY - top) / height) * bridge.getRows()) + 1,
+        Math.floor((event.clientY - top) / rowHeight) + 1,
       ),
     );
     const modifiers =
