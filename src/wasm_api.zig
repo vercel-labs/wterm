@@ -92,6 +92,10 @@ export fn getSynchronizedOutput() u32 {
     return if (terminal.synchronized_output) 1 else 0;
 }
 
+export fn getSynchronizedOutputGeneration() u32 {
+    return terminal.synchronized_output_generation;
+}
+
 // -- Title --
 
 export fn getTitlePtr() [*]const u8 {

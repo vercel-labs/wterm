@@ -23,6 +23,7 @@ interface WasmExports {
   getBracketedPaste(): number;
   getUsingAltScreen(): number;
   getSynchronizedOutput(): number;
+  getSynchronizedOutputGeneration(): number;
   getTitlePtr(): number;
   getTitleLen(): number;
   getTitleChanged(): number;
@@ -167,6 +168,9 @@ export class WasmBridge implements TerminalCore {
   }
   synchronizedOutput(): boolean {
     return this.exports.getSynchronizedOutput() !== 0;
+  }
+  synchronizedOutputGeneration(): number {
+    return this.exports.getSynchronizedOutputGeneration();
   }
 
   getTitle(): string | null {

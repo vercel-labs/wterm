@@ -73,6 +73,7 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 | `bracketedPaste()` | Whether bracketed paste mode is active |
 | `usingAltScreen()` | Whether the alternate screen buffer is active |
 | `synchronizedOutput()` | Whether synchronized output mode (2026) is active |
+| `synchronizedOutputGeneration()` | Monotonic generation for synchronized output blocks |
 
 ### `WebSocketTransport`
 

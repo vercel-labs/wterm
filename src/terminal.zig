@@ -56,6 +56,7 @@ pub const Terminal = struct {
     cursor_keys_app: bool = false,
     bracketed_paste: bool = false,
     synchronized_output: bool = false,
+    synchronized_output_generation: u32 = 0,
     linefeed_mode: bool = false,
 
     // Alternate screen buffer (pointer to avoid doubling struct size)
@@ -612,7 +613,12 @@ pub const Terminal = struct {
                 },
                 1049 => self.switchScreen(enabled, true),
                 2004 => self.bracketed_paste = enabled,
-                2026 => self.synchronized_output = enabled,
+                2026 => {
+                    if (enabled and !self.synchronized_output) {
+                        self.synchronized_output_generation +%= 1;
+                    }
+                    self.synchronized_output = enabled;
+                },
                 else => {},
             }
         }

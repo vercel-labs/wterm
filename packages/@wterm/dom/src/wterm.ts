@@ -157,12 +157,13 @@ export class WTerm {
       this.bridge.writeRaw(data);
     }
     const synchronized = this.bridge.synchronizedOutput?.() ?? false;
-    const held = this._updateSynchronizedOutput(synchronized);
-    this._drainResponses();
-    if (!held) {
+    const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
+    this._updateSynchronizedOutput(synchronized, generation);
+    if (this._synchronizedOutputState !== "held") {
       this._setupRendererIfNeeded();
       this._scheduleRender();
     }
+    this._drainResponses();
   }
 
   resize(cols: number, rows: number): void {
@@ -172,7 +173,8 @@ export class WTerm {
     this.rows = rows;
     this.bridge.resize(cols, rows);
     const synchronized = this.bridge.synchronizedOutput?.() ?? false;
-    if (this._updateSynchronizedOutput(synchronized)) {
+    const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
+    if (this._updateSynchronizedOutput(synchronized, generation)) {
       this._rendererNeedsSetup = true;
     } else {
       this.renderer?.setup(cols, rows);
@@ -213,7 +215,10 @@ export class WTerm {
     }
   }
 
-  private _updateSynchronizedOutput(synchronized: boolean): boolean {
+  private _updateSynchronizedOutput(
+    synchronized: boolean,
+    generation: number,
+  ): boolean {
     if (!synchronized) {
       if (this._synchronizedOutputState === "held") {
         this._cancelSynchronizedOutputFallback();
@@ -221,11 +226,23 @@ export class WTerm {
       this._synchronizedOutputState = "idle";
       return false;
     }
+    if (
+      this._synchronizedOutputState === "held" &&
+      generation !== this._synchronizedOutputGeneration
+    ) {
+      this._cancelSynchronizedOutputFallback();
+      this._synchronizedOutputState = "idle";
+    } else if (
+      this._synchronizedOutputState === "passthrough" &&
+      generation !== this._synchronizedOutputGeneration
+    ) {
+      this._synchronizedOutputState = "idle";
+    }
     if (this._synchronizedOutputState !== "idle") {
       return this._synchronizedOutputState === "held";
     }
     this._synchronizedOutputState = "held";
-    const generation = ++this._synchronizedOutputGeneration;
+    this._synchronizedOutputGeneration = generation;
     this._cancelScheduledRender();
     this._synchronizedOutputTimer = setTimeout(() => {
       if (

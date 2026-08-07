@@ -442,6 +442,30 @@ describe("WTerm", () => {
       vi.useRealTimers();
     });
 
+    it("holds a fresh block when close and reopen share one write", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      let generation = 1;
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      mockBridge.synchronizedOutputGeneration = () => generation;
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("stalled");
+      await vi.advanceTimersByTimeAsync(1001);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+
+      generation = 2;
+      term.write("close and reopen");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
     it("arms recovery before response delivery", async () => {
       vi.useFakeTimers();
       vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
@@ -464,6 +488,37 @@ describe("WTerm", () => {
 
       expect(() => term.write("open")).toThrow(error);
       await vi.advanceTimersByTimeAsync(1001);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("schedules a closing frame before response delivery", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      let synchronized = true;
+      vi.mocked(mockBridge.synchronizedOutput).mockImplementation(
+        () => synchronized,
+      );
+      const error = new Error("consumer failed");
+      const term = new WTerm(element, {
+        autoResize: false,
+        onData: () => {
+          throw error;
+        },
+      });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+      term.write("open");
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response")
+        .mockReturnValue(null);
+      synchronized = false;
+
+      expect(() => term.write("close")).toThrow(error);
+      await vi.runAllTimersAsync();
       expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
       vi.useRealTimers();
     });
