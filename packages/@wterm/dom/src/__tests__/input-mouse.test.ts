@@ -10,8 +10,11 @@ describe("InputHandler mouse and focus modes", () => {
 
   beforeEach(() => {
     container = document.createElement("div");
+    container.style.padding = "0";
+    container.style.border = "0";
     document.body.appendChild(container);
     Object.defineProperty(container, "getBoundingClientRect", {
+      configurable: true,
       value: () => ({
         left: 10,
         top: 20,
@@ -63,10 +66,10 @@ describe("InputHandler mouse and focus modes", () => {
     container.dispatchEvent(wheel);
 
     expect(received).toEqual([
-      "\x1b[<0;8;5M",
-      "\x1b[<32;10;6M",
-      "\x1b[<0;10;6m",
-      "\x1b[<65;10;6M",
+      "\x1b[<0;8;4M",
+      "\x1b[<32;10;5M",
+      "\x1b[<0;10;5m",
+      "\x1b[<65;10;5M",
     ]);
     expect(wheel.defaultPrevented).toBe(true);
   });
@@ -130,14 +133,14 @@ describe("InputHandler mouse and focus modes", () => {
     );
 
     expect(received).toEqual([
-      "\x1b[<2;10;6M",
-      "\x1b[<34;10;6M",
-      "\x1b[<2;10;6m",
-      "\x1b[<1;10;6M",
-      "\x1b[<33;10;6M",
-      "\x1b[<1;10;6m",
-      "\x1b[<66;10;6M",
-      "\x1b[<67;10;6M",
+      "\x1b[<2;10;5M",
+      "\x1b[<34;10;5M",
+      "\x1b[<2;10;5m",
+      "\x1b[<1;10;5M",
+      "\x1b[<33;10;5M",
+      "\x1b[<1;10;5m",
+      "\x1b[<66;10;5M",
+      "\x1b[<67;10;5M",
     ]);
   });
 
@@ -162,7 +165,7 @@ describe("InputHandler mouse and focus modes", () => {
     );
 
     expect(received).toEqual([
-      "\x1b[<0;2;2M",
+      "\x1b[<0;2;1M",
       "\x1b[<32;80;40M",
       "\x1b[<0;80;40m",
     ]);
@@ -197,6 +200,142 @@ describe("InputHandler mouse and focus modes", () => {
     );
 
     expect(received).toEqual(["\x1b[<0;10;20M"]);
+  });
+
+  it("measures cells from the content box", () => {
+    container.style.padding = "10px";
+    Object.defineProperty(container, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ left: 10, top: 20, width: 820, height: 420 }),
+    });
+
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 20,
+        clientY: 30,
+      }),
+    );
+
+    expect(received).toEqual(["\x1b[<0;1;1M"]);
+  });
+
+  it("keeps capture until every pressed button is released", () => {
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 2,
+        buttons: 3,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", {
+        button: 0,
+        buttons: 2,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mousemove", {
+        buttons: 2,
+        clientX: 35,
+        clientY: 45,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", {
+        button: 2,
+        buttons: 0,
+        clientX: 35,
+        clientY: 45,
+      }),
+    );
+
+    expect(received).toEqual([
+      "\x1b[<0;2;1M",
+      "\x1b[<2;2;1M",
+      "\x1b[<0;2;1m",
+      "\x1b[<34;3;2M",
+      "\x1b[<2;3;2m",
+    ]);
+  });
+
+  it("does not capture a press without terminal geometry", () => {
+    Object.defineProperty(container, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ left: 0, top: 0, width: 0, height: 0 }),
+    });
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 10,
+        clientY: 10,
+      }),
+    );
+    Object.defineProperty(container, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ left: 10, top: 20, width: 800, height: 400 }),
+    });
+    window.dispatchEvent(
+      new MouseEvent("mouseup", {
+        button: 0,
+        buttons: 0,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+
+    expect(received).toEqual([]);
+  });
+
+  it("captures mouse events on the element's owning window", () => {
+    const iframe = document.createElement("iframe");
+    document.body.appendChild(iframe);
+    const iframeWindow = iframe.contentWindow!;
+    const iframeContainer = iframe.contentDocument!.createElement("div");
+    iframe.contentDocument!.body.appendChild(iframeContainer);
+    Object.defineProperty(iframeContainer, "getBoundingClientRect", {
+      value: () => ({ left: 10, top: 20, width: 800, height: 400 }),
+    });
+    const iframeReceived: string[] = [];
+    const iframeHandler = new InputHandler(
+      iframeContainer,
+      (data) => iframeReceived.push(data),
+      () => core,
+    );
+
+    iframeContainer.dispatchEvent(
+      new iframeWindow.MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+    iframeWindow.dispatchEvent(
+      new iframeWindow.MouseEvent("mouseup", {
+        button: 0,
+        buttons: 0,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+
+    expect(iframeReceived).toEqual(["\x1b[<0;2;2M", "\x1b[<0;2;2m"]);
+    iframeHandler.destroy();
+    iframe.remove();
   });
 
   it("emits focus reports only when mode 1004 is enabled", () => {

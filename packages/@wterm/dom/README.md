@@ -62,6 +62,8 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 
 When a terminal application enables modes 1000 or 1002 with SGR encoding (1006), pointer input is sent through `onData`. Focus reports are sent when mode 1004 is active.
 
+When a terminal application enables modes 1000 or 1002 with SGR encoding (1006), pointer input is sent through `onData`. Focus reports are sent when mode 1004 is active.
+
 ### `WebSocketTransport`
 
 Connect to a PTY backend over WebSocket (re-exported from `@wterm/core`).

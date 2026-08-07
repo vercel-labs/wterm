@@ -47,7 +47,7 @@ export class InputHandler {
   private onData: (data: string) => void;
   private getBridge: () => TerminalCore | null;
   private composing = false;
-  private mousePressed = false;
+  private mouseButtons = 0;
 
   private _onKeyDown: (e: KeyboardEvent) => void;
   private _onPaste: (e: ClipboardEvent) => void;
@@ -113,12 +113,13 @@ export class InputHandler {
     };
     this._onMouseDown = (event) => this.handleMouse(event, "press");
     this._onMouseMove = (event) => {
-      if (this.mousePressed) this.handleMouse(event, "move");
+      if (this.mouseButtons !== 0) this.handleMouse(event, "move");
     };
     this._onMouseUp = (event) => {
-      if (!this.mousePressed) return;
+      if (this.mouseButtons === 0) return;
       this.handleMouse(event, "release");
-      this.stopMouseCapture();
+      this.mouseButtons = event.buttons;
+      if (this.mouseButtons === 0) this.stopMouseCapture();
     };
     this._onWheel = (event) => this.handleMouse(event, "wheel");
 
@@ -239,31 +240,45 @@ export class InputHandler {
     const bridge = this.getBridge();
     const tracking = bridge?.mouseTracking?.() ?? 0;
     if (!bridge || tracking === 0 || !bridge.mouseSgr?.()) return;
-    if (kind === "press") {
-      this.mousePressed = true;
-      window.addEventListener("mousemove", this._onMouseMove);
-      window.addEventListener("mouseup", this._onMouseUp);
-    }
     if (kind === "move" && (tracking !== 1002 || event.buttons === 0)) return;
 
     const rect = this.element.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+    const view = this.element.ownerDocument.defaultView;
+    if (!view) return;
+    const style = view.getComputedStyle(this.element);
+    const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+    const borderRight = parseFloat(style.borderRightWidth) || 0;
+    const borderTop = parseFloat(style.borderTopWidth) || 0;
+    const borderBottom = parseFloat(style.borderBottomWidth) || 0;
+    const paddingLeft = parseFloat(style.paddingLeft) || 0;
+    const paddingRight = parseFloat(style.paddingRight) || 0;
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const paddingBottom = parseFloat(style.paddingBottom) || 0;
+    const left = rect.left + borderLeft + paddingLeft;
+    const top = rect.top + borderTop + paddingTop;
+    const width =
+      rect.width - borderLeft - borderRight - paddingLeft - paddingRight;
+    const height =
+      rect.height - borderTop - borderBottom - paddingTop - paddingBottom;
+    if (width <= 0 || height <= 0) return;
+    if (kind === "press") {
+      this.mouseButtons =
+        event.buttons || (event.button === 1 ? 4 : event.button === 2 ? 2 : 1);
+      view.addEventListener("mousemove", this._onMouseMove);
+      view.addEventListener("mouseup", this._onMouseUp);
+    }
     const col = Math.max(
       1,
       Math.min(
         bridge.getCols(),
-        Math.floor(
-          ((event.clientX - rect.left) / rect.width) * bridge.getCols(),
-        ) + 1,
+        Math.floor(((event.clientX - left) / width) * bridge.getCols()) + 1,
       ),
     );
     const row = Math.max(
       1,
       Math.min(
         bridge.getRows(),
-        Math.floor(
-          ((event.clientY - rect.top) / rect.height) * bridge.getRows(),
-        ) + 1,
+        Math.floor(((event.clientY - top) / height) * bridge.getRows()) + 1,
       ),
     );
     const modifiers =
@@ -302,9 +317,10 @@ export class InputHandler {
   }
 
   private stopMouseCapture(): void {
-    this.mousePressed = false;
-    window.removeEventListener("mousemove", this._onMouseMove);
-    window.removeEventListener("mouseup", this._onMouseUp);
+    this.mouseButtons = 0;
+    const view = this.element.ownerDocument.defaultView;
+    view?.removeEventListener("mousemove", this._onMouseMove);
+    view?.removeEventListener("mouseup", this._onMouseUp);
   }
 
   private keyToSequence(e: KeyboardEvent): string | null {

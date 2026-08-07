@@ -4,6 +4,8 @@ Full-featured terminal emulation core for [wterm](https://github.com/vercel-labs
 
 Drop-in replacement for wterm's built-in Zig core. Implements the same `TerminalCore` interface with comprehensive VT emulation: proper Unicode grapheme handling, all SGR attributes, terminal modes, and more.
 
+The core exposes SGR mouse tracking (modes 1000, 1002, and 1006) and focus reporting (mode 1004) to `@wterm/dom`.
+
 ## Install
 
 ```bash
