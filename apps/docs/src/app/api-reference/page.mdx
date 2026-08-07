@@ -174,6 +174,8 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
 
 Instance methods on the vanilla `WTerm` class:
 
+WTerm renders synchronized output blocks (CSI `?2026`) atomically when the mode closes. An unterminated block falls back to normal painting after one second of inactivity.
+
 <table>
   <thead>
     <tr>

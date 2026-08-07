@@ -38,6 +38,7 @@ export class WTerm {
   private rafId: number | null = null;
   private _renderTimer: ReturnType<typeof setTimeout> | null = null;
   private _synchronizedOutputTimer: ReturnType<typeof setTimeout> | null = null;
+  private _synchronizedOutputTimedOut = false;
   private _rendererNeedsSetup = false;
   private resizeObserver: ResizeObserver | null = null;
   private _destroyed = false;
@@ -155,10 +156,12 @@ export class WTerm {
       this.bridge.writeRaw(data);
     }
     this._drainResponses();
-    if (this.bridge.synchronizedOutput?.()) {
+    const synchronized = this.bridge.synchronizedOutput?.() ?? false;
+    if (synchronized && !this._synchronizedOutputTimedOut) {
       this._cancelScheduledRender();
       this._scheduleSynchronizedOutputFallback();
     } else {
+      if (!synchronized) this._synchronizedOutputTimedOut = false;
       this._cancelSynchronizedOutputFallback();
       this._setupRendererIfNeeded();
       this._scheduleRender();
@@ -171,11 +174,14 @@ export class WTerm {
     this.cols = cols;
     this.rows = rows;
     this.bridge.resize(cols, rows);
-    if (this.bridge.synchronizedOutput?.()) {
+    const synchronized = this.bridge.synchronizedOutput?.() ?? false;
+    if (synchronized && !this._synchronizedOutputTimedOut) {
       this._rendererNeedsSetup = true;
       this._cancelScheduledRender();
       this._scheduleSynchronizedOutputFallback();
     } else {
+      if (!synchronized) this._synchronizedOutputTimedOut = false;
+      this._cancelSynchronizedOutputFallback();
       this.renderer?.setup(cols, rows);
       this._scheduleRender();
     }
@@ -215,9 +221,10 @@ export class WTerm {
   }
 
   private _scheduleSynchronizedOutputFallback(): void {
-    if (this._synchronizedOutputTimer != null) return;
+    this._cancelSynchronizedOutputFallback();
     this._synchronizedOutputTimer = setTimeout(() => {
       this._synchronizedOutputTimer = null;
+      this._synchronizedOutputTimedOut = true;
       this._setupRendererIfNeeded();
       this._scheduleRender();
     }, SYNCHRONIZED_OUTPUT_TIMEOUT_MS);
