@@ -491,6 +491,30 @@ describe("WTerm", () => {
       vi.useRealTimers();
     });
 
+    it("commits recovery before a new block can cancel it", async () => {
+      vi.useFakeTimers();
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockReturnValue(42);
+      let generation = 1;
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      mockBridge.synchronizedOutputGeneration = () => generation;
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+      requestAnimationFrame.mockClear();
+
+      term.write("frame 1");
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      expect(requestAnimationFrame).not.toHaveBeenCalled();
+
+      generation++;
+      term.write("frame 2");
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
     it("arms recovery before response delivery", async () => {
       vi.useFakeTimers();
       vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {

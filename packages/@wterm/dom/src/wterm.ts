@@ -249,7 +249,8 @@ export class WTerm {
       this._synchronizedOutputTimer = null;
       this._synchronizedOutputState = "passthrough";
       this._setupRendererIfNeeded();
-      this._scheduleRender();
+      this._cancelScheduledRender();
+      this._doRender();
     }, SYNCHRONIZED_OUTPUT_TIMEOUT_MS);
     return true;
   }
