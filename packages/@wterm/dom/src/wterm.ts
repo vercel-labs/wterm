@@ -3,6 +3,8 @@ import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
 import { DebugAdapter } from "./debug.js";
 
+const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
+
 export interface WTermOptions {
   cols?: number;
   rows?: number;
@@ -35,6 +37,10 @@ export class WTerm {
   private input: InputHandler | null = null;
   private rafId: number | null = null;
   private _renderTimer: ReturnType<typeof setTimeout> | null = null;
+  private _synchronizedOutputTimer: ReturnType<typeof setTimeout> | null = null;
+  private _synchronizedOutputState: "idle" | "held" | "passthrough" = "idle";
+  private _synchronizedOutputGeneration = 0;
+  private _rendererNeedsSetup = false;
   private resizeObserver: ResizeObserver | null = null;
   private _destroyed = false;
   private _shouldScrollToBottom = false;
@@ -150,7 +156,14 @@ export class WTerm {
     } else {
       this.bridge.writeRaw(data);
     }
-    this._scheduleRender();
+    const synchronized = this.bridge.synchronizedOutput?.() ?? false;
+    const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
+    this._updateSynchronizedOutput(synchronized, generation);
+    if (this._synchronizedOutputState !== "held") {
+      this._setupRendererIfNeeded();
+      this._scheduleRender();
+    }
+    this._drainResponses();
   }
 
   resize(cols: number, rows: number): void {
@@ -159,8 +172,14 @@ export class WTerm {
     this.cols = cols;
     this.rows = rows;
     this.bridge.resize(cols, rows);
-    this.renderer?.setup(cols, rows);
-    this._scheduleRender();
+    const synchronized = this.bridge.synchronizedOutput?.() ?? false;
+    const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
+    if (this._updateSynchronizedOutput(synchronized, generation)) {
+      this._rendererNeedsSetup = true;
+    } else {
+      this.renderer?.setup(cols, rows);
+      this._scheduleRender();
+    }
     if (this.onResize) this.onResize(cols, rows);
   }
 
@@ -183,6 +202,69 @@ export class WTerm {
         });
       }
     }, 0);
+  }
+
+  private _cancelScheduledRender(): void {
+    if (this._renderTimer != null) {
+      clearTimeout(this._renderTimer);
+      this._renderTimer = null;
+    }
+    if (this.rafId != null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+  }
+
+  private _updateSynchronizedOutput(
+    synchronized: boolean,
+    generation: number,
+  ): boolean {
+    if (!synchronized) {
+      if (this._synchronizedOutputState === "held") {
+        this._cancelSynchronizedOutputFallback();
+      }
+      this._synchronizedOutputState = "idle";
+      return false;
+    }
+    if (
+      this._synchronizedOutputState === "held" &&
+      generation !== this._synchronizedOutputGeneration
+    ) {
+      this._synchronizedOutputGeneration = generation;
+      return true;
+    } else if (
+      this._synchronizedOutputState === "passthrough" &&
+      generation !== this._synchronizedOutputGeneration
+    ) {
+      this._synchronizedOutputState = "idle";
+    }
+    if (this._synchronizedOutputState !== "idle") {
+      return this._synchronizedOutputState === "held";
+    }
+    this._synchronizedOutputState = "held";
+    this._synchronizedOutputGeneration = generation;
+    this._cancelScheduledRender();
+    this._synchronizedOutputTimer = setTimeout(() => {
+      if (this._synchronizedOutputState !== "held") return;
+      this._synchronizedOutputTimer = null;
+      this._synchronizedOutputState = "passthrough";
+      this._setupRendererIfNeeded();
+      this._cancelScheduledRender();
+      this._doRender();
+    }, SYNCHRONIZED_OUTPUT_TIMEOUT_MS);
+    return true;
+  }
+
+  private _cancelSynchronizedOutputFallback(): void {
+    if (this._synchronizedOutputTimer == null) return;
+    clearTimeout(this._synchronizedOutputTimer);
+    this._synchronizedOutputTimer = null;
+  }
+
+  private _setupRendererIfNeeded(): void {
+    if (!this._rendererNeedsSetup) return;
+    this.renderer?.setup(this.cols, this.rows);
+    this._rendererNeedsSetup = false;
   }
 
   private _initialRender(): void {
@@ -220,9 +302,14 @@ export class WTerm {
       this.onTitle(title);
     }
 
-    const response = this.bridge.getResponse();
-    if (response !== null && this.onData) {
-      this.onData(response);
+    this._drainResponses();
+  }
+
+  private _drainResponses(): void {
+    if (!this.bridge) return;
+    let response: string | null;
+    while ((response = this.bridge.getResponse()) !== null) {
+      if (this.onData) this.onData(response);
     }
   }
 
@@ -306,8 +393,8 @@ export class WTerm {
 
   destroy(): void {
     this._destroyed = true;
-    if (this._renderTimer != null) clearTimeout(this._renderTimer);
-    if (this.rafId != null) cancelAnimationFrame(this.rafId);
+    this._cancelScheduledRender();
+    this._cancelSynchronizedOutputFallback();
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.input) this.input.destroy();
     this.element.removeEventListener("click", this._onClickFocus);

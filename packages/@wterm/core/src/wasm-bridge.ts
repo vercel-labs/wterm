@@ -22,6 +22,8 @@ interface WasmExports {
   getCursorKeysApp(): number;
   getBracketedPaste(): number;
   getUsingAltScreen(): number;
+  getSynchronizedOutput(): number;
+  getSynchronizedOutputGeneration(): number;
   getTitlePtr(): number;
   getTitleLen(): number;
   getTitleChanged(): number;
@@ -163,6 +165,12 @@ export class WasmBridge implements TerminalCore {
   }
   usingAltScreen(): boolean {
     return this.exports.getUsingAltScreen() !== 0;
+  }
+  synchronizedOutput(): boolean {
+    return this.exports.getSynchronizedOutput() !== 0;
+  }
+  synchronizedOutputGeneration(): number {
+    return this.exports.getSynchronizedOutputGeneration();
   }
 
   getTitle(): string | null {

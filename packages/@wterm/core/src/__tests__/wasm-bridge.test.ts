@@ -175,6 +175,14 @@ describe("WasmBridge", () => {
       bridge.writeString("\x1b[?1049l");
       expect(bridge.usingAltScreen()).toBe(false);
     });
+
+    it("tracks synchronized output mode", () => {
+      expect(bridge.synchronizedOutput()).toBe(false);
+      bridge.writeString("\x1b[?2026h");
+      expect(bridge.synchronizedOutput()).toBe(true);
+      bridge.writeString("\x1b[?2026l");
+      expect(bridge.synchronizedOutput()).toBe(false);
+    });
   });
 
   describe("title", () => {

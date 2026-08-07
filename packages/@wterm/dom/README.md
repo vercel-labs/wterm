@@ -60,6 +60,8 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `focus()` | Focus the terminal element |
 | `destroy()` | Clean up event listeners and DOM |
 
+WTerm honors synchronized output mode (CSI `?2026`) by painting the block atomically when the mode closes. If a producer leaves the mode open, WTerm resumes painting after one second of inactivity and keeps painting until the mode closes.
+
 ### `WebSocketTransport`
 
 Connect to a PTY backend over WebSocket (re-exported from `@wterm/core`).

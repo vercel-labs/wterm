@@ -21,6 +21,7 @@ function createMockBridge(): WasmBridge {
     cursorKeysApp: vi.fn(() => false),
     bracketedPaste: vi.fn(() => false),
     usingAltScreen: vi.fn(() => false),
+    synchronizedOutput: vi.fn(() => false),
   } as unknown as WasmBridge;
 }
 
@@ -34,6 +35,7 @@ vi.mock("@wterm/core", () => ({
 
 import { WasmBridge as MockedWasmBridge } from "@wterm/core";
 import { WTerm } from "../wterm.js";
+import { Renderer } from "../renderer.js";
 
 describe("WTerm", () => {
   let element: HTMLDivElement;
@@ -291,12 +293,348 @@ describe("WTerm", () => {
   describe("response forwarding", () => {
     it("forwards bridge response to onData", async () => {
       const onData = vi.fn();
-      vi.mocked(mockBridge.getResponse).mockReturnValue("response-data");
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response-data")
+        .mockReturnValue(null);
 
       const term = new WTerm(element, { autoResize: false, onData });
       await term.init();
 
       expect(onData).toHaveBeenCalledWith("response-data");
+    });
+  });
+
+  describe("synchronized output", () => {
+    it("holds rendering until synchronized output closes", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      let synchronized = false;
+      vi.mocked(mockBridge.synchronizedOutput).mockImplementation(
+        () => synchronized,
+      );
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      synchronized = true;
+      term.write("partial");
+      await vi.advanceTimersByTimeAsync(20);
+      expect(mockBridge.clearDirty).not.toHaveBeenCalled();
+
+      synchronized = false;
+      term.write("complete");
+      expect(mockBridge.synchronizedOutput).toHaveLastReturnedWith(false);
+      expect(
+        (term as unknown as { _rendererNeedsSetup: boolean })
+          ._rendererNeedsSetup,
+      ).toBe(false);
+      await vi.runAllTimersAsync();
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("forwards responses while rendering is held", async () => {
+      const onData = vi.fn();
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      const term = new WTerm(element, { autoResize: false, onData });
+      await term.init();
+      onData.mockClear();
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response")
+        .mockReturnValue(null);
+
+      term.write("query");
+
+      expect(onData).toHaveBeenCalledWith("response");
+      term.destroy();
+    });
+
+    it("flushes an unterminated synchronized block", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("partial");
+      await vi.advanceTimersByTimeAsync(999);
+      expect(mockBridge.clearDirty).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("keeps painting after an unterminated synchronized block", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        setTimeout(() => cb(performance.now()), 0);
+        return 1;
+      });
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("partial");
+      await vi.advanceTimersByTimeAsync(1002);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+
+      term.write("more");
+      await vi.advanceTimersByTimeAsync(2);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(2);
+      vi.useRealTimers();
+    });
+
+    it("does not extend the fallback deadline for ordinary payload", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("partial");
+      await vi.advanceTimersByTimeAsync(900);
+      term.write("continued");
+      await vi.advanceTimersByTimeAsync(101);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("holds a fresh synchronized block after recovery", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      let synchronized = true;
+      vi.mocked(mockBridge.synchronizedOutput).mockImplementation(
+        () => synchronized,
+      );
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("stalled");
+      await vi.advanceTimersByTimeAsync(1001);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+
+      synchronized = false;
+      term.write("old close");
+      synchronized = true;
+      term.write("fresh open");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      synchronized = false;
+      term.write("fresh close");
+      await vi.runAllTimersAsync();
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(2);
+      vi.useRealTimers();
+    });
+
+    it("holds a fresh block when close and reopen share one write", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      let generation = 1;
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      mockBridge.synchronizedOutputGeneration = () => generation;
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("stalled");
+      await vi.advanceTimersByTimeAsync(1001);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+
+      generation = 2;
+      term.write("close and reopen");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("does not postpone recovery across chained generations", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      let generation = 1;
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      mockBridge.synchronizedOutputGeneration = () => generation;
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("frame 1");
+      for (let elapsed = 100; elapsed < 1000; elapsed += 100) {
+        await vi.advanceTimersByTimeAsync(100);
+        generation++;
+        term.write(`frame ${generation}`);
+      }
+      expect(mockBridge.clearDirty).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(101);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("commits recovery before a new block can cancel it", async () => {
+      vi.useFakeTimers();
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockReturnValue(42);
+      let generation = 1;
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      mockBridge.synchronizedOutputGeneration = () => generation;
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+      requestAnimationFrame.mockClear();
+
+      term.write("frame 1");
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      expect(requestAnimationFrame).not.toHaveBeenCalled();
+
+      generation++;
+      term.write("frame 2");
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("arms recovery before response delivery", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      const error = new Error("consumer failed");
+      const term = new WTerm(element, {
+        autoResize: false,
+        onData: () => {
+          throw error;
+        },
+      });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response")
+        .mockReturnValue(null);
+
+      expect(() => term.write("open")).toThrow(error);
+      await vi.advanceTimersByTimeAsync(1001);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("schedules a closing frame before response delivery", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      let synchronized = true;
+      vi.mocked(mockBridge.synchronizedOutput).mockImplementation(
+        () => synchronized,
+      );
+      const error = new Error("consumer failed");
+      const term = new WTerm(element, {
+        autoResize: false,
+        onData: () => {
+          throw error;
+        },
+      });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+      term.write("open");
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response")
+        .mockReturnValue(null);
+      synchronized = false;
+
+      expect(() => term.write("close")).toThrow(error);
+      await vi.runAllTimersAsync();
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("cancels a queued animation frame when synchronized output starts", async () => {
+      vi.useFakeTimers();
+      const cancelAnimationFrame = vi.spyOn(globalThis, "cancelAnimationFrame");
+      vi.spyOn(globalThis, "requestAnimationFrame").mockReturnValue(42);
+      let synchronized = false;
+      vi.mocked(mockBridge.synchronizedOutput).mockImplementation(
+        () => synchronized,
+      );
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+
+      term.write("normal");
+      await vi.advanceTimersByTimeAsync(0);
+      synchronized = true;
+      term.write("partial");
+
+      expect(cancelAnimationFrame).toHaveBeenCalledWith(42);
+      term.destroy();
+      vi.useRealTimers();
+    });
+
+    it("clears the synchronized output fallback when destroyed", async () => {
+      vi.useFakeTimers();
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+
+      term.write("partial");
+      expect(
+        (term as unknown as { _synchronizedOutputTimer: unknown })
+          ._synchronizedOutputTimer,
+      ).not.toBeNull();
+      term.destroy();
+      expect(
+        (term as unknown as { _synchronizedOutputTimer: unknown })
+          ._synchronizedOutputTimer,
+      ).toBeNull();
+      vi.useRealTimers();
+    });
+
+    it("does not rebuild rows during a synchronized resize", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      let synchronized = true;
+      vi.mocked(mockBridge.synchronizedOutput).mockImplementation(
+        () => synchronized,
+      );
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const setup = vi.spyOn(Renderer.prototype, "setup");
+      setup.mockClear();
+
+      term.resize(100, 30);
+      expect(setup).not.toHaveBeenCalled();
+
+      synchronized = false;
+      term.write("complete");
+      await vi.runAllTimersAsync();
+      expect(setup).toHaveBeenCalledWith(100, 30);
+      vi.useRealTimers();
     });
   });
 
