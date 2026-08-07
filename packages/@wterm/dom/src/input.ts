@@ -265,38 +265,43 @@ export class InputHandler {
     );
     const hostRect = this.element.getBoundingClientRect();
     const rowRect = viewportRow?.getBoundingClientRect();
-    const style = view.getComputedStyle(this.element);
-    const left =
-      rowRect?.left ??
-      hostRect.left +
-        (parseFloat(style.borderLeftWidth) || 0) +
-        (parseFloat(style.paddingLeft) || 0);
-    const top =
-      rowRect?.top ??
-      hostRect.top +
-        (parseFloat(style.borderTopWidth) || 0) +
-        (parseFloat(style.paddingTop) || 0);
     const cellSize = this.getCellSize();
-    const contentWidth =
-      hostRect.width -
-      (parseFloat(style.borderLeftWidth) || 0) -
-      (parseFloat(style.borderRightWidth) || 0) -
-      (parseFloat(style.paddingLeft) || 0) -
-      (parseFloat(style.paddingRight) || 0);
-    const contentHeight =
-      hostRect.height -
-      (parseFloat(style.borderTopWidth) || 0) -
-      (parseFloat(style.borderBottomWidth) || 0) -
-      (parseFloat(style.paddingTop) || 0) -
-      (parseFloat(style.paddingBottom) || 0);
-    const charWidth =
-      rowRect && cellSize
-        ? cellSize.charWidth
-        : contentWidth / bridge.getCols();
-    const rowHeight =
-      rowRect && cellSize
-        ? cellSize.rowHeight
-        : contentHeight / bridge.getRows();
+    let left: number;
+    let top: number;
+    let charWidth: number;
+    let rowHeight: number;
+    if (rowRect && cellSize) {
+      left = rowRect.left;
+      top = rowRect.top;
+      charWidth = cellSize.charWidth;
+      rowHeight = cellSize.rowHeight;
+    } else {
+      const style = view.getComputedStyle(this.element);
+      const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+      const borderRight = parseFloat(style.borderRightWidth) || 0;
+      const borderTop = parseFloat(style.borderTopWidth) || 0;
+      const borderBottom = parseFloat(style.borderBottomWidth) || 0;
+      const paddingLeft = parseFloat(style.paddingLeft) || 0;
+      const paddingRight = parseFloat(style.paddingRight) || 0;
+      const paddingTop = parseFloat(style.paddingTop) || 0;
+      const paddingBottom = parseFloat(style.paddingBottom) || 0;
+      left = rowRect?.left ?? hostRect.left + borderLeft + paddingLeft;
+      top = rowRect?.top ?? hostRect.top + borderTop + paddingTop;
+      charWidth =
+        (hostRect.width -
+          borderLeft -
+          borderRight -
+          paddingLeft -
+          paddingRight) /
+        bridge.getCols();
+      rowHeight =
+        (hostRect.height -
+          borderTop -
+          borderBottom -
+          paddingTop -
+          paddingBottom) /
+        bridge.getRows();
+    }
     if (charWidth <= 0 || rowHeight <= 0) return;
     if (kind === "press") {
       this.textarea.focus({ preventScroll: true });

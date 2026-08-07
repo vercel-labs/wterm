@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TerminalCore } from "@wterm/core";
 import { InputHandler } from "../input.js";
 
@@ -445,6 +445,41 @@ describe("InputHandler mouse and focus modes", () => {
 
     expect(received.at(-1)).toBe("\x1b[<0;11;2M");
     measured.destroy();
+  });
+
+  it("does not recalculate styles when measured geometry is available", () => {
+    handler.destroy();
+    const row = document.createElement("div");
+    row.className = "term-row";
+    Object.defineProperty(row, "getBoundingClientRect", {
+      value: () => ({ left: 10, top: 20, width: 640, height: 10 }),
+    });
+    container.appendChild(row);
+    handler = new InputHandler(
+      container,
+      (data) => received.push(data),
+      () => core,
+      () => ({ charWidth: 8, rowHeight: 10 }),
+    );
+    const getComputedStyle = vi.spyOn(window, "getComputedStyle");
+
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mousemove", {
+        buttons: 1,
+        clientX: 35,
+        clientY: 45,
+      }),
+    );
+
+    expect(getComputedStyle).not.toHaveBeenCalled();
   });
 
   it("reports focus before the first mouse press after blur", () => {
