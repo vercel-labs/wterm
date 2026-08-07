@@ -330,6 +330,10 @@ describe("WTerm", () => {
         onData,
       });
       await term.init();
+      const scheduleRender = vi.spyOn(
+        term as unknown as { _scheduleRender(): void },
+        "_scheduleRender",
+      );
       vi.mocked(mockBridge.getResponse).mockClear();
       vi.mocked(mockBridge.writeString).mockImplementation(
         (_data, afterChunk) => {
@@ -347,6 +351,33 @@ describe("WTerm", () => {
       expect(() => term.write("data")).toThrow(error);
       expect(onData.mock.calls).toEqual([["response-a"], ["response-b"]]);
       expect(mockBridge.getResponse).toHaveBeenCalledTimes(5);
+      expect(scheduleRender).toHaveBeenCalledTimes(1);
+    });
+
+    it("rethrows undefined from onData after scheduling rendering", async () => {
+      const onData = vi.fn(() => {
+        throw undefined;
+      });
+      const term = new WTerm(element, { autoResize: false, onData });
+      await term.init();
+      const scheduleRender = vi.spyOn(
+        term as unknown as { _scheduleRender(): void },
+        "_scheduleRender",
+      );
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response")
+        .mockReturnValue(null);
+
+      let completed = false;
+      try {
+        term.write("query");
+        completed = true;
+      } catch (error) {
+        expect(error).toBeUndefined();
+      }
+
+      expect(completed).toBe(false);
+      expect(scheduleRender).toHaveBeenCalledTimes(1);
     });
   });
 
