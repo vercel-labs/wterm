@@ -38,7 +38,8 @@ export class WTerm {
   private rafId: number | null = null;
   private _renderTimer: ReturnType<typeof setTimeout> | null = null;
   private _synchronizedOutputTimer: ReturnType<typeof setTimeout> | null = null;
-  private _synchronizedOutputTimedOut = false;
+  private _synchronizedOutputState: "idle" | "held" | "passthrough" = "idle";
+  private _synchronizedOutputGeneration = 0;
   private _rendererNeedsSetup = false;
   private resizeObserver: ResizeObserver | null = null;
   private _destroyed = false;
@@ -155,14 +156,10 @@ export class WTerm {
     } else {
       this.bridge.writeRaw(data);
     }
-    this._drainResponses();
     const synchronized = this.bridge.synchronizedOutput?.() ?? false;
-    if (synchronized && !this._synchronizedOutputTimedOut) {
-      this._cancelScheduledRender();
-      this._scheduleSynchronizedOutputFallback();
-    } else {
-      if (!synchronized) this._synchronizedOutputTimedOut = false;
-      this._cancelSynchronizedOutputFallback();
+    const held = this._updateSynchronizedOutput(synchronized);
+    this._drainResponses();
+    if (!held) {
       this._setupRendererIfNeeded();
       this._scheduleRender();
     }
@@ -175,13 +172,9 @@ export class WTerm {
     this.rows = rows;
     this.bridge.resize(cols, rows);
     const synchronized = this.bridge.synchronizedOutput?.() ?? false;
-    if (synchronized && !this._synchronizedOutputTimedOut) {
+    if (this._updateSynchronizedOutput(synchronized)) {
       this._rendererNeedsSetup = true;
-      this._cancelScheduledRender();
-      this._scheduleSynchronizedOutputFallback();
     } else {
-      if (!synchronized) this._synchronizedOutputTimedOut = false;
-      this._cancelSynchronizedOutputFallback();
       this.renderer?.setup(cols, rows);
       this._scheduleRender();
     }
@@ -220,14 +213,33 @@ export class WTerm {
     }
   }
 
-  private _scheduleSynchronizedOutputFallback(): void {
-    this._cancelSynchronizedOutputFallback();
+  private _updateSynchronizedOutput(synchronized: boolean): boolean {
+    if (!synchronized) {
+      if (this._synchronizedOutputState === "held") {
+        this._cancelSynchronizedOutputFallback();
+      }
+      this._synchronizedOutputState = "idle";
+      return false;
+    }
+    if (this._synchronizedOutputState !== "idle") {
+      return this._synchronizedOutputState === "held";
+    }
+    this._synchronizedOutputState = "held";
+    const generation = ++this._synchronizedOutputGeneration;
+    this._cancelScheduledRender();
     this._synchronizedOutputTimer = setTimeout(() => {
+      if (
+        this._synchronizedOutputState !== "held" ||
+        generation !== this._synchronizedOutputGeneration
+      ) {
+        return;
+      }
       this._synchronizedOutputTimer = null;
-      this._synchronizedOutputTimedOut = true;
+      this._synchronizedOutputState = "passthrough";
       this._setupRendererIfNeeded();
       this._scheduleRender();
     }, SYNCHRONIZED_OUTPUT_TIMEOUT_MS);
+    return true;
   }
 
   private _cancelSynchronizedOutputFallback(): void {
