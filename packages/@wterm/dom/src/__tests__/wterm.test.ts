@@ -317,6 +317,37 @@ describe("WTerm", () => {
 
       expect(onData.mock.calls).toEqual([["response-a"], ["response-b"]]);
     });
+
+    it("finishes parsing and schedules rendering when onData throws", async () => {
+      const error = new Error("consumer failed");
+      const onData = vi
+        .fn<(data: string) => void>()
+        .mockImplementationOnce(() => {
+          throw error;
+        });
+      const term = new WTerm(element, {
+        autoResize: false,
+        onData,
+      });
+      await term.init();
+      vi.mocked(mockBridge.getResponse).mockClear();
+      vi.mocked(mockBridge.writeString).mockImplementation(
+        (_data, afterChunk) => {
+          vi.mocked(mockBridge.getResponse)
+            .mockReturnValueOnce("response-a")
+            .mockReturnValueOnce(null);
+          afterChunk?.();
+          vi.mocked(mockBridge.getResponse)
+            .mockReturnValueOnce("response-b")
+            .mockReturnValueOnce(null);
+          afterChunk?.();
+        },
+      );
+
+      expect(() => term.write("data")).toThrow(error);
+      expect(onData.mock.calls).toEqual([["response-a"], ["response-b"]]);
+      expect(mockBridge.getResponse).toHaveBeenCalledTimes(5);
+    });
   });
 
   describe("scrollback class toggle", () => {

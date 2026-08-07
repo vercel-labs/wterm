@@ -145,13 +145,21 @@ export class WTerm {
     if (!this.bridge) return;
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._isScrolledToBottom();
+    let deliveryError: unknown;
+    const drain = () => {
+      const error = this._drainResponses();
+      if (deliveryError === undefined && error !== undefined) {
+        deliveryError = error;
+      }
+    };
     if (typeof data === "string") {
-      this.bridge.writeString(data, () => this._drainResponses());
+      this.bridge.writeString(data, drain);
     } else {
-      this.bridge.writeRaw(data, () => this._drainResponses());
+      this.bridge.writeRaw(data, drain);
     }
-    this._drainResponses();
+    drain();
     this._scheduleRender();
+    if (deliveryError !== undefined) throw deliveryError;
   }
 
   resize(cols: number, rows: number): void {
@@ -224,12 +232,18 @@ export class WTerm {
     this._drainResponses();
   }
 
-  private _drainResponses(): void {
-    if (!this.bridge) return;
+  private _drainResponses(): unknown {
+    if (!this.bridge) return undefined;
     let response: string | null;
+    let firstError: unknown;
     while ((response = this.bridge.getResponse()) !== null) {
-      if (this.onData) this.onData(response);
+      try {
+        if (this.onData) this.onData(response);
+      } catch (error) {
+        firstError ??= error;
+      }
     }
+    return firstError;
   }
 
   private _lockHeight(): void {
