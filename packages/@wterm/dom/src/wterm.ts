@@ -91,6 +91,7 @@ export class WTerm {
       }
 
       this._setRowHeight();
+      this._measureCharSize();
 
       this.renderer = new Renderer(this._container);
       this.renderer.setup(this.cols, this.rows);

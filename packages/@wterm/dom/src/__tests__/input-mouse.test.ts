@@ -385,6 +385,42 @@ describe("InputHandler mouse and focus modes", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it("does not retain unsupported buttons during capture", () => {
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 3,
+        buttons: 9,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", {
+        button: 0,
+        buttons: 8,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mousemove", {
+        buttons: 8,
+        clientX: 35,
+        clientY: 45,
+      }),
+    );
+
+    expect(received).toEqual(["\x1b[<0;2;1M", "\x1b[<0;2;1m"]);
+  });
+
   it("uses measured cell width when the host has spare width", () => {
     const row = document.createElement("div");
     row.className = "term-row";

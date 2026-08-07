@@ -129,7 +129,7 @@ export class InputHandler {
     this._onMouseUp = (event) => {
       if (this.mouseButtons === 0) return;
       this.handleMouse(event, "release");
-      this.mouseButtons = event.buttons;
+      this.mouseButtons = event.buttons & 7;
       if (this.mouseButtons === 0) this.stopMouseCapture();
     };
     this._onWheel = (event) => this.handleMouse(event, "wheel");
@@ -253,7 +253,10 @@ export class InputHandler {
     if (!bridge || tracking === 0 || !bridge.mouseSgr?.()) return;
     if (kind === "press" && (event.shiftKey || event.button > 2)) return;
     if (kind === "release" && event.button > 2) return;
-    if (kind === "move" && (tracking !== 1002 || event.buttons === 0)) return;
+    const supportedButtons = event.buttons & 7;
+    if (kind === "move" && (tracking !== 1002 || supportedButtons === 0)) {
+      return;
+    }
 
     const view = this.element.ownerDocument.defaultView;
     if (!view) return;
@@ -299,7 +302,8 @@ export class InputHandler {
       this.textarea.focus({ preventScroll: true });
       if (!this.focused) this._onFocus();
       this.mouseButtons =
-        event.buttons || (event.button === 1 ? 4 : event.button === 2 ? 2 : 1);
+        supportedButtons ||
+        (event.button === 1 ? 4 : event.button === 2 ? 2 : 1);
       view.addEventListener("mousemove", this._onMouseMove);
       view.addEventListener("mouseup", this._onMouseUp);
     }
@@ -335,9 +339,9 @@ export class InputHandler {
     } else {
       const button =
         kind === "move"
-          ? event.buttons & 4
+          ? supportedButtons & 4
             ? 1
-            : event.buttons & 2
+            : supportedButtons & 2
               ? 2
               : 0
           : event.button === 1
