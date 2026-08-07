@@ -335,11 +335,7 @@ describe("InputHandler mouse and focus modes", () => {
       }),
     );
 
-    expect(iframeReceived).toEqual([
-      "\x1b[I",
-      "\x1b[<0;2;2M",
-      "\x1b[<0;2;2m",
-    ]);
+    expect(iframeReceived).toEqual(["\x1b[I", "\x1b[<0;2;2M", "\x1b[<0;2;2m"]);
     iframeHandler.destroy();
     iframe.remove();
   });
