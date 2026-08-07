@@ -104,12 +104,12 @@ export class WasmBridge implements TerminalCore {
     this.maxCols = this.exports.getMaxCols();
   }
 
-  writeString(str: string): void {
+  writeString(str: string, afterChunk?: () => void): void {
     const encoded = this.encoder.encode(str);
-    this.writeRaw(encoded);
+    this.writeRaw(encoded, afterChunk);
   }
 
-  writeRaw(data: Uint8Array): void {
+  writeRaw(data: Uint8Array, afterChunk?: () => void): void {
     let offset = 0;
     while (offset < data.length) {
       const chunk = Math.min(data.length - offset, 8192);
@@ -117,6 +117,7 @@ export class WasmBridge implements TerminalCore {
       buf.set(data.subarray(offset, offset + chunk));
       this.exports.writeBytes(chunk);
       offset += chunk;
+      afterChunk?.();
     }
   }
 

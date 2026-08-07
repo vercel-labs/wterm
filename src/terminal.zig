@@ -11,6 +11,8 @@ const Action = parser_mod.Action;
 const Scrollback = scrollback_mod.Scrollback;
 
 pub const DEBUG_LOG_MAX: u8 = 32;
+pub const RESPONSE_MAX_BYTES: usize = 64;
+pub const RESPONSE_QUEUE_MAX: u16 = 2048;
 
 pub const DebugLogEntry = struct {
     final_byte: u8 = 0,
@@ -71,9 +73,13 @@ pub const Terminal = struct {
     title_len: u16 = 0,
     title_changed: bool = false,
 
-    // Response buffer for DSR and similar host-to-application replies
-    response_buf: [64]u8 = undefined,
-    response_len: u8 = 0,
+    // Bounded FIFO for DSR and similar host-to-application replies.
+    // When full, new responses are dropped so accepted responses stay ordered.
+    response_queue: [RESPONSE_QUEUE_MAX][RESPONSE_MAX_BYTES]u8 = undefined,
+    response_lens: [RESPONSE_QUEUE_MAX]u8 = [_]u8{0} ** RESPONSE_QUEUE_MAX,
+    response_head: u16 = 0,
+    response_tail: u16 = 0,
+    response_count: u16 = 0,
 
     // Ring buffer of unhandled/ignored CSI sequences for debug introspection
     debug_log: [DEBUG_LOG_MAX]DebugLogEntry = [_]DebugLogEntry{.{}} ** DEBUG_LOG_MAX,
@@ -242,7 +248,9 @@ pub const Terminal = struct {
         self.using_alt_screen = false;
         self.title_len = 0;
         self.title_changed = false;
-        self.response_len = 0;
+        self.response_head = 0;
+        self.response_tail = 0;
+        self.response_count = 0;
         self.tab_stops = initTabStops();
     }
 
@@ -252,6 +260,31 @@ pub const Terminal = struct {
         for (data) |byte| {
             self.processByte(byte);
         }
+    }
+
+    pub fn responsePtr(self: *const Terminal) [*]const u8 {
+        return &self.response_queue[self.response_head];
+    }
+
+    pub fn responseLen(self: *const Terminal) u8 {
+        if (self.response_count == 0) return 0;
+        return self.response_lens[self.response_head];
+    }
+
+    pub fn popResponse(self: *Terminal) void {
+        if (self.response_count == 0) return;
+        self.response_lens[self.response_head] = 0;
+        self.response_head = (self.response_head + 1) % RESPONSE_QUEUE_MAX;
+        self.response_count -= 1;
+    }
+
+    fn enqueueResponse(self: *Terminal, response: []const u8) void {
+        if (self.response_count == RESPONSE_QUEUE_MAX) return;
+        const len = @min(response.len, RESPONSE_MAX_BYTES);
+        @memcpy(self.response_queue[self.response_tail][0..len], response[0..len]);
+        self.response_lens[self.response_tail] = @intCast(len);
+        self.response_tail = (self.response_tail + 1) % RESPONSE_QUEUE_MAX;
+        self.response_count += 1;
     }
 
     pub fn resize(self: *Terminal, new_cols: u16, new_rows: u16) void {
@@ -683,8 +716,7 @@ pub const Terminal = struct {
             len = appendU16(buf[0..], len, col);
             buf[len] = 'R';
             len += 1;
-            self.response_buf = buf;
-            self.response_len = len;
+            self.enqueueResponse(buf[0..len]);
         }
     }
 
@@ -1147,6 +1179,43 @@ test "cursor movement CSI" {
     t.write("\x1b[5;10H");
     try @import("std").testing.expectEqual(@as(u16, 4), t.cursor_row);
     try @import("std").testing.expectEqual(@as(u16, 9), t.cursor_col);
+}
+
+test "queues consecutive CPR responses in order" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[1G\x1b[6n\x1b[2G\x1b[6n");
+
+    try testing.expectEqualStrings("\x1b[1;1R", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try testing.expectEqualStrings("\x1b[1;2R", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try testing.expectEqual(@as(u8, 0), t.responseLen());
+}
+
+test "response FIFO wraps and drops newest when full" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    var index: u16 = 0;
+    while (index < RESPONSE_QUEUE_MAX) : (index += 1) t.write("\x1b[6n");
+    try testing.expectEqual(RESPONSE_QUEUE_MAX, t.response_count);
+    t.write("\x1b[2G\x1b[6n");
+    try testing.expectEqual(RESPONSE_QUEUE_MAX, t.response_count);
+
+    index = 0;
+    while (index < RESPONSE_QUEUE_MAX) : (index += 1) t.popResponse();
+    try testing.expectEqual(@as(u8, 0), t.responseLen());
+    t.write("\x1b[3G\x1b[6n");
+    try testing.expectEqualStrings("\x1b[1;3R", t.responsePtr()[0..t.responseLen()]);
+}
+
+test "reset clears queued responses" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[6n\x1b[6n");
+    try testing.expectEqual(@as(u16, 2), t.response_count);
+    t.reset(80, 24);
+    try testing.expectEqual(@as(u8, 0), t.responseLen());
 }
 
 test "SGR colors" {

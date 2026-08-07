@@ -444,12 +444,12 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
       <td>Initialize the terminal grid</td>
     </tr>
     <tr>
-      <td><code>writeString(str)</code></td>
-      <td>Write a UTF-8 string (including escape sequences) to the terminal</td>
+      <td><code>writeString(str, afterChunk?)</code></td>
+      <td>Write a UTF-8 string and optionally run a callback after each internal chunk</td>
     </tr>
     <tr>
-      <td><code>writeRaw(data: Uint8Array)</code></td>
-      <td>Write raw bytes to the terminal (chunked to 8192 bytes internally)</td>
+      <td><code>writeRaw(data, afterChunk?)</code></td>
+      <td>Write raw bytes and optionally run a callback after each 8192-byte internal chunk</td>
     </tr>
     <tr>
       <td><code>resize(cols, rows)</code></td>
@@ -481,7 +481,7 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
     </tr>
     <tr>
       <td><code>getResponse(): string | null</code></td>
-      <td>Get pending host response (e.g. DSR), or <code>null</code>. Reading clears the buffer.</td>
+      <td>Dequeue one pending host response (e.g. DSR), or <code>null</code>.</td>
     </tr>
     <tr>
       <td><code>getScrollbackCount(): number</code></td>
