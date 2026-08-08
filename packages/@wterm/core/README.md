@@ -56,8 +56,8 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 |---|---|
 | `WasmBridge.load(url?)` | Load WASM binary and return a new bridge instance. Uses the embedded binary when no URL is given. |
 | `init(cols, rows)` | Initialize the terminal grid |
-| `writeString(str)` | Write a UTF-8 string to the terminal |
-| `writeRaw(data: Uint8Array)` | Write raw bytes to the terminal |
+| `writeString(str, afterChunk?)` | Write a UTF-8 string, optionally running a callback after each internal chunk |
+| `writeRaw(data, afterChunk?)` | Write raw bytes, optionally running a callback after each internal chunk |
 | `resize(cols, rows)` | Resize the terminal grid |
 | `getCell(row, col)` | Get cell data (`{ char, fg, bg, flags, width }`) |
 | `getCursor()` | Get cursor state (`{ row, col, visible }`) |
