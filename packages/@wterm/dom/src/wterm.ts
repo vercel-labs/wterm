@@ -240,7 +240,7 @@ export class WTerm {
       this._synchronizedOutputState === "held" &&
       generation !== this._synchronizedOutputGeneration
     ) {
-      this._synchronizedOutputGeneration = generation;
+      this._armSynchronizedOutputFallback(generation);
       return true;
     } else if (
       this._synchronizedOutputState === "passthrough" &&
@@ -252,17 +252,27 @@ export class WTerm {
       return this._synchronizedOutputState === "held";
     }
     this._synchronizedOutputState = "held";
-    this._synchronizedOutputGeneration = generation;
     this._cancelScheduledRender();
+    this._armSynchronizedOutputFallback(generation);
+    return true;
+  }
+
+  private _armSynchronizedOutputFallback(generation: number): void {
+    this._cancelSynchronizedOutputFallback();
+    this._synchronizedOutputGeneration = generation;
     this._synchronizedOutputTimer = setTimeout(() => {
-      if (this._synchronizedOutputState !== "held") return;
+      if (
+        this._synchronizedOutputState !== "held" ||
+        this._synchronizedOutputGeneration !== generation
+      ) {
+        return;
+      }
       this._synchronizedOutputTimer = null;
       this._synchronizedOutputState = "passthrough";
       this._setupRendererIfNeeded();
       this._cancelScheduledRender();
       this._doRender();
     }, SYNCHRONIZED_OUTPUT_TIMEOUT_MS);
-    return true;
   }
 
   private _cancelSynchronizedOutputFallback(): void {

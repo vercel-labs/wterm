@@ -545,7 +545,7 @@ describe("WTerm", () => {
       vi.useRealTimers();
     });
 
-    it("does not postpone recovery across chained generations", async () => {
+    it("gives each chained generation a fresh recovery deadline", async () => {
       vi.useFakeTimers();
       vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
         cb(performance.now());
@@ -559,13 +559,12 @@ describe("WTerm", () => {
       vi.mocked(mockBridge.clearDirty).mockClear();
 
       term.write("frame 1");
-      for (let elapsed = 100; elapsed < 1000; elapsed += 100) {
-        await vi.advanceTimersByTimeAsync(100);
-        generation++;
-        term.write(`frame ${generation}`);
-      }
+      await vi.advanceTimersByTimeAsync(600);
+      generation++;
+      term.write("frame 2");
+      await vi.advanceTimersByTimeAsync(999);
       expect(mockBridge.clearDirty).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(101);
+      await vi.advanceTimersByTimeAsync(2);
       expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
       vi.useRealTimers();
     });
