@@ -173,28 +173,6 @@ pub const Terminal = struct {
     /// narrower width than the grid it came from: a pair straddling that
     /// boundary must be blanked before the prefix is copied, or the copy keeps
     /// a wide cell whose continuation was left behind.
-    /// Rows at the bottom of the viewport holding nothing but blanks, counted
-    /// upward from `height`. A vertical shrink discards these before it pushes
-    /// anything into scrollback.
-    fn trailingBlankRows(self: *const Terminal, height: u16) u16 {
-        var count: u16 = 0;
-        var r: u16 = height;
-        while (r > 0) : (count += 1) {
-            r -= 1;
-            if (r <= self.cursor_row) break;
-            var c: u16 = 0;
-            var blank = true;
-            while (c < self.cols) : (c += 1) {
-                if (self.grid.cells[r][c].char != ' ' and self.grid.cells[r][c].char != 0) {
-                    blank = false;
-                    break;
-                }
-            }
-            if (!blank) break;
-        }
-        return count;
-    }
-
     /// Copy a scrollback line back into the viewport, padded or truncated to the
     /// current width. The line was stored at whatever width was current when it
     /// left, which need not be this one.
@@ -362,10 +340,13 @@ pub const Terminal = struct {
         // discarded first so a shrink that fits does not push live content.
         var restored: u16 = 0;
         if (rows < old_rows) {
-            const drop = old_rows - rows;
-            const trailing = self.trailingBlankRows(old_rows);
-            const spare = if (trailing > drop) drop else trailing;
-            const from_top = drop - spare;
+            // Scroll only as far as it takes to keep the cursor on screen, so a
+            // shrink at a fresh prompt pushes nothing and rows below the cursor
+            // are discarded rather than preserved.
+            const from_top: u16 = if (self.cursor_row >= rows)
+                self.cursor_row - rows + 1
+            else
+                0;
 
             if (from_top > 0) {
                 if (!self.using_alt_screen and self.scrollback != null) {
@@ -1487,20 +1468,33 @@ test "vertical shrink then grow restores the viewport" {
     try testing.expectEqual(scrollback_before, sb.count);
 }
 
-test "vertical shrink discards trailing blank rows before pushing content" {
+test "shrink at a top-of-screen prompt adds no scrollback" {
     const testing = @import("std").testing;
     const sb = try testing.allocator.create(Scrollback);
     defer testing.allocator.destroy(sb);
     sb.* = .{};
-    var t = Terminal.init(20, 6);
+    var t = Terminal.init(80, 24);
     t.scrollback = sb;
-    t.write("top\r\nnext");
-
-    t.resize(20, 3);
-    // Four blank rows sat below the cursor, so nothing had to leave the screen.
+    t.write("$ ");
+    try testing.expectEqual(@as(u16, 0), t.cursor_row);
+    t.resize(80, 8);
     try testing.expectEqual(@as(u32, 0), sb.count);
-    try testing.expectEqual(@as(u32, 't'), t.grid.getCell(0, 0).char);
-    try testing.expectEqual(@as(u32, 'n'), t.grid.getCell(1, 0).char);
+    try testing.expectEqual(@as(u16, 0), t.cursor_row);
+    try testing.expectEqual(@as(u32, '$'), t.grid.getCell(0, 0).char);
+}
+
+test "shrink keeps the cursor row on screen when content sits below it" {
+    const testing = @import("std").testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    var t = Terminal.init(20, 8);
+    t.scrollback = sb;
+    t.write("r0\r\nr1\r\nr2\r\nr3\r\nr4\r\nr5\r\nr6\r\nr7");
+    t.write("\x1b[3;1H");
+    try testing.expectEqual(@as(u16, 2), t.cursor_row);
+    t.resize(20, 3);
+    try testing.expectEqual(@as(u32, '2'), t.grid.getCell(t.cursor_row, 1).char);
 }
 
 test "alternate screen resize does not touch scrollback" {
@@ -1531,3 +1525,4 @@ test "scrollback" {
     try testing.expectEqual(@as(u32, 'L'), line0.cells[0].char);
     try testing.expectEqual(@as(u32, '2'), line0.cells[1].char);
 }
+
