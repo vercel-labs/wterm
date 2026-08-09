@@ -140,14 +140,21 @@ const ResponseHandler = struct {
             .request_mode => {
                 // DECRPM reads the same mode state the set/reset path writes,
                 // so a reported mode cannot drift from the implemented one.
+                // Mode packs its number together with an ansi flag, and only
+                // DEC private modes carry the `?` prefix, so both come from
+                // the unpacked tag rather than the raw enum value.
                 const mode = value.mode;
                 const set = self.inner.terminal.modes.get(mode);
+                const tag: modes.ModeTag = @bitCast(@intFromEnum(mode));
                 var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
-                const num = @intFromEnum(mode);
                 const out = std.fmt.bufPrint(
                     &buf,
-                    "\x1b[?{d};{d}$y",
-                    .{ num, @as(u8, if (set) 1 else 2) },
+                    "\x1b[{s}{d};{d}$y",
+                    .{
+                        if (tag.ansi) "" else "?",
+                        tag.value,
+                        @as(u8, if (set) 1 else 2),
+                    },
                 ) catch return;
                 self.queue.push(out);
             },
@@ -155,8 +162,8 @@ const ResponseHandler = struct {
                 var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
                 const out = std.fmt.bufPrint(
                     &buf,
-                    "\x1b[?{d};0$y",
-                    .{value.mode},
+                    "\x1b[{s}{d};0$y",
+                    .{ if (value.ansi) "" else "?", value.mode },
                 ) catch return;
                 self.queue.push(out);
             },
