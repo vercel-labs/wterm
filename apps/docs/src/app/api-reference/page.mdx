@@ -174,6 +174,8 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
 
 Instance methods on the vanilla `WTerm` class:
 
+WTerm renders synchronized output blocks (CSI `?2026`) atomically when the mode closes. Each block can hold rendering for at most one second from its opening sequence. Ordinary payload does not extend that deadline. If the deadline expires, WTerm resumes painting until a fresh block begins.
+
 <table>
   <thead>
     <tr>
@@ -444,12 +446,12 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
       <td>Initialize the terminal grid</td>
     </tr>
     <tr>
-      <td><code>writeString(str)</code></td>
-      <td>Write a UTF-8 string (including escape sequences) to the terminal</td>
+      <td><code>writeString(str, afterChunk?)</code></td>
+      <td>Write a UTF-8 string and optionally run a callback after each internal chunk</td>
     </tr>
     <tr>
-      <td><code>writeRaw(data: Uint8Array)</code></td>
-      <td>Write raw bytes to the terminal (chunked to 8192 bytes internally)</td>
+      <td><code>writeRaw(data, afterChunk?)</code></td>
+      <td>Write raw bytes and optionally run a callback after each 8192-byte internal chunk</td>
     </tr>
     <tr>
       <td><code>resize(cols, rows)</code></td>
@@ -481,7 +483,7 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
     </tr>
     <tr>
       <td><code>getResponse(): string | null</code></td>
-      <td>Get pending host response (e.g. DSR), or <code>null</code>. Reading clears the buffer.</td>
+      <td>Dequeue one pending host response (e.g. DSR), or <code>null</code>.</td>
     </tr>
     <tr>
       <td><code>getScrollbackCount(): number</code></td>
@@ -518,6 +520,14 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
     <tr>
       <td><code>focusEvents(): boolean</code></td>
       <td>Whether focus reporting (mode 1004) is active</td>
+    </tr>
+    <tr>
+      <td><code>synchronizedOutput(): boolean</code></td>
+      <td>Whether synchronized output mode (2026) is active</td>
+    </tr>
+    <tr>
+      <td><code>synchronizedOutputGeneration(): number</code></td>
+      <td>Monotonic generation for synchronized output blocks</td>
     </tr>
   </tbody>
 </table>

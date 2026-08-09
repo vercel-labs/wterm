@@ -56,8 +56,8 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 |---|---|
 | `WasmBridge.load(url?)` | Load WASM binary and return a new bridge instance. Uses the embedded binary when no URL is given. |
 | `init(cols, rows)` | Initialize the terminal grid |
-| `writeString(str)` | Write a UTF-8 string to the terminal |
-| `writeRaw(data: Uint8Array)` | Write raw bytes to the terminal |
+| `writeString(str, afterChunk?)` | Write a UTF-8 string, optionally running a callback after each internal chunk |
+| `writeRaw(data, afterChunk?)` | Write raw bytes, optionally running a callback after each internal chunk |
 | `resize(cols, rows)` | Resize the terminal grid |
 | `getCell(row, col)` | Get cell data (`{ char, fg, bg, flags, width }`) |
 | `getCursor()` | Get cursor state (`{ row, col, visible }`) |
@@ -75,6 +75,8 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 | `mouseTracking()` | Active mouse tracking mode (`0`, `1000`, or `1002`) |
 | `mouseSgr()` | Whether SGR mouse encoding is active |
 | `focusEvents()` | Whether focus reporting is active |
+| `synchronizedOutput()` | Whether synchronized output mode (2026) is active |
+| `synchronizedOutputGeneration()` | Monotonic generation for synchronized output blocks |
 
 ### `WebSocketTransport`
 
