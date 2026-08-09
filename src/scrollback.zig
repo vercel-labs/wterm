@@ -47,10 +47,11 @@ pub const Scrollback = struct {
 
     pub fn getLine(self: *const Scrollback, offset: u32) ?*const ScrollbackLine {
         if (offset >= self.count) return null;
-        const idx = if (self.count < MAX_SCROLLBACK_LINES)
-            self.count - 1 - offset
-        else
-            (self.write_pos + MAX_SCROLLBACK_LINES - 1 - offset) % MAX_SCROLLBACK_LINES;
+        // Counting back from the write position is correct whether or not the
+        // ring has wrapped. The previous fast path keyed off `count` being
+        // below the maximum, which stopped meaning "never wrapped" once `pop`
+        // could lower `count` on a wrapped ring.
+        const idx = (self.write_pos + MAX_SCROLLBACK_LINES - 1 - offset) % MAX_SCROLLBACK_LINES;
         return &self.lines[idx];
     }
 };

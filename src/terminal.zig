@@ -1434,6 +1434,29 @@ test "scroll fills new lines with current background" {
     try testing.expectEqual(@as(u16, 2), blank_cell.bg);
 }
 
+test "scrollback reads stay correct after a pop on a wrapped ring" {
+    const testing = @import("std").testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+
+    // Fill past capacity so the ring wraps, then take one back out. `count`
+    // now drops below the maximum while `write_pos` sits mid-ring, so any read
+    // that treats "count < max" as "never wrapped" lands on the wrong line.
+    var row: [grid_mod.MAX_COLS]Cell = undefined;
+    var i: u32 = 0;
+    while (i < scrollback_mod.MAX_SCROLLBACK_LINES + 10) : (i += 1) {
+        row[0] = Cell{ .char = 'a' + @as(u32, @intCast(i % 26)) };
+        sb.push(&row, 1);
+    }
+    const newest = sb.getLine(0).?.cells[0].char;
+    const second = sb.getLine(1).?.cells[0].char;
+
+    _ = sb.pop();
+    try testing.expectEqual(second, sb.getLine(0).?.cells[0].char);
+    try testing.expect(sb.getLine(0).?.cells[0].char != newest);
+}
+
 test "vertical shrink then grow restores the viewport" {
     const testing = @import("std").testing;
     const sb = try testing.allocator.create(Scrollback);
