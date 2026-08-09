@@ -7,6 +7,8 @@ const RenderState = vt.RenderState;
 const Style = vt.Style;
 const color = vt.color;
 const modes = vt.modes;
+const ReadonlyHandler = vt.ReadonlyHandler;
+const StreamAction = vt.StreamAction;
 
 const Allocator = std.mem.Allocator;
 const allocator = std.heap.wasm_allocator;
@@ -55,10 +57,121 @@ const JS = struct {
 // ---------------------------------------------------------------
 const CELL_BYTES = 16;
 
+// -- Responses --------------------------------------------------
+//
+// Queries reach the terminal on the same stream as everything else, and the
+// host reads their answers back out one at a time. The queue is fixed-size and
+// drops the newest response when full, so the answers that are kept stay in the
+// order they were produced. This mirrors the built-in core's contract.
+
+const RESPONSE_QUEUE_MAX = 256;
+const RESPONSE_MAX_BYTES = 64;
+
+const ResponseQueue = struct {
+    slots: [RESPONSE_QUEUE_MAX][RESPONSE_MAX_BYTES]u8 = undefined,
+    lens: [RESPONSE_QUEUE_MAX]u8 = [_]u8{0} ** RESPONSE_QUEUE_MAX,
+    head: u16 = 0,
+    tail: u16 = 0,
+    count: u16 = 0,
+
+    fn push(self: *ResponseQueue, bytes: []const u8) void {
+        if (bytes.len > RESPONSE_MAX_BYTES) return;
+        if (self.count == RESPONSE_QUEUE_MAX) return;
+        @memcpy(self.slots[self.tail][0..bytes.len], bytes);
+        self.lens[self.tail] = @intCast(bytes.len);
+        self.tail = (self.tail + 1) % RESPONSE_QUEUE_MAX;
+        self.count += 1;
+    }
+
+    fn pop(self: *ResponseQueue, out: []u8) u32 {
+        if (self.count == 0) return 0;
+        const len = self.lens[self.head];
+        if (len > out.len) return 0;
+        @memcpy(out[0..len], self.slots[self.head][0..len]);
+        self.head = (self.head + 1) % RESPONSE_QUEUE_MAX;
+        self.count -= 1;
+        return len;
+    }
+};
+
+/// Wraps ghostty's own readonly handler instead of reimplementing it. Every
+/// action that mutates terminal state is delegated untouched; only the query
+/// actions, which the readonly handler documents as having "no terminal
+/// modifying effect" and drops, are answered here.
+const ResponseHandler = struct {
+    inner: ReadonlyHandler,
+    queue: *ResponseQueue,
+
+    pub fn init(terminal: *Terminal, queue: *ResponseQueue) ResponseHandler {
+        return .{ .inner = .init(terminal), .queue = queue };
+    }
+
+    pub fn deinit(self: *ResponseHandler) void {
+        self.inner.deinit();
+    }
+
+    pub fn vt(
+        self: *ResponseHandler,
+        comptime action: StreamAction.Tag,
+        value: StreamAction.Value(action),
+    ) !void {
+        switch (action) {
+            .device_attributes => switch (value) {
+                // VT100 with the advanced video option, matching the control
+                // the parity suite measures against. Every code claimed here
+                // must have a handler; do not widen it without one.
+                .primary => self.queue.push("\x1b[?1;2c"),
+                else => {},
+            },
+            .device_status => switch (value.request) {
+                .operating_status => self.queue.push("\x1b[0n"),
+                .cursor_position => {
+                    const cursor = self.inner.terminal.screens.active.cursor;
+                    var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
+                    const out = std.fmt.bufPrint(
+                        &buf,
+                        "\x1b[{d};{d}R",
+                        .{ cursor.y + 1, cursor.x + 1 },
+                    ) catch return;
+                    self.queue.push(out);
+                },
+                else => {},
+            },
+            .request_mode => {
+                // DECRPM reads the same mode state the set/reset path writes,
+                // so a reported mode cannot drift from the implemented one.
+                const mode = value.mode;
+                const set = self.inner.terminal.modes.get(mode);
+                var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
+                const num = @intFromEnum(mode);
+                const out = std.fmt.bufPrint(
+                    &buf,
+                    "\x1b[?{d};{d}$y",
+                    .{ num, @as(u8, if (set) 1 else 2) },
+                ) catch return;
+                self.queue.push(out);
+            },
+            .request_mode_unknown => {
+                var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
+                const out = std.fmt.bufPrint(
+                    &buf,
+                    "\x1b[?{d};0$y",
+                    .{value.mode},
+                ) catch return;
+                self.queue.push(out);
+            },
+            else => try self.inner.vt(action, value),
+        }
+    }
+};
+
+const ResponseStream = vt.Stream(ResponseHandler);
+
 const State = struct {
     terminal: Terminal,
-    stream: vt.ReadonlyStream,
+    stream: ResponseStream,
     render: RenderState,
+    responses: ResponseQueue,
 };
 
 fn stateFromPtr(ptr: usize) *State {
@@ -77,7 +190,8 @@ export fn init(cols: u16, rows: u16, max_scrollback: u32) usize {
         allocator.destroy(state);
         return 0;
     };
-    state.stream = state.terminal.vtStream();
+    state.responses = .{};
+    state.stream = .initAlloc(allocator, .init(&state.terminal, &state.responses));
     state.render = RenderState.empty;
     return @intFromPtr(state);
 }
@@ -413,13 +527,8 @@ export fn get_scrollback_line(ptr: usize, offset: u32, buf_ptr: [*]u8, max_cols:
 // -- Responses --------------------------------------------------
 
 export fn read_response(ptr: usize, buf_ptr: [*]u8, buf_len: u32) u32 {
-    _ = ptr;
-    _ = buf_ptr;
-    _ = buf_len;
-    // The ReadonlyStream ignores queries that produce responses.
-    // A full-featured stream handler would be needed to support
-    // device status reports and other response-generating sequences.
-    return 0;
+    const state = stateFromPtr(ptr);
+    return state.responses.pop(buf_ptr[0..buf_len]);
 }
 
 // -- Memory management ------------------------------------------
