@@ -1415,6 +1415,48 @@ test "scroll fills new lines with current background" {
     try testing.expectEqual(@as(u16, 2), blank_cell.bg);
 }
 
+test "scrollback stays ordered across a vertical shrink (#43)" {
+    const std = @import("std");
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    var t = Terminal.init(80, 24);
+    t.scrollback = sb;
+
+    var buf: [32]u8 = undefined;
+    var i: u32 = 1;
+    while (i <= 200) : (i += 1) {
+        t.write(try std.fmt.bufPrint(&buf, "line {d}\r\n", .{i}));
+    }
+    t.resize(80, 6);
+
+    // Oldest to newest, every stored line must be the next one written.
+    var prev: u32 = 0;
+    var off: u32 = sb.count;
+    while (off > 0) {
+        off -= 1;
+        const line = sb.getLine(off).?;
+        var text: [32]u8 = undefined;
+        var n: usize = 0;
+        var c: u16 = 0;
+        while (c < line.len and n < text.len) : (c += 1) {
+            const ch = line.cells[c].char;
+            if (ch >= 32 and ch < 127) {
+                text[n] = @intCast(ch);
+                n += 1;
+            }
+        }
+        while (n > 0 and text[n - 1] == ' ') n -= 1;
+        if (n == 0) continue;
+        try testing.expect(std.mem.startsWith(u8, text[0..n], "line "));
+        const num = try std.fmt.parseInt(u32, text[5..n], 10);
+        if (prev != 0) try testing.expectEqual(prev + 1, num);
+        prev = num;
+    }
+    try testing.expect(prev > 0);
+}
+
 test "scrollback reads stay correct after a pop on a wrapped ring" {
     const testing = @import("std").testing;
     const sb = try testing.allocator.create(Scrollback);
