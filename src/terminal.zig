@@ -173,6 +173,45 @@ pub const Terminal = struct {
     /// narrower width than the grid it came from: a pair straddling that
     /// boundary must be blanked before the prefix is copied, or the copy keeps
     /// a wide cell whose continuation was left behind.
+    /// Rows at the bottom of the viewport holding nothing but blanks, counted
+    /// upward from `height`. A vertical shrink discards these before it pushes
+    /// anything into scrollback.
+    fn trailingBlankRows(self: *const Terminal, height: u16) u16 {
+        var count: u16 = 0;
+        var r: u16 = height;
+        while (r > 0) : (count += 1) {
+            r -= 1;
+            if (r <= self.cursor_row) break;
+            var c: u16 = 0;
+            var blank = true;
+            while (c < self.cols) : (c += 1) {
+                if (self.grid.cells[r][c].char != ' ' and self.grid.cells[r][c].char != 0) {
+                    blank = false;
+                    break;
+                }
+            }
+            if (!blank) break;
+        }
+        return count;
+    }
+
+    /// Copy a scrollback line back into the viewport, padded or truncated to the
+    /// current width. The line was stored at whatever width was current when it
+    /// left, which need not be this one.
+    fn setRowFromScrollback(
+        self: *Terminal,
+        row: u16,
+        line: *const scrollback_mod.ScrollbackLine,
+        width: u16,
+    ) void {
+        var c: u16 = 0;
+        while (c < width) : (c += 1) {
+            self.grid.cells[row][c] = if (c < line.len) line.cells[c] else Cell{};
+        }
+        self.sanitizeWideRowWidth(row, width, Cell{});
+        self.grid.dirty[row] = 1;
+    }
+
     fn sanitizeWideRowWidth(self: *Terminal, row: u16, width: u16, blank: Cell) void {
         var c: u16 = 0;
         var changed = false;
@@ -317,19 +356,36 @@ pub const Terminal = struct {
             }
         }
 
-        // Push excess bottom rows into scrollback when shrinking vertically
+        // Shrinking vertically drops rows off the top into scrollback, not off
+        // the bottom: the viewport is a window onto history, and the window
+        // keeps the newest rows. Blank trailing rows below the cursor are
+        // discarded first so a shrink that fits does not push live content.
+        var restored: u16 = 0;
         if (rows < old_rows) {
-            if (!self.using_alt_screen and self.scrollback != null) {
-                const push_cols = if (cols < old_cols) cols else old_cols;
-                var r: u16 = rows;
-                while (r < old_rows) : (r += 1) {
-                    // These rows skipped the truncation loop above, which only
-                    // covers the rows the grid keeps. Repair at the width they
-                    // are stored with, or a pair split by that width survives
-                    // in history as a wide cell with no continuation.
-                    self.sanitizeWideRowWidth(r, push_cols, Cell{});
-                    self.scrollback.?.push(&self.grid.cells[r], push_cols);
+            const drop = old_rows - rows;
+            const trailing = self.trailingBlankRows(old_rows);
+            const spare = if (trailing > drop) drop else trailing;
+            const from_top = drop - spare;
+
+            if (from_top > 0) {
+                if (!self.using_alt_screen and self.scrollback != null) {
+                    const push_cols = if (cols < old_cols) cols else old_cols;
+                    var r: u16 = 0;
+                    while (r < from_top) : (r += 1) {
+                        // These rows may have skipped the truncation loop above,
+                        // which only covers the rows the grid keeps. Repair at
+                        // the width they are stored with, or a pair split by that
+                        // width survives in history as a wide cell with no
+                        // continuation.
+                        self.sanitizeWideRowWidth(r, push_cols, Cell{});
+                        self.scrollback.?.push(&self.grid.cells[r], push_cols);
+                    }
                 }
+                self.grid.scrollUp(0, old_rows, from_top, Cell{});
+                self.cursor_row = if (self.cursor_row > from_top)
+                    self.cursor_row - from_top
+                else
+                    0;
             }
         }
 
@@ -338,9 +394,27 @@ pub const Terminal = struct {
         self.grid.cols = cols;
         self.grid.rows = rows;
 
-        // Clear any newly exposed rows when growing vertically
+        // Growing vertically is the inverse: refill from the top out of history
+        // before blanking anything, so shrink then grow is identity on the
+        // visible content.
         if (rows > old_rows) {
-            var r: u16 = old_rows;
+            const gained = rows - old_rows;
+            if (!self.using_alt_screen and self.scrollback != null) {
+                const available = self.scrollback.?.count;
+                restored = if (gained > available) @intCast(available) else gained;
+            }
+            if (restored > 0) {
+                self.grid.scrollDown(0, old_rows + restored, restored, Cell{});
+                var i: u16 = 0;
+                while (i < restored) : (i += 1) {
+                    // pop returns newest first, so fill the inserted band from
+                    // the bottom up to restore chronological order.
+                    const line = self.scrollback.?.pop() orelse break;
+                    self.setRowFromScrollback(restored - 1 - i, line, cols);
+                }
+                self.cursor_row += restored;
+            }
+            var r: u16 = old_rows + restored;
             while (r < rows) : (r += 1) {
                 self.grid.clearRow(r);
             }
@@ -1358,6 +1432,67 @@ test "scroll fills new lines with current background" {
     // After scrolling, the bottom row's empty cells should have green bg
     const blank_cell = t.grid.getCell(2, 79);
     try testing.expectEqual(@as(u16, 2), blank_cell.bg);
+}
+
+test "vertical shrink then grow restores the viewport" {
+    const testing = @import("std").testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    var t = Terminal.init(20, 6);
+    t.scrollback = sb;
+    t.write("r0\r\nr1\r\nr2\r\nr3\r\nr4\r\nr5");
+
+    var before: [6][2]u32 = undefined;
+    for (0..6) |r| {
+        before[r][0] = t.grid.getCell(@intCast(r), 0).char;
+        before[r][1] = t.grid.getCell(@intCast(r), 1).char;
+    }
+    const scrollback_before = sb.count;
+
+    t.resize(20, 3);
+    // The window keeps the newest rows, so the bottom of the screen is unchanged.
+    try testing.expectEqual(@as(u32, 'r'), t.grid.getCell(2, 0).char);
+    try testing.expectEqual(@as(u32, '5'), t.grid.getCell(2, 1).char);
+    try testing.expectEqual(scrollback_before + 3, sb.count);
+
+    t.resize(20, 6);
+    for (0..6) |r| {
+        try testing.expectEqual(before[r][0], t.grid.getCell(@intCast(r), 0).char);
+        try testing.expectEqual(before[r][1], t.grid.getCell(@intCast(r), 1).char);
+    }
+    try testing.expectEqual(scrollback_before, sb.count);
+}
+
+test "vertical shrink discards trailing blank rows before pushing content" {
+    const testing = @import("std").testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    var t = Terminal.init(20, 6);
+    t.scrollback = sb;
+    t.write("top\r\nnext");
+
+    t.resize(20, 3);
+    // Four blank rows sat below the cursor, so nothing had to leave the screen.
+    try testing.expectEqual(@as(u32, 0), sb.count);
+    try testing.expectEqual(@as(u32, 't'), t.grid.getCell(0, 0).char);
+    try testing.expectEqual(@as(u32, 'n'), t.grid.getCell(1, 0).char);
+}
+
+test "alternate screen resize does not touch scrollback" {
+    const testing = @import("std").testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    var t = Terminal.init(20, 6);
+    t.scrollback = sb;
+    t.write("\x1b[?1049h");
+    t.write("a0\r\na1\r\na2\r\na3\r\na4\r\na5");
+    const before = sb.count;
+    t.resize(20, 3);
+    t.resize(20, 6);
+    try testing.expectEqual(before, sb.count);
 }
 
 test "scrollback" {
