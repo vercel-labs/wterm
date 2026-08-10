@@ -93,6 +93,42 @@ describe("GhosttyCore grapheme strings", () => {
     const offset = core.getScrollbackCount() - 1;
     expect(core.getScrollbackCell(offset, 0).chars).toBe("e\u0301");
   });
+
+  it("survives WASM memory growth while reading a grapheme", async () => {
+    const core = await newCore();
+    core.writeString("e\u0301x");
+
+    const internals = core as unknown as {
+      wasm: {
+        exports: Record<string, (...args: unknown[]) => number> & {
+          memory: WebAssembly.Memory;
+        };
+      };
+    };
+    const wasm = internals.wasm;
+    const exports: Record<string, unknown> = {};
+    for (const key of Object.keys(wasm.exports)) {
+      exports[key] = wasm.exports[key];
+    }
+    const real = wasm.exports.get_viewport_grapheme;
+    let grew = false;
+    exports.get_viewport_grapheme = (...args: unknown[]) => {
+      if (!grew) {
+        wasm.exports.memory.grow(1);
+        grew = true;
+      }
+      return real(...args);
+    };
+    internals.wasm = {
+      ...wasm,
+      exports: exports as typeof wasm.exports,
+    };
+
+    expect(core.getCell(0, 0).chars).toBe("e\u0301");
+    internals.wasm = wasm;
+
+    expect(core.getCell(0, 1).char).toBe("x".codePointAt(0));
+  });
 });
 
 describe("GhosttyCore input modes", () => {

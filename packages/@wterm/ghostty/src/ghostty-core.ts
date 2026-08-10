@@ -428,14 +428,17 @@ export class GhosttyCore implements TerminalCore {
   }
 
   private _ensureViewport(): void {
-    if (!this._viewportStale) return;
-    this.wasm.exports.update(this.termPtr);
-    this.wasm.exports.get_viewport(this.termPtr, this._viewportBufPtr);
-    this._viewportView = new DataView(
-      this.wasm.exports.memory.buffer,
-      this._viewportBufPtr,
-      this._viewportBufSize,
-    );
-    this._viewportStale = false;
+    if (this._viewportStale) {
+      this.wasm.exports.update(this.termPtr);
+      this.wasm.exports.get_viewport(this.termPtr, this._viewportBufPtr);
+      this._viewportStale = false;
+    }
+    if (this._viewportView?.buffer !== this.wasm.exports.memory.buffer) {
+      this._viewportView = new DataView(
+        this.wasm.exports.memory.buffer,
+        this._viewportBufPtr,
+        this._viewportBufSize,
+      );
+    }
   }
 }
