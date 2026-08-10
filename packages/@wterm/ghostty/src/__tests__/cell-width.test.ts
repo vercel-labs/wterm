@@ -66,6 +66,35 @@ describe("GhosttyCore cell width", () => {
   });
 });
 
+describe("GhosttyCore grapheme strings", () => {
+  it("returns the complete combining sequence from the active grid", async () => {
+    const core = await newCore();
+    core.writeString("e\u0301");
+
+    expect(core.getCell(0, 0)).toMatchObject({
+      char: "e".codePointAt(0),
+      chars: "e\u0301",
+      width: 1,
+    });
+  });
+
+  it("returns the complete ZWJ sequence from the active grid", async () => {
+    const core = await newCore();
+    core.writeString("👩‍💻");
+
+    expect(core.getCell(0, 0).chars).toBe("👩‍💻");
+  });
+
+  it("keeps the complete grapheme after the row enters scrollback", async () => {
+    const core = await newCore();
+    core.writeString("e\u0301\r\n");
+    for (let i = 0; i < 40; i++) core.writeString(`f${i}\r\n`);
+
+    const offset = core.getScrollbackCount() - 1;
+    expect(core.getScrollbackCell(offset, 0).chars).toBe("e\u0301");
+  });
+});
+
 describe("GhosttyCore input modes", () => {
   it("reads mouse and focus state from the committed WASM", async () => {
     const core = await newCore();

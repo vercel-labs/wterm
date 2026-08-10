@@ -537,6 +537,7 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
 ```ts
 interface CellData {
   char: number;   // Unicode code point
+  chars?: string; // Complete grapheme cluster when the cell has multiple code points
   fg: number;     // Foreground color index (256 = default)
   bg: number;     // Background color index (256 = default)
   flags: number;  // Style flags (bold, italic, underline, etc.)
