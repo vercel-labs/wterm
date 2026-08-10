@@ -36,7 +36,6 @@ export class WTerm {
   private renderer: Renderer | null = null;
   private input: InputHandler | null = null;
   private rafId: number | null = null;
-  private _renderTimer: ReturnType<typeof setTimeout> | null = null;
   private _synchronizedOutputTimer: ReturnType<typeof setTimeout> | null = null;
   private _synchronizedOutputState: "idle" | "held" | "passthrough" = "idle";
   private _synchronizedOutputGeneration = 0;
@@ -208,23 +207,14 @@ export class WTerm {
   }
 
   private _scheduleRender(): void {
-    if (this._renderTimer != null) return;
-    this._renderTimer = setTimeout(() => {
-      this._renderTimer = null;
-      if (this.rafId == null) {
-        this.rafId = requestAnimationFrame(() => {
-          this.rafId = null;
-          this._doRender();
-        });
-      }
-    }, 0);
+    if (this.rafId != null) return;
+    this.rafId = requestAnimationFrame(() => {
+      this.rafId = null;
+      this._doRender();
+    });
   }
 
   private _cancelScheduledRender(): void {
-    if (this._renderTimer != null) {
-      clearTimeout(this._renderTimer);
-      this._renderTimer = null;
-    }
     if (this.rafId != null) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;

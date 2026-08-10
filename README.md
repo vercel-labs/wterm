@@ -22,6 +22,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~12 KB `.wasm` binary (release build)
 - **DOM rendering** — native text selection, clipboard, browser find, and screen reader support
 - **Dirty-row tracking** — only touched rows are re-rendered each frame via `requestAnimationFrame`
+- **Frame-direct scheduling** — writes queue their render on the next animation frame without an extra timer hop
 - **Synchronized output** — mode 2026 blocks paint atomically with a bounded recovery deadline
 - **Themes** — CSS custom properties with built-in Default, Solarized Dark, Monokai, and Light themes
 - **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly

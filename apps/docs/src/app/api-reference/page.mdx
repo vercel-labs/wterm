@@ -176,6 +176,8 @@ Instance methods on the vanilla `WTerm` class:
 
 WTerm renders synchronized output blocks (CSI `?2026`) atomically when the mode closes. Each block can hold rendering for at most one second from its opening sequence. Ordinary payload does not extend that deadline. If the deadline expires, WTerm resumes painting until a fresh block begins.
 
+Outside synchronized output, writes request the next animation frame directly. Writes received before that frame share one render.
+
 <table>
   <thead>
     <tr>

@@ -187,6 +187,27 @@ describe("WTerm", () => {
       term.write("hello");
       expect(mockBridge.writeString).not.toHaveBeenCalled();
     });
+
+    it("requests a frame immediately and coalesces writes until it paints", async () => {
+      const callbacks: FrameRequestCallback[] = [];
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockImplementation((callback) => {
+          callbacks.push(callback);
+          return callbacks.length;
+        });
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      requestAnimationFrame.mockClear();
+      callbacks.length = 0;
+
+      term.write("a");
+      term.write("b");
+
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+      callbacks[0](performance.now());
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe("resize", () => {
@@ -492,9 +513,23 @@ describe("WTerm", () => {
 
     it("holds a fresh synchronized block after recovery", async () => {
       vi.useFakeTimers();
+      const frameTimers = new Map<number, ReturnType<typeof setTimeout>>();
+      let nextFrameId = 1;
       vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
-        cb(performance.now());
-        return 1;
+        const id = nextFrameId++;
+        frameTimers.set(
+          id,
+          setTimeout(() => {
+            frameTimers.delete(id);
+            cb(performance.now());
+          }, 0),
+        );
+        return id;
+      });
+      vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation((id) => {
+        const timer = frameTimers.get(id);
+        if (timer !== undefined) clearTimeout(timer);
+        frameTimers.delete(id);
       });
       let synchronized = true;
       vi.mocked(mockBridge.synchronizedOutput).mockImplementation(
@@ -622,7 +657,7 @@ describe("WTerm", () => {
     it("schedules a closing frame before response delivery", async () => {
       vi.useFakeTimers();
       vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
-        cb(performance.now());
+        setTimeout(() => cb(performance.now()), 0);
         return 1;
       });
       let synchronized = true;

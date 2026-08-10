@@ -64,6 +64,8 @@ When a terminal application enables modes 1000 or 1002 with SGR encoding (1006),
 
 WTerm honors synchronized output mode (CSI `?2026`) by painting the block atomically when the mode closes. Each synchronized block can hold rendering for at most one second from its opening sequence. Ordinary payload does not extend that deadline. If the deadline expires, WTerm resumes painting until a fresh synchronized block begins.
 
+Ordinary writes schedule `requestAnimationFrame` directly. Multiple writes before the frame are coalesced into one render.
+
 ### `WebSocketTransport`
 
 Connect to a PTY backend over WebSocket (re-exported from `@wterm/core`).
