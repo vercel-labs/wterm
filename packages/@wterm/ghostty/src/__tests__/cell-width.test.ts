@@ -66,6 +66,71 @@ describe("GhosttyCore cell width", () => {
   });
 });
 
+describe("GhosttyCore grapheme strings", () => {
+  it("returns the complete combining sequence from the active grid", async () => {
+    const core = await newCore();
+    core.writeString("e\u0301");
+
+    expect(core.getCell(0, 0)).toMatchObject({
+      char: "e".codePointAt(0),
+      chars: "e\u0301",
+      width: 1,
+    });
+  });
+
+  it("returns the complete ZWJ sequence from the active grid", async () => {
+    const core = await newCore();
+    core.writeString("👩‍💻");
+
+    expect(core.getCell(0, 0).chars).toBe("👩‍💻");
+  });
+
+  it("keeps the complete grapheme after the row enters scrollback", async () => {
+    const core = await newCore();
+    core.writeString("e\u0301\r\n");
+    for (let i = 0; i < 40; i++) core.writeString(`f${i}\r\n`);
+
+    const offset = core.getScrollbackCount() - 1;
+    expect(core.getScrollbackCell(offset, 0).chars).toBe("e\u0301");
+  });
+
+  it("survives WASM memory growth while reading a grapheme", async () => {
+    const core = await newCore();
+    core.writeString("e\u0301x");
+
+    const internals = core as unknown as {
+      wasm: {
+        exports: Record<string, (...args: unknown[]) => number> & {
+          memory: WebAssembly.Memory;
+        };
+      };
+    };
+    const wasm = internals.wasm;
+    const exports: Record<string, unknown> = {};
+    for (const key of Object.keys(wasm.exports)) {
+      exports[key] = wasm.exports[key];
+    }
+    const real = wasm.exports.get_viewport_grapheme;
+    let grew = false;
+    exports.get_viewport_grapheme = (...args: unknown[]) => {
+      if (!grew) {
+        wasm.exports.memory.grow(1);
+        grew = true;
+      }
+      return real(...args);
+    };
+    internals.wasm = {
+      ...wasm,
+      exports: exports as typeof wasm.exports,
+    };
+
+    expect(core.getCell(0, 0).chars).toBe("e\u0301");
+    internals.wasm = wasm;
+
+    expect(core.getCell(0, 1).char).toBe("x".codePointAt(0));
+  });
+});
+
 describe("GhosttyCore input modes", () => {
   it("reads mouse and focus state from the committed WASM", async () => {
     const core = await newCore();

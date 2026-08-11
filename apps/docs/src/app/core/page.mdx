@@ -55,6 +55,8 @@ const cursor = bridge.getCursor();
 
 Wide single-codepoint characters such as CJK, fullwidth forms, and emoji expose `width: 2` on the leading cell and `width: 0` on the continuation cell. Custom renderers should skip continuation cells.
 
+Cores that preserve multi-codepoint graphemes expose the complete string as `chars`. Render `chars` when present and fall back to `String.fromCodePoint(char)` otherwise.
+
 ## WebSocketTransport
 
 Connect to a PTY backend over WebSocket with automatic reconnection and send buffering.

@@ -53,7 +53,8 @@ const JS = struct {
 //      11     1  width  (0 = spacer, 1 = normal, 2 = wide)
 //      12     1  color_flags (bit 0 = has explicit fg,
 //                             bit 1 = has explicit bg)
-//      13     3  reserved
+//      13     1  content_flags (bit 0 = has grapheme data)
+//      14     2  reserved
 // ---------------------------------------------------------------
 const CELL_BYTES = 16;
 
@@ -193,6 +194,7 @@ export fn init(cols: u16, rows: u16, max_scrollback: u32) usize {
         .cols = cols,
         .rows = rows,
         .max_scrollback = max_scrollback,
+        .default_modes = .{ .grapheme_cluster = true },
     }) catch {
         allocator.destroy(state);
         return 0;
@@ -306,7 +308,7 @@ fn encodeCell(
     out[10] = packFlags(style);
     out[11] = cellWidth(raw.*);
     out[12] = (if (has_fg) @as(u8, 1) else 0) | (if (has_bg) @as(u8, 2) else 0);
-    out[13] = 0;
+    out[13] = if (raw.content_tag == .codepoint_grapheme) 1 else 0;
     out[14] = 0;
     out[15] = 0;
 }
@@ -381,7 +383,7 @@ export fn get_viewport(ptr: usize, buf_ptr: [*]u8) u32 {
             buf_ptr[offset + 10] = flags;
             buf_ptr[offset + 11] = width;
             buf_ptr[offset + 12] = color_flags;
-            buf_ptr[offset + 13] = 0;
+            buf_ptr[offset + 13] = if (raw.content_tag == .codepoint_grapheme) 1 else 0;
             buf_ptr[offset + 14] = 0;
             buf_ptr[offset + 15] = 0;
             offset += CELL_BYTES;
@@ -389,6 +391,55 @@ export fn get_viewport(ptr: usize, buf_ptr: [*]u8) u32 {
     }
 
     return @as(u32, rows) * @as(u32, cols);
+}
+
+fn encodeGrapheme(
+    base: u21,
+    extras: []const u21,
+    buf_addr: usize,
+    buf_len: u32,
+) u32 {
+    if (extras.len == 0) return 0;
+    var required: usize = 0;
+    for (0..extras.len + 1) |i| {
+        const cp = if (i == 0) base else extras[i - 1];
+        required += std.unicode.utf8CodepointSequenceLength(cp) catch return 0;
+    }
+    if (required > buf_len or buf_addr == 0) return @intCast(required);
+
+    const buf_ptr: [*]u8 = @ptrFromInt(buf_addr);
+    var offset: usize = 0;
+    for (0..extras.len + 1) |i| {
+        const cp = if (i == 0) base else extras[i - 1];
+        var utf8: [4]u8 = undefined;
+        const len = std.unicode.utf8Encode(cp, &utf8) catch return 0;
+        @memcpy(buf_ptr[offset .. offset + len], utf8[0..len]);
+        offset += len;
+    }
+    return @intCast(offset);
+}
+
+export fn get_viewport_grapheme(
+    ptr: usize,
+    row: u32,
+    col: u32,
+    buf_ptr: usize,
+    buf_len: u32,
+) u32 {
+    const state = stateFromPtr(ptr);
+    const rs = &state.render;
+    if (row >= rs.rows or col >= rs.cols) return 0;
+    const row_cells = rs.row_data.items(.cells);
+    if (row >= row_cells.len) return 0;
+    const cells = row_cells[row];
+    const raw = cells.items(.raw);
+    if (col >= raw.len or raw[col].content_tag != .codepoint_grapheme) return 0;
+    return encodeGrapheme(
+        raw[col].content.codepoint,
+        cells.items(.grapheme)[col],
+        buf_ptr,
+        buf_len,
+    );
 }
 
 // -- Dirty tracking ---------------------------------------------
@@ -529,6 +580,27 @@ export fn get_scrollback_line(ptr: usize, offset: u32, buf_ptr: [*]u8, max_cols:
     }
 
     return @intCast(count);
+}
+
+export fn get_scrollback_grapheme(
+    ptr: usize,
+    offset: u32,
+    col: u32,
+    buf_ptr: usize,
+    buf_len: u32,
+) u32 {
+    const state = stateFromPtr(ptr);
+    const screen: *Screen = state.terminal.screens.active;
+    const rows_up = std.math.add(usize, offset, 1) catch return 0;
+    const pin = screen.pages.getTopLeft(.active).up(rows_up) orelse return 0;
+    const cells = pin.cells(.all);
+    if (col >= cells.len or cells[col].content_tag != .codepoint_grapheme) return 0;
+    return encodeGrapheme(
+        cells[col].content.codepoint,
+        pin.grapheme(&cells[col]) orelse return 0,
+        buf_ptr,
+        buf_len,
+    );
 }
 
 // -- Responses --------------------------------------------------

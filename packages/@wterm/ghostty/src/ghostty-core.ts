@@ -16,6 +16,7 @@ import {
 } from "./wasm-bindings.js";
 
 const DEFAULT_COLOR = 256;
+const GRAPHEME_BUFFER_BYTES = 256;
 
 const WTERM_FLAG_BOLD = 0x01;
 const WTERM_FLAG_DIM = 0x02;
@@ -94,6 +95,8 @@ export class GhosttyCore implements TerminalCore {
   private _scrollbackView: DataView | null = null;
   private _scrollbackOffset = -1;
   private _scrollbackLen = 0;
+  private _graphemeBufPtr = 0;
+  private _graphemeBufSize = GRAPHEME_BUFFER_BYTES;
 
   private constructor(wasm: GhosttyWasm, options: GhosttyOptions) {
     this.wasm = wasm;
@@ -116,6 +119,7 @@ export class GhosttyCore implements TerminalCore {
     this._rows = rows;
     const scrollback = this._options.scrollbackLimit ?? 10000;
     this.termPtr = this.wasm.exports.init(cols, rows, scrollback);
+    this._graphemeBufPtr = allocBuffer(this.wasm, GRAPHEME_BUFFER_BYTES);
     this._allocViewportBuffer();
     this._invalidate();
   }
@@ -170,6 +174,7 @@ export class GhosttyCore implements TerminalCore {
       flags: cell.flags,
       width: cell.width,
     };
+    if (cell.hasGrapheme) result.chars = this._readGrapheme(row, col);
     if (cell.colorFlags & 1)
       result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
     if (cell.colorFlags & 2)
@@ -276,6 +281,8 @@ export class GhosttyCore implements TerminalCore {
       flags: cell.flags,
       width: cell.width,
     };
+    if (cell.hasGrapheme)
+      result.chars = this._readScrollbackGrapheme(offset, col);
     if (cell.colorFlags & 1)
       result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
     if (cell.colorFlags & 2)
@@ -298,6 +305,78 @@ export class GhosttyCore implements TerminalCore {
   private _invalidate(): void {
     this._viewportStale = true;
     this._scrollbackOffset = -1;
+  }
+
+  private _decodeGrapheme(len: number): string | undefined {
+    if (len === 0 || this._graphemeBufPtr === 0) return undefined;
+    return new TextDecoder().decode(
+      new Uint8Array(
+        this.wasm.exports.memory.buffer,
+        this._graphemeBufPtr,
+        len,
+      ),
+    );
+  }
+
+  private _ensureGraphemeBuffer(required: number): void {
+    if (required <= this._graphemeBufSize) return;
+    if (this._graphemeBufPtr !== 0) {
+      freeBuffer(this.wasm, this._graphemeBufPtr, this._graphemeBufSize);
+    }
+    this._graphemeBufSize = required;
+    this._graphemeBufPtr = allocBuffer(this.wasm, required);
+  }
+
+  private _readGrapheme(row: number, col: number): string | undefined {
+    if (this._graphemeBufPtr === 0 || !this.wasm.exports.get_viewport_grapheme)
+      return undefined;
+    let len = this.wasm.exports.get_viewport_grapheme(
+      this.termPtr,
+      row,
+      col,
+      this._graphemeBufPtr,
+      this._graphemeBufSize,
+    );
+    if (len > this._graphemeBufSize) {
+      this._ensureGraphemeBuffer(len);
+      len = this.wasm.exports.get_viewport_grapheme(
+        this.termPtr,
+        row,
+        col,
+        this._graphemeBufPtr,
+        this._graphemeBufSize,
+      );
+    }
+    return this._decodeGrapheme(len);
+  }
+
+  private _readScrollbackGrapheme(
+    offset: number,
+    col: number,
+  ): string | undefined {
+    if (
+      this._graphemeBufPtr === 0 ||
+      !this.wasm.exports.get_scrollback_grapheme
+    )
+      return undefined;
+    let len = this.wasm.exports.get_scrollback_grapheme(
+      this.termPtr,
+      offset,
+      col,
+      this._graphemeBufPtr,
+      this._graphemeBufSize,
+    );
+    if (len > this._graphemeBufSize) {
+      this._ensureGraphemeBuffer(len);
+      len = this.wasm.exports.get_scrollback_grapheme(
+        this.termPtr,
+        offset,
+        col,
+        this._graphemeBufPtr,
+        this._graphemeBufSize,
+      );
+    }
+    return this._decodeGrapheme(len);
   }
 
   private _allocViewportBuffer(): void {
@@ -349,14 +428,17 @@ export class GhosttyCore implements TerminalCore {
   }
 
   private _ensureViewport(): void {
-    if (!this._viewportStale) return;
-    this.wasm.exports.update(this.termPtr);
-    this.wasm.exports.get_viewport(this.termPtr, this._viewportBufPtr);
-    this._viewportView = new DataView(
-      this.wasm.exports.memory.buffer,
-      this._viewportBufPtr,
-      this._viewportBufSize,
-    );
-    this._viewportStale = false;
+    if (this._viewportStale) {
+      this.wasm.exports.update(this.termPtr);
+      this.wasm.exports.get_viewport(this.termPtr, this._viewportBufPtr);
+      this._viewportStale = false;
+    }
+    if (this._viewportView?.buffer !== this.wasm.exports.memory.buffer) {
+      this._viewportView = new DataView(
+        this.wasm.exports.memory.buffer,
+        this._viewportBufPtr,
+        this._viewportBufSize,
+      );
+    }
   }
 }

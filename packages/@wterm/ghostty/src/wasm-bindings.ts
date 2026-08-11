@@ -20,6 +20,13 @@ export interface GhosttyExports {
   // Render state
   update(ptr: number): void;
   get_viewport(ptr: number, buf_ptr: number): number;
+  get_viewport_grapheme(
+    ptr: number,
+    row: number,
+    col: number,
+    buf_ptr: number,
+    buf_len: number,
+  ): number;
 
   // Dirty tracking
   is_dirty(ptr: number): number;
@@ -50,6 +57,13 @@ export interface GhosttyExports {
     offset: number,
     buf_ptr: number,
     max_cols: number,
+  ): number;
+  get_scrollback_grapheme(
+    ptr: number,
+    offset: number,
+    col: number,
+    buf_ptr: number,
+    buf_len: number,
   ): number;
 
   // Responses
@@ -163,6 +177,7 @@ export interface WasmCellData {
   width: number;
   /** Bit 0: has explicit fg color, Bit 1: has explicit bg color */
   colorFlags: number;
+  hasGrapheme: boolean;
 }
 
 /**
@@ -181,6 +196,7 @@ export function parseCell(view: DataView, byteOffset: number): WasmCellData {
     flags: view.getUint8(byteOffset + 10),
     width: view.getUint8(byteOffset + 11),
     colorFlags: view.getUint8(byteOffset + 12),
+    hasGrapheme: (view.getUint8(byteOffset + 13) & 1) !== 0,
   };
 }
 

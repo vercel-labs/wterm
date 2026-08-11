@@ -1,5 +1,7 @@
 export interface CellData {
   char: number;
+  /** Full grapheme cluster. Present when the cell contains more than one code point. */
+  chars?: string;
   fg: number;
   bg: number;
   flags: number;

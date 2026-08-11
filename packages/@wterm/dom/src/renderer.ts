@@ -261,6 +261,7 @@ export class Renderer {
     let html = "";
     let runStyle = "";
     let runText = "";
+    let runCells: string[] = [];
     let runStart = 0;
 
     const flushRun = (endCol: number) => {
@@ -269,10 +270,9 @@ export class Renderer {
 
       if (cursorCol >= runStart && cursorCol < endCol) {
         const offset = cursorCol - runStart;
-        const chars = [...runText];
-        const before = chars.slice(0, offset).join("");
-        const cursorChar = chars[offset] || " ";
-        const after = chars.slice(offset + 1).join("");
+        const before = runCells.slice(0, offset).join("");
+        const cursorChar = runCells[offset] || " ";
+        const after = runCells.slice(offset + 1).join("");
 
         if (before) {
           html += runStyle
@@ -292,6 +292,8 @@ export class Renderer {
           ? `<span style="${runStyle}">${escaped}</span>`
           : `<span>${escaped}</span>`;
       }
+      runText = "";
+      runCells = [];
     };
 
     const appendStyledSpan = (
@@ -322,6 +324,7 @@ export class Renderer {
         }
         runStyle = "";
         runText = "";
+        runCells = [];
         runStart = col + 1;
         continue;
       }
@@ -337,11 +340,12 @@ export class Renderer {
           appendStyledSpan(col === cursorCol ? "term-cursor" : "", "", " ");
           runStyle = "";
           runText = "";
+          runCells = [];
           runStart = col + 1;
           continue;
         }
 
-        const ch = cp >= 32 ? String.fromCodePoint(cp) : " ";
+        const ch = cell.chars ?? (cp >= 32 ? String.fromCodePoint(cp) : " ");
         const style = buildCellStyle(
           cell.fg,
           cell.bg,
@@ -357,6 +361,7 @@ export class Renderer {
 
         runStyle = "";
         runText = "";
+        runCells = [];
         runStart = col + 2;
         continue;
       }
@@ -378,9 +383,11 @@ export class Renderer {
 
         runStyle = "";
         runText = "";
+        runCells = [];
         runStart = col + 1;
       } else {
-        const ch = inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ";
+        const ch =
+          cell.chars ?? (inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ");
         const style = inBounds
           ? buildCellStyle(cell.fg, cell.bg, cell.flags, cell.fgRgb, cell.bgRgb)
           : "";
@@ -389,9 +396,11 @@ export class Renderer {
           flushRun(col);
           runStyle = style;
           runText = ch;
+          runCells = [ch];
           runStart = col;
         } else {
           runText += ch;
+          runCells.push(ch);
         }
       }
     }

@@ -72,6 +72,25 @@ describe("Renderer", () => {
       expect(text).toContain("i");
     });
 
+    it("renders a complete grapheme string from one cell", () => {
+      const grid = [[{ ...makeCell("e"), chars: "e\u0301" }]];
+      const bridge = createMockBridge(1, 1, grid);
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+
+      expect(container.querySelector(".term-row")?.textContent).toBe("e\u0301");
+    });
+
+    it("keeps the cursor on the grapheme's grid cell", () => {
+      const grid = [[{ ...makeCell("e"), chars: "e\u0301" }, makeCell("x")]];
+      const bridge = createMockBridge(2, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 1, visible: true });
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+
+      expect(container.querySelector(".term-cursor")?.textContent).toBe("x");
+    });
+
     it("renders wide cells once and skips continuation cells", () => {
       const grid = [
         [
