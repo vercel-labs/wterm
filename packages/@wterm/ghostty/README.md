@@ -4,7 +4,7 @@ Full-featured terminal emulation core for [wterm](https://github.com/vercel-labs
 
 Drop-in replacement for wterm's built-in Zig core. Implements the same `TerminalCore` interface with comprehensive VT emulation: proper Unicode grapheme handling, all SGR attributes, terminal modes, and more.
 
-The core exposes SGR mouse tracking (modes 1000, 1002, and 1006) and focus reporting (mode 1004) to `@wterm/dom`.
+The core exposes SGR mouse tracking (modes 1000, 1002, and 1006), focus reporting (mode 1004), and terminal responses including foreground/background color queries (OSC 10 and OSC 11) to `@wterm/dom`.
 Combining marks and ZWJ emoji are exposed through `CellData.chars` as complete strings, including after their rows move into scrollback.
 
 ## Install
@@ -64,6 +64,17 @@ const core = await GhosttyCore.load();
 |---|---|---|
 | `wasmPath` | `string` | Custom path to the ghostty-vt WASM binary |
 | `scrollbackLimit` | `number` | Scrollback budget in bytes, not lines (default: 10000). ghostty allocates history in pages, so the retained row count depends on the terminal width |
+| `foregroundColor` | `string` | Foreground reported by OSC 10 in `#RRGGBB` format (default: `#d4d4d4`) |
+| `backgroundColor` | `string` | Background reported by OSC 11 in `#RRGGBB` format (default: `#1e1e1e`) |
+
+When using a custom CSS theme, pass matching foreground and background colors so terminal applications receive the colors they are actually rendered with:
+
+```ts
+const core = await GhosttyCore.load({
+  foregroundColor: "#ededed",
+  backgroundColor: "#0a0a0a",
+});
+```
 
 ## Bundlers
 

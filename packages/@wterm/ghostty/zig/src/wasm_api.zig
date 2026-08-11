@@ -168,6 +168,38 @@ const ResponseHandler = struct {
                 ) catch return;
                 self.queue.push(out);
             },
+            .color_operation => {
+                try self.inner.vt(action, value);
+                var it = value.requests.constIterator(0);
+                while (it.next()) |request| {
+                    const target = switch (request.*) {
+                        .query => |target| target,
+                        else => continue,
+                    };
+                    const dynamic = switch (target) {
+                        .dynamic => |dynamic| dynamic,
+                        else => continue,
+                    };
+                    const terminal_color = switch (dynamic) {
+                        .foreground => self.inner.terminal.colors.foreground.get() orelse continue,
+                        .background => self.inner.terminal.colors.background.get() orelse continue,
+                        else => continue,
+                    };
+                    var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
+                    const out = std.fmt.bufPrint(
+                        &buf,
+                        "\x1b]{d};rgb:{x:0>4}/{x:0>4}/{x:0>4}{s}",
+                        .{
+                            @intFromEnum(dynamic),
+                            @as(u16, terminal_color.r) * 257,
+                            @as(u16, terminal_color.g) * 257,
+                            @as(u16, terminal_color.b) * 257,
+                            value.terminator.string(),
+                        },
+                    ) catch continue;
+                    self.queue.push(out);
+                }
+            },
             else => try self.inner.vt(action, value),
         }
     }
@@ -188,12 +220,32 @@ fn stateFromPtr(ptr: usize) *State {
 
 // -- Lifecycle --------------------------------------------------
 
-export fn init(cols: u16, rows: u16, max_scrollback: u32) usize {
+export fn init(
+    cols: u16,
+    rows: u16,
+    max_scrollback: u32,
+    foreground_rgb: u32,
+    background_rgb: u32,
+) usize {
     const state = allocator.create(State) catch return 0;
     state.terminal = Terminal.init(allocator, .{
         .cols = cols,
         .rows = rows,
         .max_scrollback = max_scrollback,
+        .colors = .{
+            .background = .init(.{
+                .r = @truncate(background_rgb >> 16),
+                .g = @truncate(background_rgb >> 8),
+                .b = @truncate(background_rgb),
+            }),
+            .foreground = .init(.{
+                .r = @truncate(foreground_rgb >> 16),
+                .g = @truncate(foreground_rgb >> 8),
+                .b = @truncate(foreground_rgb),
+            }),
+            .cursor = .unset,
+            .palette = .default,
+        },
         .default_modes = .{ .grapheme_cluster = true },
     }) catch {
         allocator.destroy(state);

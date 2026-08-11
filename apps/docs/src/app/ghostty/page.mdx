@@ -95,8 +95,42 @@ const core = await GhosttyCore.load();
         terminal width.
       </td>
     </tr>
+    <tr>
+      <td>
+        <code>foregroundColor</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
+      <td>
+        Foreground reported by OSC 10 in <code>#RRGGBB</code> format. Defaults
+        to <code>#d4d4d4</code>.
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>backgroundColor</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
+      <td>
+        Background reported by OSC 11 in <code>#RRGGBB</code> format. Defaults
+        to <code>#1e1e1e</code>.
+      </td>
+    </tr>
   </tbody>
 </table>
+
+Pass colors matching your CSS theme so terminal applications receive the
+colors they are actually rendered with:
+
+```ts
+const core = await GhosttyCore.load({
+  foregroundColor: "#ededed",
+  backgroundColor: "#0a0a0a",
+});
+```
 
 ## Bundlers
 
@@ -161,6 +195,8 @@ The binary is also addressable as `@wterm/ghostty/ghostty-vt.wasm`, so a bundler
 The `TerminalCore` interface means the DOM renderer, input handler, and framework bindings don't need to know which core they're talking to.
 
 Ghostty enables grapheme clustering and returns combining sequences and ZWJ emoji through `CellData.chars`. The same complete strings are available from active cells and scrollback.
+
+Terminal applications can query the Ghostty core's foreground and background colors with OSC 10 and OSC 11. The core starts with its configured colors and tracks later OSC color changes and resets.
 
 ## Rebuilding the WASM
 

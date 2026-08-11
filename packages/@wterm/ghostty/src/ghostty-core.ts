@@ -17,6 +17,8 @@ import {
 
 const DEFAULT_COLOR = 256;
 const GRAPHEME_BUFFER_BYTES = 256;
+const DEFAULT_FOREGROUND = "#d4d4d4";
+const DEFAULT_BACKGROUND = "#1e1e1e";
 
 const WTERM_FLAG_BOLD = 0x01;
 const WTERM_FLAG_DIM = 0x02;
@@ -58,6 +60,15 @@ const BLANK_CELL: CellData = {
 export interface GhosttyOptions {
   wasmPath?: string;
   scrollbackLimit?: number;
+  foregroundColor?: string;
+  backgroundColor?: string;
+}
+
+function parseColor(value: string, option: string): number {
+  if (!/^#[0-9a-f]{6}$/i.test(value)) {
+    throw new Error(`@wterm/ghostty: ${option} must be a #RRGGBB color`);
+  }
+  return Number.parseInt(value.slice(1), 16);
 }
 
 /**
@@ -80,6 +91,8 @@ export class GhosttyCore implements TerminalCore {
   private wasm: GhosttyWasm;
   private termPtr = 0;
   private _options: GhosttyOptions;
+  private _foregroundRgb: number;
+  private _backgroundRgb: number;
 
   private _viewportBufPtr = 0;
   private _viewportBufSize = 0;
@@ -101,6 +114,14 @@ export class GhosttyCore implements TerminalCore {
   private constructor(wasm: GhosttyWasm, options: GhosttyOptions) {
     this.wasm = wasm;
     this._options = options;
+    this._foregroundRgb = parseColor(
+      options.foregroundColor ?? DEFAULT_FOREGROUND,
+      "foregroundColor",
+    );
+    this._backgroundRgb = parseColor(
+      options.backgroundColor ?? DEFAULT_BACKGROUND,
+      "backgroundColor",
+    );
   }
 
   /**
@@ -118,7 +139,13 @@ export class GhosttyCore implements TerminalCore {
     this._cols = cols;
     this._rows = rows;
     const scrollback = this._options.scrollbackLimit ?? 10000;
-    this.termPtr = this.wasm.exports.init(cols, rows, scrollback);
+    this.termPtr = this.wasm.exports.init(
+      cols,
+      rows,
+      scrollback,
+      this._foregroundRgb,
+      this._backgroundRgb,
+    );
     this._graphemeBufPtr = allocBuffer(this.wasm, GRAPHEME_BUFFER_BYTES);
     this._allocViewportBuffer();
     this._invalidate();

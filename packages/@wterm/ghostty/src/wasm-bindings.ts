@@ -10,7 +10,13 @@ export interface GhosttyExports {
   memory: WebAssembly.Memory;
 
   // Lifecycle
-  init(cols: number, rows: number, max_scrollback: number): number;
+  init(
+    cols: number,
+    rows: number,
+    max_scrollback: number,
+    foreground_rgb: number,
+    background_rgb: number,
+  ): number;
   deinit(ptr: number): void;
   resize(ptr: number, cols: number, rows: number): void;
 

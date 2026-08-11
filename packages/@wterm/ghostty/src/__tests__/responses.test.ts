@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { GhosttyCore } from "../ghostty-core.js";
+import { GhosttyCore, type GhosttyOptions } from "../ghostty-core.js";
 
 /**
  * Runs against the real committed wasm: the responses are produced by the Zig
@@ -29,8 +29,8 @@ afterAll(() => {
   globalThis.fetch = realFetch;
 });
 
-async function newCore(cols = 20, rows = 4) {
-  const core = await GhosttyCore.load({ wasmPath: WASM_URL });
+async function newCore(cols = 20, rows = 4, options: GhosttyOptions = {}) {
+  const core = await GhosttyCore.load({ wasmPath: WASM_URL, ...options });
   core.init(cols, rows);
   return core;
 }
@@ -86,6 +86,42 @@ describe("GhosttyCore terminal responses", () => {
     const core = await newCore();
     core.writeString("\x1b[?7777$p");
     expect(drain(core)).toEqual(["\x1b[?7777;0$y"]);
+  });
+
+  it("answers foreground and background color queries", async () => {
+    const core = await newCore();
+    core.writeString("\x1b]10;?\x07\x1b]11;?\x1b\\");
+    expect(drain(core)).toEqual([
+      "\x1b]10;rgb:d4d4/d4d4/d4d4\x07",
+      "\x1b]11;rgb:1e1e/1e1e/1e1e\x1b\\",
+    ]);
+
+    core.writeString("\x1b]10;#123456\x1b\\\x1b]10;?\x1b\\");
+    expect(drain(core)).toEqual(["\x1b]10;rgb:1212/3434/5656\x1b\\"]);
+
+    core.writeString("\x1b]110\x1b\\\x1b]10;?\x1b\\");
+    expect(drain(core)).toEqual(["\x1b]10;rgb:d4d4/d4d4/d4d4\x1b\\"]);
+
+    const themed = await newCore(20, 4, {
+      foregroundColor: "#ededed",
+      backgroundColor: "#0a0a0a",
+    });
+    themed.writeString("\x1b]10;?\x1b\\\x1b]11;?\x1b\\");
+    expect(drain(themed)).toEqual([
+      "\x1b]10;rgb:eded/eded/eded\x1b\\",
+      "\x1b]11;rgb:0a0a/0a0a/0a0a\x1b\\",
+    ]);
+  });
+
+  it("rejects invalid configured colors", async () => {
+    await expect(
+      GhosttyCore.load({
+        wasmPath: WASM_URL,
+        foregroundColor: "white",
+      }),
+    ).rejects.toThrow(
+      "@wterm/ghostty: foregroundColor must be a #RRGGBB color",
+    );
   });
 
   it("keeps replies in the order the queries arrived", async () => {
