@@ -265,6 +265,14 @@ export class GhosttyCore implements TerminalCore {
     return this.wasm.exports.focus_events(this.termPtr) !== 0;
   }
 
+  synchronizedOutput(): boolean {
+    return this.wasm.exports.synchronized_output(this.termPtr) !== 0;
+  }
+
+  synchronizedOutputGeneration(): number {
+    return this.wasm.exports.synchronized_output_generation(this.termPtr);
+  }
+
   // -- Side outputs --
 
   getTitle(): string | null {

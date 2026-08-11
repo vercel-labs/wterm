@@ -51,6 +51,8 @@ export interface GhosttyExports {
   mouse_tracking(ptr: number): number;
   mouse_sgr(ptr: number): number;
   focus_events(ptr: number): number;
+  synchronized_output(ptr: number): number;
+  synchronized_output_generation(ptr: number): number;
 
   // Grid
   get_cols(ptr: number): number;

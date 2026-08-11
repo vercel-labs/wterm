@@ -198,6 +198,8 @@ Ghostty enables grapheme clustering and returns combining sequences and ZWJ emoj
 
 Terminal applications can query the Ghostty core's foreground and background colors with OSC 10 and OSC 11. The core starts with its configured colors and tracks later OSC color changes and resets.
 
+Ghostty also exposes synchronized-output mode (`CSI ? 2026 h/l`) and its generation to the DOM renderer, so updates inside a synchronized block paint as one final frame.
+
 ## Rebuilding the WASM
 
 Only needed by maintainers. Requires [Zig 0.15.x](https://ziglang.org/download/) (ghostty's required Zig version, separate from wterm's Zig 0.16.x):

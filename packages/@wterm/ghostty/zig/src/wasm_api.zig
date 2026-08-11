@@ -102,9 +102,18 @@ const ResponseQueue = struct {
 const ResponseHandler = struct {
     inner: ReadonlyHandler,
     queue: *ResponseQueue,
+    synchronized_output_generation: *u32,
 
-    pub fn init(terminal: *Terminal, queue: *ResponseQueue) ResponseHandler {
-        return .{ .inner = .init(terminal), .queue = queue };
+    pub fn init(
+        terminal: *Terminal,
+        queue: *ResponseQueue,
+        generation: *u32,
+    ) ResponseHandler {
+        return .{
+            .inner = .init(terminal),
+            .queue = queue,
+            .synchronized_output_generation = generation,
+        };
     }
 
     pub fn deinit(self: *ResponseHandler) void {
@@ -117,6 +126,28 @@ const ResponseHandler = struct {
         value: StreamAction.Value(action),
     ) !void {
         switch (action) {
+            .set_mode => {
+                const was_synchronized = self.inner.terminal.modes.get(.synchronized_output);
+                try self.inner.vt(action, value);
+                if (
+                    value.mode == .synchronized_output and
+                    !was_synchronized and
+                    self.inner.terminal.modes.get(.synchronized_output)
+                ) {
+                    self.synchronized_output_generation.* +%= 1;
+                }
+            },
+            .restore_mode => {
+                const was_synchronized = self.inner.terminal.modes.get(.synchronized_output);
+                try self.inner.vt(action, value);
+                if (
+                    value.mode == .synchronized_output and
+                    !was_synchronized and
+                    self.inner.terminal.modes.get(.synchronized_output)
+                ) {
+                    self.synchronized_output_generation.* +%= 1;
+                }
+            },
             .device_attributes => switch (value) {
                 // VT100 with the advanced video option, matching the control
                 // the parity suite measures against. Every code claimed here
@@ -212,6 +243,7 @@ const State = struct {
     stream: ResponseStream,
     render: RenderState,
     responses: ResponseQueue,
+    synchronized_output_generation: u32,
 };
 
 fn stateFromPtr(ptr: usize) *State {
@@ -252,7 +284,12 @@ export fn init(
         return 0;
     };
     state.responses = .{};
-    state.stream = .initAlloc(allocator, .init(&state.terminal, &state.responses));
+    state.synchronized_output_generation = 0;
+    state.stream = .initAlloc(allocator, .init(
+        &state.terminal,
+        &state.responses,
+        &state.synchronized_output_generation,
+    ));
     state.render = RenderState.empty;
     return @intFromPtr(state);
 }
@@ -570,6 +607,16 @@ export fn mouse_sgr(ptr: usize) u32 {
 export fn focus_events(ptr: usize) u32 {
     const state = stateFromPtr(ptr);
     return if (state.terminal.modes.get(.focus_event)) 1 else 0;
+}
+
+export fn synchronized_output(ptr: usize) u32 {
+    const state = stateFromPtr(ptr);
+    return if (state.terminal.modes.get(.synchronized_output)) 1 else 0;
+}
+
+export fn synchronized_output_generation(ptr: usize) u32 {
+    const state = stateFromPtr(ptr);
+    return state.synchronized_output_generation;
 }
 
 // -- Grid dimensions --------------------------------------------

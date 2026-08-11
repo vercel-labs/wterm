@@ -70,6 +70,31 @@ describe("GhosttyCore terminal responses", () => {
     ]);
   });
 
+  it("exposes synchronized output state and generations", async () => {
+    const core = await newCore();
+    expect(core.synchronizedOutput?.()).toBe(false);
+    expect(core.synchronizedOutputGeneration?.()).toBe(0);
+
+    core.writeString("\x1b[?2026h");
+    expect(core.synchronizedOutput?.()).toBe(true);
+    expect(core.synchronizedOutputGeneration?.()).toBe(1);
+
+    core.writeString("\x1b[?2026h");
+    expect(core.synchronizedOutputGeneration?.()).toBe(1);
+
+    core.writeString("\x1b[?2026l");
+    expect(core.synchronizedOutput?.()).toBe(false);
+    expect(core.synchronizedOutputGeneration?.()).toBe(1);
+
+    core.writeString("\x1b[?2026h");
+    expect(core.synchronizedOutput?.()).toBe(true);
+    expect(core.synchronizedOutputGeneration?.()).toBe(2);
+
+    core.writeString("\x1b[?2026s\x1b[?2026l\x1b[?2026r");
+    expect(core.synchronizedOutput?.()).toBe(true);
+    expect(core.synchronizedOutputGeneration?.()).toBe(3);
+  });
+
   it("says nothing to an ANSI-mode DECRQM, which ghostty 1.3.1 never dispatches", async () => {
     // `CSI Ps $ p` carries one intermediate. ghostty's stream switches on
     // `intermediates.len == 2` before testing for the ANSI form, so the ANSI
