@@ -57,6 +57,11 @@
   contain: layout style;
 }
 
+.term-scrollback-spacer {
+  display: block;
+  pointer-events: none;
+}
+
 .term-row > span,
 .term-row > .term-link,
 .term-link > span {

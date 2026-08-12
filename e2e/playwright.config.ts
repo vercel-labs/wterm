@@ -19,9 +19,9 @@ export default defineConfig({
   ],
   webServer: {
     command:
-      "pnpm --filter vite build && pnpm --filter vite preview --port 4173",
+      "pnpm --filter @wterm/dom build && pnpm --filter vite build && pnpm --filter vite preview --port 4173",
     port: 4173,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     cwd: "..",
   },
 });

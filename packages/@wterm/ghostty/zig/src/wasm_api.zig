@@ -397,7 +397,7 @@ fn encodeCell(
     out[11] = cellWidth(raw.*);
     out[12] = (if (has_fg) @as(u8, 1) else 0) | (if (has_bg) @as(u8, 2) else 0);
     out[13] = (if (raw.content_tag == .codepoint_grapheme) @as(u8, 1) else 0) |
-        0;
+        (if (raw.hyperlink) @as(u8, 2) else 0);
     out[14] = 0;
     out[15] = 0;
 }
@@ -698,6 +698,11 @@ export fn get_scrollback_count(ptr: usize) u32 {
     }
     if (total <= state.terminal.rows) return 0;
     return @intCast(total - state.terminal.rows);
+}
+
+export fn get_scrollback_discarded_count(ptr: usize) u32 {
+    const state = stateFromPtr(ptr);
+    return @intCast(state.terminal.screens.active.pages.discardedRows());
 }
 
 /// Write one scrollback row into a JS-provided buffer, using the same cell

@@ -52,6 +52,8 @@ When a terminal application enables SGR mouse tracking or focus reporting, WTerm
 Application-provided OSC 8 hyperlinks render as native anchors across both the active viewport and scrollback. Only absolute HTTP and HTTPS URIs become clickable; invalid, relative, and executable schemes remain ordinary terminal text.
 While SGR mouse tracking is active, plain clicks remain terminal input instead of also opening the link. Use Shift-click to activate the browser link.
 
+Scrollback normally uses a bounded DOM window around the visible rows. An active native text selection keeps its selected range mounted so the browser can preserve it. Native browser find and accessibility inspect the mounted window, not every retained history row. If the terminal is already at the bottom, new output keeps it at the exact bottom; reading older history does not enable auto-follow, and terminal input returns to the bottom.
+
 ## Themes
 
 Import the stylesheet and apply a theme class to the terminal element:

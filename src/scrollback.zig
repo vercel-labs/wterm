@@ -13,11 +13,13 @@ pub const Scrollback = struct {
     lines: [MAX_SCROLLBACK_LINES]ScrollbackLine = undefined,
     count: u32 = 0,
     write_pos: u32 = 0,
+    discarded: u32 = 0,
 
     /// Reset counters without touching the lines array (avoids large stack copies).
     pub fn reset(self: *Scrollback) void {
         self.count = 0;
         self.write_pos = 0;
+        self.discarded = 0;
     }
 
     pub fn push(self: *Scrollback, row: []const Cell, len: u16) void {
@@ -31,6 +33,8 @@ pub const Scrollback = struct {
         self.write_pos = (self.write_pos + 1) % MAX_SCROLLBACK_LINES;
         if (self.count < MAX_SCROLLBACK_LINES) {
             self.count += 1;
+        } else {
+            self.discarded +%= 1;
         }
     }
 

@@ -35,6 +35,7 @@ interface WasmExports {
   getLinkIdPtr(index: number): number;
   getLinkIdLen(index: number): number;
   getScrollbackCount(): number;
+  getScrollbackDiscardedCount(): number;
   getScrollbackLine(offset: number): number;
   getScrollbackLineLen(offset: number): number;
   getResponsePtr(): number;
@@ -218,6 +219,10 @@ export class WasmBridge implements TerminalCore {
 
   getScrollbackCount(): number {
     return this.exports.getScrollbackCount();
+  }
+
+  getScrollbackDiscardedCount(): number {
+    return this.exports.getScrollbackDiscardedCount();
   }
 
   getScrollbackCell(offset: number, col: number): CellData {

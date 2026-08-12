@@ -112,22 +112,96 @@ test.describe("cursor", () => {
 });
 
 test.describe("scrollback", () => {
-  test("generates scrollback after enough output", async ({ page }) => {
+  test("bounds DOM rows and follows output at the exact bottom", async ({
+    page,
+  }) => {
     const terminal = page.locator(".wterm");
     await terminal.click();
 
-    for (let i = 0; i < 5; i++) {
-      await page.keyboard.type(
-        `for i in $(seq 1 20); do echo "line $i batch ${i}"; done`,
-        { delay: 5 },
-      );
-      await page.keyboard.press("Enter");
-      await page.waitForTimeout(300);
-    }
+    await page.keyboard.type(
+      'for i in $(seq 1 1200); do echo "scrollback line $i"; done',
+      { delay: 1 },
+    );
+    await page.keyboard.press("Enter");
 
     await expect(terminal).toHaveClass(/has-scrollback/, { timeout: 5000 });
+    await expect(terminal).toContainText("scrollback line 1200", {
+      timeout: 5000,
+    });
     const scrollbackRows = page.locator(".term-scrollback-row");
+    await expect
+      .poll(() => scrollbackRows.count(), { timeout: 5000 })
+      .toBeLessThan(100);
     expect(await scrollbackRows.count()).toBeGreaterThan(0);
+
+    const bottomDistance = await terminal.evaluate(
+      (element) =>
+        element.scrollHeight - element.scrollTop - element.clientHeight,
+    );
+    expect(bottomDistance).toBeLessThanOrEqual(1);
+  });
+
+  test("returns to the bottom when the user types while reading history", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await terminal.click();
+    await page.keyboard.type(
+      'for i in $(seq 1 200); do echo "history line $i"; done',
+      { delay: 1 },
+    );
+    await page.keyboard.press("Enter");
+    await expect(terminal).toHaveClass(/has-scrollback/, { timeout: 5000 });
+
+    await terminal.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await expect
+      .poll(() => terminal.evaluate((element) => element.scrollTop))
+      .toBe(0);
+
+    await page.keyboard.type("echo back-at-bottom", { delay: 1 });
+
+    const bottomDistance = await terminal.evaluate(
+      (element) =>
+        element.scrollHeight - element.scrollTop - element.clientHeight,
+    );
+    expect(bottomDistance).toBeLessThanOrEqual(1);
+  });
+
+  test("keeps the same history row anchored across resize", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await terminal.click();
+    await page.keyboard.type(
+      'for i in $(seq 1 400); do echo "resize history $i"; done',
+      { delay: 1 },
+    );
+    await page.keyboard.press("Enter");
+    await expect(terminal).toHaveClass(/has-scrollback/, { timeout: 5000 });
+
+    await terminal.evaluate((element) => {
+      element.scrollTop = 600;
+    });
+    await expect
+      .poll(() => terminal.evaluate((element) => element.scrollTop))
+      .toBe(600);
+
+    const firstVisibleText = () =>
+      terminal.evaluate((element) => {
+        const top = element.getBoundingClientRect().top + 12;
+        const row = Array.from(
+          element.querySelectorAll<HTMLElement>(".term-scrollback-row"),
+        ).find((candidate) => candidate.getBoundingClientRect().bottom > top);
+        return row?.textContent ?? null;
+      });
+    const before = await firstVisibleText();
+    expect(before).not.toBeNull();
+
+    await page.setViewportSize({ width: 1280, height: 500 });
+
+    await expect.poll(firstVisibleText).toBe(before);
   });
 });
 

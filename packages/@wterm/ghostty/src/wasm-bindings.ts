@@ -67,6 +67,7 @@ export interface GhosttyExports {
 
   // Scrollback
   get_scrollback_count(ptr: number): number;
+  get_scrollback_discarded_count(ptr: number): number;
   get_scrollback_line(
     ptr: number,
     offset: number,

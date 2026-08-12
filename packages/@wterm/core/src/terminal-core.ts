@@ -72,6 +72,7 @@ export interface TerminalCore {
 
   // -- Scrollback --
   getScrollbackCount(): number;
+  getScrollbackDiscardedCount?(): number;
   getScrollbackCell(offset: number, col: number): CellData;
   getScrollbackLineLen(offset: number): number;
 

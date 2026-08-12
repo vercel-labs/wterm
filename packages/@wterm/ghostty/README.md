@@ -8,6 +8,8 @@ The core exposes SGR mouse tracking (modes 1000, 1002, and 1006), focus reportin
 Combining marks and ZWJ emoji are exposed through `CellData.chars` as complete strings, including after their rows move into scrollback.
 Native OSC 8 hyperlinks are resolved from Ghostty's page-owned metadata and exposed through `CellData.linkUri`, `CellData.linkId`, and `CellData.linkKey` in both the viewport and scrollback.
 
+Ghostty also exposes the cumulative number of rows discarded from the oldest end of scrollback. `@wterm/dom` uses that signal to keep retained history anchored when the page budget rolls over.
+
 ## Install
 
 ```bash
@@ -113,7 +115,7 @@ The WASM binary is built from upstream [ghostty-org/ghostty](https://github.com/
 ghostty (Zig dep)  →  WASM patches  →  wasm_api.zig (~300 LOC)  →  ghostty-vt.wasm  →  TypeScript bindings
 ```
 
-ghostty's `Terminal` and `Page` types use `posix.mmap` and Mach VM allocators internally, which don't exist on `wasm32-freestanding`. The build script applies small, targeted patches to replace these with `std.heap.wasm_allocator` behind comptime `isWasm()` checks (see `scripts/patch-ghostty-wasm.sh`). The patches are pinned to ghostty v1.3.1 and only touch two files: `page.zig` and `PageList.zig`.
+ghostty's `Terminal` and `Page` types use `posix.mmap` and Mach VM allocators internally, which don't exist on `wasm32-freestanding`. The build script applies small, targeted patches to replace these with `std.heap.wasm_allocator` and expose the discarded-row count from `PageList` (see `scripts/patch-ghostty-wasm.sh`). The patches are pinned to ghostty v1.3.1 and only touch two files: `page.zig` and `PageList.zig`.
 
 The committed `wasm/ghostty-vt.wasm` binary means consumers never need Zig installed. Only maintainers rebuilding the WASM need Zig 0.15.x.
 
