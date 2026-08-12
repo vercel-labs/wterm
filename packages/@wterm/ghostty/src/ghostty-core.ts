@@ -303,6 +303,10 @@ export class GhosttyCore implements TerminalCore {
     return this.wasm.exports.get_scrollback_count(this.termPtr);
   }
 
+  getScrollbackDiscardedCount(): number {
+    return this.wasm.exports.get_scrollback_discarded_count(this.termPtr);
+  }
+
   getScrollbackCell(offset: number, col: number): CellData {
     const len = this._ensureScrollbackLine(offset);
     const view = this._scrollbackView;

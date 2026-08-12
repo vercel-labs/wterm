@@ -8,6 +8,15 @@ const FLAG_UNDERLINE = 0x08;
 const FLAG_REVERSE = 0x20;
 const FLAG_INVISIBLE = 0x40;
 const FLAG_STRIKETHROUGH = 0x80;
+const DEFAULT_SCROLLBACK_OVERSCAN_ROWS = 10;
+
+export interface RenderViewport {
+  scrollTop: number;
+  clientHeight: number;
+  rowHeight: number;
+  overscanRows?: number;
+  scrollbackDiscardedCount?: number;
+}
 
 function rgbToCSS(packed: number): string {
   const r = (packed >> 16) & 0xff;
@@ -224,7 +233,11 @@ export class Renderer {
   private prevRowBg: string[] = [];
 
   private _scrollbackRowEls: HTMLDivElement[] = [];
-  private _renderedScrollbackCount = 0;
+  private _scrollbackStartKey = 0;
+  private _renderedScrollbackCount = -1;
+  private _renderedDiscardedCount = -1;
+  private _scrollbackTopSpacer: HTMLDivElement | null = null;
+  private _scrollbackBottomSpacer: HTMLDivElement | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -237,9 +250,19 @@ export class Renderer {
     this.rowEls = [];
     this.prevRowBg = [];
     this._scrollbackRowEls = [];
-    this._renderedScrollbackCount = 0;
+    this._scrollbackStartKey = 0;
+    this._renderedScrollbackCount = -1;
+    this._renderedDiscardedCount = -1;
 
     const fragment = document.createDocumentFragment();
+    this._scrollbackTopSpacer = document.createElement("div");
+    this._scrollbackTopSpacer.className = "term-scrollback-spacer";
+    fragment.appendChild(this._scrollbackTopSpacer);
+
+    this._scrollbackBottomSpacer = document.createElement("div");
+    this._scrollbackBottomSpacer.className = "term-scrollback-spacer";
+    fragment.appendChild(this._scrollbackBottomSpacer);
+
     for (let r = 0; r < rows; r++) {
       const rowEl = document.createElement("div");
       rowEl.className = "term-row";
@@ -451,35 +474,119 @@ export class Renderer {
     return rowEl;
   }
 
-  private syncScrollback(core: TerminalCore): void {
+  private syncScrollback(core: TerminalCore, viewport?: RenderViewport): void {
     const scrollbackCount = core.getScrollbackCount();
-
-    if (scrollbackCount === this._renderedScrollbackCount) return;
-
-    if (scrollbackCount > this._renderedScrollbackCount) {
-      const newCount = scrollbackCount - this._renderedScrollbackCount;
-      const firstGridRow = this.rowEls[0] ?? null;
-      const fragment = document.createDocumentFragment();
-
-      for (let i = newCount - 1; i >= 0; i--) {
-        const rowEl = this._buildScrollbackRowEl(core, i);
-        fragment.appendChild(rowEl);
-        this._scrollbackRowEls.push(rowEl);
-      }
-
-      this.container.insertBefore(fragment, firstGridRow);
-    } else {
-      const removeCount = this._renderedScrollbackCount - scrollbackCount;
-      for (let i = 0; i < removeCount; i++) {
-        const el = this._scrollbackRowEls.shift();
-        if (el) el.remove();
-      }
+    const rowHeight = viewport?.rowHeight ?? 0;
+    const virtual = viewport !== undefined && rowHeight > 0;
+    const overscan = viewport?.overscanRows ?? DEFAULT_SCROLLBACK_OVERSCAN_ROWS;
+    const hasDiscardedCount = viewport?.scrollbackDiscardedCount !== undefined;
+    const discardedCount = viewport?.scrollbackDiscardedCount ?? 0;
+    const viewportHeight =
+      viewport && viewport.clientHeight > 0
+        ? viewport.clientHeight
+        : this.rows * rowHeight;
+    const firstVisible = virtual
+      ? Math.floor(viewport.scrollTop / rowHeight)
+      : 0;
+    const visibleRows = virtual
+      ? Math.ceil(viewportHeight / rowHeight)
+      : scrollbackCount;
+    let start = virtual
+      ? Math.max(0, Math.min(scrollbackCount, firstVisible - overscan))
+      : 0;
+    let end = virtual
+      ? Math.max(
+          start,
+          Math.min(scrollbackCount, firstVisible + visibleRows + overscan),
+        )
+      : scrollbackCount;
+    const selection = this.container.ownerDocument.getSelection();
+    const selectionInContainer =
+      selection !== null &&
+      !selection.isCollapsed &&
+      (this.container.contains(selection.anchorNode) ||
+        this.container.contains(selection.focusNode));
+    if (selectionInContainer && this._scrollbackRowEls.length > 0) {
+      start = Math.min(
+        start,
+        Math.max(0, this._scrollbackStartKey - discardedCount),
+      );
+      end = Math.max(
+        end,
+        Math.min(
+          scrollbackCount,
+          this._scrollbackStartKey -
+            discardedCount +
+            this._scrollbackRowEls.length,
+        ),
+      );
     }
 
+    const startKey = discardedCount + start;
+    if (
+      hasDiscardedCount &&
+      scrollbackCount === this._renderedScrollbackCount &&
+      discardedCount === this._renderedDiscardedCount &&
+      startKey === this._scrollbackStartKey &&
+      end - start === this._scrollbackRowEls.length
+    ) {
+      return;
+    }
+
+    const previous = new Map<number, HTMLDivElement>();
+    for (let i = 0; i < this._scrollbackRowEls.length; i++) {
+      previous.set(this._scrollbackStartKey + i, this._scrollbackRowEls[i]);
+    }
+
+    const endKey = discardedCount + end;
+    for (const [key, rowEl] of previous) {
+      if (key < startKey || key >= endKey) rowEl.remove();
+    }
+
+    const nextRows: HTMLDivElement[] = [];
+    let nextSibling = this._scrollbackTopSpacer?.nextSibling ?? null;
+    for (let index = start; index < end; index++) {
+      const key = discardedCount + index;
+      const offset = scrollbackCount - 1 - index;
+      const candidate = this._buildScrollbackRowEl(core, offset);
+      const existing = previous.get(key);
+      let rowEl = candidate;
+      let positioned = false;
+
+      if (
+        existing &&
+        existing.innerHTML === candidate.innerHTML &&
+        existing.style.cssText === candidate.style.cssText
+      ) {
+        rowEl = existing;
+      } else if (existing) {
+        existing.replaceWith(candidate);
+        positioned = true;
+      }
+
+      if (!positioned && rowEl !== nextSibling) {
+        this.container.insertBefore(
+          rowEl,
+          nextSibling ?? this._scrollbackBottomSpacer,
+        );
+      }
+      nextSibling = rowEl.nextSibling;
+      nextRows.push(rowEl);
+    }
+    this._scrollbackRowEls = nextRows;
+    this._scrollbackStartKey = startKey;
     this._renderedScrollbackCount = scrollbackCount;
+    this._renderedDiscardedCount = discardedCount;
+
+    if (this._scrollbackTopSpacer) {
+      this._scrollbackTopSpacer.style.height = `${start * rowHeight}px`;
+    }
+    if (this._scrollbackBottomSpacer) {
+      this._scrollbackBottomSpacer.style.height = `${(scrollbackCount - end) * rowHeight}px`;
+    }
   }
 
-  render(core: TerminalCore): void {
+  render(core: TerminalCore, viewport?: RenderViewport): void {
     const rows = core.getRows();
     const cols = core.getCols();
 
@@ -489,7 +596,7 @@ export class Renderer {
       resized = true;
     }
 
-    this.syncScrollback(core);
+    this.syncScrollback(core, viewport);
 
     const cursor = core.getCursor();
     const cursorVisible = cursor.visible;

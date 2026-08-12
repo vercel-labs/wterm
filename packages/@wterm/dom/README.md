@@ -68,6 +68,8 @@ Ordinary writes schedule `requestAnimationFrame` directly. Multiple writes befor
 
 When a terminal core supplies `CellData.chars`, the renderer paints that complete grapheme string instead of only the cell's base code point.
 
+Scrollback normally keeps only the visible rows plus overscan mounted in the DOM. While native text selection is active, the selected range stays mounted so the browser can preserve it. Native browser find and accessibility inspect the mounted window, not every retained history row. Scrolling updates the window, while new output follows the exact bottom only when the terminal was already there.
+
 ### `WebSocketTransport`
 
 Connect to a PTY backend over WebSocket (re-exported from `@wterm/core`).

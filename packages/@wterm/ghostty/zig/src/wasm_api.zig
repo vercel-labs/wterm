@@ -645,6 +645,11 @@ export fn get_scrollback_count(ptr: usize) u32 {
     return @intCast(total - state.terminal.rows);
 }
 
+export fn get_scrollback_discarded_count(ptr: usize) u32 {
+    const state = stateFromPtr(ptr);
+    return @intCast(state.terminal.screens.active.pages.discardedRows());
+}
+
 /// Write one scrollback row into a JS-provided buffer, using the same cell
 /// layout as get_viewport.
 ///

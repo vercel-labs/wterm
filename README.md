@@ -2,7 +2,7 @@
 
 A terminal emulator for the web.
 
-wterm ("dub-term") renders to the DOM — native text selection, copy/paste, find, and accessibility come for free. The core is written in Zig and compiled to WASM for near-native performance.
+wterm ("dub-term") renders to the DOM — native text selection, copy/paste, find, and accessibility work directly on the mounted rows. The core is written in Zig and compiled to WASM for near-native performance.
 
 ## Packages
 
@@ -20,13 +20,13 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 
 - **Pluggable cores** — built-in lightweight Zig core (~12 KB) or opt-in [libghostty](packages/@wterm/ghostty) backend (~400 KB) for full VT compliance
 - **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~12 KB `.wasm` binary (release build)
-- **DOM rendering** — native text selection, clipboard, browser find, and screen reader support
+- **DOM rendering** — native text selection, clipboard, browser find, and screen reader support for mounted rows
 - **Dirty-row tracking** — only touched rows are re-rendered each frame via `requestAnimationFrame`
 - **Frame-direct scheduling** — writes queue their render on the next animation frame without an extra timer hop
 - **Synchronized output** — mode 2026 blocks paint atomically with a bounded recovery deadline
 - **Themes** — CSS custom properties with built-in Default, Solarized Dark, Monokai, and Light themes
 - **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly
-- **Scrollback history** — configurable ring buffer
+- **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window
 - **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws aligned
 - **Grapheme strings** — the Ghostty core preserves combining marks and ZWJ emoji through the DOM renderer and scrollback
 - **24-bit color** — full RGB SGR support

@@ -213,5 +213,198 @@ describe("Renderer", () => {
       expect(rowHtml).toContain("&quot;");
       expect(container.querySelector(".term-row")?.textContent).toBe('"');
     });
+
+    it("bounds materialized scrollback rows to the visible window", () => {
+      const bridge = createMockBridge(4, 3);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 4;
+      bridge.getScrollbackCell = (offset: number) =>
+        makeCell(String(offset % 10));
+      const renderer = new Renderer(container);
+
+      renderer.render(bridge as any, {
+        scrollTop: 5000,
+        clientHeight: 100,
+        rowHeight: 10,
+        overscanRows: 10,
+      });
+
+      expect(container.querySelectorAll(".term-scrollback-row").length).toBe(
+        30,
+      );
+      expect(container.querySelectorAll(".term-row").length).toBe(33);
+    });
+
+    it("refreshes visible scrollback when a full ring rolls over", () => {
+      let prefix = "A";
+      let discardedCount = 0;
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 2;
+      bridge.getScrollbackCell = () => makeCell(prefix);
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 5000,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 1,
+        scrollbackDiscardedCount: discardedCount,
+      };
+
+      renderer.render(bridge as any, viewport);
+      expect(container.querySelector(".term-scrollback-row")?.textContent).toBe(
+        "AA",
+      );
+
+      prefix = "B";
+      discardedCount = 1;
+      renderer.render(bridge as any, {
+        ...viewport,
+        scrollbackDiscardedCount: discardedCount,
+      });
+      expect(container.querySelector(".term-scrollback-row")?.textContent).toBe(
+        "BB",
+      );
+    });
+
+    it("refreshes visible scrollback without an optional rollover signal", () => {
+      let prefix = "A";
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 2;
+      bridge.getScrollbackCell = () => makeCell(prefix);
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 5000,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 1,
+      };
+
+      renderer.render(bridge as any, viewport);
+      expect(container.querySelector(".term-scrollback-row")?.textContent).toBe(
+        "AA",
+      );
+
+      prefix = "B";
+      renderer.render(bridge as any, viewport);
+
+      expect(container.querySelector(".term-scrollback-row")?.textContent).toBe(
+        "BB",
+      );
+    });
+
+    it("preserves unchanged visible scrollback row elements", () => {
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 2;
+      bridge.getScrollbackCell = () => makeCell("A");
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 5000,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 1,
+      };
+
+      renderer.render(bridge as any, viewport);
+      const row = container.querySelector(".term-scrollback-row");
+      renderer.render(bridge as any, viewport);
+
+      expect(container.querySelector(".term-scrollback-row")).toBe(row);
+    });
+
+    it("preserves retained row elements across rollover", () => {
+      const history = ["A", "B", "C", "D", "E"];
+      let discardedCount = 0;
+      const bridge = createMockBridge(1, 1);
+      bridge.getScrollbackCount = () => history.length;
+      bridge.getScrollbackLineLen = () => 1;
+      bridge.getScrollbackCell = (offset: number) =>
+        makeCell(history[history.length - 1 - offset]);
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 0,
+        clientHeight: 50,
+        rowHeight: 10,
+        overscanRows: 0,
+        scrollbackDiscardedCount: discardedCount,
+      };
+
+      renderer.render(bridge as any, viewport);
+      const retainedRow = Array.from(
+        container.querySelectorAll(".term-scrollback-row"),
+      ).find((row) => row.textContent === "D");
+      history.splice(0, 3);
+      history.push("F", "G", "H");
+      discardedCount = 3;
+      renderer.render(bridge as any, {
+        ...viewport,
+        scrollbackDiscardedCount: discardedCount,
+      });
+
+      expect(
+        Array.from(container.querySelectorAll(".term-scrollback-row")).find(
+          (row) => row.textContent === "D",
+        ),
+      ).toBe(retainedRow);
+    });
+
+    it("does not reread scrollback when history and window are unchanged", () => {
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 2;
+      let reads = 0;
+      bridge.getScrollbackCell = () => {
+        reads++;
+        return makeCell("A");
+      };
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 5000,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 1,
+        scrollbackDiscardedCount: 0,
+      };
+
+      renderer.render(bridge as any, viewport);
+      const firstReads = reads;
+      renderer.render(bridge as any, viewport);
+
+      expect(firstReads).toBeGreaterThan(0);
+      expect(reads).toBe(firstReads);
+    });
+
+    it("expands the window while a terminal selection is active", () => {
+      const bridge = createMockBridge(1, 1);
+      bridge.getScrollbackCount = () => 100;
+      bridge.getScrollbackLineLen = () => 1;
+      bridge.getScrollbackCell = () => makeCell("A");
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 0,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 0,
+      };
+
+      renderer.render(bridge as any, viewport);
+      const firstRow = container.querySelector(".term-scrollback-row")!;
+      const selection = document.getSelection()!;
+      const range = document.createRange();
+      range.selectNodeContents(firstRow);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      selection.extend(firstRow, 1);
+
+      renderer.render(bridge as any, { ...viewport, scrollTop: 100 });
+
+      expect(container.contains(firstRow)).toBe(true);
+      expect(container.querySelectorAll(".term-scrollback-row").length).toBe(
+        12,
+      );
+      selection.removeAllRanges();
+    });
   });
 });

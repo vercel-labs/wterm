@@ -49,6 +49,8 @@ See [WTerm Methods](/api-reference#wterm-methods) for the full list of instance 
 
 When a terminal application enables SGR mouse tracking or focus reporting, WTerm sends those reports through `onData` with keyboard input and host responses.
 
+Scrollback normally uses a bounded DOM window around the visible rows. An active native text selection keeps its selected range mounted so the browser can preserve it. Native browser find and accessibility inspect the mounted window, not every retained history row. If the terminal is already at the bottom, new output keeps it at the exact bottom; reading older history does not enable auto-follow, and terminal input returns to the bottom.
+
 ## Themes
 
 Import the stylesheet and apply a theme class to the terminal element:

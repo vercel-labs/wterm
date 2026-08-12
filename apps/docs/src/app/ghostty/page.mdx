@@ -196,6 +196,8 @@ The `TerminalCore` interface means the DOM renderer, input handler, and framewor
 
 Ghostty enables grapheme clustering and returns combining sequences and ZWJ emoji through `CellData.chars`. The same complete strings are available from active cells and scrollback.
 
+The adapter also reports how many rows Ghostty has discarded from the oldest end of its page-backed history. WTerm uses that count to keep retained rows anchored when the scrollback budget rolls over.
+
 Terminal applications can query the Ghostty core's foreground and background colors with OSC 10 and OSC 11. The core starts with its configured colors and tracks later OSC color changes and resets.
 
 Ghostty also exposes synchronized-output mode (`CSI ? 2026 h/l`) and its generation to the DOM renderer, so updates inside a synchronized block paint as one final frame.

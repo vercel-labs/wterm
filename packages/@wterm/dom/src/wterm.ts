@@ -43,9 +43,12 @@ export class WTerm {
   private resizeObserver: ResizeObserver | null = null;
   private _destroyed = false;
   private _shouldScrollToBottom = false;
+  private _scrollbackDiscardedCount = 0;
+  private _programmaticScrollTop: number | null = null;
   private _rowHeight = 0;
   private _charWidth = 0;
   private _onClickFocus: () => void;
+  private _onScroll: () => void;
 
   onData: ((data: string) => void) | null;
   onTitle: ((title: string) => void) | null;
@@ -77,6 +80,19 @@ export class WTerm {
       if (!sel || sel.isCollapsed) this.input?.focus();
     };
     this.element.addEventListener("click", this._onClickFocus);
+    this._onScroll = () => {
+      if (
+        this._programmaticScrollTop !== null &&
+        this.element.scrollTop === this._programmaticScrollTop
+      ) {
+        this._programmaticScrollTop = null;
+        return;
+      }
+      this._programmaticScrollTop = null;
+      this._shouldScrollToBottom = false;
+      this._scheduleRender();
+    };
+    this.element.addEventListener("scroll", this._onScroll, { passive: true });
   }
 
   async init(): Promise<this> {
@@ -145,11 +161,16 @@ export class WTerm {
     const el = this.element;
     const maxScroll = el.scrollHeight - el.clientHeight;
     if (maxScroll <= 0) {
-      el.scrollTop = 0;
+      this._setScrollTop(0);
       return;
     }
-    const rh = this._rowHeight || 17;
-    el.scrollTop = Math.floor(maxScroll / rh) * rh;
+    this._setScrollTop(maxScroll);
+  }
+
+  private _setScrollTop(value: number): void {
+    if (this.element.scrollTop === value) return;
+    this._programmaticScrollTop = value;
+    this.element.scrollTop = value;
   }
 
   write(data: string | Uint8Array): void {
@@ -298,13 +319,41 @@ export class WTerm {
       }
     }
 
-    this.renderer.render(this.bridge);
+    const rowHeight = this._rowHeight || 17;
+    const scrollbackCount = this.bridge.getScrollbackCount();
+    const discardedCount = this.bridge.getScrollbackDiscardedCount?.();
+    const discardedDelta =
+      discardedCount !== undefined &&
+      discardedCount >= this._scrollbackDiscardedCount
+        ? discardedCount - this._scrollbackDiscardedCount
+        : 0;
+    if (discardedCount !== undefined) {
+      this._scrollbackDiscardedCount = discardedCount;
+    }
+    if (!this._shouldScrollToBottom && discardedDelta > 0) {
+      this._setScrollTop(
+        Math.max(0, this.element.scrollTop - discardedDelta * rowHeight),
+      );
+    }
+
+    this.renderer.render(this.bridge, {
+      scrollTop: this._shouldScrollToBottom
+        ? Math.max(
+            0,
+            (scrollbackCount + this.rows) * rowHeight -
+              this.element.clientHeight,
+          )
+        : this.element.scrollTop,
+      clientHeight: this.element.clientHeight,
+      rowHeight,
+      scrollbackDiscardedCount: discardedCount,
+    });
 
     if (this.debug) {
       this.debug.recordRender(performance.now() - t0, dirtyCount);
     }
 
-    const hasScrollback = this.bridge.getScrollbackCount() > 0;
+    const hasScrollback = scrollbackCount > 0;
     this.element.classList.toggle("has-scrollback", hasScrollback);
 
     if (this._shouldScrollToBottom) {
@@ -425,6 +474,7 @@ export class WTerm {
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.input) this.input.destroy();
     this.element.removeEventListener("click", this._onClickFocus);
+    this.element.removeEventListener("scroll", this._onScroll);
     this.element.innerHTML = "";
     if (
       this.debug &&

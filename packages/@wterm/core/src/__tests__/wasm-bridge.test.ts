@@ -257,5 +257,15 @@ describe("WasmBridge", () => {
         expect(len).toBeGreaterThan(0);
       }
     });
+
+    it("counts rows discarded after the scrollback ring fills", () => {
+      bridge.init(2, 2);
+      bridge.writeString(
+        Array.from({ length: 1005 }, (_, index) => `${index}\r\n`).join(""),
+      );
+
+      expect(bridge.getScrollbackCount()).toBe(1000);
+      expect(bridge.getScrollbackDiscardedCount()).toBeGreaterThan(0);
+    });
   });
 });

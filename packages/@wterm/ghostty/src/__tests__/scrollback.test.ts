@@ -175,6 +175,18 @@ describe("GhosttyCore scrollback readback", () => {
     expect(rowText(core, 0)).not.toBe(before);
     expect(rowText(core, 1)).toBe(before);
   });
+
+  it("counts rows discarded from the oldest end", async () => {
+    const core = await GhosttyCore.load({
+      wasmPath: WASM_URL,
+      scrollbackLimit: 4096,
+    });
+    core.init(COLS, ROWS);
+    fill(core, 5000);
+
+    expect(core.getScrollbackCount()).toBeGreaterThan(0);
+    expect(core.getScrollbackDiscardedCount()).toBeGreaterThan(0);
+  });
 });
 
 describe("GhosttyCore scrollback isolation", () => {

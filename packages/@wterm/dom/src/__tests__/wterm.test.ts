@@ -22,6 +22,7 @@ function createMockBridge(): WasmBridge {
     bracketedPaste: vi.fn(() => false),
     usingAltScreen: vi.fn(() => false),
     synchronizedOutput: vi.fn(() => false),
+    getScrollbackDiscardedCount: vi.fn(() => 0),
   } as unknown as WasmBridge;
 }
 
@@ -768,6 +769,73 @@ describe("WTerm", () => {
       await term.init();
 
       expect(element.classList.contains("has-scrollback")).toBe(false);
+    });
+
+    it("scrolls to the exact bottom when output arrives", async () => {
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 20,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 73,
+      });
+
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      element.scrollTop = 53;
+
+      term.write("next");
+
+      expect(element.scrollTop).toBe(53);
+    });
+
+    it("schedules a render when the scroll position changes", async () => {
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockReturnValue(42);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      requestAnimationFrame.mockClear();
+
+      element.dispatchEvent(new Event("scroll"));
+
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+      term.destroy();
+    });
+
+    it("keeps the same retained row anchored after old history is discarded", async () => {
+      let discarded = 0;
+      vi.mocked(mockBridge.getScrollbackCount).mockReturnValue(1000);
+      vi.mocked(mockBridge.getScrollbackDiscardedCount!).mockImplementation(
+        () => discarded,
+      );
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 170,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 17408,
+      });
+
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      (term as unknown as { _rowHeight: number })._rowHeight = 17;
+      element.scrollTop = 340;
+      discarded = 3;
+
+      term.write("rollover");
+
+      expect(element.scrollTop).toBe(289);
     });
   });
 
