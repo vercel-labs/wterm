@@ -20,8 +20,7 @@ pub const Cell = extern struct {
     bg: u16 = DEFAULT_COLOR,
     flags: u8 = 0,
     width: u8 = WIDTH_NARROW,
-    _pad2: u8 = 0,
-    _pad3: u8 = 0,
+    link: u16 = 0,
 
     pub const BYTE_SIZE = @sizeOf(Cell);
 };

@@ -6,6 +6,7 @@ Drop-in replacement for wterm's built-in Zig core. Implements the same `Terminal
 
 The core exposes SGR mouse tracking (modes 1000, 1002, and 1006), focus reporting (mode 1004), synchronized-output state (mode 2026), and terminal responses including foreground/background color queries (OSC 10 and OSC 11) to `@wterm/dom`.
 Combining marks and ZWJ emoji are exposed through `CellData.chars` as complete strings, including after their rows move into scrollback.
+Native OSC 8 hyperlinks are resolved from Ghostty's page-owned metadata and exposed through `CellData.linkUri`, `CellData.linkId`, and `CellData.linkKey` in both the viewport and scrollback.
 
 ## Install
 

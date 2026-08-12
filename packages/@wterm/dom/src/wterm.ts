@@ -45,7 +45,7 @@ export class WTerm {
   private _shouldScrollToBottom = false;
   private _rowHeight = 0;
   private _charWidth = 0;
-  private _onClickFocus: () => void;
+  private _onClickFocus: (event: MouseEvent) => void;
 
   onData: ((data: string) => void) | null;
   onTitle: ((title: string) => void) | null;
@@ -72,7 +72,17 @@ export class WTerm {
     this.element.classList.add("wterm");
     if (options.cursorBlink) this.element.classList.add("cursor-blink");
 
-    this._onClickFocus = () => {
+    this._onClickFocus = (event) => {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(".term-link") &&
+        !event.shiftKey &&
+        (this.bridge?.mouseTracking?.() ?? 0) !== 0 &&
+        this.bridge?.mouseSgr?.()
+      ) {
+        event.preventDefault();
+      }
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) this.input?.focus();
     };

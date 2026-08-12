@@ -21,6 +21,8 @@ function createMockBridge(): WasmBridge {
     cursorKeysApp: vi.fn(() => false),
     bracketedPaste: vi.fn(() => false),
     usingAltScreen: vi.fn(() => false),
+    mouseTracking: vi.fn(() => 0),
+    mouseSgr: vi.fn(() => false),
     synchronizedOutput: vi.fn(() => false),
   } as unknown as WasmBridge;
 }
@@ -84,6 +86,43 @@ describe("WTerm", () => {
       const term = new WTerm(element, { cols: 120, rows: 40 });
       expect(term.cols).toBe(120);
       expect(term.rows).toBe(40);
+    });
+  });
+
+  describe("hyperlink activation", () => {
+    it("blocks plain link activation while mouse tracking owns the click", async () => {
+      vi.mocked(mockBridge.mouseTracking!).mockReturnValue(1002);
+      vi.mocked(mockBridge.mouseSgr!).mockReturnValue(true);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const link = document.createElement("a");
+      link.className = "term-link";
+      element.querySelector(".term-grid")!.appendChild(link);
+
+      const event = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      });
+      expect(link.dispatchEvent(event)).toBe(false);
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("keeps Shift-click available while mouse tracking is active", async () => {
+      vi.mocked(mockBridge.mouseTracking!).mockReturnValue(1002);
+      vi.mocked(mockBridge.mouseSgr!).mockReturnValue(true);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const link = document.createElement("a");
+      link.className = "term-link";
+      element.querySelector(".term-grid")!.appendChild(link);
+
+      const event = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        shiftKey: true,
+      });
+      expect(link.dispatchEvent(event)).toBe(true);
+      expect(event.defaultPrevented).toBe(false);
     });
   });
 

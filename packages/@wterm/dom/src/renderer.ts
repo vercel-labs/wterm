@@ -97,6 +97,23 @@ function escapeHTML(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function safeLinkHref(uri: string | undefined): string | undefined {
+  if (!uri) return undefined;
+  try {
+    const url = new URL(uri);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function linkIdentity(cell: CellData): string {
+  if (!cell.linkUri) return "";
+  return cell.linkKey ?? `fallback\0${cell.linkId ?? ""}\0${cell.linkUri}`;
+}
+
 function resolveColors(
   fg: number,
   bg: number,
@@ -263,10 +280,31 @@ export class Renderer {
     let runText = "";
     let runCells: string[] = [];
     let runStart = 0;
+    let runLinkKey = "";
+    let runLinkUri: string | undefined;
+    let outputLinkKey = "";
+
+    const appendContent = (
+      content: string,
+      linkKey: string,
+      uri: string | undefined,
+    ) => {
+      const href = safeLinkHref(uri);
+      const nextLinkKey = href ? linkKey : "";
+      if (nextLinkKey !== outputLinkKey) {
+        if (outputLinkKey) html += "</a>";
+        if (nextLinkKey) {
+          html += `<a class="term-link" href="${escapeHTML(href!)}" target="_blank" rel="noopener noreferrer">`;
+        }
+        outputLinkKey = nextLinkKey;
+      }
+      html += content;
+    };
 
     const flushRun = (endCol: number) => {
       if (!runText) return;
       const escaped = escapeHTML(runText);
+      let content = "";
 
       if (cursorCol >= runStart && cursorCol < endCol) {
         const offset = cursorCol - runStart;
@@ -275,23 +313,24 @@ export class Renderer {
         const after = runCells.slice(offset + 1).join("");
 
         if (before) {
-          html += runStyle
+          content += runStyle
             ? `<span style="${runStyle}">${escapeHTML(before)}</span>`
             : `<span>${escapeHTML(before)}</span>`;
         }
-        html += runStyle
+        content += runStyle
           ? `<span class="term-cursor" style="${runStyle}">${escapeHTML(cursorChar)}</span>`
           : `<span class="term-cursor">${escapeHTML(cursorChar)}</span>`;
         if (after) {
-          html += runStyle
+          content += runStyle
             ? `<span style="${runStyle}">${escapeHTML(after)}</span>`
             : `<span>${escapeHTML(after)}</span>`;
         }
       } else {
-        html += runStyle
+        content += runStyle
           ? `<span style="${runStyle}">${escaped}</span>`
           : `<span>${escaped}</span>`;
       }
+      appendContent(content, runLinkKey, runLinkUri);
       runText = "";
       runCells = [];
     };
@@ -300,10 +339,16 @@ export class Renderer {
       className: string,
       style: string,
       text: string,
+      linkKey: string,
+      linkUri?: string,
     ) => {
       const classAttr = className ? ` class="${className}"` : "";
       const styleAttr = style ? ` style="${style}"` : "";
-      html += `<span${classAttr}${styleAttr}>${escapeHTML(text)}</span>`;
+      appendContent(
+        `<span${classAttr}${styleAttr}>${escapeHTML(text)}</span>`,
+        linkKey,
+        linkUri,
+      );
     };
 
     for (let col = 0; col < this.cols; col++) {
@@ -311,6 +356,8 @@ export class Renderer {
       const inBounds = col < lineLen;
       const cp = inBounds ? cell.char : 0;
       const width = inBounds ? (cell.width ?? 1) : 1;
+      const cellLinkKey = inBounds ? linkIdentity(cell) : "";
+      const cellLinkUri = inBounds ? cell.linkUri : undefined;
 
       if (inBounds && width === 0) {
         flushRun(col);
@@ -320,9 +367,17 @@ export class Renderer {
         // would shorten the row.
         const continuesWide = col > 0 && (getCell(col - 1).width ?? 1) === 2;
         if (!continuesWide) {
-          appendStyledSpan(col === cursorCol ? "term-cursor" : "", "", " ");
+          appendStyledSpan(
+            col === cursorCol ? "term-cursor" : "",
+            "",
+            " ",
+            cellLinkKey,
+            cellLinkUri,
+          );
         }
         runStyle = "";
+        runLinkKey = "";
+        runLinkUri = undefined;
         runText = "";
         runCells = [];
         runStart = col + 1;
@@ -337,8 +392,16 @@ export class Renderer {
         // continuation is outside the row. Drawing the pair here would spill
         // a second column past the row.
         if (col + 1 >= this.cols) {
-          appendStyledSpan(col === cursorCol ? "term-cursor" : "", "", " ");
+          appendStyledSpan(
+            col === cursorCol ? "term-cursor" : "",
+            "",
+            " ",
+            cellLinkKey,
+            cellLinkUri,
+          );
           runStyle = "";
+          runLinkKey = "";
+          runLinkUri = undefined;
           runText = "";
           runCells = [];
           runStart = col + 1;
@@ -357,9 +420,11 @@ export class Renderer {
           cursorCol >= col && cursorCol < col + 2
             ? "term-wide term-cursor"
             : "term-wide";
-        appendStyledSpan(cls, style, ch);
+        appendStyledSpan(cls, style, ch, cellLinkKey, cellLinkUri);
 
         runStyle = "";
+        runLinkKey = "";
+        runLinkUri = undefined;
         runText = "";
         runCells = [];
         runStart = col + 2;
@@ -379,9 +444,15 @@ export class Renderer {
         const cls = col === cursorCol ? "term-block term-cursor" : "term-block";
         const bg = getBlockBackground(cp, colors.fg, colors.bg);
         const dim = cell.flags & FLAG_DIM ? "opacity:0.5;" : "";
-        html += `<span class="${cls}" style="background:${bg};${dim}"></span>`;
+        appendContent(
+          `<span class="${cls}" style="background:${bg};${dim}"></span>`,
+          cellLinkKey,
+          cellLinkUri,
+        );
 
         runStyle = "";
+        runLinkKey = "";
+        runLinkUri = undefined;
         runText = "";
         runCells = [];
         runStart = col + 1;
@@ -392,9 +463,11 @@ export class Renderer {
           ? buildCellStyle(cell.fg, cell.bg, cell.flags, cell.fgRgb, cell.bgRgb)
           : "";
 
-        if (style !== runStyle) {
+        if (style !== runStyle || cellLinkKey !== runLinkKey) {
           flushRun(col);
           runStyle = style;
+          runLinkKey = cellLinkKey;
+          runLinkUri = cellLinkUri;
           runText = ch;
           runCells = [ch];
           runStart = col;
@@ -405,6 +478,7 @@ export class Renderer {
       }
     }
     flushRun(this.cols);
+    if (outputLinkKey) html += "</a>";
 
     rowEl.innerHTML = html;
 

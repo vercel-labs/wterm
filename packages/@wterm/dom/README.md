@@ -68,6 +68,9 @@ Ordinary writes schedule `requestAnimationFrame` directly. Multiple writes befor
 
 When a terminal core supplies `CellData.chars`, the renderer paints that complete grapheme string instead of only the cell's base code point.
 
+When a core supplies OSC 8 metadata through `CellData.linkUri` and `CellData.linkKey`, the renderer groups the covered cells into native anchors. Only absolute HTTP and HTTPS URIs become clickable. Invalid, relative, and executable schemes render as ordinary terminal text.
+While SGR mouse tracking is active, plain clicks remain terminal input instead of also opening the link. Use Shift-click to activate the browser link.
+
 ### `WebSocketTransport`
 
 Connect to a PTY backend over WebSocket (re-exported from `@wterm/core`).

@@ -2,6 +2,39 @@
 
 Complete reference for all wterm options, methods, types, and transport APIs.
 
+## Cell Data
+
+`TerminalCore.getCell()` and `getScrollbackCell()` return `CellData`. Alongside glyph, color, style, and width fields, a core may provide resolved OSC 8 metadata:
+
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>linkUri</code></td>
+      <td><code>string?</code></td>
+      <td>The resolved URI attached to this cell</td>
+    </tr>
+    <tr>
+      <td><code>linkId</code></td>
+      <td><code>string?</code></td>
+      <td>The explicit OSC 8 <code>id=</code> parameter, when provided</td>
+    </tr>
+    <tr>
+      <td><code>linkKey</code></td>
+      <td><code>string?</code></td>
+      <td>An opaque semantic identity used by renderers to group linked cells. Consumers must not interpret its contents.</td>
+    </tr>
+  </tbody>
+</table>
+
+These fields are optional so custom `TerminalCore` implementations remain source-compatible.
+
 ## Terminal Options
 
 The React and Vue `<Terminal>` components and the vanilla `WTerm` constructor all accept these options:

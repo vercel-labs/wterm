@@ -30,6 +30,62 @@ describe("WasmBridge", () => {
   });
 
   describe("writeString / getCell", () => {
+    it("exposes OSC 8 metadata only on covered cells", () => {
+      bridge.writeString(
+        "\x1b]8;id=docs;https://example.com/docs\x07LINK\x1b]8;;\x1b\\ plain",
+      );
+
+      for (let col = 0; col < 4; col++) {
+        expect(bridge.getCell(0, col)).toMatchObject({
+          linkUri: "https://example.com/docs",
+          linkId: "docs",
+          linkKey: "e\u0000docs\u0000https://example.com/docs",
+        });
+      }
+      expect(bridge.getCell(0, 4).linkUri).toBeUndefined();
+    });
+
+    it("keeps implicit OSC 8 identities distinct", () => {
+      bridge.writeString(
+        "\x1b]8;;https://example.com\x1b\\A\x1b]8;;\x1b\\" +
+          "\x1b]8;;https://example.com\x1b\\B\x1b]8;;\x1b\\",
+      );
+
+      expect(bridge.getCell(0, 0).linkKey).toBeDefined();
+      expect(bridge.getCell(0, 1).linkKey).toBeDefined();
+      expect(bridge.getCell(0, 0).linkKey).not.toBe(
+        bridge.getCell(0, 1).linkKey,
+      );
+    });
+
+    it("clears OSC 8 metadata on overwrite and erase", () => {
+      bridge.writeString("\x1b]8;;https://example.com\x1b\\LINK\x1b]8;;\x1b\\");
+      bridge.writeString("\rX\x1b[K");
+
+      expect(bridge.getCell(0, 0).linkUri).toBeUndefined();
+      expect(bridge.getCell(0, 1).linkUri).toBeUndefined();
+    });
+
+    it("keeps erased cells unlinked while an OSC 8 link remains active", () => {
+      bridge.writeString("\x1b]8;;https://example.com\x1b\\LINK");
+      bridge.writeString("\r\x1b[K");
+
+      expect(bridge.getCell(0, 0).linkUri).toBeUndefined();
+      expect(bridge.getCell(0, 1).linkUri).toBeUndefined();
+      bridge.writeString("Z");
+      expect(bridge.getCell(0, 0).linkUri).toBe("https://example.com");
+    });
+
+    it("does not alias hyperlink destinations after RIS", () => {
+      bridge.writeString("\x1b]8;;https://a.example\x1b\\A\x1b]8;;\x1b\\");
+      expect(bridge.getCell(0, 0).linkUri).toBe("https://a.example");
+
+      bridge.writeString("\x1bc");
+      bridge.writeString("\x1b]8;;https://b.example\x1b\\B\x1b]8;;\x1b\\");
+
+      expect(bridge.getCell(0, 0).linkUri).toBe("https://b.example");
+    });
+
     it("writes a character to the grid", () => {
       bridge.writeString("A");
       const cell = bridge.getCell(0, 0);
@@ -245,6 +301,19 @@ describe("WasmBridge", () => {
         const cell = bridge.getScrollbackCell(0, 0);
         expect(cell.char).toBe(65); // 'A'
       }
+    });
+
+    it("keeps OSC 8 metadata after a row enters scrollback", () => {
+      bridge.writeString(
+        "\x1b]8;;https://example.com/history\x1b\\LINK\x1b]8;;\x1b\\\r\n",
+      );
+      for (let i = 0; i < 30; i++) bridge.writeString(`line ${i}\r\n`);
+
+      const offset = bridge.getScrollbackCount() - 1;
+      expect(bridge.getScrollbackCell(offset, 0).linkUri).toBe(
+        "https://example.com/history",
+      );
+      expect(bridge.getScrollbackCell(offset, 4).linkUri).toBeUndefined();
     });
 
     it("returns scrollback line length", () => {

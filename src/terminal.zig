@@ -1,7 +1,9 @@
+const std = @import("std");
 const cell_mod = @import("cell.zig");
 const grid_mod = @import("grid.zig");
 const parser_mod = @import("parser.zig");
 const scrollback_mod = @import("scrollback.zig");
+const hyperlink_mod = @import("hyperlink.zig");
 const unicode_width = @import("unicode_width.zig");
 
 const Cell = cell_mod.Cell;
@@ -31,6 +33,7 @@ pub const Terminal = struct {
     grid: Grid,
     parser: Parser = .{},
     scrollback: ?*Scrollback = null,
+    hyperlinks: hyperlink_mod.Table = .{},
 
     cols: u16,
     rows: u16,
@@ -49,6 +52,7 @@ pub const Terminal = struct {
     current_fg: u16 = cell_mod.DEFAULT_COLOR,
     current_bg: u16 = cell_mod.DEFAULT_COLOR,
     current_flags: u8 = 0,
+    current_link: u16 = 0,
 
     scroll_top: u16 = 0,
     scroll_bottom: u16 = 0,
@@ -71,6 +75,7 @@ pub const Terminal = struct {
     alt_saved_fg: u16 = cell_mod.DEFAULT_COLOR,
     alt_saved_bg: u16 = cell_mod.DEFAULT_COLOR,
     alt_saved_flags: u8 = 0,
+    alt_saved_link: u16 = 0,
     using_alt_screen: bool = false,
 
     // Title (from OSC 0 / 2)
@@ -116,6 +121,7 @@ pub const Terminal = struct {
             .bg = self.current_bg,
             .flags = self.current_flags,
             .width = cell_mod.WIDTH_CONTINUATION,
+            .link = self.current_link,
         };
     }
 
@@ -255,6 +261,7 @@ pub const Terminal = struct {
         self.current_fg = cell_mod.DEFAULT_COLOR;
         self.current_bg = cell_mod.DEFAULT_COLOR;
         self.current_flags = 0;
+        self.current_link = 0;
         self.scroll_top = 0;
         self.scroll_bottom = rows;
         self.auto_wrap = true;
@@ -271,6 +278,7 @@ pub const Terminal = struct {
         self.alt_saved_fg = cell_mod.DEFAULT_COLOR;
         self.alt_saved_bg = cell_mod.DEFAULT_COLOR;
         self.alt_saved_flags = 0;
+        self.alt_saved_link = 0;
         self.using_alt_screen = false;
         self.title_len = 0;
         self.title_changed = false;
@@ -483,6 +491,7 @@ pub const Terminal = struct {
             .bg = self.current_bg,
             .flags = self.current_flags,
             .width = width,
+            .link = self.current_link,
         });
 
         if (width == cell_mod.WIDTH_WIDE) {
@@ -735,6 +744,8 @@ pub const Terminal = struct {
         const ag = self.alt_grid orelse return;
 
         if (alt) {
+            self.alt_saved_link = self.current_link;
+            self.current_link = 0;
             if (save_cursor) self.saveCursorToAlt();
             ag.* = self.grid;
             self.grid.reset(self.cols, self.rows);
@@ -742,6 +753,7 @@ pub const Terminal = struct {
         } else {
             self.grid = ag.*;
             self.using_alt_screen = false;
+            self.current_link = self.alt_saved_link;
             if (save_cursor) self.restoreCursorFromAlt();
             var r: u16 = 0;
             while (r < self.rows) : (r += 1) {
@@ -1100,7 +1112,6 @@ pub const Terminal = struct {
         if (self.parser.osc_len < 2) return;
         const data = self.parser.osc_data[0..self.parser.osc_len];
 
-        // OSC 0;title ST  or  OSC 2;title ST
         if ((data[0] == '0' or data[0] == '2') and data[1] == ';') {
             const title = data[2..];
             const len = if (title.len > self.title_buf.len) self.title_buf.len else title.len;
@@ -1110,6 +1121,34 @@ pub const Terminal = struct {
             }
             self.title_len = @intCast(len);
             self.title_changed = true;
+            return;
+        }
+
+        if (data[0] == '8' and data[1] == ';') {
+            if (self.parser.osc_truncated) {
+                self.current_link = 0;
+                return;
+            }
+            const params_end = std.mem.indexOfScalarPos(u8, data, 2, ';') orelse {
+                self.current_link = 0;
+                return;
+            };
+            const params = data[2..params_end];
+            const uri = data[params_end + 1 ..];
+            if (uri.len == 0) {
+                self.current_link = 0;
+                return;
+            }
+
+            var explicit_id: ?[]const u8 = null;
+            var params_it = std.mem.splitScalar(u8, params, ':');
+            while (params_it.next()) |param| {
+                if (std.mem.startsWith(u8, param, "id=") and param.len > 3) {
+                    explicit_id = param[3..];
+                    break;
+                }
+            }
+            self.current_link = self.hyperlinks.open(uri, explicit_id);
         }
     }
 
@@ -1170,6 +1209,105 @@ test "basic print" {
     try @import("std").testing.expectEqual(@as(u32, 'H'), h.char);
     try @import("std").testing.expectEqual(@as(u32, 'e'), e.char);
     try @import("std").testing.expectEqual(@as(u16, 5), t.cursor_col);
+}
+
+test "OSC 8 stamps exact cells and closes on BEL or ST" {
+    const testing = std.testing;
+    var t = Terminal.init(20, 2);
+    t.write("\x1b]8;id=docs;https://example.com\x07LINK\x1b]8;;\x1b\\ plain");
+
+    const link = t.grid.getCell(0, 0).link;
+    try testing.expect(link != 0);
+    try testing.expectEqual(link, t.grid.getCell(0, 3).link);
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(0, 4).link);
+    const entry = t.hyperlinks.get(link).?;
+    try testing.expectEqualStrings("https://example.com", entry.uri[0..entry.uri_len]);
+    try testing.expectEqualStrings("docs", entry.id[0..entry.id_len]);
+}
+
+test "OSC 8 overwrite erase and truncation fail closed" {
+    const testing = std.testing;
+    var t = Terminal.init(20, 2);
+    t.write("\x1b]8;;https://example.com\x1b\\LINK\x1b]8;;\x1b\\");
+    try testing.expect(t.grid.getCell(0, 0).link != 0);
+    t.write("\rX\x1b[K");
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(0, 0).link);
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(0, 1).link);
+
+    t.write("\r\n\x1b]8;;https://old.example\x1b\\");
+    try testing.expect(t.current_link != 0);
+    t.write("\x1b]8;;");
+    var i: usize = 0;
+    while (i < parser_mod.MAX_OSC + 1) : (i += 1) t.write("x");
+    t.write("\x07Y");
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(1, 0).link);
+
+    t.write("\x1b]8;;https://old.example\x1b\\");
+    try testing.expect(t.current_link != 0);
+    t.write("\x1b]8;malformed\x07Z");
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(1, 1).link);
+
+    t.write("\x1b[H\x1b]8;;https://active.example\x1b\\LINK");
+    t.write("\r\x1b[K");
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(0, 0).link);
+    t.write("Q");
+    try testing.expect(t.grid.getCell(0, 0).link != 0);
+}
+
+test "OSC 8 implicit opens keep distinct identity" {
+    const testing = std.testing;
+    var t = Terminal.init(20, 2);
+    t.write("\x1b]8;;https://example.com\x1b\\A\x1b]8;;\x1b\\");
+    t.write("\x1b]8;;https://example.com\x1b\\B\x1b]8;;\x1b\\");
+    try testing.expect(t.grid.getCell(0, 0).link != t.grid.getCell(0, 1).link);
+}
+
+test "OSC 8 covers wide cells and keeps active link state screen-local" {
+    const testing = std.testing;
+    var alt = Grid.init(20, 2);
+    var t = Terminal.init(20, 2);
+    t.alt_grid = &alt;
+
+    t.write("\x1b]8;;https://example.com/wide\x1b\\界");
+    const primary_link = t.grid.getCell(0, 0).link;
+    try testing.expect(primary_link != 0);
+    try testing.expectEqual(primary_link, t.grid.getCell(0, 1).link);
+
+    t.write("\x1b[?1049h\x1b[H");
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(0, 0).link);
+    t.write("A");
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(0, 0).link);
+    t.write("\x1b]8;;https://example.com/alt\x1b\\B");
+    const alt_link = t.grid.getCell(0, 1).link;
+    try testing.expect(alt_link != 0);
+
+    t.write("\x1b[?1049l");
+    try testing.expectEqual(primary_link, t.grid.getCell(0, 0).link);
+    try testing.expectEqual(@as(u32, '界'), t.grid.getCell(0, 0).char);
+    t.write("C");
+    try testing.expectEqual(primary_link, t.grid.getCell(0, 2).link);
+}
+
+test "OSC 8 identities remain stable across RIS" {
+    const testing = std.testing;
+    var t = Terminal.init(20, 2);
+    t.write("\x1b]8;;https://a.example\x1b\\A\x1b]8;;\x1b\\");
+    const first_link = t.grid.getCell(0, 0).link;
+    try testing.expect(first_link != 0);
+
+    t.write("\x1bc");
+    t.write("\x1b]8;;https://b.example\x1b\\B\x1b]8;;\x1b\\");
+    const second_link = t.grid.getCell(0, 0).link;
+    try testing.expect(second_link != 0);
+    try testing.expect(first_link != second_link);
+    try testing.expectEqualStrings(
+        "https://a.example",
+        t.hyperlinks.get(first_link).?.uri[0..t.hyperlinks.get(first_link).?.uri_len],
+    );
+    try testing.expectEqualStrings(
+        "https://b.example",
+        t.hyperlinks.get(second_link).?.uri[0..t.hyperlinks.get(second_link).?.uri_len],
+    );
 }
 
 test "wide characters advance by two cells" {
@@ -1416,7 +1554,6 @@ test "scroll fills new lines with current background" {
 }
 
 test "scrollback stays ordered across a vertical shrink (#43)" {
-    const std = @import("std");
     const testing = std.testing;
     const sb = try testing.allocator.create(Scrollback);
     defer testing.allocator.destroy(sb);
@@ -1567,4 +1704,3 @@ test "scrollback" {
     try testing.expectEqual(@as(u32, 'L'), line0.cells[0].char);
     try testing.expectEqual(@as(u32, '2'), line0.cells[1].char);
 }
-

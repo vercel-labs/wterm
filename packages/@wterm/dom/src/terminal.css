@@ -57,10 +57,18 @@
   contain: layout style;
 }
 
-.term-row > span {
+.term-row > span,
+.term-row > .term-link,
+.term-link > span {
   display: inline-block;
   height: var(--term-row-height);
   vertical-align: top;
+}
+
+.term-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 .term-block {

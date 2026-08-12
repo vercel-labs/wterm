@@ -17,6 +17,7 @@ import {
 
 const DEFAULT_COLOR = 256;
 const GRAPHEME_BUFFER_BYTES = 256;
+const HYPERLINK_BUFFER_BYTES = 1024;
 const DEFAULT_FOREGROUND = "#d4d4d4";
 const DEFAULT_BACKGROUND = "#1e1e1e";
 
@@ -110,6 +111,12 @@ export class GhosttyCore implements TerminalCore {
   private _scrollbackLen = 0;
   private _graphemeBufPtr = 0;
   private _graphemeBufSize = GRAPHEME_BUFFER_BYTES;
+  private _hyperlinkBufPtr = 0;
+  private _hyperlinkBufSize = HYPERLINK_BUFFER_BYTES;
+  private _hyperlinkCache = new Map<
+    string,
+    { linkUri: string; linkId?: string; linkKey: string }
+  >();
 
   private constructor(wasm: GhosttyWasm, options: GhosttyOptions) {
     this.wasm = wasm;
@@ -138,6 +145,7 @@ export class GhosttyCore implements TerminalCore {
   init(cols: number, rows: number): void {
     this._cols = cols;
     this._rows = rows;
+    this._hyperlinkCache.clear();
     const scrollback = this._options.scrollbackLimit ?? 10000;
     this.termPtr = this.wasm.exports.init(
       cols,
@@ -147,6 +155,11 @@ export class GhosttyCore implements TerminalCore {
       this._backgroundRgb,
     );
     this._graphemeBufPtr = allocBuffer(this.wasm, GRAPHEME_BUFFER_BYTES);
+    if (this._hyperlinkBufPtr !== 0) {
+      freeBuffer(this.wasm, this._hyperlinkBufPtr, this._hyperlinkBufSize);
+    }
+    this._hyperlinkBufSize = HYPERLINK_BUFFER_BYTES;
+    this._hyperlinkBufPtr = allocBuffer(this.wasm, HYPERLINK_BUFFER_BYTES);
     this._allocViewportBuffer();
     this._invalidate();
   }
@@ -190,6 +203,7 @@ export class GhosttyCore implements TerminalCore {
       cell.codepoint === 0 &&
       cell.flags === 0 &&
       cell.colorFlags === 0 &&
+      !cell.hasHyperlink &&
       cell.width !== 0
     )
       return BLANK_CELL;
@@ -202,6 +216,8 @@ export class GhosttyCore implements TerminalCore {
       width: cell.width,
     };
     if (cell.hasGrapheme) result.chars = this._readGrapheme(row, col);
+    if (cell.hasHyperlink)
+      Object.assign(result, this._readHyperlink(row, col, false));
     if (cell.colorFlags & 1)
       result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
     if (cell.colorFlags & 2)
@@ -318,6 +334,8 @@ export class GhosttyCore implements TerminalCore {
     };
     if (cell.hasGrapheme)
       result.chars = this._readScrollbackGrapheme(offset, col);
+    if (cell.hasHyperlink)
+      Object.assign(result, this._readHyperlink(offset, col, true));
     if (cell.colorFlags & 1)
       result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
     if (cell.colorFlags & 2)
@@ -360,6 +378,66 @@ export class GhosttyCore implements TerminalCore {
     }
     this._graphemeBufSize = required;
     this._graphemeBufPtr = allocBuffer(this.wasm, required);
+  }
+
+  private _ensureHyperlinkBuffer(required: number): void {
+    if (required <= this._hyperlinkBufSize) return;
+    if (this._hyperlinkBufPtr !== 0) {
+      freeBuffer(this.wasm, this._hyperlinkBufPtr, this._hyperlinkBufSize);
+    }
+    this._hyperlinkBufSize = required;
+    this._hyperlinkBufPtr = allocBuffer(this.wasm, required);
+  }
+
+  private _readHyperlink(
+    rowOrOffset: number,
+    col: number,
+    scrollback: boolean,
+  ): { linkUri: string; linkId?: string; linkKey: string } | undefined {
+    if (this._hyperlinkBufPtr === 0) return undefined;
+    const read = scrollback
+      ? this.wasm.exports.get_scrollback_hyperlink
+      : this.wasm.exports.get_viewport_hyperlink;
+    let len = read(
+      this.termPtr,
+      rowOrOffset,
+      col,
+      this._hyperlinkBufPtr,
+      this._hyperlinkBufSize,
+    );
+    if (len > this._hyperlinkBufSize) {
+      this._ensureHyperlinkBuffer(len);
+      if (this._hyperlinkBufPtr === 0) return undefined;
+      len = read(
+        this.termPtr,
+        rowOrOffset,
+        col,
+        this._hyperlinkBufPtr,
+        this._hyperlinkBufSize,
+      );
+    }
+    if (len === 0 || len > this._hyperlinkBufSize) return undefined;
+    const text = new TextDecoder().decode(
+      new Uint8Array(
+        this.wasm.exports.memory.buffer,
+        this._hyperlinkBufPtr,
+        len,
+      ),
+    );
+    const [linkUri, linkId = "", implicitId = ""] = text.split("\0");
+    if (!linkUri) return undefined;
+    const linkKey = linkId
+      ? `e\0${linkId}\0${linkUri}`
+      : `g\0${implicitId}\0${linkUri}`;
+    const cached = this._hyperlinkCache.get(linkKey);
+    if (cached) return cached;
+    const value = {
+      linkUri,
+      linkId: linkId || undefined,
+      linkKey,
+    };
+    this._hyperlinkCache.set(linkKey, value);
+    return value;
   }
 
   private _readGrapheme(row: number, col: number): string | undefined {

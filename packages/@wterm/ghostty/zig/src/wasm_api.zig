@@ -53,7 +53,8 @@ const JS = struct {
 //      11     1  width  (0 = spacer, 1 = normal, 2 = wide)
 //      12     1  color_flags (bit 0 = has explicit fg,
 //                             bit 1 = has explicit bg)
-//      13     1  content_flags (bit 0 = has grapheme data)
+//      13     1  content_flags (bit 0 = has grapheme data,
+//                             bit 1 = has OSC 8 hyperlink)
 //      14     2  reserved
 // ---------------------------------------------------------------
 const CELL_BYTES = 16;
@@ -129,22 +130,20 @@ const ResponseHandler = struct {
             .set_mode => {
                 const was_synchronized = self.inner.terminal.modes.get(.synchronized_output);
                 try self.inner.vt(action, value);
-                if (
-                    value.mode == .synchronized_output and
+                if (value.mode == .synchronized_output and
                     !was_synchronized and
-                    self.inner.terminal.modes.get(.synchronized_output)
-                ) {
+                    self.inner.terminal.modes.get(.synchronized_output))
+                {
                     self.synchronized_output_generation.* +%= 1;
                 }
             },
             .restore_mode => {
                 const was_synchronized = self.inner.terminal.modes.get(.synchronized_output);
                 try self.inner.vt(action, value);
-                if (
-                    value.mode == .synchronized_output and
+                if (value.mode == .synchronized_output and
                     !was_synchronized and
-                    self.inner.terminal.modes.get(.synchronized_output)
-                ) {
+                    self.inner.terminal.modes.get(.synchronized_output))
+                {
                     self.synchronized_output_generation.* +%= 1;
                 }
             },
@@ -397,7 +396,8 @@ fn encodeCell(
     out[10] = packFlags(style);
     out[11] = cellWidth(raw.*);
     out[12] = (if (has_fg) @as(u8, 1) else 0) | (if (has_bg) @as(u8, 2) else 0);
-    out[13] = if (raw.content_tag == .codepoint_grapheme) 1 else 0;
+    out[13] = (if (raw.content_tag == .codepoint_grapheme) @as(u8, 1) else 0) |
+        0;
     out[14] = 0;
     out[15] = 0;
 }
@@ -472,7 +472,9 @@ export fn get_viewport(ptr: usize, buf_ptr: [*]u8) u32 {
             buf_ptr[offset + 10] = flags;
             buf_ptr[offset + 11] = width;
             buf_ptr[offset + 12] = color_flags;
-            buf_ptr[offset + 13] = if (raw.content_tag == .codepoint_grapheme) 1 else 0;
+            buf_ptr[offset + 13] =
+                (if (raw.content_tag == .codepoint_grapheme) @as(u8, 1) else 0) |
+                (if (raw.hyperlink) @as(u8, 2) else 0);
             buf_ptr[offset + 14] = 0;
             buf_ptr[offset + 15] = 0;
             offset += CELL_BYTES;
@@ -529,6 +531,59 @@ export fn get_viewport_grapheme(
         buf_ptr,
         buf_len,
     );
+}
+
+fn encodeHyperlink(
+    pin: vt.Pin,
+    col: u32,
+    buf_addr: usize,
+    buf_len: u32,
+) u32 {
+    const cells = pin.cells(.all);
+    if (col >= cells.len or !cells[col].hyperlink) return 0;
+    const page = &pin.node.data;
+    const link_id = page.lookupHyperlink(&cells[col]) orelse return 0;
+    const entry = page.hyperlink_set.get(page.memory, link_id);
+    const uri = entry.uri.slice(page.memory);
+    const explicit_id: []const u8 = switch (entry.id) {
+        .explicit => |value| value.slice(page.memory),
+        .implicit => "",
+    };
+    var implicit_buf: [20]u8 = undefined;
+    const implicit_id: []const u8 = switch (entry.id) {
+        .explicit => "",
+        .implicit => |value| std.fmt.bufPrint(&implicit_buf, "{d}", .{value}) catch return 0,
+    };
+    const required = uri.len + explicit_id.len + implicit_id.len + 2;
+    if (required > buf_len or buf_addr == 0) return @intCast(required);
+
+    const out: [*]u8 = @ptrFromInt(buf_addr);
+    var offset: usize = 0;
+    @memcpy(out[offset .. offset + uri.len], uri);
+    offset += uri.len;
+    out[offset] = 0;
+    offset += 1;
+    @memcpy(out[offset .. offset + explicit_id.len], explicit_id);
+    offset += explicit_id.len;
+    out[offset] = 0;
+    offset += 1;
+    @memcpy(out[offset .. offset + implicit_id.len], implicit_id);
+    return @intCast(required);
+}
+
+export fn get_viewport_hyperlink(
+    ptr: usize,
+    row: u32,
+    col: u32,
+    buf_ptr: usize,
+    buf_len: u32,
+) u32 {
+    const state = stateFromPtr(ptr);
+    const rs = &state.render;
+    if (row >= rs.rows or col >= rs.cols) return 0;
+    const pins = rs.row_data.items(.pin);
+    if (row >= pins.len) return 0;
+    return encodeHyperlink(pins[row], col, buf_ptr, buf_len);
 }
 
 // -- Dirty tracking ---------------------------------------------
@@ -700,6 +755,20 @@ export fn get_scrollback_grapheme(
         buf_ptr,
         buf_len,
     );
+}
+
+export fn get_scrollback_hyperlink(
+    ptr: usize,
+    offset: u32,
+    col: u32,
+    buf_ptr: usize,
+    buf_len: u32,
+) u32 {
+    const state = stateFromPtr(ptr);
+    const screen: *Screen = state.terminal.screens.active;
+    const rows_up = std.math.add(usize, offset, 1) catch return 0;
+    const pin = screen.pages.getTopLeft(.active).up(rows_up) orelse return 0;
+    return encodeHyperlink(pin, col, buf_ptr, buf_len);
 }
 
 // -- Responses --------------------------------------------------

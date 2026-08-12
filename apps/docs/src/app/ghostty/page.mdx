@@ -6,6 +6,8 @@ The `@wterm/ghostty` package provides a full-featured terminal emulation core po
 
 wterm ships with a lightweight built-in core (~12 KB WASM) that covers basic VT100/VT220/xterm escape sequences. For apps that need comprehensive terminal emulation — full Unicode grapheme clusters, all SGR attributes, terminal modes, and more — `@wterm/ghostty` provides all of that via Ghostty's battle-tested VT parser (~400 KB WASM).
 
+Ghostty's native OSC 8 metadata is preserved through the active viewport, scrollback, and reflow. The DOM renderer resolves it into safe HTTP and HTTPS anchors without exposing Ghostty's page-local numeric IDs.
+
 ## Install
 
 ```bash
