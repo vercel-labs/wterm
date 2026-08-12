@@ -274,6 +274,83 @@ describe("WTerm", () => {
       expect(onResize).toHaveBeenCalledWith(100, 30);
     });
 
+    it("preserves the scroll offset while rebuilding virtualized rows", async () => {
+      vi.mocked(mockBridge.getScrollbackCount).mockReturnValue(100);
+      vi.mocked(mockBridge.getCols).mockReturnValue(100);
+      vi.mocked(mockBridge.getRows).mockReturnValue(30);
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      const originalSetup = Renderer.prototype.setup;
+      vi.spyOn(Renderer.prototype, "setup").mockImplementation(
+        function (cols, rows) {
+          originalSetup.call(this, cols, rows);
+          element.scrollTop = 0;
+        },
+      );
+      const render = vi.spyOn(Renderer.prototype, "render");
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 170,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 2210,
+      });
+
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      (term as unknown as { _rowHeight: number })._rowHeight = 17;
+      element.scrollTop = 600;
+      render.mockClear();
+
+      term.resize(100, 30);
+
+      expect(render.mock.calls[0][1]?.scrollTop).toBe(600);
+      expect(element.scrollTop).toBe(600);
+    });
+
+    it("keeps the original scroll offset across coalesced resizes", async () => {
+      vi.mocked(mockBridge.getScrollbackCount).mockReturnValue(100);
+      vi.mocked(mockBridge.getCols).mockReturnValue(120);
+      vi.mocked(mockBridge.getRows).mockReturnValue(40);
+      let renderFrame: FrameRequestCallback | undefined;
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        renderFrame = cb;
+        return 1;
+      });
+      const originalSetup = Renderer.prototype.setup;
+      vi.spyOn(Renderer.prototype, "setup").mockImplementation(
+        function (cols, rows) {
+          originalSetup.call(this, cols, rows);
+          element.scrollTop = 0;
+        },
+      );
+      const render = vi.spyOn(Renderer.prototype, "render");
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 170,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 2210,
+      });
+
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      (term as unknown as { _rowHeight: number })._rowHeight = 17;
+      element.scrollTop = 600;
+      render.mockClear();
+
+      term.resize(100, 30);
+      term.resize(120, 40);
+      renderFrame?.(performance.now());
+
+      expect(render.mock.calls[0][1]?.scrollTop).toBe(600);
+      expect(element.scrollTop).toBe(600);
+    });
+
     it("is a no-op before init", () => {
       const term = new WTerm(element);
       term.resize(120, 40);

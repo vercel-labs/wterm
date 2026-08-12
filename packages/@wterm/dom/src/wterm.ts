@@ -45,6 +45,7 @@ export class WTerm {
   private _shouldScrollToBottom = false;
   private _scrollbackDiscardedCount = 0;
   private _programmaticScrollTop: number | null = null;
+  private _pendingResizeScrollTop: number | null = null;
   private _rowHeight = 0;
   private _charWidth = 0;
   private _onClickFocus: (event: MouseEvent) => void;
@@ -91,6 +92,7 @@ export class WTerm {
     };
     this.element.addEventListener("click", this._onClickFocus);
     this._onScroll = () => {
+      if (this._pendingResizeScrollTop !== null) return;
       if (
         this._programmaticScrollTop !== null &&
         this.element.scrollTop === this._programmaticScrollTop
@@ -214,7 +216,8 @@ export class WTerm {
 
   resize(cols: number, rows: number): void {
     if (!this.bridge) return;
-    this._shouldScrollToBottom = this._isScrolledToBottom();
+    this._shouldScrollToBottom =
+      this._pendingResizeScrollTop === null && this._isScrolledToBottom();
     this.cols = cols;
     this.rows = rows;
     this.bridge.resize(cols, rows);
@@ -223,7 +226,7 @@ export class WTerm {
     if (this._updateSynchronizedOutput(synchronized, generation)) {
       this._rendererNeedsSetup = true;
     } else {
-      this.renderer?.setup(cols, rows);
+      this._setupRenderer(cols, rows);
       this._scheduleRender();
     }
     if (this.onResize) this.onResize(cols, rows);
@@ -310,8 +313,15 @@ export class WTerm {
 
   private _setupRendererIfNeeded(): void {
     if (!this._rendererNeedsSetup) return;
-    this.renderer?.setup(this.cols, this.rows);
+    this._setupRenderer(this.cols, this.rows);
     this._rendererNeedsSetup = false;
+  }
+
+  private _setupRenderer(cols: number, rows: number): void {
+    if (!this._shouldScrollToBottom && this._pendingResizeScrollTop === null) {
+      this._pendingResizeScrollTop = this.element.scrollTop;
+    }
+    this.renderer?.setup(cols, rows);
   }
 
   private _initialRender(): void {
@@ -340,10 +350,17 @@ export class WTerm {
     if (discardedCount !== undefined) {
       this._scrollbackDiscardedCount = discardedCount;
     }
+    let scrollTop =
+      this._pendingResizeScrollTop !== null
+        ? this._pendingResizeScrollTop
+        : this.element.scrollTop;
     if (!this._shouldScrollToBottom && discardedDelta > 0) {
-      this._setScrollTop(
-        Math.max(0, this.element.scrollTop - discardedDelta * rowHeight),
-      );
+      scrollTop = Math.max(0, scrollTop - discardedDelta * rowHeight);
+      if (this._pendingResizeScrollTop !== null) {
+        this._pendingResizeScrollTop = scrollTop;
+      } else {
+        this._setScrollTop(scrollTop);
+      }
     }
 
     this.renderer.render(this.bridge, {
@@ -353,7 +370,7 @@ export class WTerm {
             (scrollbackCount + this.rows) * rowHeight -
               this.element.clientHeight,
           )
-        : this.element.scrollTop,
+        : scrollTop,
       clientHeight: this.element.clientHeight,
       rowHeight,
       scrollbackDiscardedCount: discardedCount,
@@ -368,6 +385,10 @@ export class WTerm {
 
     if (this._shouldScrollToBottom) {
       this._scrollToBottom();
+    } else if (this._pendingResizeScrollTop !== null) {
+      const pendingScrollTop = this._pendingResizeScrollTop;
+      this._pendingResizeScrollTop = null;
+      this._setScrollTop(pendingScrollTop);
     } else if (!hasScrollback && this.element.scrollTop !== 0) {
       this.element.scrollTop = 0;
     }
