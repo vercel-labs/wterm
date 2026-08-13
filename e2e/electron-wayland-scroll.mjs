@@ -64,8 +64,15 @@ app.commandLine.appendSwitch("force-device-scale-factor", String(dpr));
 app.disableHardwareAcceleration();
 app.on("window-all-closed", () => {});
 
-async function waitForReady(window) {
-  await withTimeout(window.loadURL(url), "fixture navigation", 20000);
+async function waitForReady(window, caseName) {
+  const separator = url.includes("?") ? "&" : "?";
+  await withTimeout(
+    window.loadURL(
+      `${url}${separator}waylandCase=${encodeURIComponent(caseName)}`,
+    ),
+    "fixture navigation",
+    20000,
+  );
   await withTimeout(
     window.webContents.executeJavaScript(`
       new Promise((resolve, reject) => {
@@ -92,21 +99,14 @@ async function waitForReady(window) {
   );
 }
 
-async function runCase(height) {
-  mark(`geometry:${height}:create`);
-  const window = new BrowserWindow({
-    width: 997,
-    height,
-    frame: false,
-    show: true,
-    useContentSize: true,
-  });
-  try {
-    mark(`geometry:${height}:ready`);
-    await waitForReady(window);
-    mark(`geometry:${height}:exercise`);
-    return await withTimeout(
-      window.webContents.executeJavaScript(`
+async function runCase(window, height) {
+  mark(`geometry:${height}:resize`);
+  window.setContentSize(997, height);
+  mark(`geometry:${height}:ready`);
+  await waitForReady(window, `geometry-${height}`);
+  mark(`geometry:${height}:exercise`);
+  return await withTimeout(
+    window.webContents.executeJavaScript(`
         new Promise((resolve, reject) => {
           const term = globalThis.__wterm;
           const element = term.element;
@@ -162,29 +162,19 @@ async function runCase(height) {
           stream();
         })
       `),
-      `geometry case ${height}`,
-      20000,
-    );
-  } finally {
-    window.destroy();
-  }
+    `geometry case ${height}`,
+    20000,
+  );
 }
 
-async function runHistoryCase() {
-  mark("history:create");
-  const window = new BrowserWindow({
-    width: 997,
-    height: 413,
-    frame: false,
-    show: true,
-    useContentSize: true,
-  });
-  try {
-    mark("history:ready");
-    await waitForReady(window);
-    mark("history:exercise");
-    return await withTimeout(
-      window.webContents.executeJavaScript(`
+async function runHistoryCase(window) {
+  mark("history:resize");
+  window.setContentSize(997, 413);
+  mark("history:ready");
+  await waitForReady(window, "history");
+  mark("history:exercise");
+  return await withTimeout(
+    window.webContents.executeJavaScript(`
         new Promise((resolve, reject) => {
           const term = globalThis.__wterm;
           const element = term.element;
@@ -232,12 +222,9 @@ async function runHistoryCase() {
           waitForBottom();
         })
       `),
-      "history case",
-      20000,
-    );
-  } finally {
-    window.destroy();
-  }
+    "history case",
+    20000,
+  );
 }
 
 async function run() {
@@ -260,8 +247,15 @@ async function run() {
     throw new Error(`expected Chromium 150, received ${versions.chrome}`);
   }
 
+  const window = new BrowserWindow({
+    width: 997,
+    height: heights[0],
+    frame: false,
+    show: true,
+    useContentSize: true,
+  });
   const cases = [];
-  for (const height of heights) cases.push(await runCase(height));
+  for (const height of heights) cases.push(await runCase(window, height));
 
   for (const result of cases) {
     if (Math.abs(result.dpr - dpr) > 0.01) {
@@ -284,7 +278,7 @@ async function run() {
     if (failures.length > 0) {
       failureMessage = `fixed build failed ${failures.length} geometry cases`;
     } else {
-      history = await runHistoryCase();
+      history = await runHistoryCase(window);
       if (Math.abs(history.after - history.held) > 1 || history.following) {
         failureMessage =
           "history position did not remain anchored during output";
