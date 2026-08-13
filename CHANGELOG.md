@@ -1,8 +1,31 @@
 # Changelog
 
-## 0.3.3
+## 0.3.4
 
 <!-- release:start -->
+
+### New Features
+
+- **Native OSC 8 hyperlinks:** the built-in and Ghostty cores preserve hyperlink metadata through rendering, scrollback, reflow and resets. The DOM renderer exposes safe absolute HTTP(S) links as native anchors, with Command-click activation on macOS and Control-click on Windows/Linux while plain clicks remain terminal-owned (#116)
+
+### Bug Fixes
+
+- **Complete Ghostty grapheme strings:** combining marks and ZWJ sequences now cross the WASM boundary as complete clusters in both the viewport and scrollback instead of being truncated to a base codepoint (#111)
+- **Ghostty theme color responses:** OSC 10 and OSC 11 queries now return the configured foreground and background colors with the original BEL or ST terminator (#113)
+- **Atomic Ghostty synchronized output:** Ghostty exposes DEC mode `?2026` state and block generations so the DOM scheduler holds intermediate frames and paints the completed burst once (#114)
+- **Bounded scrollback DOM:** history rows are virtualized with viewport overscan, preserving native selection and the visible history position across rollover and resize while keeping mounted rows bounded (#115, #61)
+
+### Improvements
+
+- **Direct animation-frame scheduling:** normal writes request an animation frame without an intermediate timer while retaining one pending render per frame and synchronized-output cancellation semantics (#112)
+
+### Contributors
+
+- @Railly
+
+<!-- release:end -->
+
+## 0.3.3
 
 ### Bug Fixes
 
@@ -18,8 +41,6 @@
 - @ivebenfreed
 - @Ramalama2
 - @Railly
-
-<!-- release:end -->
 
 ## 0.3.2
 

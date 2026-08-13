@@ -1,6 +1,6 @@
 {
   "name": "@wterm/ghostty",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "libghostty-powered terminal core for wterm — full-featured VT emulation via Ghostty's WASM build",
   "type": "module",
   "main": "dist/index.js",
