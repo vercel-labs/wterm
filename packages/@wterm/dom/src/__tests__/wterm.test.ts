@@ -1055,7 +1055,52 @@ describe("WTerm", () => {
       expect(requestAnimationFrame).not.toHaveBeenCalled();
     });
 
+    it("keeps following when DOM shrink reclamps the scroll position to the new bottom", async () => {
+      let scrollHeight = 568;
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 414,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        get: () => scrollHeight,
+      });
+      const scroll = installScrollTop(0, (value) =>
+        Math.min(value, scrollHeight - 414),
+      );
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockReturnValue(42);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      requestAnimationFrame.mockClear();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _setScrollTop(value: number): void;
+        _shouldScrollToBottom: boolean;
+      };
+      internals._shouldScrollToBottom = true;
+
+      internals._setScrollTop(568);
+      expect(element.scrollTop).toBe(154);
+      scrollHeight = 414;
+      scroll.setActual(0);
+      element.dispatchEvent(new Event("scroll"));
+
+      expect(internals._programmaticScrollTop).toBeNull();
+      expect(internals._shouldScrollToBottom).toBe(true);
+      expect(requestAnimationFrame).not.toHaveBeenCalled();
+    });
+
     it("consumes a matching programmatic scroll token once", async () => {
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 100,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 1000,
+      });
       const scroll = installScrollTop(100, (value) => Math.min(value, 900));
       const requestAnimationFrame = vi
         .spyOn(globalThis, "requestAnimationFrame")
@@ -1073,6 +1118,7 @@ describe("WTerm", () => {
       internals._setScrollTop(1000);
       scroll.setActual(899);
       element.dispatchEvent(new Event("scroll"));
+      scroll.setActual(800);
       element.dispatchEvent(new Event("scroll"));
 
       expect(internals._programmaticScrollTop).toBeNull();
@@ -1081,6 +1127,14 @@ describe("WTerm", () => {
     });
 
     it("treats a scroll more than one pixel from the accepted value as user input", async () => {
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 100,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 1000,
+      });
       const scroll = installScrollTop(100, (value) => Math.min(value, 900));
       const requestAnimationFrame = vi
         .spyOn(globalThis, "requestAnimationFrame")
@@ -1096,7 +1150,7 @@ describe("WTerm", () => {
       internals._shouldScrollToBottom = true;
 
       internals._setScrollTop(1000);
-      scroll.setActual(898);
+      scroll.setActual(800);
       element.dispatchEvent(new Event("scroll"));
 
       expect(internals._programmaticScrollTop).toBeNull();

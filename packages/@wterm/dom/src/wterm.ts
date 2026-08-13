@@ -124,6 +124,10 @@ export class WTerm {
     );
     this._onScroll = () => {
       if (this._pendingResizeScrollTop !== null) return;
+      if (this._shouldScrollToBottom && this._isScrolledToBottom()) {
+        this._programmaticScrollTop = null;
+        return;
+      }
       if (
         this._programmaticScrollTop !== null &&
         Math.abs(this.element.scrollTop - this._programmaticScrollTop) <=
