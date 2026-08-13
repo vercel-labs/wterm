@@ -294,35 +294,39 @@ async function run() {
   return { versions, cases, failures, history, failureMessage, events };
 }
 
-let exitCode = 0;
-try {
-  const result = await withTimeout(run(), "Wayland probe", 240000);
-  mark("artifact:write");
-  await writeArtifact(result);
-  if (result.failureMessage) {
-    exitCode = 1;
-  }
-} catch (error) {
-  exitCode = 1;
-  const failedStage = stage;
-  mark("failure");
-  const diagnostic = {
-    error: error instanceof Error ? error.message : String(error),
-    stack: error instanceof Error ? error.stack : null,
-    stage: failedStage,
-    requestedDpr: dpr,
-    expected,
-    events,
-  };
+async function main() {
+  let exitCode = 0;
   try {
-    await writeArtifact(diagnostic);
-  } catch (artifactError) {
-    process.stderr.write(
-      `[wterm-wayland] failed to write diagnostic: ${String(artifactError)}\n`,
-    );
+    const result = await withTimeout(run(), "Wayland probe", 240000);
+    mark("artifact:write");
+    await writeArtifact(result);
+    if (result.failureMessage) {
+      exitCode = 1;
+    }
+  } catch (error) {
+    exitCode = 1;
+    const failedStage = stage;
+    mark("failure");
+    const diagnostic = {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : null,
+      stage: failedStage,
+      requestedDpr: dpr,
+      expected,
+      events,
+    };
+    try {
+      await writeArtifact(diagnostic);
+    } catch (artifactError) {
+      process.stderr.write(
+        `[wterm-wayland] failed to write diagnostic: ${String(artifactError)}\n`,
+      );
+    }
+  } finally {
+    for (const window of BrowserWindow.getAllWindows()) window.destroy();
+    mark(`exit:${exitCode}`);
+    app.exit(exitCode);
   }
-} finally {
-  for (const window of BrowserWindow.getAllWindows()) window.destroy();
-  mark(`exit:${exitCode}`);
-  app.exit(exitCode);
 }
+
+void main();
