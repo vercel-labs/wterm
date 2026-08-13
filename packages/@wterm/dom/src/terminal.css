@@ -73,6 +73,16 @@
 
 .term-link {
   color: inherit;
+  cursor: text;
+}
+
+.wterm.link-modifier-active .term-link:hover,
+.term-link:focus-visible {
+  cursor: pointer;
+}
+
+.wterm.link-modifier-active .term-link:hover > span,
+.term-link:focus-visible > span {
   text-decoration: underline;
   text-underline-offset: 0.15em;
 }

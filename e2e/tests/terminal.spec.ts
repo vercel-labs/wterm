@@ -36,6 +36,122 @@ test.describe("rendering", () => {
       terminal.locator(".term-wide").filter({ hasText: "📁" }),
     ).toHaveCount(1);
   });
+
+  test("reveals OSC 8 hyperlink decoration on hover", async ({ page }) => {
+    await page.evaluate(() => {
+      (
+        globalThis as typeof globalThis & {
+          __wterm: { write: (data: string) => void };
+        }
+      ).__wterm.write("\x1b]8;;https://wterm.dev\x1b\\wterm.dev\x1b]8;;\x1b\\");
+    });
+
+    const link = page.locator("a.term-link", { hasText: "wterm.dev" });
+    await expect(link).toHaveAttribute("href", "https://wterm.dev/");
+    await expect(link.locator("span")).toHaveCSS(
+      "text-decoration-line",
+      "none",
+    );
+    await link.hover();
+    await expect(link.locator("span")).toHaveCSS(
+      "text-decoration-line",
+      "none",
+    );
+    const modifier = await page.evaluate(() =>
+      navigator.platform.startsWith("Mac") ? "Meta" : "Control",
+    );
+    await page.keyboard.down(modifier);
+    await expect(link.locator("span")).toHaveCSS(
+      "text-decoration-line",
+      "underline",
+    );
+    await expect(link).toHaveCSS("cursor", "pointer");
+    await page.keyboard.up(modifier);
+    await expect(link.locator("span")).toHaveCSS(
+      "text-decoration-line",
+      "none",
+    );
+
+    const activation = await link.evaluate((element) => {
+      const dispatch = (init: MouseEventInit) => {
+        const event = new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          detail: 1,
+          ...init,
+        });
+        return {
+          dispatched: element.dispatchEvent(event),
+          defaultPrevented: event.defaultPrevented,
+        };
+      };
+      return {
+        isMac: navigator.platform.startsWith("Mac"),
+        plain: dispatch({}),
+        meta: dispatch({ metaKey: true }),
+        control: dispatch({ ctrlKey: true }),
+      };
+    });
+    expect(activation.plain).toEqual({
+      dispatched: false,
+      defaultPrevented: true,
+    });
+    expect(activation.meta).toEqual({
+      dispatched: activation.isMac,
+      defaultPrevented: !activation.isMac,
+    });
+    expect(activation.control).toEqual({
+      dispatched: !activation.isMac,
+      defaultPrevented: activation.isMac,
+    });
+
+    const mouseOwnership = await link.evaluate((element) => {
+      const scope = globalThis as typeof globalThis & {
+        __wterm: {
+          onData: ((data: string) => void) | null;
+          write: (data: string) => void;
+        };
+      };
+      scope.__wterm.write("\x1b[?1000h\x1b[?1006h");
+      const received: string[] = [];
+      scope.__wterm.onData = (data) => received.push(data);
+      const rect = element.getBoundingClientRect();
+      const init = {
+        bubbles: true,
+        button: 0,
+        buttons: 1,
+        clientX: rect.left + 2,
+        clientY: rect.top + 2,
+        cancelable: true,
+      };
+
+      element.dispatchEvent(
+        new MouseEvent("mousedown", { ...init, metaKey: true }),
+      );
+      const afterMeta = [...received];
+      element.dispatchEvent(
+        new MouseEvent("mousedown", { ...init, ctrlKey: true }),
+      );
+      const afterControl = [...received];
+      element.dispatchEvent(new MouseEvent("mousedown", init));
+
+      return {
+        isMac: navigator.platform.startsWith("Mac"),
+        afterMeta,
+        afterControl,
+        afterPlain: received,
+      };
+    });
+    const metaReports = mouseOwnership.afterMeta.length;
+    const controlReports =
+      mouseOwnership.afterControl.length - mouseOwnership.afterMeta.length;
+    expect(mouseOwnership.isMac ? metaReports : controlReports).toBe(0);
+    expect(mouseOwnership.isMac ? controlReports : metaReports).toBe(1);
+    expect(
+      mouseOwnership.afterPlain.length - mouseOwnership.afterControl.length,
+    ).toBe(1);
+    expect(mouseOwnership.afterPlain[1]).toMatch(/^\x1b\[<0;\d+;\d+M$/);
+  });
 });
 
 test.describe("keyboard input", () => {

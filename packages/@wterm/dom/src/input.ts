@@ -1,4 +1,5 @@
 import type { TerminalCore } from "@wterm/core";
+import { isLinkActivationModifier } from "./hyperlink.js";
 
 const NORMAL_KEYS: Record<string, string> = {
   ArrowUp: "\x1b[A",
@@ -251,6 +252,17 @@ export class InputHandler {
     const bridge = this.getBridge();
     const tracking = bridge?.mouseTracking?.() ?? 0;
     if (!bridge || tracking === 0 || !bridge.mouseSgr?.()) return;
+    if (
+      kind === "press" &&
+      isLinkActivationModifier(
+        event,
+        this.element.ownerDocument.defaultView?.navigator ?? navigator,
+      ) &&
+      event.target instanceof Element &&
+      event.target.closest(".term-link")
+    ) {
+      return;
+    }
     if (kind === "press" && (event.shiftKey || event.button > 2)) return;
     if (kind === "release" && event.button > 2) return;
     const supportedButtons = event.buttons & 7;

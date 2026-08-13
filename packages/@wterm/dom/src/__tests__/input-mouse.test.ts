@@ -367,6 +367,55 @@ describe("InputHandler mouse and focus modes", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it.each([
+    ["MacIntel", "Meta", { metaKey: true }],
+    ["Win32", "Control", { ctrlKey: true }],
+  ])("does not send %s-click on %s to mouse tracking", (platform, _, init) => {
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+    const link = document.createElement("a");
+    link.className = "term-link";
+    container.appendChild(link);
+    const event = new MouseEvent("mousedown", {
+      bubbles: true,
+      button: 0,
+      buttons: 1,
+      clientX: 25,
+      clientY: 35,
+      cancelable: true,
+      ...init,
+    });
+    link.dispatchEvent(event);
+
+    expect(received).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it.each([
+    ["MacIntel", { ctrlKey: true }],
+    ["Win32", { metaKey: true }],
+  ])(
+    "keeps the non-native modifier owned by mouse tracking on %s",
+    (platform, init) => {
+      vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+      const link = document.createElement("a");
+      link.className = "term-link";
+      container.appendChild(link);
+      link.dispatchEvent(
+        new MouseEvent("mousedown", {
+          bubbles: true,
+          button: 0,
+          buttons: 1,
+          clientX: 25,
+          clientY: 35,
+          cancelable: true,
+          ...init,
+        }),
+      );
+
+      expect(received).toHaveLength(1);
+    },
+  );
+
   it("ignores browser navigation buttons", () => {
     const event = new MouseEvent("mousedown", {
       button: 3,

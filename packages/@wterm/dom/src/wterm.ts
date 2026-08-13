@@ -2,6 +2,7 @@ import { WasmBridge, type TerminalCore } from "@wterm/core";
 import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
 import { DebugAdapter } from "./debug.js";
+import { isLinkActivationModifier } from "./hyperlink.js";
 
 const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
 
@@ -50,6 +51,8 @@ export class WTerm {
   private _charWidth = 0;
   private _onClickFocus: (event: MouseEvent) => void;
   private _onScroll: () => void;
+  private _onModifierChange: (event: KeyboardEvent) => void;
+  private _onWindowBlur: () => void;
 
   onData: ((data: string) => void) | null;
   onTitle: ((title: string) => void) | null;
@@ -78,19 +81,46 @@ export class WTerm {
 
     this._onClickFocus = (event) => {
       const target = event.target;
-      if (
-        target instanceof Element &&
-        target.closest(".term-link") &&
-        !event.shiftKey &&
-        (this.bridge?.mouseTracking?.() ?? 0) !== 0 &&
-        this.bridge?.mouseSgr?.()
-      ) {
+      if (target instanceof Element && target.closest(".term-link")) {
+        if (
+          isLinkActivationModifier(
+            event,
+            this.element.ownerDocument.defaultView?.navigator ?? navigator,
+          ) ||
+          event.detail === 0
+        ) {
+          return;
+        }
         event.preventDefault();
       }
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) this.input?.focus();
     };
     this.element.addEventListener("click", this._onClickFocus);
+    this._onModifierChange = (event) => {
+      this.element.classList.toggle(
+        "link-modifier-active",
+        isLinkActivationModifier(
+          event,
+          this.element.ownerDocument.defaultView?.navigator ?? navigator,
+        ),
+      );
+    };
+    this._onWindowBlur = () => {
+      this.element.classList.remove("link-modifier-active");
+    };
+    this.element.ownerDocument.addEventListener(
+      "keydown",
+      this._onModifierChange,
+    );
+    this.element.ownerDocument.addEventListener(
+      "keyup",
+      this._onModifierChange,
+    );
+    this.element.ownerDocument.defaultView?.addEventListener(
+      "blur",
+      this._onWindowBlur,
+    );
     this._onScroll = () => {
       if (this._pendingResizeScrollTop !== null) return;
       if (
@@ -506,6 +536,19 @@ export class WTerm {
     if (this.input) this.input.destroy();
     this.element.removeEventListener("click", this._onClickFocus);
     this.element.removeEventListener("scroll", this._onScroll);
+    this.element.ownerDocument.removeEventListener(
+      "keydown",
+      this._onModifierChange,
+    );
+    this.element.ownerDocument.removeEventListener(
+      "keyup",
+      this._onModifierChange,
+    );
+    this.element.ownerDocument.defaultView?.removeEventListener(
+      "blur",
+      this._onWindowBlur,
+    );
+    this.element.classList.remove("link-modifier-active");
     this.element.innerHTML = "";
     if (
       this.debug &&

@@ -91,9 +91,61 @@ describe("WTerm", () => {
   });
 
   describe("hyperlink activation", () => {
-    it("blocks plain link activation while mouse tracking owns the click", async () => {
-      vi.mocked(mockBridge.mouseTracking!).mockReturnValue(1002);
-      vi.mocked(mockBridge.mouseSgr!).mockReturnValue(true);
+    it.each([
+      ["MacIntel", "Meta", { key: "Meta", metaKey: true }],
+      ["Win32", "Control", { key: "Control", ctrlKey: true }],
+    ])("shows link affordance on %s while %s is held", (platform, _, init) => {
+      vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+      const term = new WTerm(element, { autoResize: false });
+
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, ...init }),
+      );
+      expect(element.classList.contains("link-modifier-active")).toBe(true);
+
+      document.dispatchEvent(
+        new KeyboardEvent("keyup", { bubbles: true, key: init.key }),
+      );
+      expect(element.classList.contains("link-modifier-active")).toBe(false);
+
+      term.destroy();
+    });
+
+    it("clears link affordance on window blur and destroy", () => {
+      vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+      const term = new WTerm(element, { autoResize: false });
+
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          key: "Meta",
+          metaKey: true,
+        }),
+      );
+      window.dispatchEvent(new Event("blur"));
+      expect(element.classList.contains("link-modifier-active")).toBe(false);
+
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          key: "Meta",
+          metaKey: true,
+        }),
+      );
+      term.destroy();
+      expect(element.classList.contains("link-modifier-active")).toBe(false);
+
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          key: "Control",
+          ctrlKey: true,
+        }),
+      );
+      expect(element.classList.contains("link-modifier-active")).toBe(false);
+    });
+
+    it("blocks plain link activation", async () => {
       const term = new WTerm(element, { autoResize: false });
       await term.init();
       const link = document.createElement("a");
@@ -103,14 +155,42 @@ describe("WTerm", () => {
       const event = new MouseEvent("click", {
         bubbles: true,
         cancelable: true,
+        detail: 1,
       });
       expect(link.dispatchEvent(event)).toBe(false);
       expect(event.defaultPrevented).toBe(true);
     });
 
-    it("keeps Shift-click available while mouse tracking is active", async () => {
-      vi.mocked(mockBridge.mouseTracking!).mockReturnValue(1002);
-      vi.mocked(mockBridge.mouseSgr!).mockReturnValue(true);
+    it.each([
+      ["MacIntel", "Meta", { metaKey: true }],
+      ["Win32", "Control", { ctrlKey: true }],
+    ])(
+      "keeps %s-click available on %s while mouse tracking is active",
+      async (platform, _, init) => {
+        vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+        vi.mocked(mockBridge.mouseTracking!).mockReturnValue(1002);
+        vi.mocked(mockBridge.mouseSgr!).mockReturnValue(true);
+        const term = new WTerm(element, { autoResize: false });
+        await term.init();
+        const link = document.createElement("a");
+        link.className = "term-link";
+        element.querySelector(".term-grid")!.appendChild(link);
+
+        const event = new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          ...init,
+        });
+        expect(link.dispatchEvent(event)).toBe(true);
+        expect(event.defaultPrevented).toBe(false);
+      },
+    );
+
+    it.each([
+      ["MacIntel", { ctrlKey: true }],
+      ["Win32", { metaKey: true }],
+    ])("blocks the non-native modifier on %s", async (platform, init) => {
+      vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
       const term = new WTerm(element, { autoResize: false });
       await term.init();
       const link = document.createElement("a");
@@ -120,7 +200,24 @@ describe("WTerm", () => {
       const event = new MouseEvent("click", {
         bubbles: true,
         cancelable: true,
-        shiftKey: true,
+        detail: 1,
+        ...init,
+      });
+      expect(link.dispatchEvent(event)).toBe(false);
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("keeps keyboard activation available", async () => {
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const link = document.createElement("a");
+      link.className = "term-link";
+      element.querySelector(".term-grid")!.appendChild(link);
+
+      const event = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        detail: 0,
       });
       expect(link.dispatchEvent(event)).toBe(true);
       expect(event.defaultPrevented).toBe(false);

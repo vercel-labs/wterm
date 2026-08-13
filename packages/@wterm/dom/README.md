@@ -69,7 +69,7 @@ Ordinary writes schedule `requestAnimationFrame` directly. Multiple writes befor
 When a terminal core supplies `CellData.chars`, the renderer paints that complete grapheme string instead of only the cell's base code point.
 
 When a core supplies OSC 8 metadata through `CellData.linkUri` and `CellData.linkKey`, the renderer groups the covered cells into native anchors. Only absolute HTTP and HTTPS URIs become clickable. Invalid, relative, and executable schemes render as ordinary terminal text.
-While SGR mouse tracking is active, plain clicks remain terminal input instead of also opening the link. Use Shift-click to activate the browser link.
+While hovering an anchor, holding Command on macOS or Control on Windows and Linux reveals its underline and pointer cursor. Plain clicks remain terminal interaction. Command-click, Control-click, or native keyboard activation when an anchor receives focus opens the link. Modified link activation remains available while SGR mouse tracking is active and is not forwarded to the terminal application.
 
 Scrollback normally keeps only the visible rows plus overscan mounted in the DOM. While native text selection is active, the selected range stays mounted so the browser can preserve it. Native browser find and accessibility inspect the mounted window, not every retained history row. Scrolling updates the window, while new output follows the exact bottom only when the terminal was already there.
 
