@@ -4,11 +4,12 @@ import path from "node:path";
 
 const dpr = Number(process.env.WTERM_DPR);
 const expected = process.env.WTERM_EXPECT;
+const caseType = process.env.WTERM_CASE ?? "geometry";
+const height = Number(process.env.WTERM_HEIGHT);
 const artifactDir = path.resolve(
   process.env.WTERM_ARTIFACT_DIR ?? "e2e/artifacts/fractional-scroll",
 );
 const url = process.env.WTERM_URL ?? "http://127.0.0.1:4173/?debug";
-const heights = [397, 401, 405, 409, 413, 417, 421, 425, 429, 433];
 const events = [];
 let stage = "startup";
 
@@ -39,7 +40,7 @@ async function withTimeout(promise, label, timeoutMs) {
 async function writeArtifact(result) {
   await mkdir(artifactDir, { recursive: true });
   await writeFile(
-    path.join(artifactDir, `dpr-${dpr}-${expected}.json`),
+    path.join(artifactDir, `dpr-${dpr}-${expected}-${caseType}-${height}.json`),
     `${JSON.stringify(result, null, 2)}\n`,
   );
   await new Promise((resolve) => {
@@ -50,6 +51,15 @@ async function writeArtifact(result) {
 if (!Number.isFinite(dpr)) throw new Error("WTERM_DPR must be numeric");
 if (expected !== "broken" && expected !== "fixed") {
   throw new Error("WTERM_EXPECT must be broken or fixed");
+}
+if (caseType !== "geometry" && caseType !== "history") {
+  throw new Error("WTERM_CASE must be geometry or history");
+}
+if (!Number.isInteger(height) || height <= 0) {
+  throw new Error("WTERM_HEIGHT must be a positive integer");
+}
+if (caseType === "history" && expected !== "fixed") {
+  throw new Error("history cases only support WTERM_EXPECT=fixed");
 }
 if (process.env.DISPLAY) {
   throw new Error(`DISPLAY must be unset, received ${process.env.DISPLAY}`);
@@ -167,9 +177,9 @@ async function runCase(window, height) {
   );
 }
 
-async function runHistoryCase(window) {
+async function runHistoryCase(window, caseHeight) {
   mark("history:resize");
-  window.setContentSize(997, 413);
+  window.setContentSize(997, caseHeight);
   mark("history:ready");
   await waitForReady(window, "history");
   mark("history:exercise");
@@ -249,44 +259,52 @@ async function run() {
 
   const window = new BrowserWindow({
     width: 997,
-    height: heights[0],
+    height,
     frame: false,
     show: true,
     useContentSize: true,
   });
-  const cases = [];
-  for (const height of heights) cases.push(await runCase(window, height));
-
-  for (const result of cases) {
-    if (Math.abs(result.dpr - dpr) > 0.01) {
-      throw new Error(`requested DPR ${dpr}, received ${result.dpr}`);
-    }
+  if (caseType === "history") {
+    const history = await runHistoryCase(window, height);
+    const failureMessage =
+      Math.abs(history.after - history.held) > 1 || history.following
+        ? "history position did not remain anchored during output"
+        : null;
+    return {
+      versions,
+      caseType,
+      height,
+      geometry: null,
+      history,
+      failureMessage,
+      events,
+    };
   }
 
-  const failures = cases.filter(
-    (result) => result.gap > 1 || result.following !== true,
-  );
-  let history = null;
-  let failureMessage = null;
-
-  if (expected === "broken") {
-    if (failures.length === 0) {
-      failureMessage =
-        "baseline did not reproduce the fractional-scroll defect";
-    }
-  } else {
-    if (failures.length > 0) {
-      failureMessage = `fixed build failed ${failures.length} geometry cases`;
-    } else {
-      history = await runHistoryCase(window);
-      if (Math.abs(history.after - history.held) > 1 || history.following) {
-        failureMessage =
-          "history position did not remain anchored during output";
-      }
-    }
+  const geometry = await runCase(window, height);
+  if (Math.abs(geometry.dpr - dpr) > 0.01) {
+    throw new Error(`requested DPR ${dpr}, received ${geometry.dpr}`);
   }
 
-  return { versions, cases, failures, history, failureMessage, events };
+  const failed = geometry.gap > 1 || geometry.following !== true;
+  const failureMessage =
+    expected === "broken"
+      ? failed
+        ? null
+        : "baseline did not reproduce the fractional-scroll defect"
+      : failed
+        ? "fixed build failed the geometry case"
+        : null;
+
+  return {
+    versions,
+    caseType,
+    height,
+    geometry,
+    history: null,
+    failureMessage,
+    events,
+  };
 }
 
 async function main() {
@@ -308,6 +326,8 @@ async function main() {
       stage: failedStage,
       requestedDpr: dpr,
       expected,
+      caseType,
+      height,
       events,
     };
     try {
