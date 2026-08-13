@@ -66,6 +66,7 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 | `clearDirty()` | Reset all dirty-row flags |
 | `getTitle()` | Get pending title change (or `null`) |
 | `getResponse()` | Get pending host response (or `null`) |
+| `getResourceState()` | Get optional core resource state, including built-in hyperlink identity saturation |
 | `getScrollbackCount()` | Number of lines in the scrollback buffer |
 | `getScrollbackDiscardedCount()` | Cumulative rows discarded from the oldest end, when supported |
 | `getScrollbackCell(offset, col)` | Get cell data from scrollback |
@@ -80,6 +81,8 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 | `synchronizedOutputGeneration()` | Monotonic generation for synchronized output blocks |
 
 OSC 8 hyperlink metadata is optional so third-party `TerminalCore` implementations remain source-compatible. Cores should expose the resolved URI and an opaque semantic key rather than a private numeric index.
+
+The built-in core reports its fixed hyperlink identity capacity through `getResourceState()`. When `hyperlinks.saturated` is true, new distinct OSC 8 links render as plain text and `hyperlinks.rejected` counts capacity-rejected opens. Existing identities remain valid.
 
 ### `WebSocketTransport`
 

@@ -2,6 +2,7 @@ const terminal_mod = @import("terminal.zig");
 const grid_mod = @import("grid.zig");
 const cell_mod = @import("cell.zig");
 const scrollback_mod = @import("scrollback.zig");
+const hyperlink_mod = @import("hyperlink.zig");
 
 const Terminal = terminal_mod.Terminal;
 
@@ -145,6 +146,18 @@ export fn getLinkIdPtr(index: u32) [*]const u8 {
 export fn getLinkIdLen(index: u32) u32 {
     const entry = terminal.hyperlinks.get(@intCast(index)) orelse return 0;
     return entry.id_len;
+}
+
+export fn getHyperlinkCapacity() u32 {
+    return hyperlink_mod.MAX_LINKS;
+}
+
+export fn getHyperlinkCount() u32 {
+    return terminal.hyperlinks.count;
+}
+
+export fn getHyperlinkRejectedCount() u32 {
+    return terminal.hyperlinks.rejected;
 }
 
 // -- Scrollback --

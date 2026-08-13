@@ -49,6 +49,27 @@ describe("GhosttyCore OSC 8 hyperlinks", () => {
     expect(core.getCell(0, 4).linkUri).toBeUndefined();
   });
 
+  it("does not retain every resolved hyperlink identity in JavaScript", async () => {
+    const core = await newCore(2, 2);
+
+    for (let index = 0; index < 1600; index++) {
+      core.writeString(
+        `\x1b]8;;https://example.com/${index}\x1b\\X\x1b]8;;\x1b\\\r`,
+      );
+      core.getCell(0, 0);
+    }
+
+    const largestRetainedMap = Object.values(
+      core as unknown as Record<string, unknown>,
+    ).reduce(
+      (largest, value) =>
+        value instanceof Map ? Math.max(largest, value.size) : largest,
+      0,
+    );
+
+    expect(largestRetainedMap).toBeLessThanOrEqual(64);
+  });
+
   it("keeps implicit opens distinct and accepts ST termination", async () => {
     const core = await newCore();
     core.writeString(

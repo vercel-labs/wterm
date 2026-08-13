@@ -1,6 +1,7 @@
 import type {
   CellData,
   CursorState,
+  TerminalResourceState,
   UnhandledSequence,
   TerminalCore,
 } from "./terminal-core.js";
@@ -34,6 +35,9 @@ interface WasmExports {
   getLinkUriLen(index: number): number;
   getLinkIdPtr(index: number): number;
   getLinkIdLen(index: number): number;
+  getHyperlinkCapacity?(): number;
+  getHyperlinkCount?(): number;
+  getHyperlinkRejectedCount?(): number;
   getScrollbackCount(): number;
   getScrollbackDiscardedCount(): number;
   getScrollbackLine(offset: number): number;
@@ -215,6 +219,27 @@ export class WasmBridge implements TerminalCore {
     const str = this.decoder.decode(bytes);
     this.exports.clearResponse();
     return str;
+  }
+
+  getResourceState(): TerminalResourceState {
+    const capacity = this.exports.getHyperlinkCapacity?.();
+    const used = this.exports.getHyperlinkCount?.();
+    const rejected = this.exports.getHyperlinkRejectedCount?.();
+    if (
+      capacity === undefined ||
+      used === undefined ||
+      rejected === undefined
+    ) {
+      return {};
+    }
+    return {
+      hyperlinks: {
+        capacity,
+        used,
+        rejected,
+        saturated: used >= capacity,
+      },
+    };
   }
 
   getScrollbackCount(): number {

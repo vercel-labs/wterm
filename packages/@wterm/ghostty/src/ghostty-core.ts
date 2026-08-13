@@ -113,10 +113,6 @@ export class GhosttyCore implements TerminalCore {
   private _graphemeBufSize = GRAPHEME_BUFFER_BYTES;
   private _hyperlinkBufPtr = 0;
   private _hyperlinkBufSize = HYPERLINK_BUFFER_BYTES;
-  private _hyperlinkCache = new Map<
-    string,
-    { linkUri: string; linkId?: string; linkKey: string }
-  >();
 
   private constructor(wasm: GhosttyWasm, options: GhosttyOptions) {
     this.wasm = wasm;
@@ -145,7 +141,6 @@ export class GhosttyCore implements TerminalCore {
   init(cols: number, rows: number): void {
     this._cols = cols;
     this._rows = rows;
-    this._hyperlinkCache.clear();
     const scrollback = this._options.scrollbackLimit ?? 10000;
     this.termPtr = this.wasm.exports.init(
       cols,
@@ -433,15 +428,11 @@ export class GhosttyCore implements TerminalCore {
     const linkKey = linkId
       ? `e\0${linkId}\0${linkUri}`
       : `g\0${implicitId}\0${linkUri}`;
-    const cached = this._hyperlinkCache.get(linkKey);
-    if (cached) return cached;
-    const value = {
+    return {
       linkUri,
       linkId: linkId || undefined,
       linkKey,
     };
-    this._hyperlinkCache.set(linkKey, value);
-    return value;
   }
 
   private _readGrapheme(row: number, col: number): string | undefined {

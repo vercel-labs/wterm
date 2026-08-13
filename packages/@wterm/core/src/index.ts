@@ -1,6 +1,8 @@
 export type {
   CellData,
   CursorState,
+  HyperlinkResourceState,
+  TerminalResourceState,
   UnhandledSequence,
   TerminalCore,
 } from "./terminal-core.js";

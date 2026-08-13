@@ -86,6 +86,72 @@ describe("WasmBridge", () => {
       expect(bridge.getCell(0, 0).linkUri).toBe("https://b.example");
     });
 
+    it("reports hyperlink identity saturation to the host", () => {
+      bridge.init(2, 2);
+      for (let index = 0; index < 1025; index++) {
+        bridge.writeString(
+          `\x1b]8;;https://example.com/${index}\x1b\\X\x1b]8;;\x1b\\\r\n`,
+        );
+      }
+
+      const state = (
+        bridge as unknown as {
+          getResourceState?: () => {
+            hyperlinks: {
+              capacity: number;
+              used: number;
+              rejected: number;
+              saturated: boolean;
+            };
+          };
+        }
+      ).getResourceState?.();
+
+      expect(state?.hyperlinks).toEqual({
+        capacity: 1024,
+        used: 1024,
+        rejected: 1,
+        saturated: true,
+      });
+    });
+
+    it("preserves hyperlink saturation state across RIS and clears it on init", () => {
+      bridge.init(2, 2);
+      for (let index = 0; index < 1025; index++) {
+        bridge.writeString(
+          `\x1b]8;;https://example.com/${index}\x1b\\X\x1b]8;;\x1b\\\r\n`,
+        );
+      }
+
+      bridge.writeString("\x1bc");
+      expect(bridge.getResourceState().hyperlinks).toMatchObject({
+        used: 1024,
+        rejected: 1,
+        saturated: true,
+      });
+
+      bridge.init(2, 2);
+      expect(bridge.getResourceState().hyperlinks).toEqual({
+        capacity: 1024,
+        used: 0,
+        rejected: 0,
+        saturated: false,
+      });
+    });
+
+    it("returns no resource state when an older WASM lacks the exports", () => {
+      const internals = bridge as unknown as {
+        exports: Record<string, WebAssembly.ExportValue>;
+      };
+      const exportsWithoutResourceState = { ...internals.exports };
+      delete exportsWithoutResourceState.getHyperlinkCapacity;
+      delete exportsWithoutResourceState.getHyperlinkCount;
+      delete exportsWithoutResourceState.getHyperlinkRejectedCount;
+      internals.exports = exportsWithoutResourceState;
+
+      expect(bridge.getResourceState()).toEqual({});
+    });
+
     it("writes a character to the grid", () => {
       bridge.writeString("A");
       const cell = bridge.getCell(0, 0);

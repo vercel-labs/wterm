@@ -1,8 +1,8 @@
 import { test, expect } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/");
-  await page.waitForSelector(".wterm .term-grid .term-row");
+  await page.goto("/?debug");
+  await expect(page.locator(".wterm")).toContainText("Welcome to wterm!");
 });
 
 test.describe("rendering", () => {
@@ -112,6 +112,82 @@ test.describe("cursor", () => {
 });
 
 test.describe("scrollback", () => {
+  test("applies one scroll adjustment when old rows are discarded across frames", async ({
+    page,
+  }) => {
+    const result = await page.evaluate(async () => {
+      const term = (
+        globalThis as typeof globalThis & {
+          __wterm: {
+            element: HTMLElement;
+            bridge: {
+              getScrollbackDiscardedCount?: () => number;
+            } | null;
+            write: (data: string) => void;
+          };
+        }
+      ).__wterm;
+      const scroller = term.element;
+      const lines = Array.from({ length: 1040 }, (_, index) => {
+        const label = `history ${String(index).padStart(4, "0")}`;
+        return `\x1b]8;;https://example.com/${index}\x1b\\${label}\x1b]8;;\x1b\\\r\n`;
+      }).join("");
+      term.write(lines);
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+
+      scroller.scrollTop = 6000;
+      scroller.dispatchEvent(new Event("scroll"));
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+
+      const firstVisible = () => {
+        const top = scroller.getBoundingClientRect().top;
+        return (
+          Array.from(
+            scroller.querySelectorAll<HTMLElement>(".term-scrollback-row"),
+          ).find((row) => row.getBoundingClientRect().bottom > top)
+            ?.textContent ?? null
+        );
+      };
+      const beforeScrollTop = scroller.scrollTop;
+      const beforeRow = firstVisible();
+      const beforeDiscarded = term.bridge?.getScrollbackDiscardedCount?.() ?? 0;
+      const measuredRow = scroller.querySelector<HTMLElement>(
+        ".term-scrollback-row",
+      );
+      if (!measuredRow) throw new Error("missing rendered scrollback row");
+      const rowHeight = measuredRow.getBoundingClientRect().height;
+
+      for (let index = 0; index < 40; index++) {
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => {
+            term.write(`next ${index}\r\n`);
+            resolve();
+          }),
+        );
+      }
+
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const afterDiscarded =
+        term.bridge?.getScrollbackDiscardedCount?.() ?? beforeDiscarded;
+      return {
+        after: scroller.scrollTop,
+        expected:
+          beforeScrollTop - (afterDiscarded - beforeDiscarded) * rowHeight,
+        beforeRow,
+        afterRow: firstVisible(),
+      };
+    });
+
+    expect(result.after).toBe(result.expected);
+    expect(result.afterRow).toBe(result.beforeRow);
+  });
+
   test("bounds DOM rows and follows output at the exact bottom", async ({
     page,
   }) => {
@@ -180,9 +256,15 @@ test.describe("scrollback", () => {
     );
     await page.keyboard.press("Enter");
     await expect(terminal).toHaveClass(/has-scrollback/, { timeout: 5000 });
+    await expect(terminal).toContainText("resize history 400", {
+      timeout: 5000,
+    });
 
-    await terminal.evaluate((element) => {
+    await terminal.evaluate(async (element) => {
       element.scrollTop = 600;
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
     });
     await expect
       .poll(() => terminal.evaluate((element) => element.scrollTop))

@@ -32,6 +32,17 @@ export interface UnhandledSequence {
   params: number[];
 }
 
+export interface HyperlinkResourceState {
+  capacity: number;
+  used: number;
+  rejected: number;
+  saturated: boolean;
+}
+
+export interface TerminalResourceState {
+  hyperlinks?: HyperlinkResourceState;
+}
+
 /**
  * Abstract terminal emulation core. Both the built-in Zig WASM core
  * (`WasmBridge`) and alternative backends (e.g. `@wterm/ghostty`) implement
@@ -69,6 +80,7 @@ export interface TerminalCore {
   // -- Side outputs --
   getTitle(): string | null;
   getResponse(): string | null;
+  getResourceState?(): TerminalResourceState;
 
   // -- Scrollback --
   getScrollbackCount(): number;
