@@ -91,7 +91,7 @@ jobs:
         run: |
           dbus-run-session -- \
             pnpm --config.minimumReleaseAge=0 dlx \
-              electron@43.4.0 e2e/electron-wayland-scroll.mjs
+              electron@43.4.0 --no-sandbox e2e/electron-wayland-scroll.mjs
 
       - uses: actions/upload-artifact@v4
         if: always()
