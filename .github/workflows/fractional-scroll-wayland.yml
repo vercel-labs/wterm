@@ -23,6 +23,8 @@ jobs:
         expected: [broken, fixed]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -39,7 +41,7 @@ jobs:
 
       - name: Build the browser fixture
         run: |
-          pnpm --filter @wterm/dom build
+          pnpm build
           pnpm --filter vite build
 
       - name: Install Wayland and Electron dependencies
