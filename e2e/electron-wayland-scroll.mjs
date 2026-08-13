@@ -121,9 +121,32 @@ async function runCase(window, height) {
           const term = globalThis.__wterm;
           const element = term.element;
           const initialHeight = element.scrollHeight;
+          const trace = [];
+          const record = (type, details = {}) => {
+            trace.push({
+              type,
+              at: performance.now(),
+              scrollTop: element.scrollTop,
+              scrollHeight: element.scrollHeight,
+              clientHeight: element.clientHeight,
+              following: term._shouldScrollToBottom,
+              pending: term._programmaticScrollTop,
+              ...details,
+            });
+            if (trace.length > 300) trace.shift();
+          };
+          const originalSetScrollTop = term._setScrollTop.bind(term);
+          term._setScrollTop = (value) => {
+            record("set:before", { requested: value });
+            originalSetScrollTop(value);
+            record("set:after", { requested: value });
+          };
+          element.addEventListener("scroll", () => record("scroll"));
+          record("initial");
           let written = 0;
           const deadline = performance.now() + 15000;
           const stream = () => {
+            record("write:before", { written });
             term.write(
               Array.from(
                 { length: 10 },
@@ -134,6 +157,7 @@ async function runCase(window, height) {
               ).join(""),
             );
             written += 10;
+            record("write:after", { written });
             if (written < 400) {
               requestAnimationFrame(stream);
               return;
@@ -158,6 +182,7 @@ async function runCase(window, height) {
                       element.clientHeight,
                     following: term._shouldScrollToBottom,
                     pending: term._programmaticScrollTop,
+                    trace,
                   });
                 }),
               );
