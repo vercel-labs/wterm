@@ -333,6 +333,47 @@ test.describe("scrollback", () => {
     expect(bottomDistance).toBeLessThanOrEqual(1);
   });
 
+  test("keeps following when the browser reclamps a programmatic scroll by one pixel", async ({
+    page,
+  }) => {
+    const result = await page.evaluate(() => {
+      const term = (
+        globalThis as typeof globalThis & {
+          __wterm: {
+            element: HTMLElement;
+            _programmaticScrollTop: number | null;
+            _setScrollTop(value: number): void;
+            _shouldScrollToBottom: boolean;
+          };
+        }
+      ).__wterm;
+      let actual = 100;
+      Object.defineProperty(term.element, "scrollTop", {
+        configurable: true,
+        get: () => actual,
+        set: (value: number) => {
+          actual = Math.min(value, 900);
+        },
+      });
+      term._shouldScrollToBottom = true;
+      term._setScrollTop(1000);
+      const accepted = term._programmaticScrollTop;
+      actual = 899;
+      term.element.dispatchEvent(new Event("scroll"));
+      return {
+        accepted,
+        following: term._shouldScrollToBottom,
+        pending: term._programmaticScrollTop,
+      };
+    });
+
+    expect(result).toEqual({
+      accepted: 900,
+      following: true,
+      pending: null,
+    });
+  });
+
   test("returns to the bottom when the user types while reading history", async ({
     page,
   }) => {

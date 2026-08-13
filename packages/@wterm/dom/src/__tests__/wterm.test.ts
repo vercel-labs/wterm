@@ -966,6 +966,28 @@ describe("WTerm", () => {
   });
 
   describe("scrollback class toggle", () => {
+    function installScrollTop(
+      initial: number,
+      clamp: (value: number) => number,
+    ) {
+      let actual = initial;
+      const requests: number[] = [];
+      Object.defineProperty(element, "scrollTop", {
+        configurable: true,
+        get: () => actual,
+        set: (value: number) => {
+          requests.push(value);
+          actual = clamp(value);
+        },
+      });
+      return {
+        requests,
+        setActual(value: number) {
+          actual = value;
+        },
+      };
+    }
+
     it("adds has-scrollback when scrollback exists", async () => {
       vi.mocked(mockBridge.getScrollbackCount).mockReturnValue(5);
 
@@ -997,6 +1019,7 @@ describe("WTerm", () => {
         configurable: true,
         value: 73,
       });
+      installScrollTop(0, (value) => Math.min(value, 53));
 
       const term = new WTerm(element, { autoResize: false });
       await term.init();
@@ -1005,6 +1028,130 @@ describe("WTerm", () => {
       term.write("next");
 
       expect(element.scrollTop).toBe(53);
+    });
+
+    it("attributes a scroll event after the browser reclamps by one pixel", async () => {
+      const scroll = installScrollTop(100, (value) => Math.min(value, 900));
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockReturnValue(42);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      requestAnimationFrame.mockClear();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _setScrollTop(value: number): void;
+        _shouldScrollToBottom: boolean;
+      };
+      internals._shouldScrollToBottom = true;
+
+      internals._setScrollTop(1000);
+      expect(internals._programmaticScrollTop).toBe(900);
+      scroll.setActual(899);
+      element.dispatchEvent(new Event("scroll"));
+
+      expect(internals._programmaticScrollTop).toBeNull();
+      expect(internals._shouldScrollToBottom).toBe(true);
+      expect(requestAnimationFrame).not.toHaveBeenCalled();
+    });
+
+    it("consumes a matching programmatic scroll token once", async () => {
+      const scroll = installScrollTop(100, (value) => Math.min(value, 900));
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockReturnValue(42);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      requestAnimationFrame.mockClear();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _setScrollTop(value: number): void;
+        _shouldScrollToBottom: boolean;
+      };
+      internals._shouldScrollToBottom = true;
+
+      internals._setScrollTop(1000);
+      scroll.setActual(899);
+      element.dispatchEvent(new Event("scroll"));
+      element.dispatchEvent(new Event("scroll"));
+
+      expect(internals._programmaticScrollTop).toBeNull();
+      expect(internals._shouldScrollToBottom).toBe(false);
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+    });
+
+    it("treats a scroll more than one pixel from the accepted value as user input", async () => {
+      const scroll = installScrollTop(100, (value) => Math.min(value, 900));
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockReturnValue(42);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      requestAnimationFrame.mockClear();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _setScrollTop(value: number): void;
+        _shouldScrollToBottom: boolean;
+      };
+      internals._shouldScrollToBottom = true;
+
+      internals._setScrollTop(1000);
+      scroll.setActual(898);
+      element.dispatchEvent(new Event("scroll"));
+
+      expect(internals._programmaticScrollTop).toBeNull();
+      expect(internals._shouldScrollToBottom).toBe(false);
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the latest moving assignment when a later assignment is a no-op", async () => {
+      installScrollTop(100, (value) => Math.min(value, 900));
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _setScrollTop(value: number): void;
+      };
+
+      internals._setScrollTop(800);
+      internals._setScrollTop(800);
+
+      expect(internals._programmaticScrollTop).toBe(800);
+    });
+
+    it("tracks the accepted position from the latest moving assignment", async () => {
+      installScrollTop(100, (value) => Math.min(value, 900));
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _setScrollTop(value: number): void;
+      };
+
+      internals._setScrollTop(500);
+      internals._setScrollTop(1000);
+
+      expect(internals._programmaticScrollTop).toBe(900);
+    });
+
+    it("lets the browser clamp the bottom target", async () => {
+      const scroll = installScrollTop(100, (value) => Math.min(value, 900));
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 1000,
+      });
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _scrollToBottom(): void;
+      };
+
+      internals._scrollToBottom();
+
+      expect(scroll.requests.at(-1)).toBe(1000);
+      expect(element.scrollTop).toBe(900);
+      expect(internals._programmaticScrollTop).toBe(900);
     });
 
     it("schedules a render when the scroll position changes", async () => {

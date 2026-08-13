@@ -5,6 +5,7 @@ import { DebugAdapter } from "./debug.js";
 import { isLinkActivationModifier } from "./hyperlink.js";
 
 const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
+const PROGRAMMATIC_SCROLL_TOLERANCE = 1;
 
 export interface WTermOptions {
   cols?: number;
@@ -125,7 +126,8 @@ export class WTerm {
       if (this._pendingResizeScrollTop !== null) return;
       if (
         this._programmaticScrollTop !== null &&
-        this.element.scrollTop === this._programmaticScrollTop
+        Math.abs(this.element.scrollTop - this._programmaticScrollTop) <=
+          PROGRAMMATIC_SCROLL_TOLERANCE
       ) {
         this._programmaticScrollTop = null;
         return;
@@ -200,19 +202,15 @@ export class WTerm {
   }
 
   private _scrollToBottom(): void {
-    const el = this.element;
-    const maxScroll = el.scrollHeight - el.clientHeight;
-    if (maxScroll <= 0) {
-      this._setScrollTop(0);
-      return;
-    }
-    this._setScrollTop(maxScroll);
+    this._setScrollTop(this.element.scrollHeight);
   }
 
   private _setScrollTop(value: number): void {
-    if (this.element.scrollTop === value) return;
-    this._programmaticScrollTop = value;
+    const before = this.element.scrollTop;
     this.element.scrollTop = value;
+    const after = this.element.scrollTop;
+    if (after === before) return;
+    this._programmaticScrollTop = after;
   }
 
   write(data: string | Uint8Array): void {
@@ -420,7 +418,7 @@ export class WTerm {
       this._pendingResizeScrollTop = null;
       this._setScrollTop(pendingScrollTop);
     } else if (!hasScrollback && this.element.scrollTop !== 0) {
-      this.element.scrollTop = 0;
+      this._setScrollTop(0);
     }
 
     const title = this.bridge.getTitle();
