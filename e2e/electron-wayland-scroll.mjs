@@ -61,6 +61,7 @@ if (!process.env.WAYLAND_DISPLAY) {
 app.commandLine.appendSwitch("enable-features", "UseOzonePlatform");
 app.commandLine.appendSwitch("ozone-platform", "wayland");
 app.commandLine.appendSwitch("force-device-scale-factor", String(dpr));
+app.disableHardwareAcceleration();
 
 async function waitForReady(window) {
   await withTimeout(window.loadURL(url), "fixture navigation", 20000);

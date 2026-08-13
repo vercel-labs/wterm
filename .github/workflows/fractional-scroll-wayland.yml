@@ -69,6 +69,7 @@ jobs:
           mkdir -p "$runtime_dir"
           chmod 700 "$runtime_dir"
           echo "XDG_RUNTIME_DIR=$runtime_dir" >> "$GITHUB_ENV"
+          echo "XDG_SESSION_TYPE=wayland" >> "$GITHUB_ENV"
           echo "WAYLAND_DISPLAY=wayland-1" >> "$GITHUB_ENV"
           XDG_RUNTIME_DIR="$runtime_dir" \
             weston --backend=headless-backend.so --socket=wayland-1 \
@@ -85,6 +86,7 @@ jobs:
       - name: Exercise Electron on Wayland
         env:
           DISPLAY: ""
+          GDK_BACKEND: wayland
           WTERM_DPR: ${{ matrix.dpr }}
           WTERM_EXPECT: ${{ matrix.expected }}
           WTERM_ARTIFACT_DIR: artifacts
