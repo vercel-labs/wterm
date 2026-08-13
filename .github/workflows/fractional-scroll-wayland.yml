@@ -94,6 +94,7 @@ jobs:
           dbus-run-session -- \
             pnpm --config.minimumReleaseAge=0 dlx \
               electron@43.4.0 --no-sandbox e2e/electron-wayland-scroll.mjs
+          test -s "artifacts/dpr-${WTERM_DPR}-${WTERM_EXPECT}.json"
 
       - uses: actions/upload-artifact@v4
         if: always()
