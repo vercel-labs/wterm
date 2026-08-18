@@ -204,6 +204,8 @@ Terminal applications can query the Ghostty core's foreground and background col
 
 Ghostty also exposes synchronized-output mode (`CSI ? 2026 h/l`) and its generation to the DOM renderer, so updates inside a synchronized block paint as one final frame.
 
+Kitty keyboard query and negotiation operate on Ghostty's native active-screen state. Primary and alternate screens have independent flag stacks, DECSTR preserves them, and RIS clears them. The DOM renderer reads those flags directly instead of maintaining a TypeScript shadow state.
+
 ## Rebuilding the WASM
 
 Only needed by maintainers. Requires [Zig 0.15.x](https://ziglang.org/download/) (ghostty's required Zig version, separate from wterm's Zig 0.16.x):

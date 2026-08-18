@@ -14,6 +14,18 @@ function createKeyboardEvent(
   });
 }
 
+function createKeyUpEvent(
+  key: string,
+  opts: Partial<KeyboardEventInit> = {},
+): KeyboardEvent {
+  return new KeyboardEvent("keyup", {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...opts,
+  });
+}
+
 describe("InputHandler", () => {
   let container: HTMLElement;
   let received: string[];
@@ -188,6 +200,63 @@ describe("InputHandler", () => {
       const ta = getTextarea();
       ta.dispatchEvent(createKeyboardEvent("x"));
       expect(received).toContain("x");
+    });
+  });
+
+  describe("Kitty keyboard protocol", () => {
+    it("uses the negotiated flags for press, repeat, and release", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("a", { code: "KeyA", repeat: true }),
+      );
+      ta.dispatchEvent(createKeyUpEvent("a", { code: "KeyA" }));
+      expect(received).toEqual(["\x1b[97;1:2;97u", "\x1b[97;1:3u"]);
+    });
+
+    it("keeps the legacy path for a core without Kitty support", () => {
+      bridgeMock = { cursorKeysApp: () => false } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(createKeyboardEvent("ArrowUp"));
+      ta.dispatchEvent(createKeyUpEvent("ArrowUp"));
+      expect(received).toEqual(["\x1b[A"]);
+    });
+
+    it("does not emit a release for a browser-owned shortcut", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("v", {
+          code: "KeyV",
+          metaKey: true,
+        }),
+      );
+      ta.dispatchEvent(createKeyUpEvent("v", { code: "KeyV" }));
+      expect(received).toEqual([]);
+    });
+
+    it("does not emit a release after a composing keydown", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.dispatchEvent(createKeyboardEvent("Dead", { code: "Quote" }));
+      ta.dispatchEvent(new CompositionEvent("compositionend", { data: "é" }));
+      ta.dispatchEvent(createKeyUpEvent("Dead", { code: "Quote" }));
+      expect(received).toEqual(["é"]);
+    });
+
+    it("clears a stale shortcut suppression on the next real keydown", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("v", {
+          code: "KeyV",
+          metaKey: true,
+        }),
+      );
+      ta.dispatchEvent(createKeyboardEvent("v", { code: "KeyV" }));
+      ta.dispatchEvent(createKeyUpEvent("v", { code: "KeyV" }));
+      expect(received).toEqual(["\x1b[118;;118u", "\x1b[118;1:3u"]);
     });
   });
 

@@ -1,5 +1,6 @@
 import type { TerminalCore } from "@wterm/core";
 import { isLinkActivationModifier } from "./hyperlink.js";
+import { encodeKittyKey, KITTY_REPORT_EVENTS } from "./kitty-keys.js";
 
 const NORMAL_KEYS: Record<string, string> = {
   ArrowUp: "\x1b[A",
@@ -54,8 +55,10 @@ export class InputHandler {
   private composing = false;
   private mouseButtons = 0;
   private focused = false;
+  private suppressedKeyUps = new Set<string>();
 
   private _onKeyDown: (e: KeyboardEvent) => void;
+  private _onKeyUp: (e: KeyboardEvent) => void;
   private _onPaste: (e: ClipboardEvent) => void;
   private _onCompositionStart: () => void;
   private _onCompositionEnd: (e: CompositionEvent) => void;
@@ -107,6 +110,7 @@ export class InputHandler {
     element.appendChild(this.textarea);
 
     this._onKeyDown = this.handleKeyDown.bind(this);
+    this._onKeyUp = this.handleKeyUp.bind(this);
     this._onPaste = this.handlePaste.bind(this);
     this._onCompositionStart = this.handleCompositionStart.bind(this);
     this._onCompositionEnd = this.handleCompositionEnd.bind(this);
@@ -136,6 +140,7 @@ export class InputHandler {
     this._onWheel = (event) => this.handleMouse(event, "wheel");
 
     this.textarea.addEventListener("keydown", this._onKeyDown);
+    this.textarea.addEventListener("keyup", this._onKeyUp);
     this.textarea.addEventListener("paste", this._onPaste as EventListener);
     this.textarea.addEventListener(
       "compositionstart",
@@ -158,6 +163,7 @@ export class InputHandler {
 
   destroy(): void {
     this.textarea.removeEventListener("keydown", this._onKeyDown);
+    this.textarea.removeEventListener("keyup", this._onKeyUp);
     this.textarea.removeEventListener("paste", this._onPaste as EventListener);
     this.textarea.removeEventListener(
       "compositionstart",
@@ -178,17 +184,26 @@ export class InputHandler {
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
-    if (this.composing) return;
+    const keyId = e.code || e.key;
+    if (this.composing) {
+      this.suppressedKeyUps.add(keyId);
+      return;
+    }
 
     if ((e.metaKey || e.ctrlKey) && e.key === "c") {
       const sel = window.getSelection();
-      if (sel && sel.toString().length > 0) return;
+      if (sel && sel.toString().length > 0) {
+        this.suppressedKeyUps.add(keyId);
+        return;
+      }
     }
     if ((e.metaKey || e.ctrlKey) && e.key === "v") {
+      this.suppressedKeyUps.add(keyId);
       this.textarea.focus();
       return;
     }
     if (e.metaKey && !e.ctrlKey) {
+      this.suppressedKeyUps.add(keyId);
       if (e.key === "Backspace") {
         e.preventDefault();
         this.onData("\x15");
@@ -205,9 +220,29 @@ export class InputHandler {
       return;
     }
 
+    this.suppressedKeyUps.delete(keyId);
     e.preventDefault();
+    const kittyFlags = this.getBridge()?.kittyKeyboardFlags?.() ?? 0;
+    if (kittyFlags !== 0) {
+      const seq = encodeKittyKey(e, kittyFlags, e.repeat ? "repeat" : "press");
+      if (seq) this.onData(seq);
+      return;
+    }
     const seq = this.keyToSequence(e);
     if (seq) this.onData(seq);
+  }
+
+  private handleKeyUp(e: KeyboardEvent): void {
+    const keyId = e.code || e.key;
+    if (this.suppressedKeyUps.delete(keyId)) return;
+    if (this.composing) return;
+    const kittyFlags = this.getBridge()?.kittyKeyboardFlags?.() ?? 0;
+    if (!(kittyFlags & KITTY_REPORT_EVENTS)) return;
+    if (e.metaKey && !e.ctrlKey) return;
+    const seq = encodeKittyKey(e, kittyFlags, "release");
+    if (!seq) return;
+    e.preventDefault();
+    this.onData(seq);
   }
 
   private handlePaste(e: ClipboardEvent): void {
