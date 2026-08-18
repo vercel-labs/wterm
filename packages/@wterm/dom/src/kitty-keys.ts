@@ -162,7 +162,12 @@ export function encodeKittyKey(
     !(flags & KITTY_REPORT_ALL) &&
     ((event.key === "Enter" && event.code !== "NumpadEnter") ||
       event.key === "Backspace" ||
-      event.key === "Tab")
+      event.key === "Tab" ||
+      (textEntry &&
+        !event.shiftKey &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey))
   ) {
     return null;
   }

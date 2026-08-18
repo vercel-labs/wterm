@@ -214,6 +214,14 @@ describe("InputHandler", () => {
       expect(received).toEqual(["\x1b[97;1:2;97u", "\x1b[97;1:3u"]);
     });
 
+    it("does not emit a release for plain text without report-all", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 2 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(createKeyboardEvent("a", { code: "KeyA" }));
+      ta.dispatchEvent(createKeyUpEvent("a", { code: "KeyA" }));
+      expect(received).toEqual(["a"]);
+    });
+
     it("keeps the legacy path for a core without Kitty support", () => {
       bridgeMock = { cursorKeysApp: () => false } as any;
       const ta = getTextarea();

@@ -108,6 +108,20 @@ describe("encodeKittyKey", () => {
       encodeKittyKey(key("a", { code: "KeyA" }), KITTY_REPORT_ALL, "release"),
     ).toBeNull();
     expect(
+      encodeKittyKey(
+        key("a", { code: "KeyA" }),
+        KITTY_REPORT_EVENTS,
+        "release",
+      ),
+    ).toBeNull();
+    expect(
+      encodeKittyKey(
+        key("a", { code: "KeyA", ctrlKey: true }),
+        KITTY_REPORT_EVENTS,
+        "release",
+      ),
+    ).toBe("\x1b[97;5:3u");
+    expect(
       encodeKittyKey(key("Enter"), 1 | KITTY_REPORT_EVENTS, "release"),
     ).toBeNull();
     expect(encodeKittyKey(key("Enter"), ALL_FLAGS, "release")).toBe(
