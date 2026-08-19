@@ -204,7 +204,8 @@ export class InputHandler {
       return;
     }
 
-    const kittyFlags = this.getBridge()?.kittyKeyboardFlags?.() ?? 0;
+    const bridge = this.getBridge();
+    const kittyFlags = bridge?.kittyKeyboardFlags?.() ?? 0;
     const kittyOwnsModifier =
       physicalModifier && Boolean(kittyFlags & KITTY_REPORT_ALL);
     const delivered = this.deliveredKeys.has(keyId);
@@ -247,6 +248,7 @@ export class InputHandler {
         kittyFlags,
         e.repeat ? "repeat" : "press",
         this.pressedModifiers,
+        bridge?.cursorKeysApp?.() ?? false,
       );
       if (seq) {
         this.deliveredKeys.add(keyId);
@@ -264,9 +266,16 @@ export class InputHandler {
     this.deliveredKeys.delete(keyId);
     if (this.suppressedKeyUps.delete(keyId)) return;
     if (this.composing) return;
-    const kittyFlags = this.getBridge()?.kittyKeyboardFlags?.() ?? 0;
+    const bridge = this.getBridge();
+    const kittyFlags = bridge?.kittyKeyboardFlags?.() ?? 0;
     if (!(kittyFlags & KITTY_REPORT_EVENTS)) return;
-    const seq = encodeKittyKey(e, kittyFlags, "release", this.pressedModifiers);
+    const seq = encodeKittyKey(
+      e,
+      kittyFlags,
+      "release",
+      this.pressedModifiers,
+      bridge?.cursorKeysApp?.() ?? false,
+    );
     if (!seq) return;
     e.preventDefault();
     this.onData(seq);

@@ -84,6 +84,60 @@ describe("encodeKittyKey", () => {
     );
   });
 
+  it("keeps functional keys legacy when flags add no payload", () => {
+    for (const flags of [KITTY_REPORT_EVENTS, KITTY_REPORT_ALTERNATES]) {
+      expect(encodeKittyKey(key("Escape"), flags, "press")).toBe("\x1b");
+      expect(
+        encodeKittyKey(key("Enter", { code: "NumpadEnter" }), flags, "press"),
+      ).toBe("\r");
+    }
+
+    for (const [functionKey, sequence] of [
+      ["F1", "\x1bOP"],
+      ["F2", "\x1bOQ"],
+      ["F3", "\x1bOR"],
+      ["F4", "\x1bOS"],
+    ] as const) {
+      expect(
+        encodeKittyKey(key(functionKey), KITTY_REPORT_ALTERNATES, "press"),
+      ).toBe(sequence);
+    }
+    expect(
+      encodeKittyKey(
+        key("Tab", { shiftKey: true }),
+        KITTY_REPORT_ALTERNATES,
+        "press",
+      ),
+    ).toBe("\x1b[Z");
+    expect(
+      encodeKittyKey(
+        key("ArrowUp", { code: "Numpad8" }),
+        KITTY_REPORT_ALTERNATES,
+        "press",
+      ),
+    ).toBe("\x1b[A");
+  });
+
+  it("uses application cursor mode only inside the Kitty legacy window", () => {
+    const arrow = key("ArrowUp");
+    expect(
+      encodeKittyKey(arrow, KITTY_REPORT_ALTERNATES, "press", undefined, true),
+    ).toBe("\x1bOA");
+    expect(
+      encodeKittyKey(arrow, KITTY_REPORT_EVENTS, "press", undefined, true),
+    ).toBe("\x1b[A");
+    expect(encodeKittyKey(arrow, 1, "press", undefined, true)).toBe("\x1b[A");
+    expect(
+      encodeKittyKey(
+        key("ArrowUp", { ctrlKey: true }),
+        KITTY_REPORT_ALTERNATES,
+        "press",
+        undefined,
+        true,
+      ),
+    ).toBe("\x1b[1;5A");
+  });
+
   it("encodes modified controls and navigation", () => {
     expect(encodeKittyKey(key("Enter", { shiftKey: true }), 1, "press")).toBe(
       "\x1b[13;2u",
@@ -149,8 +203,25 @@ describe("encodeKittyKey", () => {
 
   it("does not treat functional key names as associated text", () => {
     expect(encodeKittyKey(key("Enter"), ALL_FLAGS, "press")).toBe("\x1b[13u");
-    expect(encodeKittyKey(key("ArrowUp"), ALL_FLAGS, "press")).toBe(
-      "\x1b[1;1:1A",
+    expect(encodeKittyKey(key("ArrowUp"), KITTY_REPORT_EVENTS, "press")).toBe(
+      "\x1b[A",
+    );
+    expect(encodeKittyKey(key("ArrowUp"), ALL_FLAGS, "press")).toBe("\x1b[A");
+    expect(
+      encodeKittyKey(
+        key("ArrowUp", { ctrlKey: true }),
+        KITTY_REPORT_EVENTS,
+        "press",
+      ),
+    ).toBe("\x1b[1;5A");
+    expect(encodeKittyKey(key("ArrowUp"), KITTY_REPORT_EVENTS, "repeat")).toBe(
+      "\x1b[1;1:2A",
+    );
+    expect(encodeKittyKey(key("ArrowUp"), KITTY_REPORT_EVENTS, "release")).toBe(
+      "\x1b[1;1:3A",
+    );
+    expect(encodeKittyKey(key("F1"), KITTY_REPORT_EVENTS, "press")).toBe(
+      "\x1b[P",
     );
   });
 

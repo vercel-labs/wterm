@@ -242,6 +242,66 @@ describe("InputHandler", () => {
       expect(received).toEqual(["\x01"]);
     });
 
+    it("preserves functional bytes under isolated enhancement flags", () => {
+      const ta = getTextarea();
+      for (const flags of [2, 4]) {
+        bridgeMock = {
+          kittyKeyboardFlags: () => flags,
+          cursorKeysApp: () => false,
+        } as any;
+        ta.dispatchEvent(createKeyboardEvent("Escape", { code: "Escape" }));
+        ta.dispatchEvent(createKeyboardEvent("Enter", { code: "NumpadEnter" }));
+      }
+      bridgeMock = {
+        kittyKeyboardFlags: () => 4,
+        cursorKeysApp: () => false,
+      } as any;
+      ta.dispatchEvent(createKeyboardEvent("F1", { code: "F1" }));
+      ta.dispatchEvent(
+        createKeyboardEvent("Tab", { code: "Tab", shiftKey: true }),
+      );
+      ta.dispatchEvent(createKeyboardEvent("ArrowUp", { code: "Numpad8" }));
+      expect(received).toEqual([
+        "\x1b",
+        "\r",
+        "\x1b",
+        "\r",
+        "\x1bOP",
+        "\x1b[Z",
+        "\x1b[A",
+      ]);
+    });
+
+    it("uses current cursor application mode in the Kitty legacy window", () => {
+      let appMode = false;
+      bridgeMock = {
+        kittyKeyboardFlags: () => 4,
+        cursorKeysApp: () => appMode,
+      } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(createKeyboardEvent("ArrowUp", { code: "ArrowUp" }));
+      appMode = true;
+      ta.dispatchEvent(createKeyboardEvent("ArrowUp", { code: "ArrowUp" }));
+      expect(received).toEqual(["\x1b[A", "\x1bOA"]);
+    });
+
+    it("omits press actions but retains repeat and release actions", () => {
+      bridgeMock = {
+        kittyKeyboardFlags: () => 2,
+        cursorKeysApp: () => false,
+      } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(createKeyboardEvent("ArrowUp", { code: "ArrowUp" }));
+      ta.dispatchEvent(
+        createKeyboardEvent("ArrowUp", {
+          code: "ArrowUp",
+          repeat: true,
+        }),
+      );
+      ta.dispatchEvent(createKeyUpEvent("ArrowUp", { code: "ArrowUp" }));
+      expect(received).toEqual(["\x1b[A", "\x1b[1;1:2A", "\x1b[1;1:3A"]);
+    });
+
     it("reports post-release modifier state and preserves a held peer", () => {
       bridgeMock = { kittyKeyboardFlags: () => 1 | 2 | 8 } as any;
       const ta = getTextarea();

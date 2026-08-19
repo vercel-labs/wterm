@@ -406,6 +406,58 @@ test.describe("keyboard input", () => {
         "\x1b[57448;1:3u",
       ],
     });
+
+    await setup(4);
+    await page.keyboard.press("F1");
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("NumpadEnter");
+    await page.keyboard.press("Numpad8");
+    const legacyFunctional = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(legacyFunctional).toMatchObject({
+      received: ["\x1bOP", "\x1b[Z", "\r", "\x1b[A"],
+    });
+
+    await setup(2);
+    await page.keyboard.down("Escape");
+    const escapePress = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(escapePress).toMatchObject({ received: ["\x1b"] });
+    await page.keyboard.up("Escape");
+
+    await setup(2);
+    await page.keyboard.down("ArrowUp");
+    await page.keyboard.down("ArrowUp");
+    await page.keyboard.up("ArrowUp");
+    const arrowLifecycle = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(arrowLifecycle).toMatchObject({
+      received: ["\x1b[A", "\x1b[1;1:2A", "\x1b[1;1:3A"],
+    });
+
+    await setup(4);
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __wterm: { bridge: { cursorKeysApp: () => boolean } };
+      };
+      scope.__wterm.bridge.cursorKeysApp = () => true;
+    });
+    await page.keyboard.press("ArrowUp");
+    const applicationCursor = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(applicationCursor).toMatchObject({ received: ["\x1bOA"] });
   });
 
   test("typing a command produces output", async ({ page }) => {

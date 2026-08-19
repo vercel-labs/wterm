@@ -22,6 +22,11 @@ interface KittyEntry {
   modifier?: boolean;
 }
 
+interface ResolvedKey {
+  entry: KittyEntry;
+  functionalKey: string | null;
+}
+
 const FUNCTIONAL_KEYS: Record<string, KittyEntry> = {
   Escape: { code: 27, final: "u" },
   Enter: { code: 13, final: "u" },
@@ -82,6 +87,8 @@ const FUNCTIONAL_KEYS: Record<string, KittyEntry> = {
   NumpadComma: { code: 57416, final: "u" },
 };
 
+const KEYPAD_BEGIN: KittyEntry = { code: 1, final: "E" };
+
 for (let index = 13; index <= 25; index++) {
   FUNCTIONAL_KEYS[`F${index}`] = {
     code: 57363 + index,
@@ -102,12 +109,32 @@ function printableEntry(event: KittyKeyEvent): KittyEntry | null {
   return { code: primary ?? current, final: "u" };
 }
 
-function functionalEntry(event: KittyKeyEvent): KittyEntry | null {
+function resolveKey(
+  event: KittyKeyEvent,
+  normalizeKeypad: boolean,
+): ResolvedKey | null {
+  if (normalizeKeypad && event.code.startsWith("Numpad")) {
+    if (event.code === "Numpad5" && event.key === "Clear") {
+      return { entry: KEYPAD_BEGIN, functionalKey: "Begin" };
+    }
+    if (event.key.length === 1) {
+      const entry = printableEntry(event);
+      return entry ? { entry, functionalKey: null } : null;
+    }
+    const entry = FUNCTIONAL_KEYS[event.key];
+    return entry ? { entry, functionalKey: event.key } : null;
+  }
+
   const keypadNavigation = keypadNavigationEntry(event);
-  if (keypadNavigation) return keypadNavigation;
+  if (keypadNavigation) {
+    return { entry: keypadNavigation, functionalKey: event.code };
+  }
   const byCode = FUNCTIONAL_KEYS[event.code];
-  if (byCode) return byCode;
-  return FUNCTIONAL_KEYS[event.key] ?? null;
+  if (byCode) return { entry: byCode, functionalKey: event.code };
+  const byKey = FUNCTIONAL_KEYS[event.key];
+  if (byKey) return { entry: byKey, functionalKey: event.key };
+  const printable = printableEntry(event);
+  return printable ? { entry: printable, functionalKey: null } : null;
 }
 
 function keypadNavigationEntry(event: KittyKeyEvent): KittyEntry | null {
@@ -228,16 +255,109 @@ function legacyModifiedText(event: KittyKeyEvent): string | null {
   return event.altKey ? `\x1b${event.key}` : null;
 }
 
+function legacyFunctionalSequence(
+  functionalKey: string,
+  flags: number,
+  action: KittyKeyAction,
+  modifierBits: number,
+  cursorKeysApp: boolean,
+): { handled: boolean; sequence: string | null } {
+  const disambiguate = Boolean(flags & 1);
+  const reportEvents = Boolean(flags & KITTY_REPORT_EVENTS);
+  const reportAll = Boolean(flags & KITTY_REPORT_ALL);
+  const legacyMode = !disambiguate && !reportEvents && !reportAll;
+  const nonLockModifiers = modifierBits & ~(64 | 128);
+
+  if (cursorKeysApp && legacyMode && modifierBits === 0) {
+    const appSequence = {
+      ArrowUp: "\x1bOA",
+      ArrowDown: "\x1bOB",
+      ArrowRight: "\x1bOC",
+      ArrowLeft: "\x1bOD",
+      Begin: "\x1bOE",
+      End: "\x1bOF",
+      Home: "\x1bOH",
+    }[functionalKey];
+    if (appSequence) return { handled: true, sequence: appSequence };
+  }
+
+  if (modifierBits === 0) {
+    if (!disambiguate && !reportAll && functionalKey === "Escape") {
+      return { handled: true, sequence: "\x1b" };
+    }
+    if (legacyMode) {
+      const functionSequence = {
+        F1: "\x1bOP",
+        F2: "\x1bOQ",
+        F3: "\x1bOR",
+        F4: "\x1bOS",
+      }[functionalKey];
+      if (functionSequence)
+        return { handled: true, sequence: functionSequence };
+    }
+  }
+
+  if (legacyMode && modifierBits !== 0) {
+    const prefix = modifierBits & 2 ? "\x1b" : "";
+    if (functionalKey === "Enter") {
+      return { handled: true, sequence: `${prefix}\r` };
+    }
+    if (functionalKey === "Escape") {
+      return { handled: true, sequence: `${prefix}\x1b` };
+    }
+    if (functionalKey === "Backspace") {
+      return {
+        handled: true,
+        sequence: `${prefix}${modifierBits & 4 ? "\x08" : "\x7f"}`,
+      };
+    }
+    if (functionalKey === "Tab") {
+      if (modifierBits & 1) {
+        return {
+          handled: true,
+          sequence: `${modifierBits & 2 ? "\x1b\x1b" : "\x1b"}[Z`,
+        };
+      }
+      return { handled: true, sequence: `${prefix}\t` };
+    }
+  }
+
+  if (
+    nonLockModifiers === 0 &&
+    !reportAll &&
+    (functionalKey === "Enter" ||
+      functionalKey === "Backspace" ||
+      functionalKey === "Tab")
+  ) {
+    return {
+      handled: true,
+      sequence:
+        action === "release"
+          ? null
+          : functionalKey === "Enter"
+            ? "\r"
+            : functionalKey === "Backspace"
+              ? "\x7f"
+              : "\t",
+    };
+  }
+
+  return { handled: false, sequence: null };
+}
+
 export function encodeKittyKey(
   event: KittyKeyEvent,
   flags: number,
   action: KittyKeyAction,
   pressedModifiers?: ReadonlySet<string>,
+  cursorKeysApp = false,
 ): string | null {
   if (flags === 0) return null;
   if (action === "release" && !(flags & KITTY_REPORT_EVENTS)) return null;
 
-  const entry = functionalEntry(event) ?? printableEntry(event);
+  const normalizeKeypad = !(flags & 1) && !(flags & KITTY_REPORT_ALL);
+  const resolved = resolveKey(event, normalizeKeypad);
+  const entry = resolved?.entry ?? null;
   const textEntry = printableEntry(event);
 
   const legacyText =
@@ -255,14 +375,7 @@ export function encodeKittyKey(
       ? legacyModifiedText(event)
       : null;
 
-  if (
-    action === "release" &&
-    !(flags & KITTY_REPORT_ALL) &&
-    ((event.key === "Enter" && event.code !== "NumpadEnter") ||
-      event.key === "Backspace" ||
-      event.key === "Tab" ||
-      legacyText)
-  ) {
+  if (action === "release" && !(flags & KITTY_REPORT_ALL) && legacyText) {
     return null;
   }
 
@@ -274,7 +387,11 @@ export function encodeKittyKey(
     !event.metaKey
   ) {
     if (!event.shiftKey) {
-      if (event.key === "Enter" && event.code !== "NumpadEnter") return "\r";
+      if (
+        event.key === "Enter" &&
+        (event.code !== "NumpadEnter" || normalizeKeypad)
+      )
+        return "\r";
       if (event.key === "Tab") return "\t";
       if (event.key === "Backspace") return "\x7f";
     }
@@ -286,13 +403,23 @@ export function encodeKittyKey(
   if (entry.modifier && !(flags & KITTY_REPORT_ALL)) return null;
 
   const modifiers = modifierValue(event, action, pressedModifiers);
+  if (resolved?.functionalKey) {
+    const legacy = legacyFunctionalSequence(
+      resolved.functionalKey,
+      flags,
+      action,
+      modifiers - 1,
+      cursorKeysApp,
+    );
+    if (legacy.handled) return legacy.sequence;
+  }
   const eventType =
     flags & KITTY_REPORT_EVENTS
       ? action === "repeat"
         ? 2
         : action === "release"
           ? 3
-          : 1
+          : 0
       : 0;
 
   if (entry.final !== "u" && entry.final !== "~") {
