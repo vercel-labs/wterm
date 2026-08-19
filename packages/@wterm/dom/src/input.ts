@@ -88,8 +88,10 @@ export class InputHandler {
     this.textarea.setAttribute("tabindex", "0");
     this.textarea.setAttribute("aria-hidden", "true");
     const s = this.textarea.style;
-    s.position = "absolute";
-    s.left = "-9999px";
+    // Keep the focus target in the viewport so mobile/Chromium browsers do not
+    // try to scroll the page to reveal an off-screen textarea while typing.
+    s.position = "fixed";
+    s.left = "0";
     s.top = "0";
     s.width = "1px";
     s.height = "1px";
@@ -185,7 +187,7 @@ export class InputHandler {
       if (sel && sel.toString().length > 0) return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key === "v") {
-      this.textarea.focus();
+      this.textarea.focus({ preventScroll: true });
       return;
     }
     if (e.metaKey && !e.ctrlKey) {
