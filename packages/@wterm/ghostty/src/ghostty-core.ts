@@ -284,6 +284,10 @@ export class GhosttyCore implements TerminalCore {
     return this.wasm.exports.synchronized_output_generation(this.termPtr);
   }
 
+  kittyKeyboardFlags(): number {
+    return this.wasm.exports.kitty_keyboard_flags?.(this.termPtr) ?? 0;
+  }
+
   // -- Side outputs --
 
   getTitle(): string | null {

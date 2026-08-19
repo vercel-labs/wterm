@@ -60,6 +60,7 @@ export interface GhosttyExports {
   focus_events(ptr: number): number;
   synchronized_output(ptr: number): number;
   synchronized_output_generation(ptr: number): number;
+  kitty_keyboard_flags?(ptr: number): number;
 
   // Grid
   get_cols(ptr: number): number;

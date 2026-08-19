@@ -1,12 +1,24 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { InputHandler } from "../input.js";
 import type { WasmBridge } from "@wterm/core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { InputHandler } from "../input.js";
 
 function createKeyboardEvent(
   key: string,
   opts: Partial<KeyboardEventInit> = {},
 ): KeyboardEvent {
   return new KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...opts,
+  });
+}
+
+function createKeyUpEvent(
+  key: string,
+  opts: Partial<KeyboardEventInit> = {},
+): KeyboardEvent {
+  return new KeyboardEvent("keyup", {
     key,
     bubbles: true,
     cancelable: true,
@@ -188,6 +200,161 @@ describe("InputHandler", () => {
       const ta = getTextarea();
       ta.dispatchEvent(createKeyboardEvent("x"));
       expect(received).toContain("x");
+    });
+  });
+
+  describe("Kitty keyboard protocol", () => {
+    it("uses the negotiated flags for press, repeat, and release", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("a", { code: "KeyA", repeat: true }),
+      );
+      ta.dispatchEvent(createKeyUpEvent("a", { code: "KeyA" }));
+      expect(received).toEqual(["\x1b[97;1:2;97u", "\x1b[97;1:3u"]);
+    });
+
+    it("does not emit a release for plain text without report-all", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 2 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(createKeyboardEvent("a", { code: "KeyA" }));
+      ta.dispatchEvent(createKeyUpEvent("a", { code: "KeyA" }));
+      expect(received).toEqual(["a"]);
+    });
+
+    it("reports post-release modifier state and preserves a held peer", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 1 | 2 | 8 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("Control", {
+          code: "ControlLeft",
+          ctrlKey: true,
+        }),
+      );
+      ta.dispatchEvent(
+        createKeyboardEvent("Control", {
+          code: "ControlRight",
+          ctrlKey: true,
+        }),
+      );
+      ta.dispatchEvent(
+        createKeyUpEvent("Control", {
+          code: "ControlLeft",
+          ctrlKey: false,
+        }),
+      );
+      ta.dispatchEvent(
+        createKeyUpEvent("Control", {
+          code: "ControlRight",
+          ctrlKey: false,
+        }),
+      );
+      expect(received).toEqual([
+        "\x1b[57442;5u",
+        "\x1b[57448;5u",
+        "\x1b[57442;5:3u",
+        "\x1b[57448;1:3u",
+      ]);
+    });
+
+    it("reports Meta modifiers and releases a delivered key while Meta is held", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 1 | 2 | 8 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("Meta", { code: "MetaLeft", metaKey: true }),
+      );
+      ta.dispatchEvent(
+        createKeyUpEvent("Meta", { code: "MetaLeft", metaKey: false }),
+      );
+      expect(received).toEqual(["\x1b[57444;9u", "\x1b[57444;1:3u"]);
+
+      received.length = 0;
+      ta.dispatchEvent(createKeyboardEvent("a", { code: "KeyA" }));
+      ta.dispatchEvent(
+        createKeyboardEvent("Meta", { code: "MetaLeft", metaKey: true }),
+      );
+      ta.dispatchEvent(
+        createKeyboardEvent("a", {
+          code: "KeyA",
+          metaKey: true,
+          repeat: true,
+        }),
+      );
+      ta.dispatchEvent(createKeyUpEvent("a", { code: "KeyA", metaKey: true }));
+      ta.dispatchEvent(
+        createKeyUpEvent("Meta", { code: "MetaLeft", metaKey: false }),
+      );
+      expect(received).toEqual([
+        "\x1b[97u",
+        "\x1b[57444;9u",
+        "\x1b[97;9:2u",
+        "\x1b[97;9:3u",
+        "\x1b[57444;1:3u",
+      ]);
+    });
+
+    it("clears tracked modifiers on blur", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 1 | 2 | 8 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("Control", {
+          code: "ControlRight",
+          ctrlKey: true,
+        }),
+      );
+      ta.dispatchEvent(new FocusEvent("blur"));
+      ta.dispatchEvent(
+        createKeyUpEvent("Control", {
+          code: "ControlLeft",
+          ctrlKey: false,
+        }),
+      );
+      expect(received.at(-1)).toBe("\x1b[57442;1:3u");
+    });
+
+    it("keeps the legacy path for a core without Kitty support", () => {
+      bridgeMock = { cursorKeysApp: () => false } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(createKeyboardEvent("ArrowUp"));
+      ta.dispatchEvent(createKeyUpEvent("ArrowUp"));
+      expect(received).toEqual(["\x1b[A"]);
+    });
+
+    it("does not emit a release for a browser-owned shortcut", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("v", {
+          code: "KeyV",
+          metaKey: true,
+        }),
+      );
+      ta.dispatchEvent(createKeyUpEvent("v", { code: "KeyV" }));
+      expect(received).toEqual([]);
+    });
+
+    it("does not emit a release after a composing keydown", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.dispatchEvent(createKeyboardEvent("Dead", { code: "Quote" }));
+      ta.dispatchEvent(new CompositionEvent("compositionend", { data: "é" }));
+      ta.dispatchEvent(createKeyUpEvent("Dead", { code: "Quote" }));
+      expect(received).toEqual(["é"]);
+    });
+
+    it("clears a stale shortcut suppression on the next real keydown", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("v", {
+          code: "KeyV",
+          metaKey: true,
+        }),
+      );
+      ta.dispatchEvent(createKeyboardEvent("v", { code: "KeyV" }));
+      ta.dispatchEvent(createKeyUpEvent("v", { code: "KeyV" }));
+      expect(received).toEqual(["\x1b[118;;118u", "\x1b[118;1:3u"]);
     });
   });
 

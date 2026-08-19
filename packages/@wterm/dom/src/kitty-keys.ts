@@ -1,0 +1,275 @@
+export const KITTY_REPORT_EVENTS = 1 << 1;
+export const KITTY_REPORT_ALTERNATES = 1 << 2;
+export const KITTY_REPORT_ALL = 1 << 3;
+export const KITTY_REPORT_ASSOCIATED = 1 << 4;
+
+export type KittyKeyAction = "press" | "repeat" | "release";
+
+type KittyKeyEvent = Pick<
+  KeyboardEvent,
+  | "key"
+  | "code"
+  | "shiftKey"
+  | "altKey"
+  | "ctrlKey"
+  | "metaKey"
+  | "getModifierState"
+>;
+
+interface KittyEntry {
+  code: number;
+  final: string;
+  modifier?: boolean;
+}
+
+const FUNCTIONAL_KEYS: Record<string, KittyEntry> = {
+  Escape: { code: 27, final: "u" },
+  Enter: { code: 13, final: "u" },
+  Tab: { code: 9, final: "u" },
+  Backspace: { code: 127, final: "u" },
+  Insert: { code: 2, final: "~" },
+  Delete: { code: 3, final: "~" },
+  ArrowLeft: { code: 1, final: "D" },
+  ArrowRight: { code: 1, final: "C" },
+  ArrowUp: { code: 1, final: "A" },
+  ArrowDown: { code: 1, final: "B" },
+  PageUp: { code: 5, final: "~" },
+  PageDown: { code: 6, final: "~" },
+  Home: { code: 1, final: "H" },
+  End: { code: 1, final: "F" },
+  CapsLock: { code: 57358, final: "u", modifier: true },
+  ScrollLock: { code: 57359, final: "u" },
+  NumLock: { code: 57360, final: "u", modifier: true },
+  PrintScreen: { code: 57361, final: "u" },
+  Pause: { code: 57362, final: "u" },
+  F1: { code: 1, final: "P" },
+  F2: { code: 1, final: "Q" },
+  F3: { code: 13, final: "~" },
+  F4: { code: 1, final: "S" },
+  F5: { code: 15, final: "~" },
+  F6: { code: 17, final: "~" },
+  F7: { code: 18, final: "~" },
+  F8: { code: 19, final: "~" },
+  F9: { code: 20, final: "~" },
+  F10: { code: 21, final: "~" },
+  F11: { code: 23, final: "~" },
+  F12: { code: 24, final: "~" },
+  ShiftLeft: { code: 57441, final: "u", modifier: true },
+  ControlLeft: { code: 57442, final: "u", modifier: true },
+  AltLeft: { code: 57443, final: "u", modifier: true },
+  MetaLeft: { code: 57444, final: "u", modifier: true },
+  ShiftRight: { code: 57447, final: "u", modifier: true },
+  ControlRight: { code: 57448, final: "u", modifier: true },
+  AltRight: { code: 57449, final: "u", modifier: true },
+  MetaRight: { code: 57450, final: "u", modifier: true },
+  Numpad0: { code: 57399, final: "u" },
+  Numpad1: { code: 57400, final: "u" },
+  Numpad2: { code: 57401, final: "u" },
+  Numpad3: { code: 57402, final: "u" },
+  Numpad4: { code: 57403, final: "u" },
+  Numpad5: { code: 57404, final: "u" },
+  Numpad6: { code: 57405, final: "u" },
+  Numpad7: { code: 57406, final: "u" },
+  Numpad8: { code: 57407, final: "u" },
+  Numpad9: { code: 57408, final: "u" },
+  NumpadDecimal: { code: 57409, final: "u" },
+  NumpadDivide: { code: 57410, final: "u" },
+  NumpadMultiply: { code: 57411, final: "u" },
+  NumpadSubtract: { code: 57412, final: "u" },
+  NumpadAdd: { code: 57413, final: "u" },
+  NumpadEnter: { code: 57414, final: "u" },
+  NumpadEqual: { code: 57415, final: "u" },
+  NumpadComma: { code: 57416, final: "u" },
+};
+
+for (let index = 13; index <= 25; index++) {
+  FUNCTIONAL_KEYS[`F${index}`] = {
+    code: 57363 + index,
+    final: "u",
+  };
+}
+
+function codePoint(value: string): number | null {
+  const chars = Array.from(value);
+  return chars.length === 1 ? chars[0].codePointAt(0)! : null;
+}
+
+function printableEntry(event: KittyKeyEvent): KittyEntry | null {
+  const current = codePoint(event.key);
+  if (current === null || current < 0x20 || current === 0x7f) return null;
+  const lower = event.key.toLowerCase();
+  const primary = codePoint(lower);
+  return { code: primary ?? current, final: "u" };
+}
+
+function functionalEntry(event: KittyKeyEvent): KittyEntry | null {
+  const keypadNavigation = keypadNavigationEntry(event);
+  if (keypadNavigation) return keypadNavigation;
+  const byCode = FUNCTIONAL_KEYS[event.code];
+  if (byCode) return byCode;
+  return FUNCTIONAL_KEYS[event.key] ?? null;
+}
+
+function keypadNavigationEntry(event: KittyKeyEvent): KittyEntry | null {
+  const key = `${event.code}:${event.key}`;
+  const code = {
+    "Numpad4:ArrowLeft": 57417,
+    "Numpad6:ArrowRight": 57418,
+    "Numpad8:ArrowUp": 57419,
+    "Numpad2:ArrowDown": 57420,
+    "Numpad9:PageUp": 57421,
+    "Numpad3:PageDown": 57422,
+    "Numpad7:Home": 57423,
+    "Numpad1:End": 57424,
+    "Numpad0:Insert": 57425,
+    "NumpadDecimal:Delete": 57426,
+    "Numpad5:Clear": 57427,
+  }[key];
+  return code === undefined ? null : { code, final: "u" };
+}
+
+function hasModifier(
+  prefix: string,
+  pressedModifiers?: ReadonlySet<string>,
+): boolean {
+  for (const code of pressedModifiers ?? []) {
+    if (code.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+function modifierValue(
+  event: KittyKeyEvent,
+  action: KittyKeyAction,
+  pressedModifiers?: ReadonlySet<string>,
+): number {
+  let value = 1;
+  const includeCurrent = action !== "release";
+  if (
+    event.shiftKey ||
+    hasModifier("Shift", pressedModifiers) ||
+    (includeCurrent && event.code.startsWith("Shift"))
+  )
+    value += 1;
+  if (
+    event.altKey ||
+    hasModifier("Alt", pressedModifiers) ||
+    (includeCurrent && event.code.startsWith("Alt"))
+  )
+    value += 2;
+  if (
+    event.ctrlKey ||
+    hasModifier("Control", pressedModifiers) ||
+    (includeCurrent && event.code.startsWith("Control"))
+  )
+    value += 4;
+  if (
+    event.metaKey ||
+    hasModifier("Meta", pressedModifiers) ||
+    (includeCurrent && event.code.startsWith("Meta"))
+  )
+    value += 8;
+  if (event.getModifierState("CapsLock")) value += 64;
+  if (event.getModifierState("NumLock")) value += 128;
+  return value;
+}
+
+function associatedText(event: KittyKeyEvent): number[] {
+  if (event.ctrlKey || event.metaKey || event.altKey) return [];
+  return Array.from(event.key)
+    .map((char) => char.codePointAt(0)!)
+    .filter((point) => point >= 0x20 && point !== 0x7f);
+}
+
+export function encodeKittyKey(
+  event: KittyKeyEvent,
+  flags: number,
+  action: KittyKeyAction,
+  pressedModifiers?: ReadonlySet<string>,
+): string | null {
+  if (flags === 0) return null;
+  if (action === "release" && !(flags & KITTY_REPORT_EVENTS)) return null;
+
+  const entry = functionalEntry(event) ?? printableEntry(event);
+  const textEntry = printableEntry(event);
+
+  const legacyText =
+    !(flags & KITTY_REPORT_ALL) &&
+    textEntry !== null &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    (!event.shiftKey || !(flags & KITTY_REPORT_ALTERNATES));
+
+  if (
+    action === "release" &&
+    !(flags & KITTY_REPORT_ALL) &&
+    ((event.key === "Enter" && event.code !== "NumpadEnter") ||
+      event.key === "Backspace" ||
+      event.key === "Tab" ||
+      legacyText)
+  ) {
+    return null;
+  }
+
+  if (
+    action !== "release" &&
+    !(flags & KITTY_REPORT_ALL) &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey
+  ) {
+    if (!event.shiftKey) {
+      if (event.key === "Enter" && event.code !== "NumpadEnter") return "\r";
+      if (event.key === "Tab") return "\t";
+      if (event.key === "Backspace") return "\x7f";
+    }
+    if (legacyText) return event.key;
+  }
+
+  if (!entry) return null;
+  if (entry.modifier && !(flags & KITTY_REPORT_ALL)) return null;
+
+  const modifiers = modifierValue(event, action, pressedModifiers);
+  const eventType =
+    flags & KITTY_REPORT_EVENTS
+      ? action === "repeat"
+        ? 2
+        : action === "release"
+          ? 3
+          : 1
+      : 0;
+
+  if (entry.final !== "u" && entry.final !== "~") {
+    if (eventType !== 0) {
+      return `\x1b[1;${modifiers}:${eventType}${entry.final}`;
+    }
+    if (modifiers > 1) return `\x1b[1;${modifiers}${entry.final}`;
+    return `\x1b[${entry.final}`;
+  }
+
+  let sequence = `\x1b[${entry.code}`;
+  if (textEntry && flags & KITTY_REPORT_ALTERNATES && event.shiftKey) {
+    const shifted = codePoint(event.key);
+    if (shifted !== null && shifted !== entry.code) sequence += `:${shifted}`;
+  }
+
+  let emittedModifiers = false;
+  if (eventType === 2 || eventType === 3) {
+    sequence += `;${modifiers}:${eventType}`;
+    emittedModifiers = true;
+  } else if (modifiers > 1) {
+    sequence += `;${modifiers}`;
+    emittedModifiers = true;
+  }
+
+  if (textEntry && flags & KITTY_REPORT_ASSOCIATED && action !== "release") {
+    const text = associatedText(event);
+    if (text.length > 0) {
+      sequence += emittedModifiers ? ";" : ";;";
+      sequence += text.join(":");
+    }
+  }
+
+  return sequence + entry.final;
+}

@@ -49,6 +49,10 @@ See [WTerm Methods](/api-reference#wterm-methods) for the full list of instance 
 
 When a terminal application enables SGR mouse tracking or focus reporting, WTerm sends those reports through `onData` with keyboard input and host responses.
 
+When the active core negotiates the Kitty keyboard protocol, WTerm encodes key presses, repeats, and available releases from the core's current flags. The built-in and Ghostty cores keep separate primary and alternate-screen flag stacks. Third-party cores without Kitty state retain legacy keyboard behavior.
+
+Browsers do not expose every native keyboard field. WTerm uses `KeyboardEvent.code` for functional and modifier identity, `KeyboardEvent.key` for text, and reports shifted alternates when available. It does not invent a base-layout alternate, synthesize missing release events, or retain associated text beyond the current press.
+
 Application-provided OSC 8 hyperlinks render as native anchors across both the active viewport and scrollback. Only absolute HTTP and HTTPS URIs become clickable; invalid, relative, and executable schemes remain ordinary terminal text.
 While hovering an anchor, holding Command on macOS or Control on Windows and Linux reveals its underline and pointer cursor. Plain clicks remain terminal interaction. Command-click, Control-click, or native keyboard activation when an anchor receives focus opens the link. Modified link activation remains available while SGR mouse tracking is active and is not forwarded to the terminal application.
 

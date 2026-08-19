@@ -198,6 +198,15 @@ const ResponseHandler = struct {
                 ) catch return;
                 self.queue.push(out);
             },
+            .kitty_keyboard_query => {
+                var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
+                const out = std.fmt.bufPrint(
+                    &buf,
+                    "\x1b[?{}u",
+                    .{self.inner.terminal.screens.active.kitty_keyboard.current().int()},
+                ) catch return;
+                self.queue.push(out);
+            },
             .color_operation => {
                 try self.inner.vt(action, value);
                 var it = value.requests.constIterator(0);
@@ -672,6 +681,11 @@ export fn synchronized_output(ptr: usize) u32 {
 export fn synchronized_output_generation(ptr: usize) u32 {
     const state = stateFromPtr(ptr);
     return state.synchronized_output_generation;
+}
+
+export fn kitty_keyboard_flags(ptr: usize) u32 {
+    const state = stateFromPtr(ptr);
+    return state.terminal.screens.active.kitty_keyboard.current().int();
 }
 
 // -- Grid dimensions --------------------------------------------

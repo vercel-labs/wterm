@@ -42,6 +42,7 @@ vi.mock("../wasm-bindings.js", async () => {
     mouse_tracking: () => 1002,
     mouse_sgr: () => 1,
     focus_events: () => 1,
+    kitty_keyboard_flags: () => 31,
   };
 
   return {
@@ -133,5 +134,19 @@ describe("GhosttyCore input modes", () => {
     expect(core.mouseTracking()).toBe(1002);
     expect(core.mouseSgr()).toBe(true);
     expect(core.focusEvents()).toBe(true);
+    expect(core.kittyKeyboardFlags()).toBe(31);
+  });
+
+  it("treats an older WASM without Kitty state as legacy", async () => {
+    const core = await GhosttyCore.load();
+    core.init(80, 24);
+    const internals = core as unknown as {
+      wasm: {
+        exports: Record<string, WebAssembly.ExportValue>;
+      };
+    };
+    delete internals.wasm.exports.kitty_keyboard_flags;
+
+    expect(core.kittyKeyboardFlags()).toBe(0);
   });
 });

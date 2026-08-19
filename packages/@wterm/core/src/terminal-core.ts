@@ -76,6 +76,7 @@ export interface TerminalCore {
   focusEvents?(): boolean;
   synchronizedOutput?(): boolean;
   synchronizedOutputGeneration?(): number;
+  kittyKeyboardFlags?(): number;
 
   // -- Side outputs --
   getTitle(): string | null;
