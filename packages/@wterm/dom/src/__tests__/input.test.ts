@@ -232,6 +232,16 @@ describe("InputHandler", () => {
       expect(received).toEqual(["A"]);
     });
 
+    it("keeps Ctrl+A legacy when only report-alternates is active", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 4 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("a", { code: "KeyA", ctrlKey: true }),
+      );
+      ta.dispatchEvent(createKeyUpEvent("a", { code: "KeyA", ctrlKey: true }));
+      expect(received).toEqual(["\x01"]);
+    });
+
     it("reports post-release modifier state and preserves a held peer", () => {
       bridgeMock = { kittyKeyboardFlags: () => 1 | 2 | 8 } as any;
       const ta = getTextarea();

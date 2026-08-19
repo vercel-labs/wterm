@@ -181,6 +181,53 @@ function associatedText(event: KittyKeyEvent): number[] {
     .filter((point) => point >= 0x20 && point !== 0x7f);
 }
 
+function legacyModifiedText(event: KittyKeyEvent): string | null {
+  if (event.metaKey) return null;
+  const chars = Array.from(event.key);
+  if (
+    chars.length !== 1 ||
+    chars[0].codePointAt(0)! < 0x20 ||
+    chars[0].codePointAt(0)! > 0x7e
+  )
+    return null;
+
+  if (event.shiftKey && event.ctrlKey && /^[a-z]$/i.test(event.key)) {
+    return null;
+  }
+
+  if (event.ctrlKey) {
+    const key = event.key.toLowerCase();
+    const code = key.charCodeAt(0);
+    let control = key;
+    if (code >= 97 && code <= 122) control = String.fromCharCode(code - 96);
+    else {
+      control =
+        {
+          " ": "\0",
+          "/": "\x1f",
+          "2": "\0",
+          "3": "\x1b",
+          "4": "\x1c",
+          "5": "\x1d",
+          "6": "\x1e",
+          "7": "\x1f",
+          "8": "\x7f",
+          "?": "\x7f",
+          "@": "\0",
+          "[": "\x1b",
+          "\\": "\x1c",
+          "]": "\x1d",
+          "^": "\x1e",
+          _: "\x1f",
+          "~": "\x1e",
+        }[key] ?? key;
+    }
+    return event.altKey ? `\x1b${control}` : control;
+  }
+
+  return event.altKey ? `\x1b${event.key}` : null;
+}
+
 export function encodeKittyKey(
   event: KittyKeyEvent,
   flags: number,
@@ -199,6 +246,14 @@ export function encodeKittyKey(
     !event.altKey &&
     !event.ctrlKey &&
     !event.metaKey;
+
+  const legacyModified =
+    !(flags & 1) &&
+    !(flags & KITTY_REPORT_ALL) &&
+    (action === "press" || !(flags & KITTY_REPORT_EVENTS)) &&
+    (event.ctrlKey || event.altKey)
+      ? legacyModifiedText(event)
+      : null;
 
   if (
     action === "release" &&
@@ -225,6 +280,7 @@ export function encodeKittyKey(
     }
     if (legacyText) return event.key;
   }
+  if (legacyModified !== null) return legacyModified;
 
   if (!entry) return null;
   if (entry.modifier && !(flags & KITTY_REPORT_ALL)) return null;

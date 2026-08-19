@@ -316,6 +316,50 @@ test.describe("keyboard input", () => {
     );
     expect.soft(alternatesOnly).toMatchObject({ received: ["A"] });
 
+    await setup(4);
+    await page.keyboard.press("Control+A");
+    const controlWithAlternatesOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect
+      .soft(controlWithAlternatesOnly)
+      .toMatchObject({ received: ["\x01"] });
+
+    await setup(4);
+    await page.keyboard.press("Alt+Shift+A");
+    const shiftedAltWithAlternatesOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect
+      .soft(shiftedAltWithAlternatesOnly)
+      .toMatchObject({ received: ["\x1bA"] });
+
+    await setup(4);
+    await page.keyboard.press("Control+;");
+    const unmappedControlWithAlternatesOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect
+      .soft(unmappedControlWithAlternatesOnly)
+      .toMatchObject({ received: [";"] });
+
+    await setup(2);
+    await page.keyboard.press("Control+A");
+    const controlWithEventsOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(controlWithEventsOnly).toMatchObject({
+      received: ["\x01", "\x1b[97;5:3u"],
+    });
+
     await setup(1 | 2 | 8);
     await page.keyboard.down("Control");
     await page.keyboard.up("Control");

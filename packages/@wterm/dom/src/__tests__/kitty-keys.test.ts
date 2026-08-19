@@ -50,6 +50,40 @@ describe("encodeKittyKey", () => {
     }
   });
 
+  it("keeps modified ASCII presses legacy without disambiguation", () => {
+    const control = key("a", { code: "KeyA", ctrlKey: true });
+    const alt = key("a", { code: "KeyA", altKey: true });
+    const controlUnmapped = key(";", { code: "Semicolon", ctrlKey: true });
+    const shiftedAlt = key("A", {
+      code: "KeyA",
+      shiftKey: true,
+      altKey: true,
+    });
+    const shiftedControl = key("A", {
+      code: "KeyA",
+      shiftKey: true,
+      ctrlKey: true,
+    });
+    for (const flags of [KITTY_REPORT_EVENTS, KITTY_REPORT_ALTERNATES]) {
+      expect(encodeKittyKey(control, flags, "press")).toBe("\x01");
+      expect(encodeKittyKey(alt, flags, "press")).toBe("\x1ba");
+      expect(encodeKittyKey(controlUnmapped, flags, "press")).toBe(";");
+      expect(encodeKittyKey(shiftedAlt, flags, "press")).toBe("\x1bA");
+    }
+    expect(encodeKittyKey(shiftedControl, KITTY_REPORT_EVENTS, "press")).toBe(
+      "\x1b[97;6u",
+    );
+    expect(
+      encodeKittyKey(shiftedControl, KITTY_REPORT_ALTERNATES, "press"),
+    ).toBe("\x1b[97:65;6u");
+    expect(encodeKittyKey(control, KITTY_REPORT_EVENTS, "repeat")).toBe(
+      "\x1b[97;5:2u",
+    );
+    expect(encodeKittyKey(control, KITTY_REPORT_EVENTS, "release")).toBe(
+      "\x1b[97;5:3u",
+    );
+  });
+
   it("encodes modified controls and navigation", () => {
     expect(encodeKittyKey(key("Enter", { shiftKey: true }), 1, "press")).toBe(
       "\x1b[13;2u",
@@ -65,6 +99,23 @@ describe("encodeKittyKey", () => {
   });
 
   it("reports printable alternates and associated text", () => {
+    expect(
+      encodeKittyKey(key("a", { code: "KeyA" }), KITTY_REPORT_ALL, "press"),
+    ).toBe("\x1b[97u");
+    expect(
+      encodeKittyKey(
+        key("a", { code: "KeyA" }),
+        KITTY_REPORT_ALL | KITTY_REPORT_ASSOCIATED,
+        "press",
+      ),
+    ).toBe("\x1b[97;;97u");
+    expect(
+      encodeKittyKey(
+        key("a", { code: "KeyA" }),
+        KITTY_REPORT_EVENTS | KITTY_REPORT_ALL | KITTY_REPORT_ASSOCIATED,
+        "repeat",
+      ),
+    ).toBe("\x1b[97;1:2;97u");
     expect(
       encodeKittyKey(
         key("A", { code: "KeyA", shiftKey: true, ctrlKey: true }),
