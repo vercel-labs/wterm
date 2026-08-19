@@ -15,6 +15,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 | [`@wterm/ghostty`](packages/@wterm/ghostty) | Full-featured VT emulation core powered by libghostty |
 | [`@wterm/just-bash`](packages/@wterm/just-bash) | In-browser Bash shell powered by just-bash |
 | [`@wterm/markdown`](packages/@wterm/markdown) | Render Markdown in the terminal |
+| [`@wterm/serialize`](packages/@wterm/serialize) | Serialize and restore terminal state |
 
 ## Features
 
