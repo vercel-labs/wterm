@@ -155,6 +155,74 @@ test.describe("rendering", () => {
 });
 
 test.describe("keyboard input", () => {
+  test("Kitty report-all preserves Meta lifecycle and browser shortcuts", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await terminal.click();
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __reviewProbe?: string[];
+        __wterm: {
+          bridge: { kittyKeyboardFlags: () => number };
+          onData: ((data: string) => void) | null;
+        };
+      };
+      scope.__reviewProbe = [];
+      scope.__wterm.bridge.kittyKeyboardFlags = () => 1 | 2 | 8;
+      scope.__wterm.onData = (data) => scope.__reviewProbe?.push(data);
+    });
+
+    await page.keyboard.down("MetaLeft");
+    await page.keyboard.up("MetaLeft");
+    const modifier = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __reviewProbe: string[] })
+          .__reviewProbe,
+    );
+    expect.soft(modifier).toEqual(["\x1b[57444;9u", "\x1b[57444;1:3u"]);
+
+    await page.evaluate(() => {
+      (
+        globalThis as typeof globalThis & { __reviewProbe: string[] }
+      ).__reviewProbe.splice(0);
+    });
+    await page.keyboard.down("KeyA");
+    await page.keyboard.down("MetaLeft");
+    await page.keyboard.down("KeyA");
+    await page.keyboard.up("KeyA");
+    await page.keyboard.up("MetaLeft");
+    const interleaved = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __reviewProbe: string[] })
+          .__reviewProbe,
+    );
+    expect
+      .soft(interleaved)
+      .toEqual([
+        "\x1b[97u",
+        "\x1b[57444;9u",
+        "\x1b[97;9:2u",
+        "\x1b[97;9:3u",
+        "\x1b[57444;1:3u",
+      ]);
+
+    await page.evaluate(() => {
+      (
+        globalThis as typeof globalThis & { __reviewProbe: string[] }
+      ).__reviewProbe.splice(0);
+    });
+    await page.keyboard.down("MetaLeft");
+    await page.keyboard.press("KeyV");
+    await page.keyboard.up("MetaLeft");
+    const shortcut = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __reviewProbe: string[] })
+          .__reviewProbe,
+    );
+    expect.soft(shortcut).toEqual(["\x1b[57444;9u", "\x1b[57444;1:3u"]);
+  });
+
   test("Kitty encoding follows real Chromium shifted-text and modifier-release events", async ({
     page,
   }) => {

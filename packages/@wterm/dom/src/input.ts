@@ -1,6 +1,10 @@
 import type { TerminalCore } from "@wterm/core";
 import { isLinkActivationModifier } from "./hyperlink.js";
-import { encodeKittyKey, KITTY_REPORT_EVENTS } from "./kitty-keys.js";
+import {
+  encodeKittyKey,
+  KITTY_REPORT_ALL,
+  KITTY_REPORT_EVENTS,
+} from "./kitty-keys.js";
 
 const NORMAL_KEYS: Record<string, string> = {
   ArrowUp: "\x1b[A",
@@ -57,6 +61,7 @@ export class InputHandler {
   private focused = false;
   private suppressedKeyUps = new Set<string>();
   private pressedModifiers = new Set<string>();
+  private deliveredKeys = new Set<string>();
 
   private _onKeyDown: (e: KeyboardEvent) => void;
   private _onKeyUp: (e: KeyboardEvent) => void;
@@ -127,6 +132,7 @@ export class InputHandler {
       this.element.classList.remove("focused");
       this.stopMouseCapture();
       this.pressedModifiers.clear();
+      this.deliveredKeys.clear();
       if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[O");
     };
     this._onMouseDown = (event) => this.handleMouse(event, "press");
@@ -187,7 +193,10 @@ export class InputHandler {
 
   private handleKeyDown(e: KeyboardEvent): void {
     const keyId = e.code || e.key;
-    if (/^(Shift|Control|Alt|Meta)(Left|Right)$/.test(e.code)) {
+    const physicalModifier = /^(Shift|Control|Alt|Meta)(Left|Right)$/.test(
+      e.code,
+    );
+    if (physicalModifier) {
       this.pressedModifiers.add(e.code);
     }
     if (this.composing) {
@@ -195,19 +204,24 @@ export class InputHandler {
       return;
     }
 
-    if ((e.metaKey || e.ctrlKey) && e.key === "c") {
+    const kittyFlags = this.getBridge()?.kittyKeyboardFlags?.() ?? 0;
+    const kittyOwnsModifier =
+      physicalModifier && Boolean(kittyFlags & KITTY_REPORT_ALL);
+    const delivered = this.deliveredKeys.has(keyId);
+
+    if (!delivered && (e.metaKey || e.ctrlKey) && e.key === "c") {
       const sel = window.getSelection();
       if (sel && sel.toString().length > 0) {
         this.suppressedKeyUps.add(keyId);
         return;
       }
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === "v") {
+    if (!delivered && (e.metaKey || e.ctrlKey) && e.key === "v") {
       this.suppressedKeyUps.add(keyId);
       this.textarea.focus();
       return;
     }
-    if (e.metaKey && !e.ctrlKey) {
+    if (!delivered && !kittyOwnsModifier && e.metaKey && !e.ctrlKey) {
       this.suppressedKeyUps.add(keyId);
       if (e.key === "Backspace") {
         e.preventDefault();
@@ -227,7 +241,6 @@ export class InputHandler {
 
     this.suppressedKeyUps.delete(keyId);
     e.preventDefault();
-    const kittyFlags = this.getBridge()?.kittyKeyboardFlags?.() ?? 0;
     if (kittyFlags !== 0) {
       const seq = encodeKittyKey(
         e,
@@ -235,7 +248,10 @@ export class InputHandler {
         e.repeat ? "repeat" : "press",
         this.pressedModifiers,
       );
-      if (seq) this.onData(seq);
+      if (seq) {
+        this.deliveredKeys.add(keyId);
+        this.onData(seq);
+      }
       return;
     }
     const seq = this.keyToSequence(e);
@@ -245,11 +261,11 @@ export class InputHandler {
   private handleKeyUp(e: KeyboardEvent): void {
     const keyId = e.code || e.key;
     this.pressedModifiers.delete(e.code);
+    this.deliveredKeys.delete(keyId);
     if (this.suppressedKeyUps.delete(keyId)) return;
     if (this.composing) return;
     const kittyFlags = this.getBridge()?.kittyKeyboardFlags?.() ?? 0;
     if (!(kittyFlags & KITTY_REPORT_EVENTS)) return;
-    if (e.metaKey && !e.ctrlKey) return;
     const seq = encodeKittyKey(e, kittyFlags, "release", this.pressedModifiers);
     if (!seq) return;
     e.preventDefault();

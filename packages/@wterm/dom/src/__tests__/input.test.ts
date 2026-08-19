@@ -257,6 +257,42 @@ describe("InputHandler", () => {
       ]);
     });
 
+    it("reports Meta modifiers and releases a delivered key while Meta is held", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 1 | 2 | 8 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("Meta", { code: "MetaLeft", metaKey: true }),
+      );
+      ta.dispatchEvent(
+        createKeyUpEvent("Meta", { code: "MetaLeft", metaKey: false }),
+      );
+      expect(received).toEqual(["\x1b[57444;9u", "\x1b[57444;1:3u"]);
+
+      received.length = 0;
+      ta.dispatchEvent(createKeyboardEvent("a", { code: "KeyA" }));
+      ta.dispatchEvent(
+        createKeyboardEvent("Meta", { code: "MetaLeft", metaKey: true }),
+      );
+      ta.dispatchEvent(
+        createKeyboardEvent("a", {
+          code: "KeyA",
+          metaKey: true,
+          repeat: true,
+        }),
+      );
+      ta.dispatchEvent(createKeyUpEvent("a", { code: "KeyA", metaKey: true }));
+      ta.dispatchEvent(
+        createKeyUpEvent("Meta", { code: "MetaLeft", metaKey: false }),
+      );
+      expect(received).toEqual([
+        "\x1b[97u",
+        "\x1b[57444;9u",
+        "\x1b[97;9:2u",
+        "\x1b[97;9:3u",
+        "\x1b[57444;1:3u",
+      ]);
+    });
+
     it("clears tracked modifiers on blur", () => {
       bridgeMock = { kittyKeyboardFlags: () => 1 | 2 | 8 } as any;
       const ta = getTextarea();
