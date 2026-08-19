@@ -198,8 +198,7 @@ export function encodeKittyKey(
     textEntry !== null &&
     !event.altKey &&
     !event.ctrlKey &&
-    !event.metaKey &&
-    (!event.shiftKey || !(flags & KITTY_REPORT_ALTERNATES));
+    !event.metaKey;
 
   if (
     action === "release" &&

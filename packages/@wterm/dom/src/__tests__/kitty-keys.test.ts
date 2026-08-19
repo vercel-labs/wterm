@@ -39,6 +39,17 @@ describe("encodeKittyKey", () => {
     expect(encodeKittyKey(key("Backspace"), 1, "press")).toBe("\x7f");
   });
 
+  it("keeps shifted text plain for every mode without report-all", () => {
+    for (let flags = 1; flags < KITTY_REPORT_ALL; flags += 1) {
+      const letter = key("A", { code: "KeyA", shiftKey: true });
+      const punctuation = key("!", { code: "Digit1", shiftKey: true });
+      expect(encodeKittyKey(letter, flags, "press")).toBe("A");
+      expect(encodeKittyKey(letter, flags, "release")).toBeNull();
+      expect(encodeKittyKey(punctuation, flags, "press")).toBe("!");
+      expect(encodeKittyKey(punctuation, flags, "release")).toBeNull();
+    }
+  });
+
   it("encodes modified controls and navigation", () => {
     expect(encodeKittyKey(key("Enter", { shiftKey: true }), 1, "press")).toBe(
       "\x1b[13;2u",
@@ -56,11 +67,11 @@ describe("encodeKittyKey", () => {
   it("reports printable alternates and associated text", () => {
     expect(
       encodeKittyKey(
-        key("A", { code: "KeyA", shiftKey: true }),
-        KITTY_REPORT_ALTERNATES,
+        key("A", { code: "KeyA", shiftKey: true, ctrlKey: true }),
+        1 | KITTY_REPORT_ALTERNATES,
         "press",
       ),
-    ).toBe("\x1b[97:65;2u");
+    ).toBe("\x1b[97:65;6u");
     expect(
       encodeKittyKey(
         key("J", { code: "KeyJ", shiftKey: true }),

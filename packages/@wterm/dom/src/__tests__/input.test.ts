@@ -222,6 +222,16 @@ describe("InputHandler", () => {
       expect(received).toEqual(["a"]);
     });
 
+    it("keeps shifted text plain when only report-alternates is active", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 4 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("A", { code: "KeyA", shiftKey: true }),
+      );
+      ta.dispatchEvent(createKeyUpEvent("A", { code: "KeyA", shiftKey: true }));
+      expect(received).toEqual(["A"]);
+    });
+
     it("reports post-release modifier state and preserves a held peer", () => {
       bridgeMock = { kittyKeyboardFlags: () => 1 | 2 | 8 } as any;
       const ta = getTextarea();

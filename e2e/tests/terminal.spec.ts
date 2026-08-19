@@ -307,6 +307,15 @@ test.describe("keyboard input", () => {
     });
     expect.soft(shifted).toMatchObject({ received: ["A"] });
 
+    await setup(4);
+    await page.keyboard.press("Shift+A");
+    const alternatesOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(alternatesOnly).toMatchObject({ received: ["A"] });
+
     await setup(1 | 2 | 8);
     await page.keyboard.down("Control");
     await page.keyboard.up("Control");
