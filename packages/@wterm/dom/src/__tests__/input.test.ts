@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { InputHandler } from "../input.js";
 import type { WasmBridge } from "@wterm/core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { InputHandler } from "../input.js";
 
 function createKeyboardEvent(
   key: string,
@@ -220,6 +220,60 @@ describe("InputHandler", () => {
       ta.dispatchEvent(createKeyboardEvent("a", { code: "KeyA" }));
       ta.dispatchEvent(createKeyUpEvent("a", { code: "KeyA" }));
       expect(received).toEqual(["a"]);
+    });
+
+    it("reports post-release modifier state and preserves a held peer", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 1 | 2 | 8 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("Control", {
+          code: "ControlLeft",
+          ctrlKey: true,
+        }),
+      );
+      ta.dispatchEvent(
+        createKeyboardEvent("Control", {
+          code: "ControlRight",
+          ctrlKey: true,
+        }),
+      );
+      ta.dispatchEvent(
+        createKeyUpEvent("Control", {
+          code: "ControlLeft",
+          ctrlKey: false,
+        }),
+      );
+      ta.dispatchEvent(
+        createKeyUpEvent("Control", {
+          code: "ControlRight",
+          ctrlKey: false,
+        }),
+      );
+      expect(received).toEqual([
+        "\x1b[57442;5u",
+        "\x1b[57448;5u",
+        "\x1b[57442;5:3u",
+        "\x1b[57448;1:3u",
+      ]);
+    });
+
+    it("clears tracked modifiers on blur", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 1 | 2 | 8 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("Control", {
+          code: "ControlRight",
+          ctrlKey: true,
+        }),
+      );
+      ta.dispatchEvent(new FocusEvent("blur"));
+      ta.dispatchEvent(
+        createKeyUpEvent("Control", {
+          code: "ControlLeft",
+          ctrlKey: false,
+        }),
+      );
+      expect(received.at(-1)).toBe("\x1b[57442;1:3u");
     });
 
     it("keeps the legacy path for a core without Kitty support", () => {

@@ -128,12 +128,47 @@ function keypadNavigationEntry(event: KittyKeyEvent): KittyEntry | null {
   return code === undefined ? null : { code, final: "u" };
 }
 
-function modifierValue(event: KittyKeyEvent): number {
+function hasModifier(
+  prefix: string,
+  pressedModifiers?: ReadonlySet<string>,
+): boolean {
+  for (const code of pressedModifiers ?? []) {
+    if (code.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+function modifierValue(
+  event: KittyKeyEvent,
+  action: KittyKeyAction,
+  pressedModifiers?: ReadonlySet<string>,
+): number {
   let value = 1;
-  if (event.shiftKey || event.code.startsWith("Shift")) value += 1;
-  if (event.altKey || event.code.startsWith("Alt")) value += 2;
-  if (event.ctrlKey || event.code.startsWith("Control")) value += 4;
-  if (event.metaKey || event.code.startsWith("Meta")) value += 8;
+  const includeCurrent = action !== "release";
+  if (
+    event.shiftKey ||
+    hasModifier("Shift", pressedModifiers) ||
+    (includeCurrent && event.code.startsWith("Shift"))
+  )
+    value += 1;
+  if (
+    event.altKey ||
+    hasModifier("Alt", pressedModifiers) ||
+    (includeCurrent && event.code.startsWith("Alt"))
+  )
+    value += 2;
+  if (
+    event.ctrlKey ||
+    hasModifier("Control", pressedModifiers) ||
+    (includeCurrent && event.code.startsWith("Control"))
+  )
+    value += 4;
+  if (
+    event.metaKey ||
+    hasModifier("Meta", pressedModifiers) ||
+    (includeCurrent && event.code.startsWith("Meta"))
+  )
+    value += 8;
   if (event.getModifierState("CapsLock")) value += 64;
   if (event.getModifierState("NumLock")) value += 128;
   return value;
@@ -150,6 +185,7 @@ export function encodeKittyKey(
   event: KittyKeyEvent,
   flags: number,
   action: KittyKeyAction,
+  pressedModifiers?: ReadonlySet<string>,
 ): string | null {
   if (flags === 0) return null;
   if (action === "release" && !(flags & KITTY_REPORT_EVENTS)) return null;
@@ -157,17 +193,21 @@ export function encodeKittyKey(
   const entry = functionalEntry(event) ?? printableEntry(event);
   const textEntry = printableEntry(event);
 
+  const legacyText =
+    !(flags & KITTY_REPORT_ALL) &&
+    textEntry !== null &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    (!event.shiftKey || !(flags & KITTY_REPORT_ALTERNATES));
+
   if (
     action === "release" &&
     !(flags & KITTY_REPORT_ALL) &&
     ((event.key === "Enter" && event.code !== "NumpadEnter") ||
       event.key === "Backspace" ||
       event.key === "Tab" ||
-      (textEntry &&
-        !event.shiftKey &&
-        !event.altKey &&
-        !event.ctrlKey &&
-        !event.metaKey))
+      legacyText)
   ) {
     return null;
   }
@@ -175,21 +215,22 @@ export function encodeKittyKey(
   if (
     action !== "release" &&
     !(flags & KITTY_REPORT_ALL) &&
-    !event.shiftKey &&
     !event.altKey &&
     !event.ctrlKey &&
     !event.metaKey
   ) {
-    if (event.key === "Enter" && event.code !== "NumpadEnter") return "\r";
-    if (event.key === "Tab") return "\t";
-    if (event.key === "Backspace") return "\x7f";
-    if (textEntry) return event.key;
+    if (!event.shiftKey) {
+      if (event.key === "Enter" && event.code !== "NumpadEnter") return "\r";
+      if (event.key === "Tab") return "\t";
+      if (event.key === "Backspace") return "\x7f";
+    }
+    if (legacyText) return event.key;
   }
 
   if (!entry) return null;
   if (entry.modifier && !(flags & KITTY_REPORT_ALL)) return null;
 
-  const modifiers = modifierValue(event);
+  const modifiers = modifierValue(event, action, pressedModifiers);
   const eventType =
     flags & KITTY_REPORT_EVENTS
       ? action === "repeat"

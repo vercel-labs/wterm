@@ -28,6 +28,12 @@ const ALL_FLAGS =
 describe("encodeKittyKey", () => {
   it("leaves plain text and recovery keys usable without report-all", () => {
     expect(encodeKittyKey(key("a", { code: "KeyA" }), 1, "press")).toBe("a");
+    expect(
+      encodeKittyKey(key("A", { code: "KeyA", shiftKey: true }), 1, "press"),
+    ).toBe("A");
+    expect(
+      encodeKittyKey(key("!", { code: "Digit1", shiftKey: true }), 1, "press"),
+    ).toBe("!");
     expect(encodeKittyKey(key("Enter"), 1, "press")).toBe("\r");
     expect(encodeKittyKey(key("Tab"), 1, "press")).toBe("\t");
     expect(encodeKittyKey(key("Backspace"), 1, "press")).toBe("\x7f");
@@ -87,14 +93,29 @@ describe("encodeKittyKey", () => {
   });
 
   it("reports modifier press and release when report-all is active", () => {
-    const control = key("Control", {
+    const controlDown = key("Control", {
       code: "ControlLeft",
       ctrlKey: true,
     });
-    expect(encodeKittyKey(control, ALL_FLAGS, "press")).toBe("\x1b[57442;5u");
-    expect(encodeKittyKey(control, ALL_FLAGS, "release")).toBe(
-      "\x1b[57442;5:3u",
+    const controlUp = new KeyboardEvent("keyup", {
+      key: "Control",
+      code: "ControlLeft",
+      ctrlKey: false,
+    });
+    expect(encodeKittyKey(controlDown, ALL_FLAGS, "press")).toBe(
+      "\x1b[57442;5u",
     );
+    expect(encodeKittyKey(controlUp, ALL_FLAGS, "release")).toBe(
+      "\x1b[57442;1:3u",
+    );
+    expect(
+      encodeKittyKey(
+        controlUp,
+        ALL_FLAGS,
+        "release",
+        new Set(["ControlRight"]),
+      ),
+    ).toBe("\x1b[57442;5:3u");
   });
 
   it("reports repeats and omits release text", () => {

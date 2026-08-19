@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/?debug");
@@ -155,6 +155,138 @@ test.describe("rendering", () => {
 });
 
 test.describe("keyboard input", () => {
+  test("Kitty encoding follows real Chromium shifted-text and modifier-release events", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await terminal.click();
+
+    const setup = async (flags: number) => {
+      await page.evaluate((nextFlags) => {
+        const scope = globalThis as typeof globalThis & {
+          __kittyProbe?: {
+            events: Array<Record<string, string | boolean>>;
+            received: string[];
+          };
+          __wterm: {
+            bridge: { kittyKeyboardFlags: () => number };
+            onData: ((data: string) => void) | null;
+          };
+        };
+        const textarea = document.querySelector(".wterm textarea");
+        if (!(textarea instanceof HTMLTextAreaElement)) {
+          throw new Error("missing terminal textarea");
+        }
+        const probe = { events: [], received: [] };
+        scope.__kittyProbe = probe;
+        for (const type of ["keydown", "keyup"] as const) {
+          textarea.addEventListener(
+            type,
+            (event) => {
+              const key = event as KeyboardEvent;
+              probe.events.push({
+                type,
+                key: key.key,
+                code: key.code,
+                shiftKey: key.shiftKey,
+                altKey: key.altKey,
+                ctrlKey: key.ctrlKey,
+                metaKey: key.metaKey,
+              });
+            },
+            { capture: true },
+          );
+        }
+        scope.__wterm.bridge.kittyKeyboardFlags = () => nextFlags;
+        scope.__wterm.onData = (data) => probe.received.push(data);
+      }, flags);
+    };
+
+    await setup(1);
+    await page.keyboard.press("Shift+A");
+    const shifted = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect(shifted).toMatchObject({
+      events: [
+        {
+          type: "keydown",
+          key: "Shift",
+          code: "ShiftLeft",
+          shiftKey: true,
+        },
+        {
+          type: "keydown",
+          key: "A",
+          code: "KeyA",
+          shiftKey: true,
+        },
+        {
+          type: "keyup",
+          key: "A",
+          code: "KeyA",
+          shiftKey: true,
+        },
+        {
+          type: "keyup",
+          key: "Shift",
+          code: "ShiftLeft",
+          shiftKey: false,
+        },
+      ],
+    });
+    expect.soft(shifted).toMatchObject({ received: ["A"] });
+
+    await setup(1 | 2 | 8);
+    await page.keyboard.down("Control");
+    await page.keyboard.up("Control");
+    const control = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect(control).toMatchObject({
+      events: [
+        {
+          type: "keydown",
+          key: "Control",
+          code: "ControlLeft",
+          ctrlKey: true,
+        },
+        {
+          type: "keyup",
+          key: "Control",
+          code: "ControlLeft",
+          ctrlKey: false,
+        },
+      ],
+    });
+    expect.soft(control).toMatchObject({
+      received: ["\x1b[57442;5u", "\x1b[57442;1:3u"],
+    });
+
+    await setup(1 | 2 | 8);
+    await page.keyboard.down("ControlLeft");
+    await page.keyboard.down("ControlRight");
+    await page.keyboard.up("ControlLeft");
+    await page.keyboard.up("ControlRight");
+    const pairedControl = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(pairedControl).toMatchObject({
+      received: [
+        "\x1b[57442;5u",
+        "\x1b[57448;5u",
+        "\x1b[57442;5:3u",
+        "\x1b[57448;1:3u",
+      ],
+    });
+  });
+
   test("typing a command produces output", async ({ page }) => {
     const terminal = page.locator(".wterm");
     await expect(terminal).toContainText("$", { timeout: 5000 });

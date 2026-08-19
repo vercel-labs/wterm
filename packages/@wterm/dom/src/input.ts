@@ -56,6 +56,7 @@ export class InputHandler {
   private mouseButtons = 0;
   private focused = false;
   private suppressedKeyUps = new Set<string>();
+  private pressedModifiers = new Set<string>();
 
   private _onKeyDown: (e: KeyboardEvent) => void;
   private _onKeyUp: (e: KeyboardEvent) => void;
@@ -125,6 +126,7 @@ export class InputHandler {
       this.focused = false;
       this.element.classList.remove("focused");
       this.stopMouseCapture();
+      this.pressedModifiers.clear();
       if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[O");
     };
     this._onMouseDown = (event) => this.handleMouse(event, "press");
@@ -185,6 +187,9 @@ export class InputHandler {
 
   private handleKeyDown(e: KeyboardEvent): void {
     const keyId = e.code || e.key;
+    if (/^(Shift|Control|Alt|Meta)(Left|Right)$/.test(e.code)) {
+      this.pressedModifiers.add(e.code);
+    }
     if (this.composing) {
       this.suppressedKeyUps.add(keyId);
       return;
@@ -224,7 +229,12 @@ export class InputHandler {
     e.preventDefault();
     const kittyFlags = this.getBridge()?.kittyKeyboardFlags?.() ?? 0;
     if (kittyFlags !== 0) {
-      const seq = encodeKittyKey(e, kittyFlags, e.repeat ? "repeat" : "press");
+      const seq = encodeKittyKey(
+        e,
+        kittyFlags,
+        e.repeat ? "repeat" : "press",
+        this.pressedModifiers,
+      );
       if (seq) this.onData(seq);
       return;
     }
@@ -234,12 +244,13 @@ export class InputHandler {
 
   private handleKeyUp(e: KeyboardEvent): void {
     const keyId = e.code || e.key;
+    this.pressedModifiers.delete(e.code);
     if (this.suppressedKeyUps.delete(keyId)) return;
     if (this.composing) return;
     const kittyFlags = this.getBridge()?.kittyKeyboardFlags?.() ?? 0;
     if (!(kittyFlags & KITTY_REPORT_EVENTS)) return;
     if (e.metaKey && !e.ctrlKey) return;
-    const seq = encodeKittyKey(e, kittyFlags, "release");
+    const seq = encodeKittyKey(e, kittyFlags, "release", this.pressedModifiers);
     if (!seq) return;
     e.preventDefault();
     this.onData(seq);
