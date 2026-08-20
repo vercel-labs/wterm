@@ -180,6 +180,16 @@ export class InputHandler {
   private handleKeyDown(e: KeyboardEvent): void {
     if (this.composing) return;
 
+    // Skip the keydown that fires while an IME is starting (or in the middle
+    // of) a composition. Without this the first key of a composition leaks
+    // into the PTY before `compositionstart` flips `this.composing`.
+    if (
+      e.isComposing ||
+      e.keyCode === 229 ||
+      e.key === "Process"
+    )
+      return;
+
     if ((e.metaKey || e.ctrlKey) && e.key === "c") {
       const sel = window.getSelection();
       if (sel && sel.toString().length > 0) return;
