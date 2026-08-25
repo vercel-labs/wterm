@@ -4,6 +4,7 @@
   let cols = $state(80);
   let rows = $state(24);
   let cursorBlink = $state(false);
+  let onData = $state<((data: string) => void) | undefined>();
   let terminal: Terminal;
 
   export function setSize(nextCols: number, nextRows: number) {
@@ -15,9 +16,13 @@
     cursorBlink = nextCursorBlink;
   }
 
+  export function setOnData(nextOnData: ((data: string) => void) | undefined) {
+    onData = nextOnData;
+  }
+
   export function instance() {
     return terminal.instance();
   }
 </script>
 
-<Terminal bind:this={terminal} {cols} {rows} {cursorBlink} />
+<Terminal bind:this={terminal} {cols} {rows} {cursorBlink} {onData} />

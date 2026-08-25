@@ -197,6 +197,24 @@ describe("Terminal component", () => {
     expect(lastWTermInstance.onData).toBeNull();
   });
 
+  it("syncs onData when the callback prop changes", async () => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    const component = mount(TerminalHarness, { target });
+    await flushPromises();
+
+    const onData = vi.fn();
+    component.setOnData(onData);
+    await tick();
+
+    lastWTermInstance.onData("hello");
+    expect(onData).toHaveBeenCalledWith("hello");
+
+    component.setOnData(undefined);
+    await tick();
+    expect(lastWTermInstance.onData).toBeNull();
+  });
+
   it("passes debug option to WTerm", async () => {
     const { WTerm } = await import("@wterm/dom");
     mountTerminal({ debug: true });

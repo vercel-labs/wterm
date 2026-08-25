@@ -45,6 +45,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Check package versions
+        run: node scripts/sync-versions.mjs --check
+
       - name: Format check
         run: pnpm format:check
 

@@ -140,6 +140,12 @@
   $effect(() => {
     current?.element.classList.toggle("cursor-blink", cursorBlink);
   });
+
+  $effect(() => {
+    const wt = current;
+    if (!wt) return;
+    wt.onData = onData ? (data: string) => onData?.(data) : null;
+  });
 </script>
 
 <div

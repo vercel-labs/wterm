@@ -1,6 +1,6 @@
 {
   "name": "@wterm/svelte",
-  "version": "0.2.0",
+  "version": "0.3.4",
   "description": "Svelte component for wterm — a terminal emulator for the web",
   "type": "module",
   "svelte": "./dist/index.js",
@@ -19,7 +19,13 @@
     }
   },
   "files": [
-    "dist",
+    "dist/index.js",
+    "dist/index.d.ts",
+    "dist/index.d.ts.map",
+    "dist/Terminal.svelte",
+    "dist/Terminal.svelte.d.ts",
+    "dist/Terminal.svelte.d.ts.map",
+    "dist/terminal.css",
     "src/lib/terminal.css"
   ],
   "sideEffects": [
