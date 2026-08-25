@@ -2,6 +2,10 @@ import { WasmBridge, type TerminalCore } from "@wterm/core";
 import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
 import { DebugAdapter } from "./debug.js";
+import { isLinkActivationModifier } from "./hyperlink.js";
+
+const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
+const PROGRAMMATIC_SCROLL_TOLERANCE = 1;
 
 export interface WTermOptions {
   cols?: number;
@@ -34,12 +38,22 @@ export class WTerm {
   private renderer: Renderer | null = null;
   private input: InputHandler | null = null;
   private rafId: number | null = null;
-  private _renderTimer: ReturnType<typeof setTimeout> | null = null;
+  private _synchronizedOutputTimer: ReturnType<typeof setTimeout> | null = null;
+  private _synchronizedOutputState: "idle" | "held" | "passthrough" = "idle";
+  private _synchronizedOutputGeneration = 0;
+  private _rendererNeedsSetup = false;
   private resizeObserver: ResizeObserver | null = null;
   private _destroyed = false;
   private _shouldScrollToBottom = false;
+  private _scrollbackDiscardedCount = 0;
+  private _programmaticScrollTop: number | null = null;
+  private _pendingResizeScrollTop: number | null = null;
   private _rowHeight = 0;
-  private _onClickFocus: () => void;
+  private _charWidth = 0;
+  private _onClickFocus: (event: MouseEvent) => void;
+  private _onScroll: () => void;
+  private _onModifierChange: (event: KeyboardEvent) => void;
+  private _onWindowBlur: () => void;
 
   onData: ((data: string) => void) | null;
   onTitle: ((title: string) => void) | null;
@@ -66,11 +80,67 @@ export class WTerm {
     this.element.classList.add("wterm");
     if (options.cursorBlink) this.element.classList.add("cursor-blink");
 
-    this._onClickFocus = () => {
+    this._onClickFocus = (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".term-link")) {
+        if (
+          isLinkActivationModifier(
+            event,
+            this.element.ownerDocument.defaultView?.navigator ?? navigator,
+          ) ||
+          event.detail === 0
+        ) {
+          return;
+        }
+        event.preventDefault();
+      }
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) this.input?.focus();
     };
     this.element.addEventListener("click", this._onClickFocus);
+    this._onModifierChange = (event) => {
+      this.element.classList.toggle(
+        "link-modifier-active",
+        isLinkActivationModifier(
+          event,
+          this.element.ownerDocument.defaultView?.navigator ?? navigator,
+        ),
+      );
+    };
+    this._onWindowBlur = () => {
+      this.element.classList.remove("link-modifier-active");
+    };
+    this.element.ownerDocument.addEventListener(
+      "keydown",
+      this._onModifierChange,
+    );
+    this.element.ownerDocument.addEventListener(
+      "keyup",
+      this._onModifierChange,
+    );
+    this.element.ownerDocument.defaultView?.addEventListener(
+      "blur",
+      this._onWindowBlur,
+    );
+    this._onScroll = () => {
+      if (this._pendingResizeScrollTop !== null) return;
+      if (this._shouldScrollToBottom && this._isScrolledToBottom()) {
+        this._programmaticScrollTop = null;
+        return;
+      }
+      if (
+        this._programmaticScrollTop !== null &&
+        Math.abs(this.element.scrollTop - this._programmaticScrollTop) <=
+          PROGRAMMATIC_SCROLL_TOLERANCE
+      ) {
+        this._programmaticScrollTop = null;
+        return;
+      }
+      this._programmaticScrollTop = null;
+      this._shouldScrollToBottom = false;
+      this._scheduleRender();
+    };
+    this.element.addEventListener("scroll", this._onScroll, { passive: true });
   }
 
   async init(): Promise<this> {
@@ -90,6 +160,7 @@ export class WTerm {
       }
 
       this._setRowHeight();
+      this._measureCharSize();
 
       this.renderer = new Renderer(this._container);
       this.renderer.setup(this.cols, this.rows);
@@ -105,6 +176,10 @@ export class WTerm {
           }
         },
         () => this.bridge,
+        () =>
+          this._charWidth > 0 && this._rowHeight > 0
+            ? { charWidth: this._charWidth, rowHeight: this._rowHeight }
+            : null,
       );
 
       if (this.autoResize) {
@@ -131,36 +206,61 @@ export class WTerm {
   }
 
   private _scrollToBottom(): void {
-    const el = this.element;
-    const maxScroll = el.scrollHeight - el.clientHeight;
-    if (maxScroll <= 0) {
-      el.scrollTop = 0;
-      return;
-    }
-    const rh = this._rowHeight || 17;
-    el.scrollTop = Math.floor(maxScroll / rh) * rh;
+    this._setScrollTop(this.element.scrollHeight);
+  }
+
+  private _setScrollTop(value: number): void {
+    const before = this.element.scrollTop;
+    this.element.scrollTop = value;
+    const after = this.element.scrollTop;
+    if (after === before) return;
+    this._programmaticScrollTop = after;
   }
 
   write(data: string | Uint8Array): void {
     if (!this.bridge) return;
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._isScrolledToBottom();
+    let deliveryError: unknown;
+    let hasDeliveryError = false;
+    const drain = () => {
+      const result = this._drainResponses();
+      if (!hasDeliveryError && result.hasError) {
+        hasDeliveryError = true;
+        deliveryError = result.error;
+      }
+    };
     if (typeof data === "string") {
-      this.bridge.writeString(data);
+      this.bridge.writeString(data, drain);
     } else {
-      this.bridge.writeRaw(data);
+      this.bridge.writeRaw(data, drain);
     }
-    this._scheduleRender();
+    const synchronized = this.bridge.synchronizedOutput?.() ?? false;
+    const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
+    this._updateSynchronizedOutput(synchronized, generation);
+    if (this._synchronizedOutputState !== "held") {
+      this._setupRendererIfNeeded();
+      this._scheduleRender();
+    }
+    drain();
+    if (hasDeliveryError) throw deliveryError;
   }
 
   resize(cols: number, rows: number): void {
     if (!this.bridge) return;
-    this._shouldScrollToBottom = this._isScrolledToBottom();
+    this._shouldScrollToBottom =
+      this._pendingResizeScrollTop === null && this._isScrolledToBottom();
     this.cols = cols;
     this.rows = rows;
     this.bridge.resize(cols, rows);
-    this.renderer?.setup(cols, rows);
-    this._scheduleRender();
+    const synchronized = this.bridge.synchronizedOutput?.() ?? false;
+    const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
+    if (this._updateSynchronizedOutput(synchronized, generation)) {
+      this._rendererNeedsSetup = true;
+    } else {
+      this._setupRenderer(cols, rows);
+      this._scheduleRender();
+    }
     if (this.onResize) this.onResize(cols, rows);
   }
 
@@ -173,16 +273,87 @@ export class WTerm {
   }
 
   private _scheduleRender(): void {
-    if (this._renderTimer != null) return;
-    this._renderTimer = setTimeout(() => {
-      this._renderTimer = null;
-      if (this.rafId == null) {
-        this.rafId = requestAnimationFrame(() => {
-          this.rafId = null;
-          this._doRender();
-        });
+    if (this.rafId != null) return;
+    this.rafId = requestAnimationFrame(() => {
+      this.rafId = null;
+      this._doRender();
+    });
+  }
+
+  private _cancelScheduledRender(): void {
+    if (this.rafId != null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+  }
+
+  private _updateSynchronizedOutput(
+    synchronized: boolean,
+    generation: number,
+  ): boolean {
+    if (!synchronized) {
+      if (this._synchronizedOutputState === "held") {
+        this._cancelSynchronizedOutputFallback();
       }
-    }, 0);
+      this._synchronizedOutputState = "idle";
+      return false;
+    }
+    if (
+      this._synchronizedOutputState === "held" &&
+      generation !== this._synchronizedOutputGeneration
+    ) {
+      this._armSynchronizedOutputFallback(generation);
+      return true;
+    } else if (
+      this._synchronizedOutputState === "passthrough" &&
+      generation !== this._synchronizedOutputGeneration
+    ) {
+      this._synchronizedOutputState = "idle";
+    }
+    if (this._synchronizedOutputState !== "idle") {
+      return this._synchronizedOutputState === "held";
+    }
+    this._synchronizedOutputState = "held";
+    this._cancelScheduledRender();
+    this._armSynchronizedOutputFallback(generation);
+    return true;
+  }
+
+  private _armSynchronizedOutputFallback(generation: number): void {
+    this._cancelSynchronizedOutputFallback();
+    this._synchronizedOutputGeneration = generation;
+    this._synchronizedOutputTimer = setTimeout(() => {
+      if (
+        this._synchronizedOutputState !== "held" ||
+        this._synchronizedOutputGeneration !== generation
+      ) {
+        return;
+      }
+      this._synchronizedOutputTimer = null;
+      this._synchronizedOutputState = "passthrough";
+      this._setupRendererIfNeeded();
+      this._cancelScheduledRender();
+      this._doRender();
+    }, SYNCHRONIZED_OUTPUT_TIMEOUT_MS);
+  }
+
+  private _cancelSynchronizedOutputFallback(): void {
+    if (this._synchronizedOutputTimer == null) return;
+    clearTimeout(this._synchronizedOutputTimer);
+    this._synchronizedOutputTimer = null;
+  }
+
+  private _setupRendererIfNeeded(): void {
+    if (!this._rendererNeedsSetup) return;
+    this._setupRenderer(this.cols, this.rows);
+    this._rendererNeedsSetup = false;
+  }
+
+  private _setupRenderer(cols: number, rows: number): void {
+    if (!this._shouldScrollToBottom && this._pendingResizeScrollTop === null) {
+      this._pendingResizeScrollTop = this.element.scrollTop;
+    }
+    this.renderer?.setup(cols, rows);
   }
 
   private _initialRender(): void {
@@ -200,19 +371,58 @@ export class WTerm {
       }
     }
 
-    this.renderer.render(this.bridge);
+    const rowHeight = this._rowHeight || 17;
+    const scrollbackCount = this.bridge.getScrollbackCount();
+    const discardedCount = this.bridge.getScrollbackDiscardedCount?.();
+    const discardedDelta =
+      discardedCount !== undefined &&
+      discardedCount >= this._scrollbackDiscardedCount
+        ? discardedCount - this._scrollbackDiscardedCount
+        : 0;
+    if (discardedCount !== undefined) {
+      this._scrollbackDiscardedCount = discardedCount;
+    }
+    let scrollTop =
+      this._pendingResizeScrollTop !== null
+        ? this._pendingResizeScrollTop
+        : this.element.scrollTop;
+    if (!this._shouldScrollToBottom && discardedDelta > 0) {
+      scrollTop = Math.max(0, scrollTop - discardedDelta * rowHeight);
+      if (this._pendingResizeScrollTop !== null) {
+        this._pendingResizeScrollTop = scrollTop;
+      } else {
+        this._setScrollTop(scrollTop);
+      }
+    }
+
+    this.renderer.render(this.bridge, {
+      scrollTop: this._shouldScrollToBottom
+        ? Math.max(
+            0,
+            (scrollbackCount + this.rows) * rowHeight -
+              this.element.clientHeight,
+          )
+        : scrollTop,
+      clientHeight: this.element.clientHeight,
+      rowHeight,
+      scrollbackDiscardedCount: discardedCount,
+    });
 
     if (this.debug) {
       this.debug.recordRender(performance.now() - t0, dirtyCount);
     }
 
-    const hasScrollback = this.bridge.getScrollbackCount() > 0;
+    const hasScrollback = scrollbackCount > 0;
     this.element.classList.toggle("has-scrollback", hasScrollback);
 
     if (this._shouldScrollToBottom) {
       this._scrollToBottom();
+    } else if (this._pendingResizeScrollTop !== null) {
+      const pendingScrollTop = this._pendingResizeScrollTop;
+      this._pendingResizeScrollTop = null;
+      this._setScrollTop(pendingScrollTop);
     } else if (!hasScrollback && this.element.scrollTop !== 0) {
-      this.element.scrollTop = 0;
+      this._setScrollTop(0);
     }
 
     const title = this.bridge.getTitle();
@@ -220,10 +430,25 @@ export class WTerm {
       this.onTitle(title);
     }
 
-    const response = this.bridge.getResponse();
-    if (response !== null && this.onData) {
-      this.onData(response);
+    this._drainResponses();
+  }
+
+  private _drainResponses(): { hasError: boolean; error?: unknown } {
+    if (!this.bridge) return { hasError: false };
+    let response: string | null;
+    let firstError: unknown;
+    let hasError = false;
+    while ((response = this.bridge.getResponse()) !== null) {
+      try {
+        if (this.onData) this.onData(response);
+      } catch (error) {
+        if (!hasError) {
+          hasError = true;
+          firstError = error;
+        }
+      }
     }
+    return { hasError, error: firstError };
   }
 
   private _lockHeight(): void {
@@ -275,6 +500,7 @@ export class WTerm {
     row.remove();
 
     if (charWidth === 0 || rowHeight === 0) return null;
+    this._charWidth = charWidth;
     this._rowHeight = rowHeight;
     return { charWidth, rowHeight };
   }
@@ -306,11 +532,25 @@ export class WTerm {
 
   destroy(): void {
     this._destroyed = true;
-    if (this._renderTimer != null) clearTimeout(this._renderTimer);
-    if (this.rafId != null) cancelAnimationFrame(this.rafId);
+    this._cancelScheduledRender();
+    this._cancelSynchronizedOutputFallback();
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.input) this.input.destroy();
     this.element.removeEventListener("click", this._onClickFocus);
+    this.element.removeEventListener("scroll", this._onScroll);
+    this.element.ownerDocument.removeEventListener(
+      "keydown",
+      this._onModifierChange,
+    );
+    this.element.ownerDocument.removeEventListener(
+      "keyup",
+      this._onModifierChange,
+    );
+    this.element.ownerDocument.defaultView?.removeEventListener(
+      "blur",
+      this._onWindowBlur,
+    );
+    this.element.classList.remove("link-modifier-active");
     this.element.innerHTML = "";
     if (
       this.debug &&

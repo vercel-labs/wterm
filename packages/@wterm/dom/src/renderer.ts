@@ -8,6 +8,15 @@ const FLAG_UNDERLINE = 0x08;
 const FLAG_REVERSE = 0x20;
 const FLAG_INVISIBLE = 0x40;
 const FLAG_STRIKETHROUGH = 0x80;
+const DEFAULT_SCROLLBACK_OVERSCAN_ROWS = 10;
+
+export interface RenderViewport {
+  scrollTop: number;
+  clientHeight: number;
+  rowHeight: number;
+  overscanRows?: number;
+  scrollbackDiscardedCount?: number;
+}
 
 function rgbToCSS(packed: number): string {
   const r = (packed >> 16) & 0xff;
@@ -97,6 +106,23 @@ function escapeHTML(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function safeLinkHref(uri: string | undefined): string | undefined {
+  if (!uri) return undefined;
+  try {
+    const url = new URL(uri);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function linkIdentity(cell: CellData): string {
+  if (!cell.linkUri) return "";
+  return cell.linkKey ?? `fallback\0${cell.linkId ?? ""}\0${cell.linkUri}`;
+}
+
 function resolveColors(
   fg: number,
   bg: number,
@@ -121,24 +147,38 @@ function resolveColors(
   };
 }
 
+// Pixel-snapped vertical gradient stops keyed off `--term-row-height` so that
+// every cell paints the eighth-block boundary on the same physical pixel —
+// using raw percentages (e.g. `12.5%`) at the canonical 17px row-height
+// resolves to 2.125px and the browser rounds it differently across cells,
+// producing the per-cell jog Claude Code's horizontal-rule (`▔▔▔▔▔`) makes
+// visible against the row immediately below.
+const SNAP_1_8 = "round(calc(var(--term-row-height) * 0.125), 1px)";
+const SNAP_2_8 = "round(calc(var(--term-row-height) * 0.25), 1px)";
+const SNAP_3_8 = "round(calc(var(--term-row-height) * 0.375), 1px)";
+const SNAP_4_8 = "round(calc(var(--term-row-height) * 0.5), 1px)";
+const SNAP_5_8 = "round(calc(var(--term-row-height) * 0.625), 1px)";
+const SNAP_6_8 = "round(calc(var(--term-row-height) * 0.75), 1px)";
+const SNAP_7_8 = "round(calc(var(--term-row-height) * 0.875), 1px)";
+
 function getBlockBackground(cp: number, fg: string, bg: string): string {
   switch (cp) {
     case 0x2580:
-      return `linear-gradient(${fg} 50%,${bg} 50%)`;
+      return `linear-gradient(${fg} ${SNAP_4_8},${bg} ${SNAP_4_8})`;
     case 0x2581:
-      return `linear-gradient(${bg} 87.5%,${fg} 87.5%)`;
+      return `linear-gradient(${bg} ${SNAP_7_8},${fg} ${SNAP_7_8})`;
     case 0x2582:
-      return `linear-gradient(${bg} 75%,${fg} 75%)`;
+      return `linear-gradient(${bg} ${SNAP_6_8},${fg} ${SNAP_6_8})`;
     case 0x2583:
-      return `linear-gradient(${bg} 62.5%,${fg} 62.5%)`;
+      return `linear-gradient(${bg} ${SNAP_5_8},${fg} ${SNAP_5_8})`;
     case 0x2584:
-      return `linear-gradient(${bg} 50%,${fg} 50%)`;
+      return `linear-gradient(${bg} ${SNAP_4_8},${fg} ${SNAP_4_8})`;
     case 0x2585:
-      return `linear-gradient(${bg} 37.5%,${fg} 37.5%)`;
+      return `linear-gradient(${bg} ${SNAP_3_8},${fg} ${SNAP_3_8})`;
     case 0x2586:
-      return `linear-gradient(${bg} 25%,${fg} 25%)`;
+      return `linear-gradient(${bg} ${SNAP_2_8},${fg} ${SNAP_2_8})`;
     case 0x2587:
-      return `linear-gradient(${bg} 12.5%,${fg} 12.5%)`;
+      return `linear-gradient(${bg} ${SNAP_1_8},${fg} ${SNAP_1_8})`;
     case 0x2588:
       return fg;
     case 0x2589:
@@ -164,7 +204,7 @@ function getBlockBackground(cp: number, fg: string, bg: string): string {
     case 0x2593:
       return `color-mix(in srgb,${fg} 75%,${bg})`;
     case 0x2594:
-      return `linear-gradient(${fg} 12.5%,${bg} 12.5%)`;
+      return `linear-gradient(${fg} ${SNAP_1_8},${bg} ${SNAP_1_8})`;
     case 0x2595:
       return `linear-gradient(to right,${bg} 87.5%,${fg} 87.5%)`;
     default: {
@@ -210,7 +250,11 @@ export class Renderer {
   private prevRowBg: string[] = [];
 
   private _scrollbackRowEls: HTMLDivElement[] = [];
-  private _renderedScrollbackCount = 0;
+  private _scrollbackStartKey = 0;
+  private _renderedScrollbackCount = -1;
+  private _renderedDiscardedCount = -1;
+  private _scrollbackTopSpacer: HTMLDivElement | null = null;
+  private _scrollbackBottomSpacer: HTMLDivElement | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -223,9 +267,19 @@ export class Renderer {
     this.rowEls = [];
     this.prevRowBg = [];
     this._scrollbackRowEls = [];
-    this._renderedScrollbackCount = 0;
+    this._scrollbackStartKey = 0;
+    this._renderedScrollbackCount = -1;
+    this._renderedDiscardedCount = -1;
 
     const fragment = document.createDocumentFragment();
+    this._scrollbackTopSpacer = document.createElement("div");
+    this._scrollbackTopSpacer.className = "term-scrollback-spacer";
+    fragment.appendChild(this._scrollbackTopSpacer);
+
+    this._scrollbackBottomSpacer = document.createElement("div");
+    this._scrollbackBottomSpacer.className = "term-scrollback-spacer";
+    fragment.appendChild(this._scrollbackBottomSpacer);
+
     for (let r = 0; r < rows; r++) {
       const rowEl = document.createElement("div");
       rowEl.className = "term-row";
@@ -247,47 +301,77 @@ export class Renderer {
     let html = "";
     let runStyle = "";
     let runText = "";
+    let runCells: string[] = [];
     let runStart = 0;
+    let runLinkKey = "";
+    let runLinkUri: string | undefined;
+    let outputLinkKey = "";
+
+    const appendContent = (
+      content: string,
+      linkKey: string,
+      uri: string | undefined,
+    ) => {
+      const href = safeLinkHref(uri);
+      const nextLinkKey = href ? linkKey : "";
+      if (nextLinkKey !== outputLinkKey) {
+        if (outputLinkKey) html += "</a>";
+        if (nextLinkKey) {
+          html += `<a class="term-link" href="${escapeHTML(href!)}" target="_blank" rel="noopener noreferrer">`;
+        }
+        outputLinkKey = nextLinkKey;
+      }
+      html += content;
+    };
 
     const flushRun = (endCol: number) => {
       if (!runText) return;
       const escaped = escapeHTML(runText);
+      let content = "";
 
       if (cursorCol >= runStart && cursorCol < endCol) {
         const offset = cursorCol - runStart;
-        const chars = [...runText];
-        const before = chars.slice(0, offset).join("");
-        const cursorChar = chars[offset] || " ";
-        const after = chars.slice(offset + 1).join("");
+        const before = runCells.slice(0, offset).join("");
+        const cursorChar = runCells[offset] || " ";
+        const after = runCells.slice(offset + 1).join("");
 
         if (before) {
-          html += runStyle
+          content += runStyle
             ? `<span style="${runStyle}">${escapeHTML(before)}</span>`
             : `<span>${escapeHTML(before)}</span>`;
         }
-        html += runStyle
+        content += runStyle
           ? `<span class="term-cursor" style="${runStyle}">${escapeHTML(cursorChar)}</span>`
           : `<span class="term-cursor">${escapeHTML(cursorChar)}</span>`;
         if (after) {
-          html += runStyle
+          content += runStyle
             ? `<span style="${runStyle}">${escapeHTML(after)}</span>`
             : `<span>${escapeHTML(after)}</span>`;
         }
       } else {
-        html += runStyle
+        content += runStyle
           ? `<span style="${runStyle}">${escaped}</span>`
           : `<span>${escaped}</span>`;
       }
+      appendContent(content, runLinkKey, runLinkUri);
+      runText = "";
+      runCells = [];
     };
 
     const appendStyledSpan = (
       className: string,
       style: string,
       text: string,
+      linkKey: string,
+      linkUri?: string,
     ) => {
       const classAttr = className ? ` class="${className}"` : "";
       const styleAttr = style ? ` style="${style}"` : "";
-      html += `<span${classAttr}${styleAttr}>${escapeHTML(text)}</span>`;
+      appendContent(
+        `<span${classAttr}${styleAttr}>${escapeHTML(text)}</span>`,
+        linkKey,
+        linkUri,
+      );
     };
 
     for (let col = 0; col < this.cols; col++) {
@@ -295,6 +379,8 @@ export class Renderer {
       const inBounds = col < lineLen;
       const cp = inBounds ? cell.char : 0;
       const width = inBounds ? (cell.width ?? 1) : 1;
+      const cellLinkKey = inBounds ? linkIdentity(cell) : "";
+      const cellLinkUri = inBounds ? cell.linkUri : undefined;
 
       if (inBounds && width === 0) {
         flushRun(col);
@@ -304,10 +390,19 @@ export class Renderer {
         // would shorten the row.
         const continuesWide = col > 0 && (getCell(col - 1).width ?? 1) === 2;
         if (!continuesWide) {
-          appendStyledSpan(col === cursorCol ? "term-cursor" : "", "", " ");
+          appendStyledSpan(
+            col === cursorCol ? "term-cursor" : "",
+            "",
+            " ",
+            cellLinkKey,
+            cellLinkUri,
+          );
         }
         runStyle = "";
+        runLinkKey = "";
+        runLinkUri = undefined;
         runText = "";
+        runCells = [];
         runStart = col + 1;
         continue;
       }
@@ -320,14 +415,23 @@ export class Renderer {
         // continuation is outside the row. Drawing the pair here would spill
         // a second column past the row.
         if (col + 1 >= this.cols) {
-          appendStyledSpan(col === cursorCol ? "term-cursor" : "", "", " ");
+          appendStyledSpan(
+            col === cursorCol ? "term-cursor" : "",
+            "",
+            " ",
+            cellLinkKey,
+            cellLinkUri,
+          );
           runStyle = "";
+          runLinkKey = "";
+          runLinkUri = undefined;
           runText = "";
+          runCells = [];
           runStart = col + 1;
           continue;
         }
 
-        const ch = cp >= 32 ? String.fromCodePoint(cp) : " ";
+        const ch = cell.chars ?? (cp >= 32 ? String.fromCodePoint(cp) : " ");
         const style = buildCellStyle(
           cell.fg,
           cell.bg,
@@ -339,10 +443,13 @@ export class Renderer {
           cursorCol >= col && cursorCol < col + 2
             ? "term-wide term-cursor"
             : "term-wide";
-        appendStyledSpan(cls, style, ch);
+        appendStyledSpan(cls, style, ch, cellLinkKey, cellLinkUri);
 
         runStyle = "";
+        runLinkKey = "";
+        runLinkUri = undefined;
         runText = "";
+        runCells = [];
         runStart = col + 2;
         continue;
       }
@@ -360,28 +467,41 @@ export class Renderer {
         const cls = col === cursorCol ? "term-block term-cursor" : "term-block";
         const bg = getBlockBackground(cp, colors.fg, colors.bg);
         const dim = cell.flags & FLAG_DIM ? "opacity:0.5;" : "";
-        html += `<span class="${cls}" style="background:${bg};${dim}"></span>`;
+        appendContent(
+          `<span class="${cls}" style="background:${bg};${dim}"></span>`,
+          cellLinkKey,
+          cellLinkUri,
+        );
 
         runStyle = "";
+        runLinkKey = "";
+        runLinkUri = undefined;
         runText = "";
+        runCells = [];
         runStart = col + 1;
       } else {
-        const ch = inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ";
+        const ch =
+          cell.chars ?? (inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ");
         const style = inBounds
           ? buildCellStyle(cell.fg, cell.bg, cell.flags, cell.fgRgb, cell.bgRgb)
           : "";
 
-        if (style !== runStyle) {
+        if (style !== runStyle || cellLinkKey !== runLinkKey) {
           flushRun(col);
           runStyle = style;
+          runLinkKey = cellLinkKey;
+          runLinkUri = cellLinkUri;
           runText = ch;
+          runCells = [ch];
           runStart = col;
         } else {
           runText += ch;
+          runCells.push(ch);
         }
       }
     }
     flushRun(this.cols);
+    if (outputLinkKey) html += "</a>";
 
     rowEl.innerHTML = html;
 
@@ -428,35 +548,119 @@ export class Renderer {
     return rowEl;
   }
 
-  private syncScrollback(core: TerminalCore): void {
+  private syncScrollback(core: TerminalCore, viewport?: RenderViewport): void {
     const scrollbackCount = core.getScrollbackCount();
-
-    if (scrollbackCount === this._renderedScrollbackCount) return;
-
-    if (scrollbackCount > this._renderedScrollbackCount) {
-      const newCount = scrollbackCount - this._renderedScrollbackCount;
-      const firstGridRow = this.rowEls[0] ?? null;
-      const fragment = document.createDocumentFragment();
-
-      for (let i = newCount - 1; i >= 0; i--) {
-        const rowEl = this._buildScrollbackRowEl(core, i);
-        fragment.appendChild(rowEl);
-        this._scrollbackRowEls.push(rowEl);
-      }
-
-      this.container.insertBefore(fragment, firstGridRow);
-    } else {
-      const removeCount = this._renderedScrollbackCount - scrollbackCount;
-      for (let i = 0; i < removeCount; i++) {
-        const el = this._scrollbackRowEls.shift();
-        if (el) el.remove();
-      }
+    const rowHeight = viewport?.rowHeight ?? 0;
+    const virtual = viewport !== undefined && rowHeight > 0;
+    const overscan = viewport?.overscanRows ?? DEFAULT_SCROLLBACK_OVERSCAN_ROWS;
+    const hasDiscardedCount = viewport?.scrollbackDiscardedCount !== undefined;
+    const discardedCount = viewport?.scrollbackDiscardedCount ?? 0;
+    const viewportHeight =
+      viewport && viewport.clientHeight > 0
+        ? viewport.clientHeight
+        : this.rows * rowHeight;
+    const firstVisible = virtual
+      ? Math.floor(viewport.scrollTop / rowHeight)
+      : 0;
+    const visibleRows = virtual
+      ? Math.ceil(viewportHeight / rowHeight)
+      : scrollbackCount;
+    let start = virtual
+      ? Math.max(0, Math.min(scrollbackCount, firstVisible - overscan))
+      : 0;
+    let end = virtual
+      ? Math.max(
+          start,
+          Math.min(scrollbackCount, firstVisible + visibleRows + overscan),
+        )
+      : scrollbackCount;
+    const selection = this.container.ownerDocument.getSelection();
+    const selectionInContainer =
+      selection !== null &&
+      !selection.isCollapsed &&
+      (this.container.contains(selection.anchorNode) ||
+        this.container.contains(selection.focusNode));
+    if (selectionInContainer && this._scrollbackRowEls.length > 0) {
+      start = Math.min(
+        start,
+        Math.max(0, this._scrollbackStartKey - discardedCount),
+      );
+      end = Math.max(
+        end,
+        Math.min(
+          scrollbackCount,
+          this._scrollbackStartKey -
+            discardedCount +
+            this._scrollbackRowEls.length,
+        ),
+      );
     }
 
+    const startKey = discardedCount + start;
+    if (
+      hasDiscardedCount &&
+      scrollbackCount === this._renderedScrollbackCount &&
+      discardedCount === this._renderedDiscardedCount &&
+      startKey === this._scrollbackStartKey &&
+      end - start === this._scrollbackRowEls.length
+    ) {
+      return;
+    }
+
+    const previous = new Map<number, HTMLDivElement>();
+    for (let i = 0; i < this._scrollbackRowEls.length; i++) {
+      previous.set(this._scrollbackStartKey + i, this._scrollbackRowEls[i]);
+    }
+
+    const endKey = discardedCount + end;
+    for (const [key, rowEl] of previous) {
+      if (key < startKey || key >= endKey) rowEl.remove();
+    }
+
+    const nextRows: HTMLDivElement[] = [];
+    let nextSibling = this._scrollbackTopSpacer?.nextSibling ?? null;
+    for (let index = start; index < end; index++) {
+      const key = discardedCount + index;
+      const offset = scrollbackCount - 1 - index;
+      const candidate = this._buildScrollbackRowEl(core, offset);
+      const existing = previous.get(key);
+      let rowEl = candidate;
+      let positioned = false;
+
+      if (
+        existing &&
+        existing.innerHTML === candidate.innerHTML &&
+        existing.style.cssText === candidate.style.cssText
+      ) {
+        rowEl = existing;
+      } else if (existing) {
+        existing.replaceWith(candidate);
+        positioned = true;
+      }
+
+      if (!positioned && rowEl !== nextSibling) {
+        this.container.insertBefore(
+          rowEl,
+          nextSibling ?? this._scrollbackBottomSpacer,
+        );
+      }
+      nextSibling = rowEl.nextSibling;
+      nextRows.push(rowEl);
+    }
+    this._scrollbackRowEls = nextRows;
+    this._scrollbackStartKey = startKey;
     this._renderedScrollbackCount = scrollbackCount;
+    this._renderedDiscardedCount = discardedCount;
+
+    if (this._scrollbackTopSpacer) {
+      this._scrollbackTopSpacer.style.height = `${start * rowHeight}px`;
+    }
+    if (this._scrollbackBottomSpacer) {
+      this._scrollbackBottomSpacer.style.height = `${(scrollbackCount - end) * rowHeight}px`;
+    }
   }
 
-  render(core: TerminalCore): void {
+  render(core: TerminalCore, viewport?: RenderViewport): void {
     const rows = core.getRows();
     const cols = core.getCols();
 
@@ -466,7 +670,7 @@ export class Renderer {
       resized = true;
     }
 
-    this.syncScrollback(core);
+    this.syncScrollback(core, viewport);
 
     const cursor = core.getCursor();
     const cursorVisible = cursor.visible;

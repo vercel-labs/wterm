@@ -1,5 +1,6 @@
 zig-out/
 .zig-cache/
+zig-pkg/
 *.wasm
 !packages/@wterm/core/wasm/wterm.wasm
 !packages/@wterm/ghostty/wasm/ghostty-vt.wasm

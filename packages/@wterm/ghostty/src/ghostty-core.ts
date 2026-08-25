@@ -16,6 +16,10 @@ import {
 } from "./wasm-bindings.js";
 
 const DEFAULT_COLOR = 256;
+const GRAPHEME_BUFFER_BYTES = 256;
+const HYPERLINK_BUFFER_BYTES = 1024;
+const DEFAULT_FOREGROUND = "#d4d4d4";
+const DEFAULT_BACKGROUND = "#1e1e1e";
 
 const WTERM_FLAG_BOLD = 0x01;
 const WTERM_FLAG_DIM = 0x02;
@@ -57,6 +61,15 @@ const BLANK_CELL: CellData = {
 export interface GhosttyOptions {
   wasmPath?: string;
   scrollbackLimit?: number;
+  foregroundColor?: string;
+  backgroundColor?: string;
+}
+
+function parseColor(value: string, option: string): number {
+  if (!/^#[0-9a-f]{6}$/i.test(value)) {
+    throw new Error(`@wterm/ghostty: ${option} must be a #RRGGBB color`);
+  }
+  return Number.parseInt(value.slice(1), 16);
 }
 
 /**
@@ -79,6 +92,8 @@ export class GhosttyCore implements TerminalCore {
   private wasm: GhosttyWasm;
   private termPtr = 0;
   private _options: GhosttyOptions;
+  private _foregroundRgb: number;
+  private _backgroundRgb: number;
 
   private _viewportBufPtr = 0;
   private _viewportBufSize = 0;
@@ -94,10 +109,22 @@ export class GhosttyCore implements TerminalCore {
   private _scrollbackView: DataView | null = null;
   private _scrollbackOffset = -1;
   private _scrollbackLen = 0;
+  private _graphemeBufPtr = 0;
+  private _graphemeBufSize = GRAPHEME_BUFFER_BYTES;
+  private _hyperlinkBufPtr = 0;
+  private _hyperlinkBufSize = HYPERLINK_BUFFER_BYTES;
 
   private constructor(wasm: GhosttyWasm, options: GhosttyOptions) {
     this.wasm = wasm;
     this._options = options;
+    this._foregroundRgb = parseColor(
+      options.foregroundColor ?? DEFAULT_FOREGROUND,
+      "foregroundColor",
+    );
+    this._backgroundRgb = parseColor(
+      options.backgroundColor ?? DEFAULT_BACKGROUND,
+      "backgroundColor",
+    );
   }
 
   /**
@@ -115,7 +142,19 @@ export class GhosttyCore implements TerminalCore {
     this._cols = cols;
     this._rows = rows;
     const scrollback = this._options.scrollbackLimit ?? 10000;
-    this.termPtr = this.wasm.exports.init(cols, rows, scrollback);
+    this.termPtr = this.wasm.exports.init(
+      cols,
+      rows,
+      scrollback,
+      this._foregroundRgb,
+      this._backgroundRgb,
+    );
+    this._graphemeBufPtr = allocBuffer(this.wasm, GRAPHEME_BUFFER_BYTES);
+    if (this._hyperlinkBufPtr !== 0) {
+      freeBuffer(this.wasm, this._hyperlinkBufPtr, this._hyperlinkBufSize);
+    }
+    this._hyperlinkBufSize = HYPERLINK_BUFFER_BYTES;
+    this._hyperlinkBufPtr = allocBuffer(this.wasm, HYPERLINK_BUFFER_BYTES);
     this._allocViewportBuffer();
     this._invalidate();
   }
@@ -159,6 +198,7 @@ export class GhosttyCore implements TerminalCore {
       cell.codepoint === 0 &&
       cell.flags === 0 &&
       cell.colorFlags === 0 &&
+      !cell.hasHyperlink &&
       cell.width !== 0
     )
       return BLANK_CELL;
@@ -170,6 +210,9 @@ export class GhosttyCore implements TerminalCore {
       flags: cell.flags,
       width: cell.width,
     };
+    if (cell.hasGrapheme) result.chars = this._readGrapheme(row, col);
+    if (cell.hasHyperlink)
+      Object.assign(result, this._readHyperlink(row, col, false));
     if (cell.colorFlags & 1)
       result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
     if (cell.colorFlags & 2)
@@ -220,6 +263,27 @@ export class GhosttyCore implements TerminalCore {
     return this.wasm.exports.using_alt_screen(this.termPtr) !== 0;
   }
 
+  mouseTracking(): 0 | 1000 | 1002 {
+    const mode = this.wasm.exports.mouse_tracking(this.termPtr);
+    return mode === 1000 || mode === 1002 ? mode : 0;
+  }
+
+  mouseSgr(): boolean {
+    return this.wasm.exports.mouse_sgr(this.termPtr) !== 0;
+  }
+
+  focusEvents(): boolean {
+    return this.wasm.exports.focus_events(this.termPtr) !== 0;
+  }
+
+  synchronizedOutput(): boolean {
+    return this.wasm.exports.synchronized_output(this.termPtr) !== 0;
+  }
+
+  synchronizedOutputGeneration(): number {
+    return this.wasm.exports.synchronized_output_generation(this.termPtr);
+  }
+
   // -- Side outputs --
 
   getTitle(): string | null {
@@ -250,6 +314,10 @@ export class GhosttyCore implements TerminalCore {
     return this.wasm.exports.get_scrollback_count(this.termPtr);
   }
 
+  getScrollbackDiscardedCount(): number {
+    return this.wasm.exports.get_scrollback_discarded_count(this.termPtr);
+  }
+
   getScrollbackCell(offset: number, col: number): CellData {
     const len = this._ensureScrollbackLine(offset);
     const view = this._scrollbackView;
@@ -263,6 +331,10 @@ export class GhosttyCore implements TerminalCore {
       flags: cell.flags,
       width: cell.width,
     };
+    if (cell.hasGrapheme)
+      result.chars = this._readScrollbackGrapheme(offset, col);
+    if (cell.hasHyperlink)
+      Object.assign(result, this._readHyperlink(offset, col, true));
     if (cell.colorFlags & 1)
       result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
     if (cell.colorFlags & 2)
@@ -285,6 +357,134 @@ export class GhosttyCore implements TerminalCore {
   private _invalidate(): void {
     this._viewportStale = true;
     this._scrollbackOffset = -1;
+  }
+
+  private _decodeGrapheme(len: number): string | undefined {
+    if (len === 0 || this._graphemeBufPtr === 0) return undefined;
+    return new TextDecoder().decode(
+      new Uint8Array(
+        this.wasm.exports.memory.buffer,
+        this._graphemeBufPtr,
+        len,
+      ),
+    );
+  }
+
+  private _ensureGraphemeBuffer(required: number): void {
+    if (required <= this._graphemeBufSize) return;
+    if (this._graphemeBufPtr !== 0) {
+      freeBuffer(this.wasm, this._graphemeBufPtr, this._graphemeBufSize);
+    }
+    this._graphemeBufSize = required;
+    this._graphemeBufPtr = allocBuffer(this.wasm, required);
+  }
+
+  private _ensureHyperlinkBuffer(required: number): void {
+    if (required <= this._hyperlinkBufSize) return;
+    if (this._hyperlinkBufPtr !== 0) {
+      freeBuffer(this.wasm, this._hyperlinkBufPtr, this._hyperlinkBufSize);
+    }
+    this._hyperlinkBufSize = required;
+    this._hyperlinkBufPtr = allocBuffer(this.wasm, required);
+  }
+
+  private _readHyperlink(
+    rowOrOffset: number,
+    col: number,
+    scrollback: boolean,
+  ): { linkUri: string; linkId?: string; linkKey: string } | undefined {
+    if (this._hyperlinkBufPtr === 0) return undefined;
+    const read = scrollback
+      ? this.wasm.exports.get_scrollback_hyperlink
+      : this.wasm.exports.get_viewport_hyperlink;
+    let len = read(
+      this.termPtr,
+      rowOrOffset,
+      col,
+      this._hyperlinkBufPtr,
+      this._hyperlinkBufSize,
+    );
+    if (len > this._hyperlinkBufSize) {
+      this._ensureHyperlinkBuffer(len);
+      if (this._hyperlinkBufPtr === 0) return undefined;
+      len = read(
+        this.termPtr,
+        rowOrOffset,
+        col,
+        this._hyperlinkBufPtr,
+        this._hyperlinkBufSize,
+      );
+    }
+    if (len === 0 || len > this._hyperlinkBufSize) return undefined;
+    const text = new TextDecoder().decode(
+      new Uint8Array(
+        this.wasm.exports.memory.buffer,
+        this._hyperlinkBufPtr,
+        len,
+      ),
+    );
+    const [linkUri, linkId = "", implicitId = ""] = text.split("\0");
+    if (!linkUri) return undefined;
+    const linkKey = linkId
+      ? `e\0${linkId}\0${linkUri}`
+      : `g\0${implicitId}\0${linkUri}`;
+    return {
+      linkUri,
+      linkId: linkId || undefined,
+      linkKey,
+    };
+  }
+
+  private _readGrapheme(row: number, col: number): string | undefined {
+    if (this._graphemeBufPtr === 0 || !this.wasm.exports.get_viewport_grapheme)
+      return undefined;
+    let len = this.wasm.exports.get_viewport_grapheme(
+      this.termPtr,
+      row,
+      col,
+      this._graphemeBufPtr,
+      this._graphemeBufSize,
+    );
+    if (len > this._graphemeBufSize) {
+      this._ensureGraphemeBuffer(len);
+      len = this.wasm.exports.get_viewport_grapheme(
+        this.termPtr,
+        row,
+        col,
+        this._graphemeBufPtr,
+        this._graphemeBufSize,
+      );
+    }
+    return this._decodeGrapheme(len);
+  }
+
+  private _readScrollbackGrapheme(
+    offset: number,
+    col: number,
+  ): string | undefined {
+    if (
+      this._graphemeBufPtr === 0 ||
+      !this.wasm.exports.get_scrollback_grapheme
+    )
+      return undefined;
+    let len = this.wasm.exports.get_scrollback_grapheme(
+      this.termPtr,
+      offset,
+      col,
+      this._graphemeBufPtr,
+      this._graphemeBufSize,
+    );
+    if (len > this._graphemeBufSize) {
+      this._ensureGraphemeBuffer(len);
+      len = this.wasm.exports.get_scrollback_grapheme(
+        this.termPtr,
+        offset,
+        col,
+        this._graphemeBufPtr,
+        this._graphemeBufSize,
+      );
+    }
+    return this._decodeGrapheme(len);
   }
 
   private _allocViewportBuffer(): void {
@@ -336,14 +536,17 @@ export class GhosttyCore implements TerminalCore {
   }
 
   private _ensureViewport(): void {
-    if (!this._viewportStale) return;
-    this.wasm.exports.update(this.termPtr);
-    this.wasm.exports.get_viewport(this.termPtr, this._viewportBufPtr);
-    this._viewportView = new DataView(
-      this.wasm.exports.memory.buffer,
-      this._viewportBufPtr,
-      this._viewportBufSize,
-    );
-    this._viewportStale = false;
+    if (this._viewportStale) {
+      this.wasm.exports.update(this.termPtr);
+      this.wasm.exports.get_viewport(this.termPtr, this._viewportBufPtr);
+      this._viewportStale = false;
+    }
+    if (this._viewportView?.buffer !== this.wasm.exports.memory.buffer) {
+      this._viewportView = new DataView(
+        this.wasm.exports.memory.buffer,
+        this._viewportBufPtr,
+        this._viewportBufSize,
+      );
+    }
   }
 }

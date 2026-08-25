@@ -1,8 +1,48 @@
 # Changelog
 
-## 0.3.2
+## 0.3.4
 
 <!-- release:start -->
+
+### New Features
+
+- **Native OSC 8 hyperlinks:** the built-in and Ghostty cores preserve hyperlink metadata through rendering, scrollback, reflow and resets. The DOM renderer exposes safe absolute HTTP(S) links as native anchors, with Command-click activation on macOS and Control-click on Windows/Linux while plain clicks remain terminal-owned (#116)
+
+### Bug Fixes
+
+- **Complete Ghostty grapheme strings:** combining marks and ZWJ sequences now cross the WASM boundary as complete clusters in both the viewport and scrollback instead of being truncated to a base codepoint (#111)
+- **Ghostty theme color responses:** OSC 10 and OSC 11 queries now return the configured foreground and background colors with the original BEL or ST terminator (#113)
+- **Atomic Ghostty synchronized output:** Ghostty exposes DEC mode `?2026` state and block generations so the DOM scheduler holds intermediate frames and paints the completed burst once (#114)
+- **Bounded scrollback DOM:** history rows are virtualized with viewport overscan, preserving native selection and the visible history position across rollover and resize while keeping mounted rows bounded (#115, #61)
+
+### Improvements
+
+- **Direct animation-frame scheduling:** normal writes request an animation frame without an intermediate timer while retaining one pending render per frame and synchronized-output cancellation semantics (#112)
+
+### Contributors
+
+- @Railly
+
+<!-- release:end -->
+
+## 0.3.3
+
+### Bug Fixes
+
+- **Pixel-aligned block gradients** — vertical fractional block glyphs now snap their gradient stops to whole pixels, preventing horizontal rules from jogging between cells at fractional row-height boundaries (#104, #81)
+- **Ordered terminal query responses** — the built-in core queues every response instead of overwriting a single pending value, and the DOM adapter drains them in order even when writes arrive in chunks or an `onData` callback throws (#105)
+- **Atomic synchronized output** — DEC mode `?2026` now holds intermediate paints and exposes one completed frame, with a fixed one-second recovery ceiling for unterminated blocks and generation-aware deadlines for consecutive blocks (#106, #57)
+- **Browser mouse and focus reporting** — the DOM adapter now emits SGR press, drag, release and wheel events for modes `1000`, `1002` and `1006`, reports focus for mode `1004`, and preserves native Shift selection (#107, #55)
+- **Viewport history across vertical resize** — shrinking pushes only the rows above the cursor into scrollback, growing refills from the newest history, and wrapped rings are indexed from their write position. Growing now consumes restored scrollback rows, so `getLine` offsets can shift across a resize and hosts retaining an offset must re-read it (#108, #43, #89)
+- **Terminal responses in `@wterm/ghostty`** — DA1, DSR operating status, CPR and DECRQM queries now produce ordered responses through a bounded FIFO instead of being silently dropped (#109)
+
+### Contributors
+
+- @ivebenfreed
+- @Ramalama2
+- @Railly
+
+## 0.3.2
 
 ### Bug Fixes
 
@@ -24,8 +64,6 @@
 - @ctate
 - @njbrake
 - @Railly
-
-<!-- release:end -->
 
 ## 0.3.1
 

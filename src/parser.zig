@@ -41,6 +41,7 @@ pub const Parser = struct {
     // OSC collected data
     osc_data: [MAX_OSC]u8 = undefined,
     osc_len: u16 = 0,
+    osc_truncated: bool = false,
 
     // UTF-8 decoder
     utf8_buf: [4]u8 = undefined,
@@ -166,6 +167,7 @@ pub const Parser = struct {
         if (byte == ']') {
             self.state = .osc_string;
             self.osc_len = 0;
+            self.osc_truncated = false;
             return .none;
         }
         if (byte >= 0x20 and byte <= 0x2F) {
@@ -294,10 +296,12 @@ pub const Parser = struct {
             self.state = .ground;
             return .osc_dispatch;
         }
-        if (byte >= 0x20 and byte <= 0x7E) {
+        if (byte >= 0x20 and byte != 0x7F) {
             if (self.osc_len < MAX_OSC) {
                 self.osc_data[self.osc_len] = byte;
                 self.osc_len += 1;
+            } else {
+                self.osc_truncated = true;
             }
         }
         return .none;
@@ -342,4 +346,17 @@ fn decodeUtf8(bytes: []const u8) u21 {
         },
         else => 0xFFFD,
     };
+}
+
+test "OSC marks payloads that exceed the collection buffer as truncated" {
+    const testing = @import("std").testing;
+    var parser = Parser{};
+    _ = parser.feed(0x1b);
+    _ = parser.feed(']');
+    var i: usize = 0;
+    while (i < MAX_OSC + 1) : (i += 1) {
+        _ = parser.feed('x');
+    }
+    try testing.expect(parser.osc_truncated);
+    try testing.expectEqual(MAX_OSC, parser.osc_len);
 }

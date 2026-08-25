@@ -2,6 +2,7 @@ const terminal_mod = @import("terminal.zig");
 const grid_mod = @import("grid.zig");
 const cell_mod = @import("cell.zig");
 const scrollback_mod = @import("scrollback.zig");
+const hyperlink_mod = @import("hyperlink.zig");
 
 const Terminal = terminal_mod.Terminal;
 
@@ -17,6 +18,7 @@ export fn init(cols: u32, rows: u32) void {
     const c: u16 = if (cols > grid_mod.MAX_COLS) grid_mod.MAX_COLS else if (cols == 0) 1 else @intCast(cols);
     const r: u16 = if (rows > grid_mod.MAX_ROWS) grid_mod.MAX_ROWS else if (rows == 0) 1 else @intCast(rows);
     terminal.reset(c, r);
+    terminal.hyperlinks.reset();
     terminal.scrollback = &scrollback;
     terminal.alt_grid = &alt_grid;
     scrollback.reset();
@@ -88,6 +90,26 @@ export fn getUsingAltScreen() u32 {
     return if (terminal.using_alt_screen) 1 else 0;
 }
 
+export fn getMouseTracking() u32 {
+    return terminal.mouse_tracking;
+}
+
+export fn getMouseSgr() u32 {
+    return if (terminal.mouse_sgr) 1 else 0;
+}
+
+export fn getFocusEvents() u32 {
+    return if (terminal.focus_events) 1 else 0;
+}
+
+export fn getSynchronizedOutput() u32 {
+    return if (terminal.synchronized_output) 1 else 0;
+}
+
+export fn getSynchronizedOutputGeneration() u32 {
+    return terminal.synchronized_output_generation;
+}
+
 // -- Title --
 
 export fn getTitlePtr() [*]const u8 {
@@ -106,10 +128,46 @@ export fn getTitleChanged() u32 {
     return 0;
 }
 
+export fn getLinkUriPtr(index: u32) [*]const u8 {
+    const entry = terminal.hyperlinks.get(@intCast(index)) orelse return &input_buffer;
+    return &entry.uri;
+}
+
+export fn getLinkUriLen(index: u32) u32 {
+    const entry = terminal.hyperlinks.get(@intCast(index)) orelse return 0;
+    return entry.uri_len;
+}
+
+export fn getLinkIdPtr(index: u32) [*]const u8 {
+    const entry = terminal.hyperlinks.get(@intCast(index)) orelse return &input_buffer;
+    return &entry.id;
+}
+
+export fn getLinkIdLen(index: u32) u32 {
+    const entry = terminal.hyperlinks.get(@intCast(index)) orelse return 0;
+    return entry.id_len;
+}
+
+export fn getHyperlinkCapacity() u32 {
+    return hyperlink_mod.MAX_LINKS;
+}
+
+export fn getHyperlinkCount() u32 {
+    return terminal.hyperlinks.count;
+}
+
+export fn getHyperlinkRejectedCount() u32 {
+    return terminal.hyperlinks.rejected;
+}
+
 // -- Scrollback --
 
 export fn getScrollbackCount() u32 {
     return scrollback.count;
+}
+
+export fn getScrollbackDiscardedCount() u32 {
+    return scrollback.discarded;
 }
 
 var scrollback_line_buf: [grid_mod.MAX_COLS * cell_mod.Cell.BYTE_SIZE]u8 = undefined;
@@ -133,15 +191,15 @@ export fn getScrollbackLineLen(offset: u32) u32 {
 // -- Response buffer (for DSR replies) --
 
 export fn getResponsePtr() [*]const u8 {
-    return &terminal.response_buf;
+    return terminal.responsePtr();
 }
 
 export fn getResponseLen() u32 {
-    return terminal.response_len;
+    return terminal.responseLen();
 }
 
 export fn clearResponse() void {
-    terminal.response_len = 0;
+    terminal.popResponse();
 }
 
 // -- Debug log (unhandled sequences ring buffer) --

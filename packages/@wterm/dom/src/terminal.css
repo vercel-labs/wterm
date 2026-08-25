@@ -36,6 +36,7 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   outline: none;
   overflow: hidden;
+  overflow-anchor: none;
 }
 
 .wterm:focus,
@@ -57,10 +58,33 @@
   contain: layout style;
 }
 
-.term-row > span {
+.term-scrollback-spacer {
+  display: block;
+  pointer-events: none;
+}
+
+.term-row > span,
+.term-row > .term-link,
+.term-link > span {
   display: inline-block;
   height: var(--term-row-height);
   vertical-align: top;
+}
+
+.term-link {
+  color: inherit;
+  cursor: text;
+}
+
+.wterm.link-modifier-active .term-link:hover,
+.term-link:focus-visible {
+  cursor: pointer;
+}
+
+.wterm.link-modifier-active .term-link:hover > span,
+.term-link:focus-visible > span {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 .term-block {

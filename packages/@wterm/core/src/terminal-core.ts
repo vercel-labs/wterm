@@ -1,5 +1,7 @@
 export interface CellData {
   char: number;
+  /** Full grapheme cluster. Present when the cell contains more than one code point. */
+  chars?: string;
   fg: number;
   bg: number;
   flags: number;
@@ -9,6 +11,12 @@ export interface CellData {
   fgRgb?: number;
   /** Resolved 24-bit background color (0xRRGGBB). Present when the core provides true color. */
   bgRgb?: number;
+  /** Resolved OSC 8 URI for this cell. */
+  linkUri?: string;
+  /** Explicit OSC 8 `id=` parameter, when provided. */
+  linkId?: string;
+  /** Opaque semantic identity used to group cells from the same OSC 8 link. */
+  linkKey?: string;
 }
 
 export interface CursorState {
@@ -24,6 +32,17 @@ export interface UnhandledSequence {
   params: number[];
 }
 
+export interface HyperlinkResourceState {
+  capacity: number;
+  used: number;
+  rejected: number;
+  saturated: boolean;
+}
+
+export interface TerminalResourceState {
+  hyperlinks?: HyperlinkResourceState;
+}
+
 /**
  * Abstract terminal emulation core. Both the built-in Zig WASM core
  * (`WasmBridge`) and alternative backends (e.g. `@wterm/ghostty`) implement
@@ -35,8 +54,8 @@ export interface TerminalCore {
   resize(cols: number, rows: number): void;
 
   // -- I/O --
-  writeString(str: string): void;
-  writeRaw(data: Uint8Array): void;
+  writeString(str: string, afterChunk?: () => void): void;
+  writeRaw(data: Uint8Array, afterChunk?: () => void): void;
 
   // -- Grid --
   getCell(row: number, col: number): CellData;
@@ -52,13 +71,20 @@ export interface TerminalCore {
   cursorKeysApp(): boolean;
   bracketedPaste(): boolean;
   usingAltScreen(): boolean;
+  mouseTracking?(): 0 | 1000 | 1002;
+  mouseSgr?(): boolean;
+  focusEvents?(): boolean;
+  synchronizedOutput?(): boolean;
+  synchronizedOutputGeneration?(): number;
 
   // -- Side outputs --
   getTitle(): string | null;
   getResponse(): string | null;
+  getResourceState?(): TerminalResourceState;
 
   // -- Scrollback --
   getScrollbackCount(): number;
+  getScrollbackDiscardedCount?(): number;
   getScrollbackCell(offset: number, col: number): CellData;
   getScrollbackLineLen(offset: number): number;
 

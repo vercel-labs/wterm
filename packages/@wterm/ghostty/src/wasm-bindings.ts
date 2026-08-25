@@ -10,7 +10,13 @@ export interface GhosttyExports {
   memory: WebAssembly.Memory;
 
   // Lifecycle
-  init(cols: number, rows: number, max_scrollback: number): number;
+  init(
+    cols: number,
+    rows: number,
+    max_scrollback: number,
+    foreground_rgb: number,
+    background_rgb: number,
+  ): number;
   deinit(ptr: number): void;
   resize(ptr: number, cols: number, rows: number): void;
 
@@ -20,6 +26,20 @@ export interface GhosttyExports {
   // Render state
   update(ptr: number): void;
   get_viewport(ptr: number, buf_ptr: number): number;
+  get_viewport_grapheme(
+    ptr: number,
+    row: number,
+    col: number,
+    buf_ptr: number,
+    buf_len: number,
+  ): number;
+  get_viewport_hyperlink(
+    ptr: number,
+    row: number,
+    col: number,
+    buf_ptr: number,
+    buf_len: number,
+  ): number;
 
   // Dirty tracking
   is_dirty(ptr: number): number;
@@ -35,6 +55,11 @@ export interface GhosttyExports {
   cursor_keys_app(ptr: number): number;
   bracketed_paste(ptr: number): number;
   using_alt_screen(ptr: number): number;
+  mouse_tracking(ptr: number): number;
+  mouse_sgr(ptr: number): number;
+  focus_events(ptr: number): number;
+  synchronized_output(ptr: number): number;
+  synchronized_output_generation(ptr: number): number;
 
   // Grid
   get_cols(ptr: number): number;
@@ -42,11 +67,26 @@ export interface GhosttyExports {
 
   // Scrollback
   get_scrollback_count(ptr: number): number;
+  get_scrollback_discarded_count(ptr: number): number;
   get_scrollback_line(
     ptr: number,
     offset: number,
     buf_ptr: number,
     max_cols: number,
+  ): number;
+  get_scrollback_grapheme(
+    ptr: number,
+    offset: number,
+    col: number,
+    buf_ptr: number,
+    buf_len: number,
+  ): number;
+  get_scrollback_hyperlink(
+    ptr: number,
+    offset: number,
+    col: number,
+    buf_ptr: number,
+    buf_len: number,
   ): number;
 
   // Responses
@@ -160,6 +200,8 @@ export interface WasmCellData {
   width: number;
   /** Bit 0: has explicit fg color, Bit 1: has explicit bg color */
   colorFlags: number;
+  hasGrapheme: boolean;
+  hasHyperlink: boolean;
 }
 
 /**
@@ -178,6 +220,8 @@ export function parseCell(view: DataView, byteOffset: number): WasmCellData {
     flags: view.getUint8(byteOffset + 10),
     width: view.getUint8(byteOffset + 11),
     colorFlags: view.getUint8(byteOffset + 12),
+    hasGrapheme: (view.getUint8(byteOffset + 13) & 1) !== 0,
+    hasHyperlink: (view.getUint8(byteOffset + 13) & 2) !== 0,
   };
 }
 

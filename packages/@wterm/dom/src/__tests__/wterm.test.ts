@@ -21,6 +21,10 @@ function createMockBridge(): WasmBridge {
     cursorKeysApp: vi.fn(() => false),
     bracketedPaste: vi.fn(() => false),
     usingAltScreen: vi.fn(() => false),
+    mouseTracking: vi.fn(() => 0),
+    mouseSgr: vi.fn(() => false),
+    synchronizedOutput: vi.fn(() => false),
+    getScrollbackDiscardedCount: vi.fn(() => 0),
   } as unknown as WasmBridge;
 }
 
@@ -34,6 +38,7 @@ vi.mock("@wterm/core", () => ({
 
 import { WasmBridge as MockedWasmBridge } from "@wterm/core";
 import { WTerm } from "../wterm.js";
+import { Renderer } from "../renderer.js";
 
 describe("WTerm", () => {
   let element: HTMLDivElement;
@@ -82,6 +87,140 @@ describe("WTerm", () => {
       const term = new WTerm(element, { cols: 120, rows: 40 });
       expect(term.cols).toBe(120);
       expect(term.rows).toBe(40);
+    });
+  });
+
+  describe("hyperlink activation", () => {
+    it.each([
+      ["MacIntel", "Meta", { key: "Meta", metaKey: true }],
+      ["Win32", "Control", { key: "Control", ctrlKey: true }],
+    ])("shows link affordance on %s while %s is held", (platform, _, init) => {
+      vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+      const term = new WTerm(element, { autoResize: false });
+
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, ...init }),
+      );
+      expect(element.classList.contains("link-modifier-active")).toBe(true);
+
+      document.dispatchEvent(
+        new KeyboardEvent("keyup", { bubbles: true, key: init.key }),
+      );
+      expect(element.classList.contains("link-modifier-active")).toBe(false);
+
+      term.destroy();
+    });
+
+    it("clears link affordance on window blur and destroy", () => {
+      vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+      const term = new WTerm(element, { autoResize: false });
+
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          key: "Meta",
+          metaKey: true,
+        }),
+      );
+      window.dispatchEvent(new Event("blur"));
+      expect(element.classList.contains("link-modifier-active")).toBe(false);
+
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          key: "Meta",
+          metaKey: true,
+        }),
+      );
+      term.destroy();
+      expect(element.classList.contains("link-modifier-active")).toBe(false);
+
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          key: "Control",
+          ctrlKey: true,
+        }),
+      );
+      expect(element.classList.contains("link-modifier-active")).toBe(false);
+    });
+
+    it("blocks plain link activation", async () => {
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const link = document.createElement("a");
+      link.className = "term-link";
+      element.querySelector(".term-grid")!.appendChild(link);
+
+      const event = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        detail: 1,
+      });
+      expect(link.dispatchEvent(event)).toBe(false);
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it.each([
+      ["MacIntel", "Meta", { metaKey: true }],
+      ["Win32", "Control", { ctrlKey: true }],
+    ])(
+      "keeps %s-click available on %s while mouse tracking is active",
+      async (platform, _, init) => {
+        vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+        vi.mocked(mockBridge.mouseTracking!).mockReturnValue(1002);
+        vi.mocked(mockBridge.mouseSgr!).mockReturnValue(true);
+        const term = new WTerm(element, { autoResize: false });
+        await term.init();
+        const link = document.createElement("a");
+        link.className = "term-link";
+        element.querySelector(".term-grid")!.appendChild(link);
+
+        const event = new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          ...init,
+        });
+        expect(link.dispatchEvent(event)).toBe(true);
+        expect(event.defaultPrevented).toBe(false);
+      },
+    );
+
+    it.each([
+      ["MacIntel", { ctrlKey: true }],
+      ["Win32", { metaKey: true }],
+    ])("blocks the non-native modifier on %s", async (platform, init) => {
+      vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const link = document.createElement("a");
+      link.className = "term-link";
+      element.querySelector(".term-grid")!.appendChild(link);
+
+      const event = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        detail: 1,
+        ...init,
+      });
+      expect(link.dispatchEvent(event)).toBe(false);
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("keeps keyboard activation available", async () => {
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const link = document.createElement("a");
+      link.className = "term-link";
+      element.querySelector(".term-grid")!.appendChild(link);
+
+      const event = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        detail: 0,
+      });
+      expect(link.dispatchEvent(event)).toBe(true);
+      expect(event.defaultPrevented).toBe(false);
     });
   });
 
@@ -163,7 +302,10 @@ describe("WTerm", () => {
       const term = new WTerm(element, { autoResize: false });
       await term.init();
       term.write("hello");
-      expect(mockBridge.writeString).toHaveBeenCalledWith("hello");
+      expect(mockBridge.writeString).toHaveBeenCalledWith(
+        "hello",
+        expect.any(Function),
+      );
     });
 
     it("calls bridge.writeRaw for Uint8Array data", async () => {
@@ -171,13 +313,37 @@ describe("WTerm", () => {
       await term.init();
       const bytes = new Uint8Array([0x1b, 0x5b, 0x41]);
       term.write(bytes);
-      expect(mockBridge.writeRaw).toHaveBeenCalledWith(bytes);
+      expect(mockBridge.writeRaw).toHaveBeenCalledWith(
+        bytes,
+        expect.any(Function),
+      );
     });
 
     it("is a no-op before init", () => {
       const term = new WTerm(element);
       term.write("hello");
       expect(mockBridge.writeString).not.toHaveBeenCalled();
+    });
+
+    it("requests a frame immediately and coalesces writes until it paints", async () => {
+      const callbacks: FrameRequestCallback[] = [];
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockImplementation((callback) => {
+          callbacks.push(callback);
+          return callbacks.length;
+        });
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      requestAnimationFrame.mockClear();
+      callbacks.length = 0;
+
+      term.write("a");
+      term.write("b");
+
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+      callbacks[0](performance.now());
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -203,6 +369,83 @@ describe("WTerm", () => {
       await term.init();
       term.resize(100, 30);
       expect(onResize).toHaveBeenCalledWith(100, 30);
+    });
+
+    it("preserves the scroll offset while rebuilding virtualized rows", async () => {
+      vi.mocked(mockBridge.getScrollbackCount).mockReturnValue(100);
+      vi.mocked(mockBridge.getCols).mockReturnValue(100);
+      vi.mocked(mockBridge.getRows).mockReturnValue(30);
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      const originalSetup = Renderer.prototype.setup;
+      vi.spyOn(Renderer.prototype, "setup").mockImplementation(
+        function (cols, rows) {
+          originalSetup.call(this, cols, rows);
+          element.scrollTop = 0;
+        },
+      );
+      const render = vi.spyOn(Renderer.prototype, "render");
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 170,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 2210,
+      });
+
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      (term as unknown as { _rowHeight: number })._rowHeight = 17;
+      element.scrollTop = 600;
+      render.mockClear();
+
+      term.resize(100, 30);
+
+      expect(render.mock.calls[0][1]?.scrollTop).toBe(600);
+      expect(element.scrollTop).toBe(600);
+    });
+
+    it("keeps the original scroll offset across coalesced resizes", async () => {
+      vi.mocked(mockBridge.getScrollbackCount).mockReturnValue(100);
+      vi.mocked(mockBridge.getCols).mockReturnValue(120);
+      vi.mocked(mockBridge.getRows).mockReturnValue(40);
+      let renderFrame: FrameRequestCallback | undefined;
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        renderFrame = cb;
+        return 1;
+      });
+      const originalSetup = Renderer.prototype.setup;
+      vi.spyOn(Renderer.prototype, "setup").mockImplementation(
+        function (cols, rows) {
+          originalSetup.call(this, cols, rows);
+          element.scrollTop = 0;
+        },
+      );
+      const render = vi.spyOn(Renderer.prototype, "render");
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 170,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 2210,
+      });
+
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      (term as unknown as { _rowHeight: number })._rowHeight = 17;
+      element.scrollTop = 600;
+      render.mockClear();
+
+      term.resize(100, 30);
+      term.resize(120, 40);
+      renderFrame?.(performance.now());
+
+      expect(render.mock.calls[0][1]?.scrollTop).toBe(600);
+      expect(element.scrollTop).toBe(600);
     });
 
     it("is a no-op before init", () => {
@@ -244,7 +487,10 @@ describe("WTerm", () => {
         }),
       );
 
-      expect(mockBridge.writeString).toHaveBeenCalledWith("a");
+      expect(mockBridge.writeString).toHaveBeenCalledWith(
+        "a",
+        expect.any(Function),
+      );
     });
 
     it("calls onData instead of write when provided", async () => {
@@ -289,18 +535,459 @@ describe("WTerm", () => {
   });
 
   describe("response forwarding", () => {
-    it("forwards bridge response to onData", async () => {
+    it("forwards every queued bridge response to onData", async () => {
       const onData = vi.fn();
-      vi.mocked(mockBridge.getResponse).mockReturnValue("response-data");
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response-a")
+        .mockReturnValueOnce("response-b")
+        .mockReturnValue(null);
 
       const term = new WTerm(element, { autoResize: false, onData });
       await term.init();
 
-      expect(onData).toHaveBeenCalledWith("response-data");
+      onData.mockClear();
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response-a")
+        .mockReturnValueOnce("response-b")
+        .mockReturnValue(null);
+      term.write("query");
+
+      expect(onData.mock.calls).toEqual([["response-a"], ["response-b"]]);
+    });
+
+    it("finishes parsing and schedules rendering when onData throws", async () => {
+      const error = new Error("consumer failed");
+      const onData = vi
+        .fn<(data: string) => void>()
+        .mockImplementationOnce(() => {
+          throw error;
+        });
+      const term = new WTerm(element, {
+        autoResize: false,
+        onData,
+      });
+      await term.init();
+      const scheduleRender = vi.spyOn(
+        term as unknown as { _scheduleRender(): void },
+        "_scheduleRender",
+      );
+      vi.mocked(mockBridge.getResponse).mockClear();
+      vi.mocked(mockBridge.writeString).mockImplementation(
+        (_data, afterChunk) => {
+          vi.mocked(mockBridge.getResponse)
+            .mockReturnValueOnce("response-a")
+            .mockReturnValueOnce(null);
+          afterChunk?.();
+          vi.mocked(mockBridge.getResponse)
+            .mockReturnValueOnce("response-b")
+            .mockReturnValueOnce(null);
+          afterChunk?.();
+        },
+      );
+
+      expect(() => term.write("data")).toThrow(error);
+      expect(onData.mock.calls).toEqual([["response-a"], ["response-b"]]);
+      expect(mockBridge.getResponse).toHaveBeenCalledTimes(5);
+      expect(scheduleRender).toHaveBeenCalledTimes(1);
+    });
+
+    it("rethrows undefined from onData after scheduling rendering", async () => {
+      const onData = vi.fn(() => {
+        throw undefined;
+      });
+      const term = new WTerm(element, { autoResize: false, onData });
+      await term.init();
+      const scheduleRender = vi.spyOn(
+        term as unknown as { _scheduleRender(): void },
+        "_scheduleRender",
+      );
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response")
+        .mockReturnValue(null);
+
+      let completed = false;
+      try {
+        term.write("query");
+        completed = true;
+      } catch (error) {
+        expect(error).toBeUndefined();
+      }
+
+      expect(completed).toBe(false);
+      expect(scheduleRender).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("synchronized output", () => {
+    it("holds rendering until synchronized output closes", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      let synchronized = false;
+      vi.mocked(mockBridge.synchronizedOutput).mockImplementation(
+        () => synchronized,
+      );
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      synchronized = true;
+      term.write("partial");
+      await vi.advanceTimersByTimeAsync(20);
+      expect(mockBridge.clearDirty).not.toHaveBeenCalled();
+
+      synchronized = false;
+      term.write("complete");
+      expect(mockBridge.synchronizedOutput).toHaveLastReturnedWith(false);
+      expect(
+        (term as unknown as { _rendererNeedsSetup: boolean })
+          ._rendererNeedsSetup,
+      ).toBe(false);
+      await vi.runAllTimersAsync();
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("forwards responses while rendering is held", async () => {
+      const onData = vi.fn();
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      const term = new WTerm(element, { autoResize: false, onData });
+      await term.init();
+      onData.mockClear();
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response")
+        .mockReturnValue(null);
+
+      term.write("query");
+
+      expect(onData).toHaveBeenCalledWith("response");
+      term.destroy();
+    });
+
+    it("flushes an unterminated synchronized block", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("partial");
+      await vi.advanceTimersByTimeAsync(999);
+      expect(mockBridge.clearDirty).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("keeps painting after an unterminated synchronized block", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        setTimeout(() => cb(performance.now()), 0);
+        return 1;
+      });
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("partial");
+      await vi.advanceTimersByTimeAsync(1002);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+
+      term.write("more");
+      await vi.advanceTimersByTimeAsync(2);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(2);
+      vi.useRealTimers();
+    });
+
+    it("does not extend the fallback deadline for ordinary payload", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("partial");
+      await vi.advanceTimersByTimeAsync(900);
+      term.write("continued");
+      await vi.advanceTimersByTimeAsync(101);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("holds a fresh synchronized block after recovery", async () => {
+      vi.useFakeTimers();
+      const frameTimers = new Map<number, ReturnType<typeof setTimeout>>();
+      let nextFrameId = 1;
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        const id = nextFrameId++;
+        frameTimers.set(
+          id,
+          setTimeout(() => {
+            frameTimers.delete(id);
+            cb(performance.now());
+          }, 0),
+        );
+        return id;
+      });
+      vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation((id) => {
+        const timer = frameTimers.get(id);
+        if (timer !== undefined) clearTimeout(timer);
+        frameTimers.delete(id);
+      });
+      let synchronized = true;
+      vi.mocked(mockBridge.synchronizedOutput).mockImplementation(
+        () => synchronized,
+      );
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("stalled");
+      await vi.advanceTimersByTimeAsync(1001);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+
+      synchronized = false;
+      term.write("old close");
+      synchronized = true;
+      term.write("fresh open");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      synchronized = false;
+      term.write("fresh close");
+      await vi.runAllTimersAsync();
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(2);
+      vi.useRealTimers();
+    });
+
+    it("holds a fresh block when close and reopen share one write", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      let generation = 1;
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      mockBridge.synchronizedOutputGeneration = () => generation;
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("stalled");
+      await vi.advanceTimersByTimeAsync(1001);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+
+      generation = 2;
+      term.write("close and reopen");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("gives each chained generation a fresh recovery deadline", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      let generation = 1;
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      mockBridge.synchronizedOutputGeneration = () => generation;
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+
+      term.write("frame 1");
+      await vi.advanceTimersByTimeAsync(600);
+      generation++;
+      term.write("frame 2");
+      await vi.advanceTimersByTimeAsync(999);
+      expect(mockBridge.clearDirty).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("commits recovery before a new block can cancel it", async () => {
+      vi.useFakeTimers();
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockReturnValue(42);
+      let generation = 1;
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      mockBridge.synchronizedOutputGeneration = () => generation;
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+      requestAnimationFrame.mockClear();
+
+      term.write("frame 1");
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      expect(requestAnimationFrame).not.toHaveBeenCalled();
+
+      generation++;
+      term.write("frame 2");
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("arms recovery before response delivery", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      const error = new Error("consumer failed");
+      const term = new WTerm(element, {
+        autoResize: false,
+        onData: () => {
+          throw error;
+        },
+      });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response")
+        .mockReturnValue(null);
+
+      expect(() => term.write("open")).toThrow(error);
+      await vi.advanceTimersByTimeAsync(1001);
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("schedules a closing frame before response delivery", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        setTimeout(() => cb(performance.now()), 0);
+        return 1;
+      });
+      let synchronized = true;
+      vi.mocked(mockBridge.synchronizedOutput).mockImplementation(
+        () => synchronized,
+      );
+      const error = new Error("consumer failed");
+      const term = new WTerm(element, {
+        autoResize: false,
+        onData: () => {
+          throw error;
+        },
+      });
+      await term.init();
+      vi.mocked(mockBridge.clearDirty).mockClear();
+      term.write("open");
+      vi.mocked(mockBridge.getResponse)
+        .mockReturnValueOnce("response")
+        .mockReturnValue(null);
+      synchronized = false;
+
+      expect(() => term.write("close")).toThrow(error);
+      await vi.runAllTimersAsync();
+      expect(mockBridge.clearDirty).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("cancels a queued animation frame when synchronized output starts", async () => {
+      vi.useFakeTimers();
+      const cancelAnimationFrame = vi.spyOn(globalThis, "cancelAnimationFrame");
+      vi.spyOn(globalThis, "requestAnimationFrame").mockReturnValue(42);
+      let synchronized = false;
+      vi.mocked(mockBridge.synchronizedOutput).mockImplementation(
+        () => synchronized,
+      );
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+
+      term.write("normal");
+      await vi.advanceTimersByTimeAsync(0);
+      synchronized = true;
+      term.write("partial");
+
+      expect(cancelAnimationFrame).toHaveBeenCalledWith(42);
+      term.destroy();
+      vi.useRealTimers();
+    });
+
+    it("clears the synchronized output fallback when destroyed", async () => {
+      vi.useFakeTimers();
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+
+      term.write("partial");
+      expect(
+        (term as unknown as { _synchronizedOutputTimer: unknown })
+          ._synchronizedOutputTimer,
+      ).not.toBeNull();
+      term.destroy();
+      expect(
+        (term as unknown as { _synchronizedOutputTimer: unknown })
+          ._synchronizedOutputTimer,
+      ).toBeNull();
+      vi.useRealTimers();
+    });
+
+    it("does not rebuild rows during a synchronized resize", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      let synchronized = true;
+      vi.mocked(mockBridge.synchronizedOutput).mockImplementation(
+        () => synchronized,
+      );
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const setup = vi.spyOn(Renderer.prototype, "setup");
+      setup.mockClear();
+
+      term.resize(100, 30);
+      expect(setup).not.toHaveBeenCalled();
+
+      synchronized = false;
+      term.write("complete");
+      await vi.runAllTimersAsync();
+      expect(setup).toHaveBeenCalledWith(100, 30);
+      vi.useRealTimers();
     });
   });
 
   describe("scrollback class toggle", () => {
+    function installScrollTop(
+      initial: number,
+      clamp: (value: number) => number,
+    ) {
+      let actual = initial;
+      const requests: number[] = [];
+      Object.defineProperty(element, "scrollTop", {
+        configurable: true,
+        get: () => actual,
+        set: (value: number) => {
+          requests.push(value);
+          actual = clamp(value);
+        },
+      });
+      return {
+        requests,
+        setActual(value: number) {
+          actual = value;
+        },
+      };
+    }
+
     it("adds has-scrollback when scrollback exists", async () => {
       vi.mocked(mockBridge.getScrollbackCount).mockReturnValue(5);
 
@@ -317,6 +1004,252 @@ describe("WTerm", () => {
       await term.init();
 
       expect(element.classList.contains("has-scrollback")).toBe(false);
+    });
+
+    it("scrolls to the exact bottom when output arrives", async () => {
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 20,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 73,
+      });
+      installScrollTop(0, (value) => Math.min(value, 53));
+
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      element.scrollTop = 53;
+
+      term.write("next");
+
+      expect(element.scrollTop).toBe(53);
+    });
+
+    it("attributes a scroll event after the browser reclamps by one pixel", async () => {
+      const scroll = installScrollTop(100, (value) => Math.min(value, 900));
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockReturnValue(42);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      requestAnimationFrame.mockClear();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _setScrollTop(value: number): void;
+        _shouldScrollToBottom: boolean;
+      };
+      internals._shouldScrollToBottom = true;
+
+      internals._setScrollTop(1000);
+      expect(internals._programmaticScrollTop).toBe(900);
+      scroll.setActual(899);
+      element.dispatchEvent(new Event("scroll"));
+
+      expect(internals._programmaticScrollTop).toBeNull();
+      expect(internals._shouldScrollToBottom).toBe(true);
+      expect(requestAnimationFrame).not.toHaveBeenCalled();
+    });
+
+    it("keeps following when DOM shrink reclamps the scroll position to the new bottom", async () => {
+      let scrollHeight = 568;
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 414,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        get: () => scrollHeight,
+      });
+      const scroll = installScrollTop(0, (value) =>
+        Math.min(value, scrollHeight - 414),
+      );
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockReturnValue(42);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      requestAnimationFrame.mockClear();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _setScrollTop(value: number): void;
+        _shouldScrollToBottom: boolean;
+      };
+      internals._shouldScrollToBottom = true;
+
+      internals._setScrollTop(568);
+      expect(element.scrollTop).toBe(154);
+      scrollHeight = 414;
+      scroll.setActual(0);
+      element.dispatchEvent(new Event("scroll"));
+
+      expect(internals._programmaticScrollTop).toBeNull();
+      expect(internals._shouldScrollToBottom).toBe(true);
+      expect(requestAnimationFrame).not.toHaveBeenCalled();
+    });
+
+    it("consumes a matching programmatic scroll token once", async () => {
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 100,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 1000,
+      });
+      const scroll = installScrollTop(100, (value) => Math.min(value, 900));
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockReturnValue(42);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      requestAnimationFrame.mockClear();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _setScrollTop(value: number): void;
+        _shouldScrollToBottom: boolean;
+      };
+      internals._shouldScrollToBottom = true;
+
+      internals._setScrollTop(1000);
+      scroll.setActual(899);
+      element.dispatchEvent(new Event("scroll"));
+      scroll.setActual(800);
+      element.dispatchEvent(new Event("scroll"));
+
+      expect(internals._programmaticScrollTop).toBeNull();
+      expect(internals._shouldScrollToBottom).toBe(false);
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+    });
+
+    it("treats a scroll more than one pixel from the accepted value as user input", async () => {
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 100,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 1000,
+      });
+      const scroll = installScrollTop(100, (value) => Math.min(value, 900));
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockReturnValue(42);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      requestAnimationFrame.mockClear();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _setScrollTop(value: number): void;
+        _shouldScrollToBottom: boolean;
+      };
+      internals._shouldScrollToBottom = true;
+
+      internals._setScrollTop(1000);
+      scroll.setActual(800);
+      element.dispatchEvent(new Event("scroll"));
+
+      expect(internals._programmaticScrollTop).toBeNull();
+      expect(internals._shouldScrollToBottom).toBe(false);
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the latest moving assignment when a later assignment is a no-op", async () => {
+      installScrollTop(100, (value) => Math.min(value, 900));
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _setScrollTop(value: number): void;
+      };
+
+      internals._setScrollTop(800);
+      internals._setScrollTop(800);
+
+      expect(internals._programmaticScrollTop).toBe(800);
+    });
+
+    it("tracks the accepted position from the latest moving assignment", async () => {
+      installScrollTop(100, (value) => Math.min(value, 900));
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _setScrollTop(value: number): void;
+      };
+
+      internals._setScrollTop(500);
+      internals._setScrollTop(1000);
+
+      expect(internals._programmaticScrollTop).toBe(900);
+    });
+
+    it("lets the browser clamp the bottom target", async () => {
+      const scroll = installScrollTop(100, (value) => Math.min(value, 900));
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 1000,
+      });
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const internals = term as unknown as {
+        _programmaticScrollTop: number | null;
+        _scrollToBottom(): void;
+      };
+
+      internals._scrollToBottom();
+
+      expect(scroll.requests.at(-1)).toBe(1000);
+      expect(element.scrollTop).toBe(900);
+      expect(internals._programmaticScrollTop).toBe(900);
+    });
+
+    it("schedules a render when the scroll position changes", async () => {
+      const requestAnimationFrame = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockReturnValue(42);
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      requestAnimationFrame.mockClear();
+
+      element.dispatchEvent(new Event("scroll"));
+
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+      term.destroy();
+    });
+
+    it("keeps the same retained row anchored after old history is discarded", async () => {
+      let discarded = 0;
+      vi.mocked(mockBridge.getScrollbackCount).mockReturnValue(1000);
+      vi.mocked(mockBridge.getScrollbackDiscardedCount!).mockImplementation(
+        () => discarded,
+      );
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(performance.now());
+        return 1;
+      });
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 170,
+      });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 17408,
+      });
+
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      (term as unknown as { _rowHeight: number })._rowHeight = 17;
+      element.scrollTop = 340;
+      discarded = 3;
+
+      term.write("rollover");
+
+      expect(element.scrollTop).toBe(289);
     });
   });
 

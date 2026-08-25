@@ -4,6 +4,12 @@ Full-featured terminal emulation core for [wterm](https://github.com/vercel-labs
 
 Drop-in replacement for wterm's built-in Zig core. Implements the same `TerminalCore` interface with comprehensive VT emulation: proper Unicode grapheme handling, all SGR attributes, terminal modes, and more.
 
+The core exposes SGR mouse tracking (modes 1000, 1002, and 1006), focus reporting (mode 1004), synchronized-output state (mode 2026), and terminal responses including foreground/background color queries (OSC 10 and OSC 11) to `@wterm/dom`.
+Combining marks and ZWJ emoji are exposed through `CellData.chars` as complete strings, including after their rows move into scrollback.
+Native OSC 8 hyperlinks are resolved from Ghostty's page-owned metadata and exposed through `CellData.linkUri`, `CellData.linkId`, and `CellData.linkKey` in both the viewport and scrollback.
+
+Ghostty also exposes the cumulative number of rows discarded from the oldest end of scrollback. `@wterm/dom` uses that signal to keep retained history anchored when the page budget rolls over.
+
 ## Install
 
 ```bash
@@ -61,6 +67,17 @@ const core = await GhosttyCore.load();
 |---|---|---|
 | `wasmPath` | `string` | Custom path to the ghostty-vt WASM binary |
 | `scrollbackLimit` | `number` | Scrollback budget in bytes, not lines (default: 10000). ghostty allocates history in pages, so the retained row count depends on the terminal width |
+| `foregroundColor` | `string` | Foreground reported by OSC 10 in `#RRGGBB` format (default: `#d4d4d4`) |
+| `backgroundColor` | `string` | Background reported by OSC 11 in `#RRGGBB` format (default: `#1e1e1e`) |
+
+When using a custom CSS theme, pass matching foreground and background colors so terminal applications receive the colors they are actually rendered with:
+
+```ts
+const core = await GhosttyCore.load({
+  foregroundColor: "#ededed",
+  backgroundColor: "#0a0a0a",
+});
+```
 
 ## Bundlers
 
@@ -98,7 +115,7 @@ The WASM binary is built from upstream [ghostty-org/ghostty](https://github.com/
 ghostty (Zig dep)  →  WASM patches  →  wasm_api.zig (~300 LOC)  →  ghostty-vt.wasm  →  TypeScript bindings
 ```
 
-ghostty's `Terminal` and `Page` types use `posix.mmap` and Mach VM allocators internally, which don't exist on `wasm32-freestanding`. The build script applies small, targeted patches to replace these with `std.heap.wasm_allocator` behind comptime `isWasm()` checks (see `scripts/patch-ghostty-wasm.sh`). The patches are pinned to ghostty v1.3.1 and only touch two files: `page.zig` and `PageList.zig`.
+ghostty's `Terminal` and `Page` types use `posix.mmap` and Mach VM allocators internally, which don't exist on `wasm32-freestanding`. The build script applies small, targeted patches to replace these with `std.heap.wasm_allocator` and expose the discarded-row count from `PageList` (see `scripts/patch-ghostty-wasm.sh`). The patches are pinned to ghostty v1.3.1 and only touch two files: `page.zig` and `PageList.zig`.
 
 The committed `wasm/ghostty-vt.wasm` binary means consumers never need Zig installed. Only maintainers rebuilding the WASM need Zig 0.15.x.
 

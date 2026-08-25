@@ -39,6 +39,9 @@ vi.mock("../wasm-bindings.js", async () => {
       );
       return state.lineLen;
     },
+    mouse_tracking: () => 1002,
+    mouse_sgr: () => 1,
+    focus_events: () => 1,
   };
 
   return {
@@ -119,5 +122,16 @@ describe("GhosttyCore.getScrollbackCell", () => {
     expect(cell.char).toBe(66);
     expect(cell.fgRgb).toBe((10 << 16) | (20 << 8) | 30);
     expect(cell.bgRgb).toBe((40 << 16) | (50 << 8) | 60);
+  });
+});
+
+describe("GhosttyCore input modes", () => {
+  it("exposes mouse and focus state", async () => {
+    const core = await GhosttyCore.load();
+    core.init(80, 24);
+
+    expect(core.mouseTracking()).toBe(1002);
+    expect(core.mouseSgr()).toBe(true);
+    expect(core.focusEvents()).toBe(true);
   });
 });

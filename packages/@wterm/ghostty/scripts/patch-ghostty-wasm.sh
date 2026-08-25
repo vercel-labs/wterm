@@ -20,14 +20,8 @@ if [[ ! -f "$PAGE_ZIG" ]]; then
   exit 1
 fi
 
-# Skip if already patched
-if grep -q 'wasm_page_alloc' "$PAGE_ZIG" 2>/dev/null; then
-  echo "Already patched, skipping"
-  exit 0
-fi
-
-cp "$PAGE_ZIG" "$PAGE_ZIG.orig"
-cp "$PAGELIST_ZIG" "$PAGELIST_ZIG.orig"
+[[ -f "$PAGE_ZIG.orig" ]] || cp "$PAGE_ZIG" "$PAGE_ZIG.orig"
+[[ -f "$PAGELIST_ZIG.orig" ]] || cp "$PAGELIST_ZIG" "$PAGELIST_ZIG.orig"
 
 # ---------------------------------------------------------------
 # Patch PageList.zig — pageAllocator()
@@ -61,7 +55,77 @@ new_pa = '''inline fn pageAllocator() Allocator {
     }
 }'''
 
-src = src.replace(old_pa, new_pa, 1)
+if 'wasm_allocator' not in src[src.find('inline fn pageAllocator()'):src.find('inline fn pageAllocator()') + 700]:
+    src = src.replace(old_pa, new_pa, 1)
+
+if 'discarded_rows: usize' not in src:
+    src = src.replace(
+        'total_rows: usize,\\n\\n/// The list of tracked pins.',
+        'total_rows: usize,\\n\\ndiscarded_rows: usize,\\n\\n/// The list of tracked pins.',
+        1,
+    )
+
+if '.discarded_rows = 0' not in src:
+    src = src.replace(
+        '.total_rows = rows,\\n        .tracked_pins',
+        '.total_rows = rows,\\n        .discarded_rows = 0,\\n        .tracked_pins',
+        1,
+    )
+
+if '.discarded_rows = self.discarded_rows' not in src:
+    src = src.replace(
+        '.total_rows = total_rows,\\n        .tracked_pins',
+        '.total_rows = total_rows,\\n        .discarded_rows = self.discarded_rows,\\n'
+        '        .tracked_pins',
+        1,
+    )
+
+if 'self.discarded_rows = 0;' not in src:
+    src = src.replace(
+        'self.total_rows = self.rows;\\n',
+        'self.total_rows = self.rows;\\n    self.discarded_rows = 0;\\n',
+        1,
+    )
+
+if 'self.discarded_rows += first.data.size.rows' not in src:
+    src = src.replace(
+        'self.total_rows -= first.data.size.rows;\\n',
+        'self.total_rows -= first.data.size.rows;\\n'
+        '        self.discarded_rows += first.data.size.rows;\\n',
+        1,
+    )
+
+if 'self.discarded_rows -= first.data.size.rows' not in src:
+    src = src.replace(
+        '            self.total_rows += first.data.size.rows;\\n'
+        '            break :prune;',
+        '            self.total_rows += first.data.size.rows;\\n'
+        '            self.discarded_rows -= first.data.size.rows;\\n'
+        '            break :prune;',
+        1,
+    )
+
+if 'pub fn discardedRows' not in src:
+    src = src.replace(
+        'fn totalRows(self: *const PageList) usize {',
+        'pub fn discardedRows(self: *const PageList) usize {\\n'
+        '    return self.discarded_rows;\\n'
+        '}\\n\\nfn totalRows(self: *const PageList) usize {',
+        1,
+    )
+
+required = [
+    'discarded_rows: usize',
+    '.discarded_rows = 0',
+    '.discarded_rows = self.discarded_rows',
+    'self.discarded_rows = 0;',
+    'self.discarded_rows += first.data.size.rows',
+    'self.discarded_rows -= first.data.size.rows',
+    'pub fn discardedRows',
+]
+missing = [needle for needle in required if needle not in src]
+if missing:
+    raise SystemExit(f'PageList scrollback patch failed: {missing}')
 
 with open('$PAGELIST_ZIG', 'w') as f:
     f.write(src)
@@ -79,11 +143,12 @@ with open('$PAGE_ZIG', 'r') as f:
     src = f.read()
 
 # 1. Make posix conditional — void on WASM so no symbols are resolved
-src = src.replace(
-    'const posix = std.posix;',
-    'const posix = if (builtin.target.cpu.arch.isWasm()) void else std.posix;',
-    1
-)
+if 'if (builtin.target.cpu.arch.isWasm()) void else std.posix' not in src:
+    src = src.replace(
+        'const posix = std.posix;',
+        'const posix = if (builtin.target.cpu.arch.isWasm()) void else std.posix;',
+        1
+    )
 
 # 2. Patch init() to branch on WASM
 old_init = '''    pub inline fn init(cap: Capacity) !Page {
@@ -138,7 +203,8 @@ new_init = '''    // wasm_page_alloc: patched by @wterm/ghostty for WASM compati
         return initBuf(buf, l);
     }'''
 
-src = src.replace(old_init, new_init, 1)
+if 'wasm_page_alloc' not in src:
+    src = src.replace(old_init, new_init, 1)
 
 # 3. Patch deinit()
 old_deinit = '''    pub inline fn deinit(self: *Page) void {
@@ -155,7 +221,8 @@ new_deinit = '''    pub inline fn deinit(self: *Page) void {
         self.* = undefined;
     }'''
 
-src = src.replace(old_deinit, new_deinit, 1)
+if 'std.heap.wasm_allocator.free(self.memory)' not in src:
+    src = src.replace(old_deinit, new_deinit, 1)
 
 # 4. Patch clone()
 old_clone = '''    pub inline fn clone(self: *const Page) !Page {
@@ -193,7 +260,8 @@ new_clone = '''    pub inline fn clone(self: *const Page) !Page {
         return self.cloneBuf(backing);
     }'''
 
-src = src.replace(old_clone, new_clone, 1)
+if 'errdefer std.heap.wasm_allocator.free(backing)' not in src:
+    src = src.replace(old_clone, new_clone, 1)
 
 with open('$PAGE_ZIG', 'w') as f:
     f.write(src)

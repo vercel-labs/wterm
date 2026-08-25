@@ -2,6 +2,8 @@
 
 `@wterm/core` provides the headless terminal engine and WebSocket transport. Use it when you need direct access to the WASM bridge for a custom renderer, headless testing, or a server-connected terminal without the DOM layer.
 
+With `@wterm/dom`, terminal applications can enable SGR mouse tracking (modes 1000, 1002, and 1006) and focus reporting (mode 1004). Pointer and focus reports are emitted through `onData`.
+
 ## Install
 
 ```bash
@@ -52,6 +54,8 @@ const cursor = bridge.getCursor();
 ```
 
 Wide single-codepoint characters such as CJK, fullwidth forms, and emoji expose `width: 2` on the leading cell and `width: 0` on the continuation cell. Custom renderers should skip continuation cells.
+
+Cores that preserve multi-codepoint graphemes expose the complete string as `chars`. Render `chars` when present and fall back to `String.fromCodePoint(char)` otherwise.
 
 ## WebSocketTransport
 
