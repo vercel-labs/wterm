@@ -138,6 +138,43 @@ describe("encodeKittyKey", () => {
     ).toBe("\x1b[1;5A");
   });
 
+  it("ignores lock modifiers when selecting legacy functional sequences", () => {
+    const lockKey = (
+      value: string,
+      lock: "CapsLock" | "NumLock",
+      init: Partial<KeyboardEventInit> = {},
+    ) => {
+      const event = key(value, init);
+      Object.defineProperty(event, "getModifierState", {
+        value: (name: string) => name === lock,
+      });
+      return event;
+    };
+    expect(
+      encodeKittyKey(
+        lockKey("F1", "CapsLock"),
+        KITTY_REPORT_ALTERNATES,
+        "press",
+      ),
+    ).toBe("\x1bOP");
+    expect(
+      encodeKittyKey(
+        lockKey("ArrowUp", "NumLock"),
+        KITTY_REPORT_ALTERNATES,
+        "press",
+        undefined,
+        true,
+      ),
+    ).toBe("\x1bOA");
+    expect(
+      encodeKittyKey(
+        lockKey("F1", "CapsLock", { ctrlKey: true }),
+        KITTY_REPORT_ALTERNATES,
+        "press",
+      ),
+    ).toBe("\x1b[1;69P");
+  });
+
   it("encodes modified controls and navigation", () => {
     expect(encodeKittyKey(key("Enter", { shiftKey: true }), 1, "press")).toBe(
       "\x1b[13;2u",

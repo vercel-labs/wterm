@@ -268,7 +268,7 @@ function legacyFunctionalSequence(
   const legacyMode = !disambiguate && !reportEvents && !reportAll;
   const nonLockModifiers = modifierBits & ~(64 | 128);
 
-  if (cursorKeysApp && legacyMode && modifierBits === 0) {
+  if (cursorKeysApp && legacyMode && nonLockModifiers === 0) {
     const appSequence = {
       ArrowUp: "\x1bOA",
       ArrowDown: "\x1bOB",
@@ -281,7 +281,7 @@ function legacyFunctionalSequence(
     if (appSequence) return { handled: true, sequence: appSequence };
   }
 
-  if (modifierBits === 0) {
+  if (nonLockModifiers === 0) {
     if (!disambiguate && !reportAll && functionalKey === "Escape") {
       return { handled: true, sequence: "\x1b" };
     }
