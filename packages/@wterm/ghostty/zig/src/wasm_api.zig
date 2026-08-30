@@ -7,7 +7,10 @@ const RenderState = vt.RenderState;
 const Style = vt.Style;
 const color = vt.color;
 const modes = vt.modes;
-const ReadonlyHandler = vt.ReadonlyHandler;
+// ghostty 1.3.2-dev merged stream_readonly.Handler into stream_terminal.Handler,
+// which is readonly by default (`effects: Effects = .readonly`). The type is
+// not re-exported by lib_vt, so it is read off the TerminalStream type.
+const ReadonlyHandler = @FieldType(vt.TerminalStream, "handler");
 const StreamAction = vt.StreamAction;
 
 const Allocator = std.mem.Allocator;
@@ -125,11 +128,11 @@ const ResponseHandler = struct {
         self: *ResponseHandler,
         comptime action: StreamAction.Tag,
         value: StreamAction.Value(action),
-    ) !void {
+    ) void {
         switch (action) {
             .set_mode => {
                 const was_synchronized = self.inner.terminal.modes.get(.synchronized_output);
-                try self.inner.vt(action, value);
+                self.inner.vt(action, value);
                 if (value.mode == .synchronized_output and
                     !was_synchronized and
                     self.inner.terminal.modes.get(.synchronized_output))
@@ -139,7 +142,7 @@ const ResponseHandler = struct {
             },
             .restore_mode => {
                 const was_synchronized = self.inner.terminal.modes.get(.synchronized_output);
-                try self.inner.vt(action, value);
+                self.inner.vt(action, value);
                 if (value.mode == .synchronized_output and
                     !was_synchronized and
                     self.inner.terminal.modes.get(.synchronized_output))
@@ -199,7 +202,7 @@ const ResponseHandler = struct {
                 self.queue.push(out);
             },
             .color_operation => {
-                try self.inner.vt(action, value);
+                self.inner.vt(action, value);
                 var it = value.requests.constIterator(0);
                 while (it.next()) |request| {
                     const target = switch (request.*) {
@@ -230,7 +233,7 @@ const ResponseHandler = struct {
                     self.queue.push(out);
                 }
             },
-            else => try self.inner.vt(action, value),
+            else => self.inner.vt(action, value),
         }
     }
 };
@@ -259,10 +262,13 @@ export fn init(
     background_rgb: u32,
 ) usize {
     const state = allocator.create(State) catch return 0;
-    state.terminal = Terminal.init(allocator, .{
+    // TinyIo is stateless; on wasm32-freestanding every Io operation fails,
+    // which only disables optional features (e.g. Kitty image decode).
+    const tiny_io: vt.TinyIo = .init;
+    state.terminal = Terminal.init(tiny_io.io(), allocator, .{
         .cols = cols,
         .rows = rows,
-        .max_scrollback = max_scrollback,
+        .max_scrollback_bytes = max_scrollback,
         .colors = .{
             .background = .init(.{
                 .r = @truncate(background_rgb >> 16),
@@ -284,11 +290,14 @@ export fn init(
     };
     state.responses = .{};
     state.synchronized_output_generation = 0;
-    state.stream = .initAlloc(allocator, .init(
-        &state.terminal,
-        &state.responses,
-        &state.synchronized_output_generation,
-    ));
+    state.stream = .init(.{
+        .allocator = allocator,
+        .handler = .init(
+            &state.terminal,
+            &state.responses,
+            &state.synchronized_output_generation,
+        ),
+    });
     state.render = RenderState.empty;
     return @intFromPtr(state);
 }
@@ -303,14 +312,14 @@ export fn deinit(ptr: usize) void {
 
 export fn resize(ptr: usize, cols: u16, rows: u16) void {
     const state = stateFromPtr(ptr);
-    state.terminal.resize(allocator, cols, rows) catch {};
+    state.terminal.resize(allocator, .{ .cols = cols, .rows = rows }) catch {};
 }
 
 // -- Data input -------------------------------------------------
 
 export fn write(ptr: usize, data_ptr: [*]const u8, data_len: u32) void {
     const state = stateFromPtr(ptr);
-    state.stream.nextSlice(data_ptr[0..data_len]) catch {};
+    state.stream.nextSlice(data_ptr[0..data_len]);
 }
 
 // -- Render state -----------------------------------------------
@@ -367,7 +376,7 @@ fn encodeCell(
     out: *[CELL_BYTES]u8,
 ) void {
     const cp: u32 = switch (raw.content_tag) {
-        .codepoint, .codepoint_grapheme => raw.content.codepoint,
+        .codepoint, .codepoint_grapheme => raw.content.codepoint.data,
         else => 0,
     };
 
@@ -378,7 +387,7 @@ fn encodeCell(
 
     const fg = if (has_fg) resolveRgb(style.fg_color, palette) else color.RGB{};
     const bg = if (has_bg_cell) switch (raw.content_tag) {
-        .bg_color_palette => palette[raw.content.color_palette],
+        .bg_color_palette => palette[raw.content.color_palette.data],
         .bg_color_rgb => blk: {
             const c = raw.content.color_rgb;
             break :blk color.RGB{ .r = c.r, .g = c.g, .b = c.b };
@@ -439,7 +448,7 @@ export fn get_viewport(ptr: usize, buf_ptr: [*]u8) u32 {
             const style: Style = if (raw.style_id != 0) style_cells[x] else .{};
 
             const cp: u32 = switch (raw.content_tag) {
-                .codepoint, .codepoint_grapheme => raw.content.codepoint,
+                .codepoint, .codepoint_grapheme => raw.content.codepoint.data,
                 else => 0,
             };
 
@@ -450,7 +459,7 @@ export fn get_viewport(ptr: usize, buf_ptr: [*]u8) u32 {
 
             const fg = if (has_fg) resolveRgb(style.fg_color, palette) else color.RGB{};
             const bg = if (has_bg_cell) switch (raw.content_tag) {
-                .bg_color_palette => palette[raw.content.color_palette],
+                .bg_color_palette => palette[raw.content.color_palette.data],
                 .bg_color_rgb => blk: {
                     const c = raw.content.color_rgb;
                     break :blk color.RGB{ .r = c.r, .g = c.g, .b = c.b };
@@ -526,7 +535,7 @@ export fn get_viewport_grapheme(
     const raw = cells.items(.raw);
     if (col >= raw.len or raw[col].content_tag != .codepoint_grapheme) return 0;
     return encodeGrapheme(
-        raw[col].content.codepoint,
+        raw[col].content.codepoint.data,
         cells.items(.grapheme)[col],
         buf_ptr,
         buf_len,
@@ -541,7 +550,9 @@ fn encodeHyperlink(
 ) u32 {
     const cells = pin.cells(.all);
     if (col >= cells.len or !cells[col].hyperlink) return 0;
-    const page = &pin.node.data;
+    // node.page() restores a compressed page; required here because the
+    // hyperlink URI bytes live in page memory.
+    const page = pin.node.page();
     const link_id = page.lookupHyperlink(&cells[col]) orelse return 0;
     const entry = page.hyperlink_set.get(page.memory, link_id);
     const uri = entry.uri.slice(page.memory);
@@ -694,7 +705,7 @@ export fn get_scrollback_count(ptr: usize) u32 {
     var total: usize = 0;
     var node_ = screen.pages.pages.first;
     while (node_) |node| : (node_ = node.next) {
-        total += node.data.size.rows;
+        total += node.rows();
     }
     if (total <= state.terminal.rows) return 0;
     return @intCast(total - state.terminal.rows);
@@ -755,7 +766,7 @@ export fn get_scrollback_grapheme(
     const cells = pin.cells(.all);
     if (col >= cells.len or cells[col].content_tag != .codepoint_grapheme) return 0;
     return encodeGrapheme(
-        cells[col].content.codepoint,
+        cells[col].content.codepoint.data,
         pin.grapheme(&cells[col]) orelse return 0,
         buf_ptr,
         buf_len,
