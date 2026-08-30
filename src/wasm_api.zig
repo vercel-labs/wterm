@@ -110,6 +110,10 @@ export fn getSynchronizedOutputGeneration() u32 {
     return terminal.synchronized_output_generation;
 }
 
+export fn getKittyKeyboardFlags() u32 {
+    return terminal.kittyKeyboardFlags();
+}
+
 // -- Title --
 
 export fn getTitlePtr() [*]const u8 {

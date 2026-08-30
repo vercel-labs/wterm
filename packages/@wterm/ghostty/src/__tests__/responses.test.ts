@@ -95,6 +95,33 @@ describe("GhosttyCore terminal responses", () => {
     expect(core.synchronizedOutputGeneration?.()).toBe(3);
   });
 
+  it("tracks and queries Kitty keyboard flags from the active screen", async () => {
+    const core = await newCore();
+    expect(core.kittyKeyboardFlags()).toBe(0);
+
+    core.writeString("\x1b[>5u\x1b[=2;2u\x1b[=1;3u\x1b[?u");
+    expect(core.kittyKeyboardFlags()).toBe(6);
+    expect(drain(core)).toEqual(["\x1b[?6u"]);
+
+    core.writeString("\x1b[?1049h\x1b[>9u\x1b[!p");
+    expect(core.kittyKeyboardFlags()).toBe(9);
+    core.writeString("\x1b[?1049l");
+    expect(core.kittyKeyboardFlags()).toBe(6);
+
+    core.writeString("\x1b[<u");
+    expect(core.kittyKeyboardFlags()).toBe(0);
+    core.writeString("\x1bc");
+    expect(core.kittyKeyboardFlags()).toBe(0);
+  });
+
+  it("wraps the Kitty stack and bounds oversized pops", async () => {
+    const core = await newCore();
+    core.writeString("\x1b[>1u".repeat(9));
+    expect(core.kittyKeyboardFlags()).toBe(1);
+    core.writeString("\x1b[<10u");
+    expect(core.kittyKeyboardFlags()).toBe(0);
+  });
+
   it("says nothing to an ANSI-mode DECRQM, which ghostty 1.3.1 never dispatches", async () => {
     // `CSI Ps $ p` carries one intermediate. ghostty's stream switches on
     // `intermediates.len == 2` before testing for the ANSI form, so the ANSI
