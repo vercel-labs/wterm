@@ -5,26 +5,27 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ZIG_DIR="$SCRIPT_DIR/../zig"
 OUT_DIR="$SCRIPT_DIR/../wasm"
 
-GHOSTTY_VERSION="1.3.1"
-GHOSTTY_URL="https://github.com/ghostty-org/ghostty/archive/v${GHOSTTY_VERSION}.tar.gz"
-GHOSTTY_HASH="ghostty-${GHOSTTY_VERSION}-5UdBCwYm-gQeBa4bu1-sMooCQS4KVriv5wWSIJ_sI-Cb"
+# ghostty 1.3.2-dev: includes the hyperlink page-capacity fix
+# (ghostty-org/ghostty#13394) that is not in any tagged release. Same pin
+# zmx 0.7.1 ships with. The zig/build.zig.zon path dependency points at the
+# checkout this script creates.
+GHOSTTY_COMMIT="8af6897c0afc63037a8a3efee4162a380e3a4572"
+GHOSTTY_URL="https://github.com/ghostty-org/ghostty/archive/${GHOSTTY_COMMIT}.tar.gz"
+GHOSTTY_SRC="$ZIG_DIR/ghostty"
 
 # ---------------------------------------------------------------------------
-# 1. Locate Zig 0.15.x
+# 1. Locate Zig 0.16.x (required by ghostty 1.3.2-dev)
 # ---------------------------------------------------------------------------
 ZIG=""
-ZIGUP_PATH="$HOME/.local/share/zigup/0.15.2/files/zig"
-if [[ -x "$ZIGUP_PATH" ]]; then
-  ZIG="$ZIGUP_PATH"
-elif command -v zig &>/dev/null && [[ "$(zig version 2>/dev/null)" =~ ^0\.15\. ]]; then
+if command -v zig &>/dev/null && [[ "$(zig version 2>/dev/null)" =~ ^0\.16\. ]]; then
   ZIG="zig"
+elif command -v mise &>/dev/null; then
+  ZIG="mise exec zig@0.16.0 -- zig"
 fi
 
 if [[ -z "$ZIG" ]]; then
-  echo "Error: Zig 0.15.x is required but not found."
-  echo ""
-  echo "ghostty requires Zig 0.15.x which differs from wterm's Zig 0.16.x."
-  echo "Install it with: zigup 0.15.2"
+  echo "Error: Zig 0.16.x is required but not found."
+  echo "Install it with: zigup 0.16.0, mise install zig@0.16.0,"
   echo "or download from https://ziglang.org/download/"
   exit 1
 fi
@@ -32,24 +33,20 @@ fi
 echo "Using Zig: $ZIG ($($ZIG version))"
 
 # ---------------------------------------------------------------------------
-# 2. Ensure ghostty source is fetched (populate Zig global cache)
+# 2. Fetch and extract ghostty source (kept out of git; see .gitignore)
 # ---------------------------------------------------------------------------
-GHOSTTY_SRC="$HOME/.cache/zig/p/$GHOSTTY_HASH"
-
-if [[ ! -d "$GHOSTTY_SRC" ]]; then
-  echo "Fetching ghostty v${GHOSTTY_VERSION}..."
-  cd "$ZIG_DIR"
-  "$ZIG" build 2>/dev/null || true
-  if [[ ! -d "$GHOSTTY_SRC" ]]; then
-    echo "Error: ghostty source not found at $GHOSTTY_SRC after fetch"
-    exit 1
-  fi
+if [[ ! -f "$GHOSTTY_SRC/.commit" || "$(cat "$GHOSTTY_SRC/.commit")" != "$GHOSTTY_COMMIT" ]]; then
+  echo "Fetching ghostty @ ${GHOSTTY_COMMIT}..."
+  rm -rf "$GHOSTTY_SRC"
+  mkdir -p "$GHOSTTY_SRC"
+  curl -fsSL "$GHOSTTY_URL" | tar -xz -C "$GHOSTTY_SRC" --strip-components=1
+  echo "$GHOSTTY_COMMIT" > "$GHOSTTY_SRC/.commit"
 fi
 
 echo "ghostty source: $GHOSTTY_SRC"
 
 # ---------------------------------------------------------------------------
-# 3. Patch page.zig for WASM (mmap → wasm_allocator)
+# 3. Patch for wasm32-freestanding (page allocator, discarded-rows counter)
 # ---------------------------------------------------------------------------
 echo "Applying WASM patches..."
 bash "$SCRIPT_DIR/patch-ghostty-wasm.sh" "$GHOSTTY_SRC"
@@ -59,7 +56,7 @@ bash "$SCRIPT_DIR/patch-ghostty-wasm.sh" "$GHOSTTY_SRC"
 # ---------------------------------------------------------------------------
 cd "$ZIG_DIR"
 echo "Building ghostty-vt WASM module..."
-"$ZIG" build -Doptimize=ReleaseSmall
+$ZIG build -Doptimize=ReleaseSmall
 
 mkdir -p "$OUT_DIR"
 cp zig-out/bin/ghostty-vt.wasm "$OUT_DIR/"

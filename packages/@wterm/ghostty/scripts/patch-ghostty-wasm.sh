@@ -2,13 +2,15 @@
 # Patches ghostty source for wasm32-freestanding compatibility.
 #
 # Two files need patching:
-#   1. page.zig — uses posix.mmap/munmap for page memory
-#   2. PageList.zig — pageAllocator() returns Mach VM allocator on macOS
+#   1. page.zig — page backing memory comes from mmap (POSIX) or
+#      VirtualAlloc (Windows); neither exists on WASM. Adds an AllocWasm
+#      variant backed by wasm_allocator to the PageAlloc switch.
+#   2. PageList.zig — adds a discarded_rows counter so @wterm/dom can keep
+#      retained history anchored when the page budget rolls over. Counts
+#      both eviction paths: grow()'s prune-and-reuse and limits
+#      enforcement's automatic pruning.
 #
-# Both are replaced with wasm_allocator on WASM targets using
-# comptime isWasm() checks, matching ghostty's own conditional style.
-#
-# Pinned to ghostty v1.3.1 — verify after version bumps.
+# Pinned to ghostty 1.3.2-dev (8af6897) — verify after version bumps.
 set -euo pipefail
 
 GHOSTTY_SRC="$1"
@@ -24,39 +26,11 @@ fi
 [[ -f "$PAGELIST_ZIG.orig" ]] || cp "$PAGELIST_ZIG" "$PAGELIST_ZIG.orig"
 
 # ---------------------------------------------------------------
-# Patch PageList.zig — pageAllocator()
+# Patch PageList.zig — discarded_rows counter
 # ---------------------------------------------------------------
 python3 -c "
 with open('$PAGELIST_ZIG', 'r') as f:
     src = f.read()
-
-old_pa = '''inline fn pageAllocator() Allocator {
-    // In tests we use our testing allocator so we can detect leaks.
-    if (builtin.is_test) return std.testing.allocator;
-
-    // On non-macOS we use our standard Zig page allocator.
-    if (!builtin.target.os.tag.isDarwin()) return std.heap.page_allocator;
-
-    // On macOS we want to tag our memory so we can assign it to our
-    // core terminal usage.
-    const mach = @import(\"../os/mach.zig\");
-    return mach.taggedPageAllocator(.application_specific_1);
-}'''
-
-new_pa = '''inline fn pageAllocator() Allocator {
-    if (builtin.is_test) return std.testing.allocator;
-    if (comptime builtin.target.cpu.arch.isWasm()) {
-        return std.heap.wasm_allocator;
-    } else if (comptime builtin.target.os.tag.isDarwin()) {
-        const mach = @import(\"../os/mach.zig\");
-        return mach.taggedPageAllocator(.application_specific_1);
-    } else {
-        return std.heap.page_allocator;
-    }
-}'''
-
-if 'wasm_allocator' not in src[src.find('inline fn pageAllocator()'):src.find('inline fn pageAllocator()') + 700]:
-    src = src.replace(old_pa, new_pa, 1)
 
 if 'discarded_rows: usize' not in src:
     src = src.replace(
@@ -87,21 +61,35 @@ if 'self.discarded_rows = 0;' not in src:
         1,
     )
 
-if 'self.discarded_rows += first.data.size.rows' not in src:
+# grow(): prune-and-reuse of the oldest page when the byte budget is hit.
+if 'self.discarded_rows += first.rows()' not in src:
     src = src.replace(
-        'self.total_rows -= first.data.size.rows;\\n',
-        'self.total_rows -= first.data.size.rows;\\n'
-        '        self.discarded_rows += first.data.size.rows;\\n',
+        '        // Decrease our total row count from the pruned page\\n'
+        '        self.total_rows -= first.rows();\\n',
+        '        // Decrease our total row count from the pruned page\\n'
+        '        self.total_rows -= first.rows();\\n'
+        '        self.discarded_rows += first.rows();\\n',
         1,
     )
 
-if 'self.discarded_rows -= first.data.size.rows' not in src:
+if 'self.discarded_rows -= first.rows()' not in src:
     src = src.replace(
-        '            self.total_rows += first.data.size.rows;\\n'
+        '            self.total_rows += first.rows();\\n'
         '            break :prune;',
-        '            self.total_rows += first.data.size.rows;\\n'
-        '            self.discarded_rows -= first.data.size.rows;\\n'
+        '            self.total_rows += first.rows();\\n'
+        '            self.discarded_rows -= first.rows();\\n'
         '            break :prune;',
+        1,
+    )
+
+# Limits enforcement: automatic pruning of whole history pages.
+if 'pagelist.discarded_rows += first_rows' not in src:
+    src = src.replace(
+        '            pagelist.erasePage(first);\\n'
+        '            pagelist.total_rows -= first_rows;\\n',
+        '            pagelist.erasePage(first);\\n'
+        '            pagelist.total_rows -= first_rows;\\n'
+        '            pagelist.discarded_rows += first_rows;\\n',
         1,
     )
 
@@ -119,8 +107,9 @@ required = [
     '.discarded_rows = 0',
     '.discarded_rows = self.discarded_rows',
     'self.discarded_rows = 0;',
-    'self.discarded_rows += first.data.size.rows',
-    'self.discarded_rows -= first.data.size.rows',
+    'self.discarded_rows += first.rows()',
+    'self.discarded_rows -= first.rows()',
+    'pagelist.discarded_rows += first_rows',
     'pub fn discardedRows',
 ]
 missing = [needle for needle in required if needle not in src]
@@ -134,134 +123,55 @@ print('PageList.zig patched for WASM')
 "
 
 # ---------------------------------------------------------------
-# Patch page.zig — mmap/munmap
+# Patch page.zig — WASM page allocator
 # ---------------------------------------------------------------
 python3 -c "
-import sys
-
 with open('$PAGE_ZIG', 'r') as f:
     src = f.read()
 
-# 1. Make posix conditional — void on WASM so no symbols are resolved
-if 'if (builtin.target.cpu.arch.isWasm()) void else std.posix' not in src:
+old_switch = '''const PageAlloc = switch (builtin.os.tag) {
+    .windows => AllocWindows,
+    else => AllocPosix,
+};'''
+
+new_switch = '''const PageAlloc = if (builtin.target.cpu.arch.isWasm())
+    AllocWasm
+else switch (builtin.os.tag) {
+    .windows => AllocWindows,
+    else => AllocPosix,
+};
+
+/// Allocate page-aligned, zeroed backing memory from the WASM allocator.
+/// wasm32-freestanding has no mmap; explicit zeroing keeps the invariant.
+const AllocWasm = struct {
+    pub fn alloc(n: usize) error{OutOfMemory}![]align(std.heap.page_size_min) u8 {
+        const backing = std.heap.wasm_allocator.alignedAlloc(
+            u8,
+            .fromByteUnits(std.heap.page_size_min),
+            n,
+        ) catch return error.OutOfMemory;
+        @memset(backing, 0);
+        return backing;
+    }
+
+    pub fn free(mem: []align(std.heap.page_size_min) u8) void {
+        std.heap.wasm_allocator.free(mem);
+    }
+};'''
+
+if 'AllocWasm' not in src:
+    src = src.replace(old_switch, new_switch, 1)
+
+if 'AllocWasm' not in src:
+    raise SystemExit('page.zig PageAlloc patch failed: switch not found')
+
+# posix/windows namespaces must not be resolved on WASM.
+if 'isWasm()) void else std.posix' not in src:
     src = src.replace(
         'const posix = std.posix;',
         'const posix = if (builtin.target.cpu.arch.isWasm()) void else std.posix;',
-        1
+        1,
     )
-
-# 2. Patch init() to branch on WASM
-old_init = '''    pub inline fn init(cap: Capacity) !Page {
-        const l = layout(cap);
-
-        // We use mmap directly to avoid Zig allocator overhead
-        // (small but meaningful for this path) and because a private
-        // anonymous mmap is guaranteed on Linux and macOS to be zeroed,
-        // which is a critical property for us.
-        assert(l.total_size % std.heap.page_size_min == 0);
-        const backing = try posix.mmap(
-            null,
-            l.total_size,
-            posix.PROT.READ | posix.PROT.WRITE,
-            .{ .TYPE = .PRIVATE, .ANONYMOUS = true },
-            -1,
-            0,
-        );
-        errdefer posix.munmap(backing);
-
-        const buf = OffsetBuf.init(backing);
-        return initBuf(buf, l);
-    }'''
-
-new_init = '''    // wasm_page_alloc: patched by @wterm/ghostty for WASM compatibility
-    pub inline fn init(cap: Capacity) !Page {
-        const l = layout(cap);
-
-        if (comptime builtin.target.cpu.arch.isWasm()) {
-            const backing = std.heap.wasm_allocator.alignedAlloc(
-                u8,
-                std.heap.page_size_min,
-                l.total_size,
-            ) catch return error.OutOfMemory;
-            @memset(backing, 0);
-            const buf = OffsetBuf.init(backing);
-            return initBuf(buf, l);
-        }
-
-        assert(l.total_size % std.heap.page_size_min == 0);
-        const backing = try posix.mmap(
-            null,
-            l.total_size,
-            posix.PROT.READ | posix.PROT.WRITE,
-            .{ .TYPE = .PRIVATE, .ANONYMOUS = true },
-            -1,
-            0,
-        );
-        errdefer posix.munmap(backing);
-
-        const buf = OffsetBuf.init(backing);
-        return initBuf(buf, l);
-    }'''
-
-if 'wasm_page_alloc' not in src:
-    src = src.replace(old_init, new_init, 1)
-
-# 3. Patch deinit()
-old_deinit = '''    pub inline fn deinit(self: *Page) void {
-        posix.munmap(self.memory);
-        self.* = undefined;
-    }'''
-
-new_deinit = '''    pub inline fn deinit(self: *Page) void {
-        if (comptime builtin.target.cpu.arch.isWasm()) {
-            std.heap.wasm_allocator.free(self.memory);
-        } else {
-            posix.munmap(self.memory);
-        }
-        self.* = undefined;
-    }'''
-
-if 'std.heap.wasm_allocator.free(self.memory)' not in src:
-    src = src.replace(old_deinit, new_deinit, 1)
-
-# 4. Patch clone()
-old_clone = '''    pub inline fn clone(self: *const Page) !Page {
-        const backing = try posix.mmap(
-            null,
-            self.memory.len,
-            posix.PROT.READ | posix.PROT.WRITE,
-            .{ .TYPE = .PRIVATE, .ANONYMOUS = true },
-            -1,
-            0,
-        );
-        errdefer posix.munmap(backing);
-        return self.cloneBuf(backing);
-    }'''
-
-new_clone = '''    pub inline fn clone(self: *const Page) !Page {
-        if (comptime builtin.target.cpu.arch.isWasm()) {
-            const backing = std.heap.wasm_allocator.alignedAlloc(
-                u8,
-                std.heap.page_size_min,
-                self.memory.len,
-            ) catch return error.OutOfMemory;
-            errdefer std.heap.wasm_allocator.free(backing);
-            return self.cloneBuf(backing);
-        }
-        const backing = try posix.mmap(
-            null,
-            self.memory.len,
-            posix.PROT.READ | posix.PROT.WRITE,
-            .{ .TYPE = .PRIVATE, .ANONYMOUS = true },
-            -1,
-            0,
-        );
-        errdefer posix.munmap(backing);
-        return self.cloneBuf(backing);
-    }'''
-
-if 'errdefer std.heap.wasm_allocator.free(backing)' not in src:
-    src = src.replace(old_clone, new_clone, 1)
 
 with open('$PAGE_ZIG', 'w') as f:
     f.write(src)
