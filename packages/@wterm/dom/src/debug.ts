@@ -253,7 +253,7 @@ export class DebugAdapter {
     const c = this._bridge.getCell(row, col);
     return {
       ...c,
-      charStr: c.char >= 32 ? String.fromCodePoint(c.char) : "",
+      charStr: c.chars ?? (c.char >= 32 ? String.fromCodePoint(c.char) : ""),
       flagNames: flagsToNames(c.flags),
     };
   }

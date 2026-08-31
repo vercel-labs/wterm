@@ -1,8 +1,88 @@
 # Changelog
 
-## 0.3.0
+## 0.3.4
 
 <!-- release:start -->
+
+### New Features
+
+- **Native OSC 8 hyperlinks:** the built-in and Ghostty cores preserve hyperlink metadata through rendering, scrollback, reflow and resets. The DOM renderer exposes safe absolute HTTP(S) links as native anchors, with Command-click activation on macOS and Control-click on Windows/Linux while plain clicks remain terminal-owned (#116)
+
+### Bug Fixes
+
+- **Complete Ghostty grapheme strings:** combining marks and ZWJ sequences now cross the WASM boundary as complete clusters in both the viewport and scrollback instead of being truncated to a base codepoint (#111)
+- **Ghostty theme color responses:** OSC 10 and OSC 11 queries now return the configured foreground and background colors with the original BEL or ST terminator (#113)
+- **Atomic Ghostty synchronized output:** Ghostty exposes DEC mode `?2026` state and block generations so the DOM scheduler holds intermediate frames and paints the completed burst once (#114)
+- **Bounded scrollback DOM:** history rows are virtualized with viewport overscan, preserving native selection and the visible history position across rollover and resize while keeping mounted rows bounded (#115, #61)
+
+### Improvements
+
+- **Direct animation-frame scheduling:** normal writes request an animation frame without an intermediate timer while retaining one pending render per frame and synchronized-output cancellation semantics (#112)
+
+### Contributors
+
+- @Railly
+
+<!-- release:end -->
+
+## 0.3.3
+
+### Bug Fixes
+
+- **Pixel-aligned block gradients** — vertical fractional block glyphs now snap their gradient stops to whole pixels, preventing horizontal rules from jogging between cells at fractional row-height boundaries (#104, #81)
+- **Ordered terminal query responses** — the built-in core queues every response instead of overwriting a single pending value, and the DOM adapter drains them in order even when writes arrive in chunks or an `onData` callback throws (#105)
+- **Atomic synchronized output** — DEC mode `?2026` now holds intermediate paints and exposes one completed frame, with a fixed one-second recovery ceiling for unterminated blocks and generation-aware deadlines for consecutive blocks (#106, #57)
+- **Browser mouse and focus reporting** — the DOM adapter now emits SGR press, drag, release and wheel events for modes `1000`, `1002` and `1006`, reports focus for mode `1004`, and preserves native Shift selection (#107, #55)
+- **Viewport history across vertical resize** — shrinking pushes only the rows above the cursor into scrollback, growing refills from the newest history, and wrapped rings are indexed from their write position. Growing now consumes restored scrollback rows, so `getLine` offsets can shift across a resize and hosts retaining an offset must re-read it (#108, #43, #89)
+- **Terminal responses in `@wterm/ghostty`** — DA1, DSR operating status, CPR and DECRQM queries now produce ordered responses through a bounded FIFO instead of being silently dropped (#109)
+
+### Contributors
+
+- @ivebenfreed
+- @Ramalama2
+- @Railly
+
+## 0.3.2
+
+### Bug Fixes
+
+- **Wide characters occupied one cell** — CJK, fullwidth forms and emoji painted two columns while the grid gave them one, so every occurrence pushed the rest of the row right and cursor-addressed redraws landed a column early. `CellData` gains `width`, the core advances by it, and the DOM renderer skips continuation cells (#102, #54, #71, #101)
+- **Blank scrollback in `@wterm/ghostty`** — `get_scrollback_line` was an unimplemented stub returning 0, so every scrolled-back row rendered empty even though the row count was correct (#98)
+- **Style leaking across screens** — `get_viewport` read `RenderState.Cell.style` without checking `style_id`, resurfacing the style of whatever occupied the cell in an earlier render pass, including one against the alternate screen (#96)
+- **`GhosttyCore.load()` under bundlers that inline modules** — Bun's dev server resolves `import.meta.url` to a path on the build machine, so a `file:` URL reached the browser and `fetch` reported only `Failed to fetch`. The loader now names the cause and points at `wasmPath`, and reports a non-OK response or a non-WASM body instead of failing inside `WebAssembly.instantiate` (#99)
+- **`scrollbackLimit` documented as lines** — ghostty reads it as a byte budget, so an 80-column terminal retains about 1150 rows at the 10000 default, not 10000 (#98)
+- **Cell width guessed by Unicode block** — hand-written ranges called 1209 assigned characters wide that Unicode calls narrow, including enclosed alphanumerics, domino tiles and several arrow blocks. The table is generated from East Asian Width data now (#102)
+- **Wide pairs split at a narrower width** — a row dropped into scrollback during a resize kept a wide cell whose continuation was left behind, and a scrollback row read into a narrower grid spilled a column past its end (#102)
+
+### Improvements
+
+- **`@wterm/ghostty/ghostty-vt.wasm` subpath export** — the binary is now addressable through the package, so apps on bundlers that cannot resolve the default can serve it themselves (#99)
+- **Container WASM build** — `rebuild-wasm:docker` runs the existing build script in Linux, for hosts where Zig 0.15.x cannot link a native build runner. Output is byte-identical to a host build (#98)
+
+### Contributors
+
+- @ctate
+- @njbrake
+- @Railly
+
+## 0.3.1
+
+### Bug Fixes
+
+- **WASM view invalidation** — cached `DataView` and `Uint8Array` views over WASM memory became detached when the module grew memory mid-call, throwing on `getCell`, `getScrollbackCell` and multi-chunk `writeRaw` (#92)
+- **Scrollback colors in `@wterm/ghostty`** — `getScrollbackCell()` packed `fgRgb`/`bgRgb` regardless of `colorFlags`, so cells with no explicit color rendered black instead of the terminal default (#93)
+- **`escapeHTML` double quotes** — the DOM renderer's escape helper left `"` unescaped (#94)
+
+### Improvements
+
+- **Test coverage for `@wterm/ghostty`** — the package had no test setup, so `turbo run test` skipped it entirely. It now runs in CI like the other packages (#93)
+
+### Contributors
+
+- @hobostay
+- @Railly
+
+## 0.3.0
 
 ### New Features
 
@@ -21,8 +101,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.2.1
 

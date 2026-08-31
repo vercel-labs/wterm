@@ -2,6 +2,39 @@
 
 Complete reference for all wterm options, methods, types, and transport APIs.
 
+## Cell Data
+
+`TerminalCore.getCell()` and `getScrollbackCell()` return `CellData`. Alongside glyph, color, style, and width fields, a core may provide resolved OSC 8 metadata:
+
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>linkUri</code></td>
+      <td><code>string?</code></td>
+      <td>The resolved URI attached to this cell</td>
+    </tr>
+    <tr>
+      <td><code>linkId</code></td>
+      <td><code>string?</code></td>
+      <td>The explicit OSC 8 <code>id=</code> parameter, when provided</td>
+    </tr>
+    <tr>
+      <td><code>linkKey</code></td>
+      <td><code>string?</code></td>
+      <td>An opaque semantic identity used by renderers to group linked cells. Consumers must not interpret its contents.</td>
+    </tr>
+  </tbody>
+</table>
+
+These fields are optional so custom `TerminalCore` implementations remain source-compatible.
+
 ## Terminal Options
 
 The React and Vue `<Terminal>` components and the vanilla `WTerm` constructor all accept these options:
@@ -179,6 +212,10 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
 ## WTerm Methods
 
 Instance methods on the vanilla `WTerm` class:
+
+WTerm renders synchronized output blocks (CSI `?2026`) atomically when the mode closes. Each block can hold rendering for at most one second from its opening sequence. Ordinary payload does not extend that deadline. If the deadline expires, WTerm resumes painting until a fresh block begins.
+
+Outside synchronized output, writes request the next animation frame directly. Writes received before that frame share one render.
 
 <table>
   <thead>
@@ -450,12 +487,12 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
       <td>Initialize the terminal grid</td>
     </tr>
     <tr>
-      <td><code>writeString(str)</code></td>
-      <td>Write a UTF-8 string (including escape sequences) to the terminal</td>
+      <td><code>writeString(str, afterChunk?)</code></td>
+      <td>Write a UTF-8 string and optionally run a callback after each internal chunk</td>
     </tr>
     <tr>
-      <td><code>writeRaw(data: Uint8Array)</code></td>
-      <td>Write raw bytes to the terminal (chunked to 8192 bytes internally)</td>
+      <td><code>writeRaw(data, afterChunk?)</code></td>
+      <td>Write raw bytes and optionally run a callback after each 8192-byte internal chunk</td>
     </tr>
     <tr>
       <td><code>resize(cols, rows)</code></td>
@@ -487,11 +524,19 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
     </tr>
     <tr>
       <td><code>getResponse(): string | null</code></td>
-      <td>Get pending host response (e.g. DSR), or <code>null</code>. Reading clears the buffer.</td>
+      <td>Dequeue one pending host response (e.g. DSR), or <code>null</code>.</td>
+    </tr>
+    <tr>
+      <td><code>getResourceState?(): TerminalResourceState</code></td>
+      <td>Get optional core resource state. The built-in core reports hyperlink identity capacity, usage, capacity-rejected opens, and saturation.</td>
     </tr>
     <tr>
       <td><code>getScrollbackCount(): number</code></td>
       <td>Number of lines in the scrollback buffer</td>
+    </tr>
+    <tr>
+      <td><code>getScrollbackDiscardedCount?(): number</code></td>
+      <td>Cumulative rows discarded from the oldest end. Optional for third-party cores; WTerm uses it to preserve history position through rollover.</td>
     </tr>
     <tr>
       <td><code>getScrollbackCell(offset, col): CellData</code></td>
@@ -513,6 +558,30 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
       <td><code>usingAltScreen(): boolean</code></td>
       <td>Whether the alternate screen buffer is active</td>
     </tr>
+    <tr>
+      <td><code>mouseTracking(): number</code></td>
+      <td>Active mouse tracking mode (<code>0</code>, <code>1000</code>, or <code>1002</code>)</td>
+    </tr>
+    <tr>
+      <td><code>mouseSgr(): boolean</code></td>
+      <td>Whether SGR mouse encoding (mode 1006) is active</td>
+    </tr>
+    <tr>
+      <td><code>focusEvents(): boolean</code></td>
+      <td>Whether focus reporting (mode 1004) is active</td>
+    </tr>
+    <tr>
+      <td><code>synchronizedOutput(): boolean</code></td>
+      <td>Whether synchronized output mode (2026) is active</td>
+    </tr>
+    <tr>
+      <td><code>synchronizedOutputGeneration(): number</code></td>
+      <td>Monotonic generation for synchronized output blocks</td>
+    </tr>
+    <tr>
+      <td><code>kittyKeyboardFlags?(): number</code></td>
+      <td>Active Kitty keyboard protocol flags. Optional for third-party cores; omission keeps legacy keyboard encoding.</td>
+    </tr>
   </tbody>
 </table>
 
@@ -521,9 +590,11 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
 ```ts
 interface CellData {
   char: number;   // Unicode code point
+  chars?: string; // Complete grapheme cluster when the cell has multiple code points
   fg: number;     // Foreground color index (256 = default)
   bg: number;     // Background color index (256 = default)
   flags: number;  // Style flags (bold, italic, underline, etc.)
+  width?: number; // 1 = narrow, 2 = wide leading cell, 0 = continuation
 }
 
 interface CursorState {

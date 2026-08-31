@@ -1,4 +1,10 @@
 import type { TerminalCore } from "@wterm/core";
+import { isLinkActivationModifier } from "./hyperlink.js";
+import {
+  encodeKittyKey,
+  KITTY_REPORT_ALL,
+  KITTY_REPORT_EVENTS,
+} from "./kitty-keys.js";
 
 const NORMAL_KEYS: Record<string, string> = {
   ArrowUp: "\x1b[A",
@@ -46,24 +52,41 @@ export class InputHandler {
   private textarea: HTMLTextAreaElement;
   private onData: (data: string) => void;
   private getBridge: () => TerminalCore | null;
+  private getCellSize: () => {
+    charWidth: number;
+    rowHeight: number;
+  } | null;
   private composing = false;
+  private mouseButtons = 0;
+  private focused = false;
+  private suppressedKeyUps = new Set<string>();
+  private pressedModifiers = new Set<string>();
+  private deliveredKeys = new Set<string>();
 
   private _onKeyDown: (e: KeyboardEvent) => void;
+  private _onKeyUp: (e: KeyboardEvent) => void;
   private _onPaste: (e: ClipboardEvent) => void;
   private _onCompositionStart: () => void;
   private _onCompositionEnd: (e: CompositionEvent) => void;
   private _onInput: () => void;
   private _onFocus: () => void;
   private _onBlur: () => void;
+  private _onMouseDown: (e: MouseEvent) => void;
+  private _onMouseMove: (e: MouseEvent) => void;
+  private _onMouseUp: (e: MouseEvent) => void;
+  private _onWheel: (e: WheelEvent) => void;
 
   constructor(
     element: HTMLElement,
     onData: (data: string) => void,
     getBridge: () => TerminalCore | null,
+    getCellSize: () => { charWidth: number; rowHeight: number } | null = () =>
+      null,
   ) {
     this.element = element;
     this.onData = onData;
     this.getBridge = getBridge;
+    this.getCellSize = getCellSize;
 
     this.textarea = document.createElement("textarea");
     this.textarea.setAttribute("autocapitalize", "off");
@@ -93,14 +116,39 @@ export class InputHandler {
     element.appendChild(this.textarea);
 
     this._onKeyDown = this.handleKeyDown.bind(this);
+    this._onKeyUp = this.handleKeyUp.bind(this);
     this._onPaste = this.handlePaste.bind(this);
     this._onCompositionStart = this.handleCompositionStart.bind(this);
     this._onCompositionEnd = this.handleCompositionEnd.bind(this);
     this._onInput = this.handleInput.bind(this);
-    this._onFocus = () => this.element.classList.add("focused");
-    this._onBlur = () => this.element.classList.remove("focused");
+    this._onFocus = () => {
+      if (this.focused) return;
+      this.focused = true;
+      this.element.classList.add("focused");
+      if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[I");
+    };
+    this._onBlur = () => {
+      this.focused = false;
+      this.element.classList.remove("focused");
+      this.stopMouseCapture();
+      this.pressedModifiers.clear();
+      this.deliveredKeys.clear();
+      if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[O");
+    };
+    this._onMouseDown = (event) => this.handleMouse(event, "press");
+    this._onMouseMove = (event) => {
+      if (this.mouseButtons !== 0) this.handleMouse(event, "move");
+    };
+    this._onMouseUp = (event) => {
+      if (this.mouseButtons === 0) return;
+      this.handleMouse(event, "release");
+      this.mouseButtons = event.buttons & 7;
+      if (this.mouseButtons === 0) this.stopMouseCapture();
+    };
+    this._onWheel = (event) => this.handleMouse(event, "wheel");
 
     this.textarea.addEventListener("keydown", this._onKeyDown);
+    this.textarea.addEventListener("keyup", this._onKeyUp);
     this.textarea.addEventListener("paste", this._onPaste as EventListener);
     this.textarea.addEventListener(
       "compositionstart",
@@ -113,6 +161,8 @@ export class InputHandler {
     this.textarea.addEventListener("input", this._onInput);
     this.textarea.addEventListener("focus", this._onFocus);
     this.textarea.addEventListener("blur", this._onBlur);
+    this.element.addEventListener("mousedown", this._onMouseDown);
+    this.element.addEventListener("wheel", this._onWheel, { passive: false });
   }
 
   focus(): void {
@@ -121,6 +171,7 @@ export class InputHandler {
 
   destroy(): void {
     this.textarea.removeEventListener("keydown", this._onKeyDown);
+    this.textarea.removeEventListener("keyup", this._onKeyUp);
     this.textarea.removeEventListener("paste", this._onPaste as EventListener);
     this.textarea.removeEventListener(
       "compositionstart",
@@ -133,22 +184,46 @@ export class InputHandler {
     this.textarea.removeEventListener("input", this._onInput);
     this.textarea.removeEventListener("focus", this._onFocus);
     this.textarea.removeEventListener("blur", this._onBlur);
+    this.element.removeEventListener("mousedown", this._onMouseDown);
+    this.stopMouseCapture();
+    this.element.removeEventListener("wheel", this._onWheel);
     this.element.classList.remove("focused");
     this.textarea.remove();
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
-    if (this.composing) return;
-
-    if ((e.metaKey || e.ctrlKey) && e.key === "c") {
-      const sel = window.getSelection();
-      if (sel && sel.toString().length > 0) return;
+    const keyId = e.code || e.key;
+    const physicalModifier = /^(Shift|Control|Alt|Meta)(Left|Right)$/.test(
+      e.code,
+    );
+    if (physicalModifier) {
+      this.pressedModifiers.add(e.code);
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === "v") {
+    if (this.composing) {
+      this.suppressedKeyUps.add(keyId);
+      return;
+    }
+
+    const bridge = this.getBridge();
+    const kittyFlags = bridge?.kittyKeyboardFlags?.() ?? 0;
+    const kittyOwnsModifier =
+      physicalModifier && Boolean(kittyFlags & KITTY_REPORT_ALL);
+    const delivered = this.deliveredKeys.has(keyId);
+
+    if (!delivered && (e.metaKey || e.ctrlKey) && e.key === "c") {
+      const sel = window.getSelection();
+      if (sel && sel.toString().length > 0) {
+        this.suppressedKeyUps.add(keyId);
+        return;
+      }
+    }
+    if (!delivered && (e.metaKey || e.ctrlKey) && e.key === "v") {
+      this.suppressedKeyUps.add(keyId);
       this.textarea.focus();
       return;
     }
-    if (e.metaKey && !e.ctrlKey) {
+    if (!delivered && !kittyOwnsModifier && e.metaKey && !e.ctrlKey) {
+      this.suppressedKeyUps.add(keyId);
       if (e.key === "Backspace") {
         e.preventDefault();
         this.onData("\x15");
@@ -165,9 +240,45 @@ export class InputHandler {
       return;
     }
 
+    this.suppressedKeyUps.delete(keyId);
     e.preventDefault();
+    if (kittyFlags !== 0) {
+      const seq = encodeKittyKey(
+        e,
+        kittyFlags,
+        e.repeat ? "repeat" : "press",
+        this.pressedModifiers,
+        bridge?.cursorKeysApp?.() ?? false,
+      );
+      if (seq) {
+        this.deliveredKeys.add(keyId);
+        this.onData(seq);
+      }
+      return;
+    }
     const seq = this.keyToSequence(e);
     if (seq) this.onData(seq);
+  }
+
+  private handleKeyUp(e: KeyboardEvent): void {
+    const keyId = e.code || e.key;
+    this.pressedModifiers.delete(e.code);
+    this.deliveredKeys.delete(keyId);
+    if (this.suppressedKeyUps.delete(keyId)) return;
+    if (this.composing) return;
+    const bridge = this.getBridge();
+    const kittyFlags = bridge?.kittyKeyboardFlags?.() ?? 0;
+    if (!(kittyFlags & KITTY_REPORT_EVENTS)) return;
+    const seq = encodeKittyKey(
+      e,
+      kittyFlags,
+      "release",
+      this.pressedModifiers,
+      bridge?.cursorKeysApp?.() ?? false,
+    );
+    if (!seq) return;
+    e.preventDefault();
+    this.onData(seq);
   }
 
   private handlePaste(e: ClipboardEvent): void {
@@ -203,6 +314,141 @@ export class InputHandler {
       this.onData(value);
       this.textarea.value = "";
     }
+  }
+
+  private handleMouse(
+    event: MouseEvent | WheelEvent,
+    kind: "press" | "move" | "release" | "wheel",
+  ): void {
+    const bridge = this.getBridge();
+    const tracking = bridge?.mouseTracking?.() ?? 0;
+    if (!bridge || tracking === 0 || !bridge.mouseSgr?.()) return;
+    if (
+      kind === "press" &&
+      isLinkActivationModifier(
+        event,
+        this.element.ownerDocument.defaultView?.navigator ?? navigator,
+      ) &&
+      event.target instanceof Element &&
+      event.target.closest(".term-link")
+    ) {
+      return;
+    }
+    if (kind === "press" && (event.shiftKey || event.button > 2)) return;
+    if (kind === "release" && event.button > 2) return;
+    const supportedButtons = event.buttons & 7;
+    if (kind === "move" && (tracking !== 1002 || supportedButtons === 0)) {
+      return;
+    }
+
+    const view = this.element.ownerDocument.defaultView;
+    if (!view) return;
+    const viewportRow = this.element.querySelector<HTMLElement>(
+      ".term-row:not(.term-scrollback-row)",
+    );
+    const hostRect = this.element.getBoundingClientRect();
+    const rowRect = viewportRow?.getBoundingClientRect();
+    const cellSize = this.getCellSize();
+    let left: number;
+    let top: number;
+    let charWidth: number;
+    let rowHeight: number;
+    if (rowRect && cellSize) {
+      left = rowRect.left;
+      top = rowRect.top;
+      charWidth = cellSize.charWidth;
+      rowHeight = cellSize.rowHeight;
+    } else {
+      const style = view.getComputedStyle(this.element);
+      const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+      const borderRight = parseFloat(style.borderRightWidth) || 0;
+      const borderTop = parseFloat(style.borderTopWidth) || 0;
+      const borderBottom = parseFloat(style.borderBottomWidth) || 0;
+      const paddingLeft = parseFloat(style.paddingLeft) || 0;
+      const paddingRight = parseFloat(style.paddingRight) || 0;
+      const paddingTop = parseFloat(style.paddingTop) || 0;
+      const paddingBottom = parseFloat(style.paddingBottom) || 0;
+      left = rowRect?.left ?? hostRect.left + borderLeft + paddingLeft;
+      top = rowRect?.top ?? hostRect.top + borderTop + paddingTop;
+      charWidth =
+        (hostRect.width -
+          borderLeft -
+          borderRight -
+          paddingLeft -
+          paddingRight) /
+        bridge.getCols();
+      rowHeight =
+        (hostRect.height -
+          borderTop -
+          borderBottom -
+          paddingTop -
+          paddingBottom) /
+        bridge.getRows();
+    }
+    if (charWidth <= 0 || rowHeight <= 0) return;
+    if (kind === "press") {
+      this.textarea.focus({ preventScroll: true });
+      if (!this.focused) this._onFocus();
+      this.mouseButtons =
+        supportedButtons ||
+        (event.button === 1 ? 4 : event.button === 2 ? 2 : 1);
+      view.addEventListener("mousemove", this._onMouseMove);
+      view.addEventListener("mouseup", this._onMouseUp);
+    }
+    const col = Math.max(
+      1,
+      Math.min(
+        bridge.getCols(),
+        Math.floor((event.clientX - left) / charWidth) + 1,
+      ),
+    );
+    const row = Math.max(
+      1,
+      Math.min(
+        bridge.getRows(),
+        Math.floor((event.clientY - top) / rowHeight) + 1,
+      ),
+    );
+    const modifiers =
+      (event.shiftKey ? 4 : 0) |
+      (event.altKey ? 8 : 0) |
+      (event.ctrlKey ? 16 : 0);
+    let code: number;
+    let final = "M";
+    if (kind === "wheel") {
+      const wheel = event as WheelEvent;
+      if (Math.abs(wheel.deltaX) > Math.abs(wheel.deltaY)) {
+        if (wheel.deltaX === 0) return;
+        code = (wheel.deltaX < 0 ? 66 : 67) | modifiers;
+      } else {
+        if (wheel.deltaY === 0) return;
+        code = (wheel.deltaY < 0 ? 64 : 65) | modifiers;
+      }
+    } else {
+      const button =
+        kind === "move"
+          ? supportedButtons & 4
+            ? 1
+            : supportedButtons & 2
+              ? 2
+              : 0
+          : event.button === 1
+            ? 1
+            : event.button === 2
+              ? 2
+              : 0;
+      code = button | modifiers | (kind === "move" ? 32 : 0);
+      if (kind === "release") final = "m";
+    }
+    event.preventDefault();
+    this.onData(`\x1b[<${code};${col};${row}${final}`);
+  }
+
+  private stopMouseCapture(): void {
+    this.mouseButtons = 0;
+    const view = this.element.ownerDocument.defaultView;
+    view?.removeEventListener("mousemove", this._onMouseMove);
+    view?.removeEventListener("mouseup", this._onMouseUp);
   }
 
   private keyToSequence(e: KeyboardEvent): string | null {

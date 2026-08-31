@@ -6,6 +6,8 @@ The `@wterm/ghostty` package provides a full-featured terminal emulation core po
 
 wterm ships with a lightweight built-in core (~12 KB WASM) that covers basic VT100/VT220/xterm escape sequences. For apps that need comprehensive terminal emulation — full Unicode grapheme clusters, all SGR attributes, terminal modes, and more — `@wterm/ghostty` provides all of that via Ghostty's battle-tested VT parser (~400 KB WASM).
 
+Ghostty's native OSC 8 metadata is preserved through the active viewport, scrollback, and reflow. The DOM renderer resolves it into safe HTTP and HTTPS anchors without exposing Ghostty's page-local numeric IDs.
+
 ## Install
 
 ```bash
@@ -71,17 +73,115 @@ const core = await GhosttyCore.load();
   </thead>
   <tbody>
     <tr>
-      <td><code>wasmPath</code></td>
-      <td><code>string</code></td>
-      <td>Custom path to the ghostty-vt WASM binary. By default it resolves to the committed binary inside the package.</td>
+      <td>
+        <code>wasmPath</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
+      <td>
+        Custom path to the ghostty-vt WASM binary. By default it resolves to the
+        committed binary inside the package.
+      </td>
     </tr>
     <tr>
-      <td><code>scrollbackLimit</code></td>
-      <td><code>number</code></td>
-      <td>Maximum scrollback lines (default: 10000).</td>
+      <td>
+        <code>scrollbackLimit</code>
+      </td>
+      <td>
+        <code>number</code>
+      </td>
+      <td>
+        Scrollback budget in bytes, not lines (default: 10000). ghostty
+        allocates history in pages, so the retained row count depends on the
+        terminal width.
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>foregroundColor</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
+      <td>
+        Foreground reported by OSC 10 in <code>#RRGGBB</code> format. Defaults
+        to <code>#d4d4d4</code>.
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>backgroundColor</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
+      <td>
+        Background reported by OSC 11 in <code>#RRGGBB</code> format. Defaults
+        to <code>#1e1e1e</code>.
+      </td>
     </tr>
   </tbody>
 </table>
+
+Pass colors matching your CSS theme so terminal applications receive the
+colors they are actually rendered with:
+
+```ts
+const core = await GhosttyCore.load({
+  foregroundColor: "#ededed",
+  backgroundColor: "#0a0a0a",
+});
+```
+
+## Bundlers
+
+The WASM binary is fetched at runtime rather than inlined, so the default has to resolve to a URL your app serves. `GhosttyCore.load()` resolves it with `new URL("../wasm/ghostty-vt.wasm", import.meta.url)`. Bundlers that implement that asset pattern emit the binary and rewrite the URL. Ones that do not leave `import.meta.url` pointing at the machine that built the bundle, and `load()` throws an error saying so.
+
+<table>
+  <thead>
+    <tr>
+      <th>Bundler</th>
+      <th>
+        Default <code>GhosttyCore.load()</code>
+      </th>
+      <th>Verified</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Vite (dev and build)</td>
+      <td>Works, emits a hashed asset.</td>
+      <td>Yes</td>
+    </tr>
+    <tr>
+      <td>Bun dev server</td>
+      <td>
+        Fails, pass <code>wasmPath</code>.
+      </td>
+      <td>Yes</td>
+    </tr>
+    <tr>
+      <td>Others</td>
+      <td>
+        Untested. Use <code>wasmPath</code> if the default throws.
+      </td>
+      <td>No</td>
+    </tr>
+  </tbody>
+</table>
+
+When the default cannot work, serve the binary yourself and point at it:
+
+```bash
+cp node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm public/ghostty-vt.wasm
+```
+
+```ts
+const core = await GhosttyCore.load({ wasmPath: "/ghostty-vt.wasm" });
+```
+
+The binary is also addressable as `@wterm/ghostty/ghostty-vt.wasm`, so a bundler with a URL import can take it directly.
 
 ## How it works
 
@@ -96,12 +196,28 @@ const core = await GhosttyCore.load();
 
 The `TerminalCore` interface means the DOM renderer, input handler, and framework bindings don't need to know which core they're talking to.
 
+Ghostty enables grapheme clustering and returns combining sequences and ZWJ emoji through `CellData.chars`. The same complete strings are available from active cells and scrollback.
+
+The adapter also reports how many rows Ghostty has discarded from the oldest end of its page-backed history. WTerm uses that count to keep retained rows anchored when the scrollback budget rolls over.
+
+Terminal applications can query the Ghostty core's foreground and background colors with OSC 10 and OSC 11. The core starts with its configured colors and tracks later OSC color changes and resets.
+
+Ghostty also exposes synchronized-output mode (`CSI ? 2026 h/l`) and its generation to the DOM renderer, so updates inside a synchronized block paint as one final frame.
+
+Kitty keyboard query and negotiation operate on Ghostty's native active-screen state. Primary and alternate screens have independent flag stacks, DECSTR preserves them, and RIS clears them. The DOM renderer reads those flags directly instead of maintaining a TypeScript shadow state.
+
 ## Rebuilding the WASM
 
 Only needed by maintainers. Requires [Zig 0.15.x](https://ziglang.org/download/) (ghostty's required Zig version, separate from wterm's Zig 0.16.x):
 
 ```bash
 pnpm --filter @wterm/ghostty rebuild-wasm
+```
+
+Zig 0.15.x cannot link a native build runner on macOS 26, and Zig 0.16 fails inside ghostty's vendored build files. When the host toolchain cannot build, run the same script in a Linux container:
+
+```bash
+pnpm --filter @wterm/ghostty rebuild-wasm:docker
 ```
 
 ## Comparison
@@ -111,7 +227,9 @@ pnpm --filter @wterm/ghostty rebuild-wasm
     <tr>
       <th></th>
       <th>Built-in (default)</th>
-      <th><code>@wterm/ghostty</code></th>
+      <th>
+        <code>@wterm/ghostty</code>
+      </th>
     </tr>
   </thead>
   <tbody>
@@ -127,7 +245,7 @@ pnpm --filter @wterm/ghostty rebuild-wasm
     </tr>
     <tr>
       <td>Unicode</td>
-      <td>Single codepoints</td>
+      <td>Single codepoints with wide-cell support</td>
       <td>Full grapheme clusters</td>
     </tr>
     <tr>
@@ -143,7 +261,9 @@ pnpm --filter @wterm/ghostty rebuild-wasm
     <tr>
       <td>Setup</td>
       <td>Zero-config</td>
-      <td>Requires <code>@wterm/ghostty</code> install</td>
+      <td>
+        Requires <code>@wterm/ghostty</code> install
+      </td>
     </tr>
   </tbody>
 </table>

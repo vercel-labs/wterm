@@ -192,7 +192,9 @@ describe("KittyGraphicsFilter", () => {
     const closeNewest = feed(f, `\x1b_Gi=${newestId},m=0;\x1b\\`);
     expect(closeNewest).toHaveLength(1);
     if (closeNewest[0].type === "graphics") {
-      expect(Array.from(closeNewest[0].event.data)).toEqual([MAX_PENDING_CHUNKS]);
+      expect(Array.from(closeNewest[0].event.data)).toEqual([
+        MAX_PENDING_CHUNKS,
+      ]);
     }
   });
 });

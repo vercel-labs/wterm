@@ -16,6 +16,10 @@ import {
 } from "./wasm-bindings.js";
 
 const DEFAULT_COLOR = 256;
+const GRAPHEME_BUFFER_BYTES = 256;
+const HYPERLINK_BUFFER_BYTES = 1024;
+const DEFAULT_FOREGROUND = "#d4d4d4";
+const DEFAULT_BACKGROUND = "#1e1e1e";
 
 const WTERM_FLAG_BOLD = 0x01;
 const WTERM_FLAG_DIM = 0x02;
@@ -51,11 +55,21 @@ const BLANK_CELL: CellData = {
   fg: DEFAULT_COLOR,
   bg: DEFAULT_COLOR,
   flags: 0,
+  width: 1,
 };
 
 export interface GhosttyOptions {
   wasmPath?: string;
   scrollbackLimit?: number;
+  foregroundColor?: string;
+  backgroundColor?: string;
+}
+
+function parseColor(value: string, option: string): number {
+  if (!/^#[0-9a-f]{6}$/i.test(value)) {
+    throw new Error(`@wterm/ghostty: ${option} must be a #RRGGBB color`);
+  }
+  return Number.parseInt(value.slice(1), 16);
 }
 
 /**
@@ -78,6 +92,8 @@ export class GhosttyCore implements TerminalCore {
   private wasm: GhosttyWasm;
   private termPtr = 0;
   private _options: GhosttyOptions;
+  private _foregroundRgb: number;
+  private _backgroundRgb: number;
 
   private _viewportBufPtr = 0;
   private _viewportBufSize = 0;
@@ -86,9 +102,29 @@ export class GhosttyCore implements TerminalCore {
   private _cols = 0;
   private _rows = 0;
 
+  // One decoded scrollback row, reused across the per-column reads the
+  // renderer does for that row.
+  private _scrollbackBufPtr = 0;
+  private _scrollbackBufSize = 0;
+  private _scrollbackView: DataView | null = null;
+  private _scrollbackOffset = -1;
+  private _scrollbackLen = 0;
+  private _graphemeBufPtr = 0;
+  private _graphemeBufSize = GRAPHEME_BUFFER_BYTES;
+  private _hyperlinkBufPtr = 0;
+  private _hyperlinkBufSize = HYPERLINK_BUFFER_BYTES;
+
   private constructor(wasm: GhosttyWasm, options: GhosttyOptions) {
     this.wasm = wasm;
     this._options = options;
+    this._foregroundRgb = parseColor(
+      options.foregroundColor ?? DEFAULT_FOREGROUND,
+      "foregroundColor",
+    );
+    this._backgroundRgb = parseColor(
+      options.backgroundColor ?? DEFAULT_BACKGROUND,
+      "backgroundColor",
+    );
   }
 
   /**
@@ -106,7 +142,19 @@ export class GhosttyCore implements TerminalCore {
     this._cols = cols;
     this._rows = rows;
     const scrollback = this._options.scrollbackLimit ?? 10000;
-    this.termPtr = this.wasm.exports.init(cols, rows, scrollback);
+    this.termPtr = this.wasm.exports.init(
+      cols,
+      rows,
+      scrollback,
+      this._foregroundRgb,
+      this._backgroundRgb,
+    );
+    this._graphemeBufPtr = allocBuffer(this.wasm, GRAPHEME_BUFFER_BYTES);
+    if (this._hyperlinkBufPtr !== 0) {
+      freeBuffer(this.wasm, this._hyperlinkBufPtr, this._hyperlinkBufSize);
+    }
+    this._hyperlinkBufSize = HYPERLINK_BUFFER_BYTES;
+    this._hyperlinkBufPtr = allocBuffer(this.wasm, HYPERLINK_BUFFER_BYTES);
     this._allocViewportBuffer();
     this._invalidate();
   }
@@ -143,7 +191,16 @@ export class GhosttyCore implements TerminalCore {
     if (byteOffset + CELL_BYTES > this._viewportBufSize) return BLANK_CELL;
 
     const cell = parseCell(view, byteOffset);
-    if (cell.codepoint === 0 && cell.flags === 0 && cell.colorFlags === 0)
+    // A continuation cell carries no content of its own, so the blank test
+    // matches it. Returning BLANK_CELL would hide the width the renderer
+    // needs to skip it.
+    if (
+      cell.codepoint === 0 &&
+      cell.flags === 0 &&
+      cell.colorFlags === 0 &&
+      !cell.hasHyperlink &&
+      cell.width !== 0
+    )
       return BLANK_CELL;
 
     const result: CellData = {
@@ -151,7 +208,11 @@ export class GhosttyCore implements TerminalCore {
       fg: DEFAULT_COLOR,
       bg: DEFAULT_COLOR,
       flags: cell.flags,
+      width: cell.width,
     };
+    if (cell.hasGrapheme) result.chars = this._readGrapheme(row, col);
+    if (cell.hasHyperlink)
+      Object.assign(result, this._readHyperlink(row, col, false));
     if (cell.colorFlags & 1)
       result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
     if (cell.colorFlags & 2)
@@ -202,6 +263,31 @@ export class GhosttyCore implements TerminalCore {
     return this.wasm.exports.using_alt_screen(this.termPtr) !== 0;
   }
 
+  mouseTracking(): 0 | 1000 | 1002 {
+    const mode = this.wasm.exports.mouse_tracking(this.termPtr);
+    return mode === 1000 || mode === 1002 ? mode : 0;
+  }
+
+  mouseSgr(): boolean {
+    return this.wasm.exports.mouse_sgr(this.termPtr) !== 0;
+  }
+
+  focusEvents(): boolean {
+    return this.wasm.exports.focus_events(this.termPtr) !== 0;
+  }
+
+  synchronizedOutput(): boolean {
+    return this.wasm.exports.synchronized_output(this.termPtr) !== 0;
+  }
+
+  synchronizedOutputGeneration(): number {
+    return this.wasm.exports.synchronized_output_generation(this.termPtr);
+  }
+
+  kittyKeyboardFlags(): number {
+    return this.wasm.exports.kitty_keyboard_flags?.(this.termPtr) ?? 0;
+  }
+
   // -- Side outputs --
 
   getTitle(): string | null {
@@ -232,55 +318,36 @@ export class GhosttyCore implements TerminalCore {
     return this.wasm.exports.get_scrollback_count(this.termPtr);
   }
 
+  getScrollbackDiscardedCount(): number {
+    return this.wasm.exports.get_scrollback_discarded_count(this.termPtr);
+  }
+
   getScrollbackCell(offset: number, col: number): CellData {
-    const maxCols = this._cols;
-    const lineSize = maxCols * CELL_BYTES;
-    const bufPtr = allocBuffer(this.wasm, lineSize);
-    if (bufPtr === 0) return BLANK_CELL;
+    const len = this._ensureScrollbackLine(offset);
+    const view = this._scrollbackView;
+    if (!view || col >= len) return BLANK_CELL;
 
-    const len = this.wasm.exports.get_scrollback_line(
-      this.termPtr,
-      offset,
-      bufPtr,
-      maxCols,
-    );
-    if (len === 0 || col >= len) {
-      freeBuffer(this.wasm, bufPtr, lineSize);
-      return BLANK_CELL;
-    }
-
-    const view = new DataView(
-      this.wasm.exports.memory.buffer,
-      bufPtr,
-      lineSize,
-    );
     const cell = parseCell(view, col * CELL_BYTES);
-    freeBuffer(this.wasm, bufPtr, lineSize);
-
-    return {
+    const result: CellData = {
       char: cell.codepoint || 32,
       fg: DEFAULT_COLOR,
       bg: DEFAULT_COLOR,
       flags: cell.flags,
-      fgRgb: packRgb(cell.fgR, cell.fgG, cell.fgB),
-      bgRgb: packRgb(cell.bgR, cell.bgG, cell.bgB),
+      width: cell.width,
     };
+    if (cell.hasGrapheme)
+      result.chars = this._readScrollbackGrapheme(offset, col);
+    if (cell.hasHyperlink)
+      Object.assign(result, this._readHyperlink(offset, col, true));
+    if (cell.colorFlags & 1)
+      result.fgRgb = packRgb(cell.fgR, cell.fgG, cell.fgB);
+    if (cell.colorFlags & 2)
+      result.bgRgb = packRgb(cell.bgR, cell.bgG, cell.bgB);
+    return result;
   }
 
   getScrollbackLineLen(offset: number): number {
-    const maxCols = this._cols;
-    const lineSize = maxCols * CELL_BYTES;
-    const bufPtr = allocBuffer(this.wasm, lineSize);
-    if (bufPtr === 0) return 0;
-
-    const len = this.wasm.exports.get_scrollback_line(
-      this.termPtr,
-      offset,
-      bufPtr,
-      maxCols,
-    );
-    freeBuffer(this.wasm, bufPtr, lineSize);
-    return len;
+    return this._ensureScrollbackLine(offset);
   }
 
   // -- Debug --
@@ -293,6 +360,135 @@ export class GhosttyCore implements TerminalCore {
 
   private _invalidate(): void {
     this._viewportStale = true;
+    this._scrollbackOffset = -1;
+  }
+
+  private _decodeGrapheme(len: number): string | undefined {
+    if (len === 0 || this._graphemeBufPtr === 0) return undefined;
+    return new TextDecoder().decode(
+      new Uint8Array(
+        this.wasm.exports.memory.buffer,
+        this._graphemeBufPtr,
+        len,
+      ),
+    );
+  }
+
+  private _ensureGraphemeBuffer(required: number): void {
+    if (required <= this._graphemeBufSize) return;
+    if (this._graphemeBufPtr !== 0) {
+      freeBuffer(this.wasm, this._graphemeBufPtr, this._graphemeBufSize);
+    }
+    this._graphemeBufSize = required;
+    this._graphemeBufPtr = allocBuffer(this.wasm, required);
+  }
+
+  private _ensureHyperlinkBuffer(required: number): void {
+    if (required <= this._hyperlinkBufSize) return;
+    if (this._hyperlinkBufPtr !== 0) {
+      freeBuffer(this.wasm, this._hyperlinkBufPtr, this._hyperlinkBufSize);
+    }
+    this._hyperlinkBufSize = required;
+    this._hyperlinkBufPtr = allocBuffer(this.wasm, required);
+  }
+
+  private _readHyperlink(
+    rowOrOffset: number,
+    col: number,
+    scrollback: boolean,
+  ): { linkUri: string; linkId?: string; linkKey: string } | undefined {
+    if (this._hyperlinkBufPtr === 0) return undefined;
+    const read = scrollback
+      ? this.wasm.exports.get_scrollback_hyperlink
+      : this.wasm.exports.get_viewport_hyperlink;
+    let len = read(
+      this.termPtr,
+      rowOrOffset,
+      col,
+      this._hyperlinkBufPtr,
+      this._hyperlinkBufSize,
+    );
+    if (len > this._hyperlinkBufSize) {
+      this._ensureHyperlinkBuffer(len);
+      if (this._hyperlinkBufPtr === 0) return undefined;
+      len = read(
+        this.termPtr,
+        rowOrOffset,
+        col,
+        this._hyperlinkBufPtr,
+        this._hyperlinkBufSize,
+      );
+    }
+    if (len === 0 || len > this._hyperlinkBufSize) return undefined;
+    const text = new TextDecoder().decode(
+      new Uint8Array(
+        this.wasm.exports.memory.buffer,
+        this._hyperlinkBufPtr,
+        len,
+      ),
+    );
+    const [linkUri, linkId = "", implicitId = ""] = text.split("\0");
+    if (!linkUri) return undefined;
+    const linkKey = linkId
+      ? `e\0${linkId}\0${linkUri}`
+      : `g\0${implicitId}\0${linkUri}`;
+    return {
+      linkUri,
+      linkId: linkId || undefined,
+      linkKey,
+    };
+  }
+
+  private _readGrapheme(row: number, col: number): string | undefined {
+    if (this._graphemeBufPtr === 0 || !this.wasm.exports.get_viewport_grapheme)
+      return undefined;
+    let len = this.wasm.exports.get_viewport_grapheme(
+      this.termPtr,
+      row,
+      col,
+      this._graphemeBufPtr,
+      this._graphemeBufSize,
+    );
+    if (len > this._graphemeBufSize) {
+      this._ensureGraphemeBuffer(len);
+      len = this.wasm.exports.get_viewport_grapheme(
+        this.termPtr,
+        row,
+        col,
+        this._graphemeBufPtr,
+        this._graphemeBufSize,
+      );
+    }
+    return this._decodeGrapheme(len);
+  }
+
+  private _readScrollbackGrapheme(
+    offset: number,
+    col: number,
+  ): string | undefined {
+    if (
+      this._graphemeBufPtr === 0 ||
+      !this.wasm.exports.get_scrollback_grapheme
+    )
+      return undefined;
+    let len = this.wasm.exports.get_scrollback_grapheme(
+      this.termPtr,
+      offset,
+      col,
+      this._graphemeBufPtr,
+      this._graphemeBufSize,
+    );
+    if (len > this._graphemeBufSize) {
+      this._ensureGraphemeBuffer(len);
+      len = this.wasm.exports.get_scrollback_grapheme(
+        this.termPtr,
+        offset,
+        col,
+        this._graphemeBufPtr,
+        this._graphemeBufSize,
+      );
+    }
+    return this._decodeGrapheme(len);
   }
 
   private _allocViewportBuffer(): void {
@@ -303,17 +499,58 @@ export class GhosttyCore implements TerminalCore {
     this._viewportBufPtr = allocBuffer(this.wasm, this._viewportBufSize);
     this._viewportView = null;
     this._viewportStale = true;
+
+    if (this._scrollbackBufPtr !== 0) {
+      freeBuffer(this.wasm, this._scrollbackBufPtr, this._scrollbackBufSize);
+    }
+    this._scrollbackBufSize = this._cols * CELL_BYTES;
+    this._scrollbackBufPtr = allocBuffer(this.wasm, this._scrollbackBufSize);
+    this._scrollbackView = null;
+    this._scrollbackOffset = -1;
+  }
+
+  /**
+   * Decode one scrollback row into the shared buffer, at most once per row
+   * per invalidation, and return its length. The renderer reads a row column
+   * by column, so without this each cell would cost a page-list walk.
+   */
+  private _ensureScrollbackLine(offset: number): number {
+    if (this._scrollbackBufPtr === 0) return 0;
+
+    if (this._scrollbackOffset !== offset) {
+      this._scrollbackLen = this.wasm.exports.get_scrollback_line(
+        this.termPtr,
+        offset,
+        this._scrollbackBufPtr,
+        this._cols,
+      );
+      this._scrollbackOffset = offset;
+    }
+
+    // Growing WASM memory detaches the view, and a cached row outlives any
+    // grow an unrelated read triggers in between, so check on hits too.
+    if (this._scrollbackView?.buffer !== this.wasm.exports.memory.buffer) {
+      this._scrollbackView = new DataView(
+        this.wasm.exports.memory.buffer,
+        this._scrollbackBufPtr,
+        this._scrollbackBufSize,
+      );
+    }
+    return this._scrollbackLen;
   }
 
   private _ensureViewport(): void {
-    if (!this._viewportStale) return;
-    this.wasm.exports.update(this.termPtr);
-    this.wasm.exports.get_viewport(this.termPtr, this._viewportBufPtr);
-    this._viewportView = new DataView(
-      this.wasm.exports.memory.buffer,
-      this._viewportBufPtr,
-      this._viewportBufSize,
-    );
-    this._viewportStale = false;
+    if (this._viewportStale) {
+      this.wasm.exports.update(this.termPtr);
+      this.wasm.exports.get_viewport(this.termPtr, this._viewportBufPtr);
+      this._viewportStale = false;
+    }
+    if (this._viewportView?.buffer !== this.wasm.exports.memory.buffer) {
+      this._viewportView = new DataView(
+        this.wasm.exports.memory.buffer,
+        this._viewportBufPtr,
+        this._viewportBufSize,
+      );
+    }
   }
 }
