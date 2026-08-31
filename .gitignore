@@ -20,3 +20,4 @@ playwright-report/
 # env files
 .env*
 !.env.example
+packages/@wterm/ghostty/zig/ghostty/
