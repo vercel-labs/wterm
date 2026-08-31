@@ -357,6 +357,31 @@ describe("WTerm", () => {
       expect(allBytes.includes(0x1b)).toBe(false);
     });
 
+    it("clamps cursor advance to the viewport for a hostile row count", async () => {
+      const term = new WTerm(element, { autoResize: false, rows: 24 });
+      await term.init();
+      vi.mocked(mockBridge.writeRaw).mockClear();
+      // a=T with an absurd remote-supplied row count.
+      term.write("\x1b_Ga=T,r=999999999\x1b\\");
+      const newlines = vi
+        .mocked(mockBridge.writeRaw)
+        .mock.calls.flatMap((c) => Array.from(c[0]))
+        .filter((b) => b === 0x0a);
+      expect(newlines).toHaveLength(24);
+    });
+
+    it("advances by the requested rows when within the viewport", async () => {
+      const term = new WTerm(element, { autoResize: false, rows: 24 });
+      await term.init();
+      vi.mocked(mockBridge.writeRaw).mockClear();
+      term.write("\x1b_Ga=T,r=3\x1b\\");
+      const newlines = vi
+        .mocked(mockBridge.writeRaw)
+        .mock.calls.flatMap((c) => Array.from(c[0]))
+        .filter((b) => b === 0x0a);
+      expect(newlines).toHaveLength(3);
+    });
+
     it("requests a frame immediately and coalesces writes until it paints", async () => {
       const callbacks: FrameRequestCallback[] = [];
       const requestAnimationFrame = vi

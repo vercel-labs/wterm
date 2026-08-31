@@ -304,7 +304,7 @@ export class WTerm {
 
     let cellRows: number | null = null;
     if (typeof event.control.r === "number" && event.control.r > 0) {
-      cellRows = event.control.r;
+      cellRows = Math.floor(event.control.r);
     } else if (event.data.length > 0 && this._rowHeight > 0) {
       const dims = pngDimensions(event.data);
       if (dims) {
@@ -312,8 +312,12 @@ export class WTerm {
       }
     }
 
-    if (cellRows == null) return;
-    const newlines = "\n".repeat(cellRows);
+    if (cellRows == null || !Number.isFinite(cellRows) || cellRows < 1) return;
+    // `r` is remote-supplied and the PNG fallback derives from attacker-
+    // controlled header bytes, so both are clamped to the viewport. Advancing
+    // further has no additional visible effect, and leaving it unbounded lets
+    // hostile output force a huge string allocation.
+    const newlines = "\n".repeat(Math.min(cellRows, Math.max(1, this.rows)));
     this.bridge.writeRaw(this._textEncoder.encode(newlines));
   }
 
