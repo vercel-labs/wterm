@@ -111,47 +111,44 @@ const core = await GhosttyCore.load({ wasmPath });
 
 ## Architecture
 
-The WASM binary is built from upstream [ghostty-org/ghostty](https://github.com/ghostty-org/ghostty) (v1.3.1) using it as a Zig package dependency — no third-party npm packages or pre-built binaries from other projects.
+The WASM binary is built from upstream [ghostty-org/ghostty](https://github.com/ghostty-org/ghostty), pinned to the immutable post-fix revision [`8af6897c0afc63037a8a3efee4162a380e3a4572`](https://github.com/ghostty-org/ghostty/commit/8af6897c0afc63037a8a3efee4162a380e3a4572). This revision contains the merged [Ghostty #13394](https://github.com/ghostty-org/ghostty/pull/13394) page-capacity fix, which is not included in a tagged release. There are no third-party npm packages or pre-built binaries from other projects.
 
 ```
 ghostty (Zig dep)  →  WASM patches  →  wasm_api.zig (~300 LOC)  →  ghostty-vt.wasm  →  TypeScript bindings
 ```
 
-ghostty's `Terminal` and `Page` types use `posix.mmap` and Mach VM allocators internally, which don't exist on `wasm32-freestanding`. The build script applies small, targeted patches to replace these with `std.heap.wasm_allocator` and expose the discarded-row count from `PageList` (see `scripts/patch-ghostty-wasm.sh`). The patches are pinned to ghostty v1.3.1 and only touch two files: `page.zig` and `PageList.zig`.
+The build script downloads and extracts that exact revision into the ignored local `zig/ghostty` path dependency, records the commit in `zig/ghostty/.commit`, and applies small, targeted WASM compatibility patches to `page.zig` and `PageList.zig`. The patches replace unsupported page allocation with aligned, zeroed `std.heap.wasm_allocator` memory and expose discarded-row accounting, while leaving POSIX and Windows allocation unchanged. The script validates the expected upstream anchors and is safe to rerun after a partial build.
 
-The committed `wasm/ghostty-vt.wasm` binary means consumers never need Zig installed. Only maintainers rebuilding the WASM need Zig 0.15.x.
+The committed `wasm/ghostty-vt.wasm` binary means consumers never need Zig installed. Only maintainers rebuilding the WASM need Zig 0.16.x.
 
 ### Rebuilding the WASM
 
-Requires [Zig 0.15.x](https://ziglang.org/download/) (ghostty's required version):
+Requires [Zig 0.16.0](https://ziglang.org/download/):
 
 ```bash
 pnpm --filter @wterm/ghostty rebuild-wasm
 ```
 
-This fetches the ghostty source via Zig's package manager, applies WASM compatibility patches, compiles our export layer to `wasm32-freestanding`, and copies the binary to `wasm/`.
-
-If the host toolchain cannot build, run the same script in a Linux container:
+This downloads the pinned Ghostty source, applies WASM compatibility patches, compiles our export layer to `wasm32-freestanding`, and copies the binary to `wasm/`. The script uses Zig 0.16.x from `PATH` (or `mise exec zig@0.16.0`). If the host cannot run the build, the Docker wrapper downloads the official Zig 0.16.0 release inside an Alpine container and runs the same script:
 
 ```bash
 pnpm --filter @wterm/ghostty rebuild-wasm:docker
 ```
 
-Zig 0.15.x cannot link a native build runner on macOS 26, and Zig 0.16 fails inside ghostty's vendored build files, so neither drives `rebuild-wasm` there. The wasm target itself is unaffected. Container output is byte-identical to a host build.
+Both paths produce the same committed artifact. The extracted source and Zig build directories are ignored and can be removed safely after a build.
 
 ### Upgrading ghostty
 
-1. Edit the URL tag in `zig/build.zig.zon` to the new ghostty version
-2. Run `zig fetch <new-url>` from the `zig/` directory to get the new hash
-3. Update the hash in `build.zig.zon`
-4. Verify the patches in `scripts/patch-ghostty-wasm.sh` still apply cleanly
-5. Run `pnpm --filter @wterm/ghostty rebuild-wasm`
+1. Choose an immutable upstream commit containing the required page-capacity fix and update `GHOSTTY_COMMIT` in `scripts/build-wasm.sh`.
+2. Verify the commit's `PageList.zig` contains the capacity-retry logic and update the compatibility patch anchors if the source layout changed.
+3. Run `pnpm --filter @wterm/ghostty rebuild-wasm` with Zig 0.16.0.
+4. Run the Ghostty test suite and inspect the generated artifact before committing it.
 
 ## Tradeoffs vs built-in core
 
 | | Built-in (default) | `@wterm/ghostty` |
 |---|---|---|
-| Bundle size | ~12 KB WASM | ~400 KB WASM |
+| Bundle size | ~12 KB WASM | ~543 KB WASM |
 | VT compliance | Basic VT100/VT220/xterm | Comprehensive |
 | Unicode | Single codepoints | Full grapheme clusters |
 | Dependencies | None | None (WASM built from source) |

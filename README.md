@@ -18,7 +18,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 
 ## Features
 
-- **Pluggable cores** — built-in lightweight Zig core (~12 KB) or opt-in [libghostty](packages/@wterm/ghostty) backend (~400 KB) for full VT compliance
+- **Pluggable cores** — built-in lightweight Zig core (~12 KB) or opt-in [libghostty](packages/@wterm/ghostty) backend (~543 KB) for full VT compliance
 - **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~12 KB `.wasm` binary (release build)
 - **DOM rendering** — native text selection, clipboard, browser find, and screen reader support for mounted rows
 - **Native hyperlinks** — OSC 8 links remain attached to their exact cells through viewport and scrollback, with safe HTTP(S) anchors

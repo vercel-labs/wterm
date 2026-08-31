@@ -21,7 +21,7 @@ npm install @wterm/core
 
 ## Pluggable Cores
 
-`@wterm/core` defines a `TerminalCore` interface that any terminal emulation backend can implement. The built-in `WasmBridge` implements it using wterm's lightweight Zig WASM binary (~12 KB). For additional protocols and proper grapheme handling, use [`@wterm/ghostty`](https://www.npmjs.com/package/@wterm/ghostty), which implements the same interface using libghostty (~400 KB).
+`@wterm/core` defines a `TerminalCore` interface that any terminal emulation backend can implement. The built-in `WasmBridge` implements it using wterm's lightweight Zig WASM binary (~12 KB). For additional protocols and proper grapheme handling, use [`@wterm/ghostty`](https://www.npmjs.com/package/@wterm/ghostty), which implements the same interface using libghostty (~543 KB).
 
 ```ts
 import { WTerm } from "@wterm/dom";

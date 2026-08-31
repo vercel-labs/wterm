@@ -33,6 +33,27 @@ jobs:
             exit 1
           fi
 
+      - name: Ghostty WASM drift check
+        run: |
+          set -euo pipefail
+          ghostty_pkg="packages/@wterm/ghostty"
+          cleanup() {
+            rm -rf -- \
+              "$ghostty_pkg/zig/ghostty" \
+              "$ghostty_pkg/zig/.zig-cache" \
+              "$ghostty_pkg/zig/zig-out"
+          }
+          trap cleanup EXIT
+
+          WTERM_GHOSTTY_WASM_OUT="$RUNNER_TEMP/ghostty-vt.wasm" \
+            bash "$ghostty_pkg/scripts/build-wasm.sh"
+          if ! cmp -s \
+            "$RUNNER_TEMP/ghostty-vt.wasm" \
+            "$ghostty_pkg/wasm/ghostty-vt.wasm"; then
+            echo "::error::Committed ghostty-vt.wasm does not match the pinned Ghostty source. Rebuild with 'pnpm --filter @wterm/ghostty rebuild-wasm' and commit the updated packages/@wterm/ghostty/wasm/ghostty-vt.wasm."
+            exit 1
+          fi
+
       - name: Clean Zig artifacts
         run: rm -rf zig-x86_64-linux-0.16.0 zig.tar.xz zig-out .zig-cache
 

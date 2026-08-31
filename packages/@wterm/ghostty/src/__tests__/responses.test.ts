@@ -122,12 +122,10 @@ describe("GhosttyCore terminal responses", () => {
     expect(core.kittyKeyboardFlags()).toBe(0);
   });
 
-  it("says nothing to an ANSI-mode DECRQM, which ghostty 1.3.1 never dispatches", async () => {
-    // `CSI Ps $ p` carries one intermediate. ghostty's stream switches on
-    // `intermediates.len == 2` before testing for the ANSI form, so the ANSI
-    // branch inside is unreachable and no action reaches any handler. The
-    // handler unpacks the mode tag anyway, so it stays correct if that outer
-    // switch ever widens; this test is what would notice the upgrade.
+  it("keeps the unsupported ANSI-mode DECRQM response empty", async () => {
+    // `CSI Ps $ p` carries one intermediate. The stream currently dispatches
+    // only the DEC-private form to the response handler; keep this assertion
+    // focused on the ABI behavior rather than an upstream version detail.
     const core = await newCore();
     core.writeString("\x1b[4$p");
     core.writeString("\x1b[7777$p");
