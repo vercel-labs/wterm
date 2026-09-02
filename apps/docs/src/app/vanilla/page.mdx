@@ -43,7 +43,7 @@ await term.init();
 
 ## Options and Methods
 
-The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `cursorBlink`, `onData`, `onTitle`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
+The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `onData`, `onTitle`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
 
 See [WTerm Methods](/api-reference#wterm-methods) for the full list of instance methods (`init`, `write`, `resize`, `focus`, `destroy`).
 
@@ -76,6 +76,13 @@ The default lightweight core safely consumes unsupported Kitty APC data but
 does not render it. Pass a Ghostty core for direct PNG/RGB/RGBA support. Images
 are transient, bounded per-screen state; file/shared-memory/URL media, Sixel,
 iTerm2, animation, and virtual placements are unsupported.
+Use `maxImageWidth` and/or `maxImageHeight` in the `WTerm` options to constrain
+oversized rendered images. The limits are CSS pixels, preserve aspect ratio,
+and only scale images down.
+
+The DOM wrapper answers Kitty pixel geometry queries (`CSI 14 t` and
+`CSI 16 t`) from the rendered terminal element, allowing Kitty graphics clients
+such as `kitten icat --transfer-mode=stream image.png` to negotiate image size.
 
 ## Themes
 

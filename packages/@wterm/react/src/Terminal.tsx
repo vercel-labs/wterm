@@ -23,6 +23,10 @@ export interface TerminalProps extends Omit<
   wasmUrl?: string;
   theme?: string;
   autoResize?: boolean;
+  /** Maximum rendered Kitty image width in CSS pixels. */
+  maxImageWidth?: number;
+  /** Maximum rendered Kitty image height in CSS pixels. */
+  maxImageHeight?: number;
   cursorBlink?: boolean;
   /** Enable debug mode (init-only — changing after mount has no effect). */
   debug?: boolean;
@@ -48,6 +52,8 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     wasmUrl,
     theme,
     autoResize = false,
+    maxImageWidth,
+    maxImageHeight,
     cursorBlink = false,
     debug = false,
     onData,
@@ -101,6 +107,8 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         core,
         wasmUrl,
         autoResize: autoResizeRef.current,
+        maxImageWidth,
+        maxImageHeight,
         cursorBlink,
         debug,
         onData: callbacksRef.current.onData
@@ -130,9 +138,9 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         wtermRef.current = null;
       };
     },
-    // Re-run only when the WASM source changes
+    // Re-run when the WASM source or image sizing options change
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [core, wasmUrl],
+    [core, wasmUrl, maxImageWidth, maxImageHeight],
   );
 
   // Sync props to the existing instance (render-time checks)

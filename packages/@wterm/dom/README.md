@@ -44,6 +44,8 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `rows` | `number` | `24` | Initial row count |
 | `wasmUrl` | `string` | — | Optional URL to serve the WASM binary separately (embedded by default) |
 | `autoResize` | `boolean` | `true` | Auto-resize based on container dimensions |
+| `maxImageWidth` | `number` | — | Maximum rendered Kitty image width in CSS pixels. Images larger than the limit are scaled down proportionally. |
+| `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels. Images larger than the limit are scaled down proportionally. |
 | `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
@@ -75,6 +77,8 @@ When a terminal core supplies `CellData.chars`, the renderer paints that complet
 When a core supplies OSC 8 metadata through `CellData.linkUri` and `CellData.linkKey`, the renderer groups the covered cells into native anchors. Only absolute HTTP and HTTPS URIs become clickable. Invalid, relative, and executable schemes render as ordinary terminal text.
 While hovering an anchor, holding Command on macOS or Control on Windows and Linux reveals its underline and pointer cursor. Plain clicks remain terminal interaction. Command-click, Control-click, or native keyboard activation when an anchor receives focus opens the link. Modified link activation remains available while SGR mouse tracking is active and is not forwarded to the terminal application.
 
+WTerm answers xterm/Kitty pixel geometry queries (`CSI 14 t` and `CSI 16 t`) from the rendered terminal element and forwards the reports through `onData`, so Kitty graphics clients can size and place images in the browser.
+
 Scrollback normally keeps only the visible rows plus overscan mounted in the DOM. While native text selection is active, the selected range stays mounted so the browser can preserve it. Native browser find and accessibility inspect the mounted window, not every retained history row. Scrolling updates the window, while new output follows the exact bottom only when the terminal was already there.
 
 WTerm owns scrollback anchoring when old history is discarded. The package stylesheet disables browser-native scroll anchoring on the terminal scroller so rollover produces one deterministic adjustment across browsers.
@@ -93,7 +97,14 @@ The built-in core deliberately does not provide image data. Use
 state is transient and is isolated per primary/alternate screen. Replacement,
 deletion, scrollback movement, resize, and screen changes invalidate the layer;
 off-screen placements are not materialized, and canvases do not add scroll
-height.
+height. Implicit Kitty placements (the common auto-sized form) align with the
+terminal content origin and reserve their rendered height in the visual text
+flow, so a prompt produced after an image appears under the image instead of
+behind it.
+
+Set `maxImageWidth` and/or `maxImageHeight` on `WTerm` to constrain rendered
+image dimensions in CSS pixels; the image keeps its aspect ratio and is never
+scaled up. These are display limits and do not reduce decoded image memory.
 
 Image pixels are decorative until an accessible description contract exists.
 Applications should provide equivalent textual context when image meaning is

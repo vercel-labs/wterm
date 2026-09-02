@@ -13,7 +13,9 @@ renderer displays direct Kitty Graphics Protocol PNG/RGB/RGBA images as
 transient, bounded canvas overlays. Pinned placements follow scrollback,
 scrolling, resize, and primary/alternate screen changes. Sixel, iTerm2/OSC
 1337, animation, virtual Unicode placements, file/shared-memory/URL media, and
-image persistence are not supported.
+image persistence are not supported. Auto-sized (implicit) placements align
+with the terminal content origin and reserve their rendered height in the
+visual DOM flow so prompts emitted after an image remain visible below it.
 
 Ghostty also exposes the cumulative number of rows discarded from the oldest end of scrollback. `@wterm/dom` uses that signal to keep retained history anchored when the page budget rolls over.
 

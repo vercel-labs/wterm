@@ -28,8 +28,15 @@ interface CachedImage {
 const GRAPHICS_CANVAS_BUDGET_BYTES = 32 * 1024 * 1024;
 const MAX_CANVAS_DIMENSION = 32768;
 
-function finitePositive(value: number): boolean {
-  return Number.isFinite(value) && value > 0;
+export interface GraphicsLayerOptions {
+  /** Maximum rendered image width in CSS pixels. */
+  maxImageWidth?: number;
+  /** Maximum rendered image height in CSS pixels. */
+  maxImageHeight?: number;
+}
+
+function finitePositive(value: number | undefined): value is number {
+  return value !== undefined && Number.isFinite(value) && value > 0;
 }
 
 function safeNonNegativeInteger(value: number): boolean {
@@ -54,18 +61,34 @@ function placementKey(placement: TerminalImagePlacement): string {
 export class GraphicsLayer {
   private container: HTMLElement;
   private layer: HTMLDivElement | null = null;
+  private flowSpacer: HTMLDivElement | null = null;
   private canvases = new Map<string, HTMLCanvasElement>();
   private canvasAllocations = new Map<string, number>();
   private canvasBytes = 0;
   private cache = new Map<string, CachedImage>();
   private generation = -1;
+  private maxImageWidth: number | undefined;
+  private maxImageHeight: number | undefined;
+  private flowRows = new Map<number, number>();
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, options: GraphicsLayerOptions = {}) {
     this.container = container;
+    this.maxImageWidth = finitePositive(options.maxImageWidth)
+      ? options.maxImageWidth
+      : undefined;
+    this.maxImageHeight = finitePositive(options.maxImageHeight)
+      ? options.maxImageHeight
+      : undefined;
   }
 
   setup(): void {
     this.destroy();
+    const flowSpacer = document.createElement("div");
+    flowSpacer.className = "term-image-flow-spacer";
+    flowSpacer.setAttribute("aria-hidden", "true");
+    this.container.appendChild(flowSpacer);
+    this.flowSpacer = flowSpacer;
+
     const layer = document.createElement("div");
     layer.className = "term-images";
     layer.setAttribute("aria-hidden", "true");
@@ -80,6 +103,7 @@ export class GraphicsLayer {
     const getImage = core.getGraphicsImage;
     if (!getState || !getImage || !this.layer) {
       this.clearCanvases();
+      this.clearFlowReservations();
       return;
     }
 
@@ -88,6 +112,7 @@ export class GraphicsLayer {
       state = getState.call(core);
     } catch {
       this.clearCanvases();
+      this.clearFlowReservations();
       return;
     }
     if (
@@ -97,6 +122,7 @@ export class GraphicsLayer {
       !Array.isArray(state.placements)
     ) {
       this.clearCanvases();
+      this.clearFlowReservations();
       return;
     }
 
@@ -116,8 +142,25 @@ export class GraphicsLayer {
       }
     }
     const bounds = this.visiblePixelArea(core, viewport);
+    const flowOffsets = bounds
+      ? this.reconcileFlowReservations(
+          core,
+          state,
+          viewport,
+          descriptors,
+          bounds,
+        )
+      : new Map<number, number>();
+    if (!bounds) this.clearFlowReservations();
     const visible = bounds
-      ? this.visiblePlacements(core, state, viewport, descriptors, bounds)
+      ? this.visiblePlacements(
+          core,
+          state,
+          viewport,
+          descriptors,
+          bounds,
+          flowOffsets,
+        )
       : [];
     const wanted = new Set<string>();
     const refs = new Map<string, number>();
@@ -180,6 +223,7 @@ export class GraphicsLayer {
             placement,
             viewport,
             bounds,
+            flowOffsets.get(placement.row) ?? 0,
           );
         } catch {
           painted = false;
@@ -188,7 +232,12 @@ export class GraphicsLayer {
           this.removeCanvas(key);
         }
       } else {
-        this.position(canvas, placement, viewport);
+        this.position(
+          canvas,
+          placement,
+          viewport,
+          flowOffsets.get(placement.row) ?? 0,
+        );
       }
     }
   }
@@ -196,9 +245,12 @@ export class GraphicsLayer {
   destroy(): void {
     this.clearCanvases();
     this.layer?.remove();
+    this.flowSpacer?.remove();
     this.layer = null;
+    this.flowSpacer = null;
     this.cache.clear();
     this.generation = -1;
+    this.clearFlowReservations();
   }
 
   private createCanvas(key: string): HTMLCanvasElement | null {
@@ -228,6 +280,125 @@ export class GraphicsLayer {
     this.canvasBytes = Math.max(0, this.canvasBytes - bytes);
   }
 
+  /**
+   * An implicit Kitty placement has zero cell rows in its metadata. The
+   * terminal core still advances the shell cursor independently, so an
+   * absolute canvas alone would let the next prompt paint underneath it.
+   * Move the placement's row below the image while keeping the image itself
+   * anchored at the row where Kitty placed it. Transforms preserve the
+   * terminal screen's existing scroll geometry while changing the visual
+   * flow of rows after the image.
+   */
+  private reconcileFlowReservations(
+    core: TerminalCore,
+    state: TerminalGraphicsState,
+    viewport: GraphicsViewport,
+    descriptors: Map<string, (typeof state.images)[number]>,
+    bounds: { width: number; height: number },
+  ): Map<number, number> {
+    let totalRows: number;
+    let screenRows: number;
+    try {
+      screenRows = core.getRows();
+      totalRows = viewport.scrollbackCount + screenRows;
+    } catch {
+      if (this.flowRows.size > 0) this.clearFlowReservations();
+      return new Map();
+    }
+    if (
+      !Number.isSafeInteger(screenRows) ||
+      screenRows < 0 ||
+      !Number.isSafeInteger(totalRows) ||
+      totalRows < 0
+    ) {
+      if (this.flowRows.size > 0) this.clearFlowReservations();
+      return new Map();
+    }
+
+    const reservations = new Map<number, number>();
+    for (const placement of state.placements) {
+      if (!this.validPlacement(placement, totalRows)) continue;
+      if (placement.rows !== 0) continue;
+      // Scrollback rows are virtualized independently and do not participate
+      // in the active viewport's normal flow. Their retained coordinates are
+      // still used for canvas positioning when they are visible.
+      if (placement.row < viewport.scrollbackCount) continue;
+
+      const image = descriptors.get(
+        `${placement.imageId}:${placement.imageVersion}`,
+      );
+      if (!image) continue;
+      const size = this.destinationSize(
+        placement,
+        placement.sourceWidth || image.width,
+        placement.sourceHeight || image.height,
+        viewport,
+        bounds,
+      );
+      if (!size) continue;
+      const reserve = placement.offsetY + size.height;
+      if (!finitePositive(reserve)) continue;
+      reservations.set(
+        placement.row,
+        Math.max(reservations.get(placement.row) ?? 0, reserve),
+      );
+    }
+
+    // Most renders have no implicit placements. Keep that common path
+    // constant-time with respect to retained scrollback: there is no need to
+    // clear or rebuild row transforms when no flow reservation exists.
+    if (reservations.size === 0) {
+      if (this.flowRows.size > 0) this.clearFlowReservations();
+      return new Map();
+    }
+
+    this.clearFlowReservations();
+
+    const rows = this.container.querySelectorAll<HTMLElement>(
+      ".term-row:not(.term-scrollback-row)",
+    );
+    for (const row of rows) row.style.transform = "";
+
+    const flowOffsets = new Map<number, number>();
+    let offset = 0;
+    const scrollbackCount = viewport.scrollbackCount;
+    for (let viewportRow = 0; viewportRow < screenRows; viewportRow++) {
+      const row = scrollbackCount + viewportRow;
+      if (offset > 0) flowOffsets.set(row, offset);
+      const reserve = reservations.get(row) ?? 0;
+      const rowElement = rows[viewportRow];
+      // The row that owns an implicit placement is also where many terminal
+      // programs leave the following prompt. Shift that row by the image's
+      // height, while leaving the canvas at the row's original anchor.
+      const rowOffset = offset + reserve;
+      if (rowElement && rowOffset > 0)
+        rowElement.style.transform = `translateY(${rowOffset}px)`;
+      offset += reserve;
+    }
+    if (this.flowSpacer) this.flowSpacer.style.height = `${offset}px`;
+    this.container.parentElement?.classList.toggle(
+      "has-image-flow",
+      offset > 0,
+    );
+    this.flowRows = reservations;
+    return flowOffsets;
+  }
+
+  private clearFlowReservations(): void {
+    if (this.flowRows.size === 0) {
+      this.flowSpacer?.style.setProperty("height", "0px");
+      this.container.parentElement?.classList.remove("has-image-flow");
+      return;
+    }
+    const rows = this.container.querySelectorAll<HTMLElement>(
+      ".term-row:not(.term-scrollback-row)",
+    );
+    for (const row of rows) row.style.transform = "";
+    if (this.flowSpacer) this.flowSpacer.style.height = "0px";
+    this.container.parentElement?.classList.remove("has-image-flow");
+    this.flowRows.clear();
+  }
+
   private validImage(
     data: TerminalImageData,
     expectedWidth: number,
@@ -253,6 +424,7 @@ export class GraphicsLayer {
     viewport: GraphicsViewport,
     descriptors: Map<string, (typeof state.images)[number]>,
     bounds: { width: number; height: number },
+    flowOffsets: Map<number, number>,
   ): TerminalImagePlacement[] {
     if (
       !finitePositive(viewport.rowHeight) ||
@@ -267,19 +439,12 @@ export class GraphicsLayer {
       return [];
     }
     if (!Number.isSafeInteger(totalRows) || totalRows < 0) return [];
-    const first = Math.max(
-      0,
-      Math.floor(viewport.scrollTop / viewport.rowHeight) -
-        viewport.overscanRows,
-    );
-    const last = Math.min(
-      totalRows,
-      Math.ceil(
-        (viewport.scrollTop +
-          Math.max(viewport.clientHeight, viewport.rowHeight)) /
-          viewport.rowHeight,
-      ) + viewport.overscanRows,
-    );
+    const viewportStart =
+      viewport.scrollTop - viewport.overscanRows * viewport.rowHeight;
+    const viewportEnd =
+      viewport.scrollTop +
+      Math.max(viewport.clientHeight, viewport.rowHeight) +
+      viewport.overscanRows * viewport.rowHeight;
     return state.placements.filter((placement) => {
       if (!this.validPlacement(placement, totalRows)) return false;
       const image = descriptors.get(
@@ -294,16 +459,16 @@ export class GraphicsLayer {
         bounds,
       );
       if (!size) return false;
-      const placementRows = Math.max(
-        1,
-        Math.ceil((placement.offsetY + size.height) / viewport.rowHeight),
-      );
-      if (!Number.isSafeInteger(placementRows)) return false;
-      const placementEnd = placement.row + placementRows;
+      const placementTop =
+        placement.row * viewport.rowHeight +
+        placement.offsetY +
+        (flowOffsets.get(placement.row) ?? 0);
+      const placementEnd = placementTop + size.height;
       return (
-        Number.isSafeInteger(placementEnd) &&
-        placement.row < last &&
-        placementEnd > first
+        Number.isFinite(placementTop) &&
+        Number.isFinite(placementEnd) &&
+        placementTop < viewportEnd &&
+        placementEnd > viewportStart
       );
     });
   }
@@ -339,9 +504,18 @@ export class GraphicsLayer {
     canvas: HTMLCanvasElement,
     placement: TerminalImagePlacement,
     viewport: GraphicsViewport,
+    flowOffset = 0,
   ): void {
-    const left = placement.col * viewport.charWidth + placement.offsetX;
-    const top = placement.row * viewport.rowHeight + placement.offsetY;
+    // Kitty's implicit (auto-sized) placement is a flow item rather than a
+    // cell-positioned image. Ghostty can retain it at the cursor's next cell
+    // after the transfer completes, so align it to the terminal content
+    // origin. Explicit placements retain their protocol coordinates.
+    const left =
+      placement.rows === 0
+        ? placement.offsetX
+        : placement.col * viewport.charWidth + placement.offsetX;
+    const top =
+      placement.row * viewport.rowHeight + placement.offsetY + flowOffset;
     if (Number.isFinite(left)) canvas.style.left = `${left}px`;
     if (Number.isFinite(top)) canvas.style.top = `${top}px`;
   }
@@ -353,6 +527,7 @@ export class GraphicsLayer {
     placement: TerminalImagePlacement,
     viewport: GraphicsViewport,
     bounds: { width: number; height: number } | null,
+    flowOffset = 0,
   ): boolean {
     if (!this.validPlacement(placement, Number.MAX_SAFE_INTEGER)) return false;
     const sourceX = placement.sourceX;
@@ -398,7 +573,7 @@ export class GraphicsLayer {
       !this.resizeCanvas(canvas, key, pixelWidth, pixelHeight, allocationBytes)
     )
       return false;
-    this.position(canvas, placement, viewport);
+    this.position(canvas, placement, viewport, flowOffset);
     canvas.style.width = `${destinationWidth}px`;
     canvas.style.height = `${destinationHeight}px`;
     canvas.style.zIndex = String(placement.z);
@@ -475,11 +650,22 @@ export class GraphicsLayer {
       return null;
 
     if (!bounds) return null;
-    const boundedWidth = Math.min(destinationWidth, bounds.width);
-    const boundedHeight = Math.min(destinationHeight, bounds.height);
-    if (!finitePositive(boundedWidth) || !finitePositive(boundedHeight))
-      return null;
-    return { width: boundedWidth, height: boundedHeight };
+    const scale = Math.min(
+      1,
+      bounds.width / destinationWidth,
+      bounds.height / destinationHeight,
+      this.maxImageWidth === undefined
+        ? 1
+        : this.maxImageWidth / destinationWidth,
+      this.maxImageHeight === undefined
+        ? 1
+        : this.maxImageHeight / destinationHeight,
+    );
+    if (!finitePositive(scale)) return null;
+    return {
+      width: destinationWidth * scale,
+      height: destinationHeight * scale,
+    };
   }
 
   private visiblePixelArea(
