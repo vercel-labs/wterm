@@ -52,14 +52,17 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 | `wasmUrl` | `string` | — | Optional URL to serve the WASM binary separately (embedded by default) |
 | `theme` | `string` | — | Theme name (e.g. `"solarized-dark"`, `"monokai"`, `"light"`) |
 | `autoResize` | `boolean` | `false` | Auto-resize based on container dimensions |
+| `maxImageWidth` | `number` | — | Maximum rendered Kitty image width in CSS pixels; images scale down proportionally |
+| `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels; images scale down proportionally |
 | `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the underlying `WTerm` instance for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 
 Standard DOM attributes (`class`, `style`, `id`, ARIA props, etc.) are forwarded to the root `<div>` via `inheritAttrs`.
 
 The component delegates rendering to `@wterm/dom`, so passing a graphics-capable
-core such as `@wterm/ghostty` renders direct Kitty PNG/RGB/RGBA output without
-any image-specific Vue props. Image canvases are decorative and
+core such as `@wterm/ghostty` renders direct Kitty PNG/RGB/RGBA output. Use
+`maxImageWidth` and/or `maxImageHeight` to constrain oversized images while
+preserving their aspect ratio. Image canvases are decorative and
 `aria-hidden`; they are pointer-transparent and never replace the text rows.
 
 ## Events

@@ -7,6 +7,8 @@ import { isLinkActivationModifier } from "./hyperlink.js";
 const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
 const PROGRAMMATIC_SCROLL_TOLERANCE = 1;
 
+const WINDOW_SIZE_QUERIES = ["\x1b[14t", "\x1b[16t"] as const;
+
 export interface WTermOptions {
   cols?: number;
   rows?: number;
@@ -17,6 +19,10 @@ export interface WTermOptions {
   core?: TerminalCore;
   wasmUrl?: string;
   autoResize?: boolean;
+  /** Maximum rendered Kitty image width in CSS pixels. */
+  maxImageWidth?: number;
+  /** Maximum rendered Kitty image height in CSS pixels. */
+  maxImageHeight?: number;
   cursorBlink?: boolean;
   debug?: boolean;
   onData?: (data: string) => void;
@@ -34,6 +40,8 @@ export class WTerm {
 
   private _coreOption: TerminalCore | undefined;
   private wasmUrl: string | undefined;
+  private maxImageWidth: number | undefined;
+  private maxImageHeight: number | undefined;
   private _debugEnabled: boolean;
   private renderer: Renderer | null = null;
   private input: InputHandler | null = null;
@@ -50,6 +58,7 @@ export class WTerm {
   private _pendingResizeScrollTop: number | null = null;
   private _rowHeight = 0;
   private _charWidth = 0;
+  private _windowSizeQueryBuffer = "";
   private _onClickFocus: (event: MouseEvent) => void;
   private _onScroll: () => void;
   private _onModifierChange: (event: KeyboardEvent) => void;
@@ -65,6 +74,8 @@ export class WTerm {
     this.element = element;
     this._coreOption = options.core;
     this.wasmUrl = options.wasmUrl;
+    this.maxImageWidth = options.maxImageWidth;
+    this.maxImageHeight = options.maxImageHeight;
     this.cols = options.cols || 80;
     this.rows = options.rows || 24;
     this.autoResize = options.autoResize !== false;
@@ -162,7 +173,10 @@ export class WTerm {
       this._setRowHeight();
       this._measureCharSize();
 
-      this.renderer = new Renderer(this._container);
+      this.renderer = new Renderer(this._container, {
+        maxImageWidth: this.maxImageWidth,
+        maxImageHeight: this.maxImageHeight,
+      });
       this.renderer.setup(this.cols, this.rows);
 
       this.input = new InputHandler(
@@ -221,6 +235,7 @@ export class WTerm {
     if (!this.bridge) return;
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._isScrolledToBottom();
+    const windowSizeQueries = this._collectWindowSizeQueries(data);
     let deliveryError: unknown;
     let hasDeliveryError = false;
     const drain = () => {
@@ -243,6 +258,16 @@ export class WTerm {
       this._scheduleRender();
     }
     drain();
+    for (const query of windowSizeQueries) {
+      try {
+        this.onData?.(this._windowSizeResponse(query));
+      } catch (error) {
+        if (!hasDeliveryError) {
+          hasDeliveryError = true;
+          deliveryError = error;
+        }
+      }
+    }
     if (hasDeliveryError) throw deliveryError;
   }
 
@@ -452,6 +477,89 @@ export class WTerm {
     return { hasError, error: firstError };
   }
 
+  /**
+   * Kitty uses xterm window reports to discover the pixel geometry needed for
+   * image placement. The core intentionally does not know about the browser
+   * viewport, so these two queries are answered at the DOM boundary.
+   */
+  private _collectWindowSizeQueries(data: string | Uint8Array): (14 | 16)[] {
+    const text =
+      typeof data === "string" ? data : new TextDecoder().decode(data);
+    const input = this._windowSizeQueryBuffer + text;
+    this._windowSizeQueryBuffer = "";
+
+    const queries: (14 | 16)[] = [];
+    let index = 0;
+    while (index < input.length) {
+      const query = WINDOW_SIZE_QUERIES.find((candidate) =>
+        input.startsWith(candidate, index),
+      );
+      if (query) {
+        queries.push(query === "\x1b[14t" ? 14 : 16);
+        index += query.length;
+      } else {
+        index++;
+      }
+    }
+
+    // Keep only a possible prefix of a query so an escape sequence split
+    // across WebSocket/WASM writes is recognized on the next write.
+    for (
+      let start = Math.max(0, input.length - 4);
+      start < input.length;
+      start++
+    ) {
+      const suffix = input.slice(start);
+      if (
+        suffix.length < 5 &&
+        WINDOW_SIZE_QUERIES.some((candidate) => candidate.startsWith(suffix))
+      ) {
+        this._windowSizeQueryBuffer = suffix;
+        break;
+      }
+    }
+    return queries;
+  }
+
+  private _windowSizeResponse(query: 14 | 16): string {
+    const { width, height } = this._pixelSize();
+    if (query === 14) {
+      return `\x1b[4;${height};${width}t`;
+    }
+    const cellWidth = Math.max(1, Math.round(this._charWidth));
+    const cellHeight = Math.max(1, Math.round(this._rowHeight));
+    return `\x1b[6;${cellHeight};${cellWidth}t`;
+  }
+
+  private _pixelSize(): { width: number; height: number } {
+    const style = getComputedStyle(this.element);
+    const horizontalPadding =
+      (parseFloat(style.paddingLeft) || 0) +
+      (parseFloat(style.paddingRight) || 0);
+    const verticalPadding =
+      (parseFloat(style.paddingTop) || 0) +
+      (parseFloat(style.paddingBottom) || 0);
+
+    let width = this.element.clientWidth - horizontalPadding;
+    let height = this.element.clientHeight - verticalPadding;
+    if (width <= 0 || height <= 0) {
+      const rect = this.element.getBoundingClientRect();
+      width = rect.width - horizontalPadding;
+      height = rect.height - verticalPadding;
+    }
+
+    // A hidden element has no layout box. The measured cell geometry still
+    // gives Kitty a useful answer while the terminal is being mounted.
+    if (width <= 0 && this._charWidth > 0) width = this.cols * this._charWidth;
+    if (height <= 0 && this._rowHeight > 0)
+      height = this.rows * this._rowHeight;
+
+    return {
+      width: Math.max(1, Math.round(width)),
+      height: Math.max(1, Math.round(height)),
+    };
+  }
+
   private _lockHeight(): void {
     const rh = this._rowHeight || 17;
     const gridHeight = this.rows * rh;
@@ -533,6 +641,7 @@ export class WTerm {
 
   destroy(): void {
     this._destroyed = true;
+    this._windowSizeQueryBuffer = "";
     this._cancelScheduledRender();
     this._cancelSynchronizedOutputFallback();
     if (this.resizeObserver) this.resizeObserver.disconnect();

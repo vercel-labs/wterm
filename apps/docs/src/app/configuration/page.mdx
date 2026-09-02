@@ -2,7 +2,7 @@
 
 ## Options
 
-The React and Vue `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `cursorBlink`, and `debug` — plus event callbacks `onData`, `onTitle`, and `onResize` (exposed as `@data`, `@title`, `@resize` events in Vue).
+The React and Vue `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, and `debug` — plus event callbacks `onData`, `onTitle`, and `onResize` (exposed as `@data`, `@title`, `@resize` events in Vue).
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
 
@@ -14,7 +14,11 @@ Graphics support is optional on `TerminalCore`. The built-in core safely
 consumes unsupported Kitty APC payloads without rendering image bytes;
 `@wterm/ghostty` provides bounded direct Kitty PNG/RGB/RGBA rendering. Its
 decoded image budget defaults to 32 MiB and can be disabled with
-`imageStorageLimit: 0`.
+`imageStorageLimit: 0`. Use `maxImageWidth` and/or `maxImageHeight` to cap the
+rendered dimensions of decoded images without changing that storage budget.
+The DOM wrapper answers Kitty pixel geometry queries (`CSI 14 t` and
+`CSI 16 t`) from the rendered terminal element and forwards the reports
+through `onData`.
 
 ### React-only
 

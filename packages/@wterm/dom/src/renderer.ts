@@ -1,5 +1,5 @@
 import type { CellData, TerminalCore } from "@wterm/core";
-import { GraphicsLayer } from "./graphics-layer.js";
+import { GraphicsLayer, type GraphicsLayerOptions } from "./graphics-layer.js";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -259,9 +259,9 @@ export class Renderer {
   private _scrollbackBottomSpacer: HTMLDivElement | null = null;
   private graphics: GraphicsLayer;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, options: GraphicsLayerOptions = {}) {
     this.container = container;
-    this.graphics = new GraphicsLayer(container);
+    this.graphics = new GraphicsLayer(container, options);
   }
 
   setup(cols: number, rows: number): void {

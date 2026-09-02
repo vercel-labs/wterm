@@ -13,7 +13,9 @@ and RGBA data through the optional graphics contract. The DOM layer draws
 bounded, transient canvas overlays for pinned placements and follows scrollback,
 resize, and primary/alternate screen changes. Non-direct media is rejected
 before file or shared-memory access; Sixel, iTerm2/OSC 1337, animation, virtual
-Unicode placements, and persistence are outside the supported boundary.
+Unicode placements, and persistence are outside the supported boundary. The
+common auto-sized Kitty placement also reserves its rendered height in the
+visual DOM flow, keeping a following shell prompt below the image.
 
 ## Install
 
@@ -65,6 +67,24 @@ const core = await GhosttyCore.load();
   <Terminal :core="core" />
 </template>
 ```
+
+For large Kitty images, pass display limits to the terminal wrapper. The
+limits are CSS pixels, preserve the image aspect ratio, and only scale images
+down:
+
+```ts
+const term = new WTerm(document.getElementById("terminal"), {
+  core,
+  maxImageWidth: 640,
+  maxImageHeight: 480,
+});
+```
+
+The equivalent React and Vue props are `maxImageWidth` and `maxImageHeight`.
+
+`WTerm` answers Kitty's pixel geometry queries from the browser viewport, so
+direct image commands such as `kitten icat --transfer-mode=stream image.png`
+can negotiate their display size before transferring image data.
 
 ## Options
 

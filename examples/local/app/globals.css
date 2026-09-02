@@ -6,13 +6,17 @@
 }
 
 :root {
-  --background: #0a0a0a;
+  --background: #000;
   --foreground: #ededed;
 }
 
 @layer base {
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
   }
 }
 
+.local-terminal {
+  --term-bg: #000 !important;
+  background-color: #000;
+}

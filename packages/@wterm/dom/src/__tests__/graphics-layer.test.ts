@@ -85,6 +85,153 @@ describe("GraphicsLayer", () => {
     expect(canvas.style.pointerEvents).toBe("none");
   });
 
+  it("scales oversized images proportionally within configured bounds", () => {
+    const layer = new GraphicsLayer(container, {
+      maxImageWidth: 10,
+      maxImageHeight: 10,
+    });
+    layer.setup();
+    const core = coreWith(state);
+    layer.reconcile(core, {
+      scrollTop: 34,
+      clientHeight: 68,
+      rowHeight: 17,
+      charWidth: 8,
+      overscanRows: 0,
+      scrollbackCount: 2,
+    });
+
+    const canvas = container.querySelector("canvas") as HTMLCanvasElement;
+    expect(parseFloat(canvas.style.width)).toBeCloseTo(160 / 17);
+    expect(parseFloat(canvas.style.height)).toBeCloseTo(10);
+  });
+
+  it("does not enlarge images that are already within the bounds", () => {
+    const layer = new GraphicsLayer(container, {
+      maxImageWidth: 100,
+      maxImageHeight: 100,
+    });
+    layer.setup();
+    const core = coreWith(state);
+    layer.reconcile(core, {
+      scrollTop: 34,
+      clientHeight: 68,
+      rowHeight: 17,
+      charWidth: 8,
+      overscanRows: 0,
+      scrollbackCount: 2,
+    });
+
+    const canvas = container.querySelector("canvas") as HTMLCanvasElement;
+    expect(canvas.style.width).toBe("16px");
+    expect(canvas.style.height).toBe("17px");
+  });
+
+  it("reserves flow space for an implicit image before the next prompt", () => {
+    const implicitState: TerminalGraphicsState = {
+      generation: 1,
+      images: [{ imageId: 7, version: 1, width: 1, height: 1 }],
+      placements: [
+        {
+          ...state.placements[0],
+          offsetY: 0,
+          rows: 0,
+        },
+      ],
+    };
+    const layer = new GraphicsLayer(container);
+    layer.setup();
+    const core = coreWith(implicitState);
+    const rows = Array.from({ length: 4 }, () => {
+      const row = document.createElement("div");
+      row.className = "term-row";
+      container.querySelector(".term-images")?.before(row);
+      return row;
+    });
+
+    layer.reconcile(core, {
+      scrollTop: 34,
+      clientHeight: 68,
+      rowHeight: 17,
+      charWidth: 8,
+      overscanRows: 0,
+      scrollbackCount: 2,
+    });
+
+    // The two-column implicit image is 16px tall. Its row and following rows
+    // shift visually, while the canvas remains at the original row anchor.
+    expect(rows[0].style.transform).toBe("translateY(16px)");
+    expect(rows[1].style.transform).toBe("translateY(16px)");
+    const canvas = container.querySelector("canvas") as HTMLCanvasElement;
+    expect(canvas.style.top).toBe("34px");
+  });
+
+  it("anchors implicit images to the terminal content origin", () => {
+    const implicitState: TerminalGraphicsState = {
+      generation: 1,
+      images: [{ imageId: 7, version: 1, width: 1, height: 1 }],
+      placements: [
+        {
+          ...state.placements[0],
+          col: 4,
+          offsetX: 3,
+          rows: 0,
+        },
+      ],
+    };
+    const layer = new GraphicsLayer(container);
+    layer.setup();
+    const core = coreWith(implicitState);
+    layer.reconcile(core, {
+      scrollTop: 34,
+      clientHeight: 68,
+      rowHeight: 17,
+      charWidth: 8,
+      overscanRows: 0,
+      scrollbackCount: 2,
+    });
+
+    const canvas = container.querySelector("canvas") as HTMLCanvasElement;
+    expect(canvas.style.left).toBe("3px");
+  });
+
+  it("offsets later image placements by earlier implicit image space", () => {
+    const laterState: TerminalGraphicsState = {
+      generation: 1,
+      images: [{ imageId: 7, version: 1, width: 1, height: 1 }],
+      placements: [
+        {
+          ...state.placements[0],
+          placementKey: "first",
+          offsetY: 0,
+          rows: 0,
+        },
+        {
+          ...state.placements[0],
+          placementKey: "second",
+          row: 3,
+          rows: 1,
+        },
+      ],
+    };
+    const layer = new GraphicsLayer(container);
+    layer.setup();
+    const core = coreWith(laterState);
+    layer.reconcile(core, {
+      scrollTop: 34,
+      clientHeight: 68,
+      rowHeight: 17,
+      charWidth: 8,
+      overscanRows: 0,
+      scrollbackCount: 2,
+    });
+
+    const canvases = container.querySelectorAll("canvas");
+    expect(canvases).toHaveLength(2);
+    expect((canvases[0] as HTMLCanvasElement).style.top).toBe("34px");
+    expect((canvases[1] as HTMLCanvasElement).style.top).toBe("71px");
+  });
+
   it("filters placements outside the viewport and clears deleted graphics", () => {
     const layer = new GraphicsLayer(container);
     layer.setup();
@@ -170,17 +317,20 @@ describe("GraphicsLayer", () => {
     const layer = new GraphicsLayer(container);
     layer.setup();
     layer.reconcile(
-      coreWith({
-        generation: 1,
-        images: [{ imageId: 7, version: 1, width: 1, height: 1 }],
-        placements: [
-          {
-            ...state.placements[0],
-            columns: 4_000,
-            rows: 2_000,
-          },
-        ],
-      }),
+      coreWith(
+        {
+          generation: 1,
+          images: [{ imageId: 7, version: 1, width: 1, height: 1 }],
+          placements: [
+            {
+              ...state.placements[0],
+              columns: 4_000,
+              rows: 2_000,
+            },
+          ],
+        },
+        { cols: 4, rows: 4 },
+      ),
       {
         scrollTop: 0,
         clientHeight: 68,
@@ -194,9 +344,9 @@ describe("GraphicsLayer", () => {
     const canvas = container.querySelector("canvas") as HTMLCanvasElement;
     expect(canvas).not.toBeNull();
     expect(canvas.width).toBe(32);
-    expect(canvas.height).toBe(68);
+    expect(canvas.height).toBe(34);
     expect(canvas.style.width).toBe("32px");
-    expect(canvas.style.height).toBe("68px");
+    expect(canvas.style.height).toBe("34px");
   });
 
   it("keeps total visible canvas backing stores within the overlay budget", () => {
