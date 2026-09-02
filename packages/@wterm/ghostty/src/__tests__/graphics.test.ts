@@ -159,4 +159,39 @@ describe("GhosttyCore Kitty graphics", () => {
       console.log = log;
     }
   }, 30_000);
+
+  it("bounds unique image metadata under the default decoded-byte budget", async () => {
+    const log = console.log;
+    console.log = () => {};
+    try {
+      const core = await newCore();
+      core.writeString(rgbImage(1, [1, 2, 3]));
+      const memory = (
+        core as unknown as {
+          wasm: { exports: { memory: WebAssembly.Memory } };
+        }
+      ).wasm.exports.memory;
+      const initialBytes = memory.buffer.byteLength;
+
+      // Unique 1x1 images use very little decoded storage but must not grow
+      // the resident image map without bound.
+      for (let id = 2; id <= 16_384; id++) {
+        core.writeString(rgbImage(id, [id & 0xff, 0, 0]));
+      }
+
+      const resource = core.getResourceState().graphics;
+      expect(resource).toMatchObject({
+        capacity: 32 * 1024 * 1024,
+        used: 4096 * 3,
+        imageCount: 4096,
+        placementCount: 4096,
+        evicted: 0,
+      });
+      expect(memory.buffer.byteLength).toBeLessThan(
+        initialBytes + 4 * 1024 * 1024,
+      );
+    } finally {
+      console.log = log;
+    }
+  }, 30_000);
 });

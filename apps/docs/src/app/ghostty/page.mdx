@@ -156,7 +156,9 @@ disposes a caller-supplied core.
 
 The exported `MAX_IMAGE_BYTES` constant documents the hard per-image decoded
 byte cap. A larger `imageStorageLimit` is still useful for storing several
-smaller images.
+smaller images. Each screen also retains at most 4,096 image descriptors and
+4,096 placements; additional unique records fail closed so tiny-image churn
+cannot grow WASM metadata without bound.
 
 ## Bundlers
 

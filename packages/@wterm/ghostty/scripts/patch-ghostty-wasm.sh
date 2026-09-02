@@ -172,7 +172,9 @@ with open('$TERMINAL_ZIG', 'w') as f: f.write(src)
 # The upstream maps use tombstones after removeByPtr. Repeated image IDs can
 # therefore grow their backing allocation even while decoded bytes stay under
 # the configured limit. Compact the image map after eviction/deletion and
-# reject new placements once the independent placement budget is full.
+# reject new images and placements once their independent metadata budgets are
+# full. The image budget is intentionally separate from decoded bytes: a
+# stream of unique tiny images must not be able to grow the image map forever.
 # ---------------------------------------------------------------
 python3 -c "
 with open('$STORAGE_ZIG') as f: src = f.read()
@@ -212,6 +214,32 @@ if 'const wterm_max_placements: usize = 4096;' not in src:
         'const wterm_max_placements: usize = 4096;',
         1,
     )
+
+if 'const wterm_max_images: usize = 4096;' not in src:
+    marker = 'const wterm_max_placements: usize = 4096;'
+    if marker not in src: raise SystemExit('Kitty image metadata marker changed')
+    src = src.replace(
+        marker,
+        marker + '\\n\\n/// Bound resident image metadata independently of decoded image bytes.\\n'
+        'const wterm_max_images: usize = 4096;',
+        1,
+    )
+
+image_guard = (
+    '        if (self.images.get(img.id) == null and\\n'
+    '            self.images.count() >= wterm_max_images)\\n'
+    '        {\\n'
+    '            // Do not run the allocation-heavy byte eviction scan for\\n'
+    '            // every metadata-only overflow. The bounded resident set\\n'
+    '            // fails closed until an existing image is explicitly deleted\\n'
+    '            // or normal byte-budget eviction creates room.\\n'
+    '            return error.OutOfMemory;\\n'
+    '        }\\n\\n'
+)
+if image_guard not in src:
+    marker = '        // If this would put us over the limit, then evict.\\n'
+    if marker not in src: raise SystemExit('Kitty image insertion shape changed')
+    src = src.replace(marker, image_guard + marker, 1)
 
 placement_marker = '        const gop = try self.placements.getOrPut(alloc, key);\\n'
 placement_guard = (
@@ -303,6 +331,8 @@ if 'self.compactImages(alloc);\\n        return false;\\n    }\\n\\n    /// Ever
 
 required = [
     'const wterm_max_placements: usize = 4096;',
+    'const wterm_max_images: usize = 4096;',
+    image_guard,
     placement_guard,
     'fn compactImages(self: *ImageStorage',
     'fn compactPlacements(self: *ImageStorage',

@@ -93,10 +93,12 @@ const core = await GhosttyCore.load({
 The image limit applies to decoded image storage, not browser canvas count.
 Each direct image is also capped at `MAX_IMAGE_BYTES` (32 MiB), even when a
 larger `imageStorageLimit` is configured; the larger budget can hold multiple
-smaller images. Ghostty rejects oversized, malformed, and non-direct media
-before any file or shared-memory access. `getResourceState()` reports image
-count, placement count, bytes used/capacity, rejections, evictions, and
-saturation.
+smaller images. Each screen also retains at most 4,096 image descriptors and
+4,096 placements, so unique tiny-image churn cannot grow WASM metadata without
+bound; additional records fail closed until existing records are removed.
+Ghostty rejects oversized, malformed, and non-direct media before any file or
+shared-memory access. `getResourceState()` reports image count, placement
+count, bytes used/capacity, rejections, evictions, and saturation.
 
 The core returns copied metadata and RGBA buffers through the optional
 `TerminalCore` graphics methods. Call `core.dispose()` when the application

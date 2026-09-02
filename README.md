@@ -97,7 +97,8 @@ pnpm --filter ghostty-example dev
 
 All terminal graphics are transient browser/WASM memory. Direct media is
 accepted only within the Ghostty image budget (32 MiB by default), with a
-32 MiB hard cap per image; set `imageStorageLimit: 0` to disable it. File paths, shared memory, URLs, Sixel,
+32 MiB hard cap per image and 4,096 resident image/placement records per
+screen; set `imageStorageLimit: 0` to disable it. File paths, shared memory, URLs, Sixel,
 iTerm2, animation, and virtual placements are not loaded.
 
 ### Run the Next.js example
