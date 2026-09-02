@@ -162,8 +162,72 @@ describe("GraphicsLayer", () => {
     // shift visually, while the canvas remains at the original row anchor.
     expect(rows[0].style.transform).toBe("translateY(16px)");
     expect(rows[1].style.transform).toBe("translateY(16px)");
+    expect(
+      container.querySelector<HTMLDivElement>(".term-image-flow-spacer")?.style
+        .height,
+    ).toBe("16px");
+    expect(container.classList.contains("has-image-flow")).toBe(false);
+    expect(container.parentElement?.classList.contains("has-image-flow")).toBe(
+      true,
+    );
     const canvas = container.querySelector("canvas") as HTMLCanvasElement;
     expect(canvas.style.top).toBe("34px");
+  });
+
+  it("clears reserved flow space when implicit graphics disappear", () => {
+    const implicitState: TerminalGraphicsState = {
+      generation: 1,
+      images: [{ imageId: 7, version: 1, width: 1, height: 1 }],
+      placements: [{ ...state.placements[0], rows: 0 }],
+    };
+    const layer = new GraphicsLayer(container);
+    layer.setup();
+    const core = coreWith(implicitState);
+    layer.reconcile(core, {
+      scrollTop: 0,
+      clientHeight: 68,
+      rowHeight: 17,
+      charWidth: 8,
+      overscanRows: 0,
+      scrollbackCount: 0,
+    });
+
+    expect(container.parentElement?.classList.contains("has-image-flow")).toBe(
+      true,
+    );
+    layer.reconcile(coreWith({ generation: 2, images: [], placements: [] }), {
+      scrollTop: 0,
+      clientHeight: 68,
+      rowHeight: 17,
+      charWidth: 8,
+      overscanRows: 0,
+      scrollbackCount: 0,
+    });
+
+    expect(
+      container.querySelector<HTMLDivElement>(".term-image-flow-spacer")?.style
+        .height,
+    ).toBe("0px");
+    expect(container.parentElement?.classList.contains("has-image-flow")).toBe(
+      false,
+    );
+  });
+
+  it("does not scan retained rows when there are no implicit placements", () => {
+    const layer = new GraphicsLayer(container);
+    layer.setup();
+    const querySelectorAll = vi.spyOn(container, "querySelectorAll");
+
+    layer.reconcile(coreWith(state, { rows: 4 }), {
+      scrollTop: 0,
+      clientHeight: 68,
+      rowHeight: 17,
+      charWidth: 8,
+      overscanRows: 0,
+      scrollbackCount: 10_000,
+    });
+
+    expect(querySelectorAll).not.toHaveBeenCalled();
   });
 
   it("anchors implicit images to the terminal content origin", () => {

@@ -61,6 +61,7 @@ function placementKey(placement: TerminalImagePlacement): string {
 export class GraphicsLayer {
   private container: HTMLElement;
   private layer: HTMLDivElement | null = null;
+  private flowSpacer: HTMLDivElement | null = null;
   private canvases = new Map<string, HTMLCanvasElement>();
   private canvasAllocations = new Map<string, number>();
   private canvasBytes = 0;
@@ -82,6 +83,12 @@ export class GraphicsLayer {
 
   setup(): void {
     this.destroy();
+    const flowSpacer = document.createElement("div");
+    flowSpacer.className = "term-image-flow-spacer";
+    flowSpacer.setAttribute("aria-hidden", "true");
+    this.container.appendChild(flowSpacer);
+    this.flowSpacer = flowSpacer;
+
     const layer = document.createElement("div");
     layer.className = "term-images";
     layer.setAttribute("aria-hidden", "true");
@@ -146,7 +153,14 @@ export class GraphicsLayer {
       : new Map<number, number>();
     if (!bounds) this.clearFlowReservations();
     const visible = bounds
-      ? this.visiblePlacements(core, state, viewport, descriptors, bounds)
+      ? this.visiblePlacements(
+          core,
+          state,
+          viewport,
+          descriptors,
+          bounds,
+          flowOffsets,
+        )
       : [];
     const wanted = new Set<string>();
     const refs = new Map<string, number>();
@@ -231,7 +245,9 @@ export class GraphicsLayer {
   destroy(): void {
     this.clearCanvases();
     this.layer?.remove();
+    this.flowSpacer?.remove();
     this.layer = null;
+    this.flowSpacer = null;
     this.cache.clear();
     this.generation = -1;
     this.clearFlowReservations();
@@ -280,15 +296,24 @@ export class GraphicsLayer {
     descriptors: Map<string, (typeof state.images)[number]>,
     bounds: { width: number; height: number },
   ): Map<number, number> {
-    this.clearFlowReservations();
-
     let totalRows: number;
+    let screenRows: number;
     try {
-      totalRows = viewport.scrollbackCount + core.getRows();
+      screenRows = core.getRows();
+      totalRows = viewport.scrollbackCount + screenRows;
     } catch {
+      if (this.flowRows.size > 0) this.clearFlowReservations();
       return new Map();
     }
-    if (!Number.isSafeInteger(totalRows) || totalRows < 0) return new Map();
+    if (
+      !Number.isSafeInteger(screenRows) ||
+      screenRows < 0 ||
+      !Number.isSafeInteger(totalRows) ||
+      totalRows < 0
+    ) {
+      if (this.flowRows.size > 0) this.clearFlowReservations();
+      return new Map();
+    }
 
     const reservations = new Map<number, number>();
     for (const placement of state.placements) {
@@ -319,6 +344,16 @@ export class GraphicsLayer {
       );
     }
 
+    // Most renders have no implicit placements. Keep that common path
+    // constant-time with respect to retained scrollback: there is no need to
+    // clear or rebuild row transforms when no flow reservation exists.
+    if (reservations.size === 0) {
+      if (this.flowRows.size > 0) this.clearFlowReservations();
+      return new Map();
+    }
+
+    this.clearFlowReservations();
+
     const rows = this.container.querySelectorAll<HTMLElement>(
       ".term-row:not(.term-scrollback-row)",
     );
@@ -327,10 +362,10 @@ export class GraphicsLayer {
     const flowOffsets = new Map<number, number>();
     let offset = 0;
     const scrollbackCount = viewport.scrollbackCount;
-    for (let row = 0; row < totalRows; row++) {
-      flowOffsets.set(row, offset);
+    for (let viewportRow = 0; viewportRow < screenRows; viewportRow++) {
+      const row = scrollbackCount + viewportRow;
+      if (offset > 0) flowOffsets.set(row, offset);
       const reserve = reservations.get(row) ?? 0;
-      const viewportRow = row - scrollbackCount;
       const rowElement = rows[viewportRow];
       // The row that owns an implicit placement is also where many terminal
       // programs leave the following prompt. Shift that row by the image's
@@ -340,15 +375,27 @@ export class GraphicsLayer {
         rowElement.style.transform = `translateY(${rowOffset}px)`;
       offset += reserve;
     }
+    if (this.flowSpacer) this.flowSpacer.style.height = `${offset}px`;
+    this.container.parentElement?.classList.toggle(
+      "has-image-flow",
+      offset > 0,
+    );
     this.flowRows = reservations;
     return flowOffsets;
   }
 
   private clearFlowReservations(): void {
+    if (this.flowRows.size === 0) {
+      this.flowSpacer?.style.setProperty("height", "0px");
+      this.container.parentElement?.classList.remove("has-image-flow");
+      return;
+    }
     const rows = this.container.querySelectorAll<HTMLElement>(
       ".term-row:not(.term-scrollback-row)",
     );
     for (const row of rows) row.style.transform = "";
+    if (this.flowSpacer) this.flowSpacer.style.height = "0px";
+    this.container.parentElement?.classList.remove("has-image-flow");
     this.flowRows.clear();
   }
 
@@ -377,6 +424,7 @@ export class GraphicsLayer {
     viewport: GraphicsViewport,
     descriptors: Map<string, (typeof state.images)[number]>,
     bounds: { width: number; height: number },
+    flowOffsets: Map<number, number>,
   ): TerminalImagePlacement[] {
     if (
       !finitePositive(viewport.rowHeight) ||
@@ -391,19 +439,12 @@ export class GraphicsLayer {
       return [];
     }
     if (!Number.isSafeInteger(totalRows) || totalRows < 0) return [];
-    const first = Math.max(
-      0,
-      Math.floor(viewport.scrollTop / viewport.rowHeight) -
-        viewport.overscanRows,
-    );
-    const last = Math.min(
-      totalRows,
-      Math.ceil(
-        (viewport.scrollTop +
-          Math.max(viewport.clientHeight, viewport.rowHeight)) /
-          viewport.rowHeight,
-      ) + viewport.overscanRows,
-    );
+    const viewportStart =
+      viewport.scrollTop - viewport.overscanRows * viewport.rowHeight;
+    const viewportEnd =
+      viewport.scrollTop +
+      Math.max(viewport.clientHeight, viewport.rowHeight) +
+      viewport.overscanRows * viewport.rowHeight;
     return state.placements.filter((placement) => {
       if (!this.validPlacement(placement, totalRows)) return false;
       const image = descriptors.get(
@@ -418,16 +459,16 @@ export class GraphicsLayer {
         bounds,
       );
       if (!size) return false;
-      const placementRows = Math.max(
-        1,
-        Math.ceil((placement.offsetY + size.height) / viewport.rowHeight),
-      );
-      if (!Number.isSafeInteger(placementRows)) return false;
-      const placementEnd = placement.row + placementRows;
+      const placementTop =
+        placement.row * viewport.rowHeight +
+        placement.offsetY +
+        (flowOffsets.get(placement.row) ?? 0);
+      const placementEnd = placementTop + size.height;
       return (
-        Number.isSafeInteger(placementEnd) &&
-        placement.row < last &&
-        placementEnd > first
+        Number.isFinite(placementTop) &&
+        Number.isFinite(placementEnd) &&
+        placementTop < viewportEnd &&
+        placementEnd > viewportStart
       );
     });
   }

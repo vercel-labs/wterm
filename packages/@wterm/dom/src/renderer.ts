@@ -259,6 +259,13 @@ export class Renderer {
   private _scrollbackBottomSpacer: HTMLDivElement | null = null;
   private graphics: GraphicsLayer;
 
+  get hasImageFlow(): boolean {
+    return (
+      this.container.parentElement?.classList.contains("has-image-flow") ??
+      false
+    );
+  }
+
   constructor(container: HTMLElement, options: GraphicsLayerOptions = {}) {
     this.container = container;
     this.graphics = new GraphicsLayer(container, options);

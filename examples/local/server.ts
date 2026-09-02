@@ -164,9 +164,7 @@ function handlePTYConnection(ws: WebSocket) {
     const input = typeof msg === "string" ? msg : msg.toString("utf-8");
 
     if (input.startsWith("\x1b[RESIZE:")) {
-      const match = input.match(
-        /\x1b\[RESIZE:(\d+);(\d+)(?:;(\d+);(\d+))?\]/,
-      );
+      const match = input.match(/\x1b\[RESIZE:(\d+);(\d+)(?:;(\d+);(\d+))?\]/);
       if (match) {
         const cols = parseInt(match[1], 10);
         const rows = parseInt(match[2], 10);

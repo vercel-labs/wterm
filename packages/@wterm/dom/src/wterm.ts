@@ -438,7 +438,7 @@ export class WTerm {
       this.debug.recordRender(performance.now() - t0, dirtyCount);
     }
 
-    const hasScrollback = scrollbackCount > 0;
+    const hasScrollback = scrollbackCount > 0 || this.renderer.hasImageFlow;
     this.element.classList.toggle("has-scrollback", hasScrollback);
 
     if (this._shouldScrollToBottom) {
