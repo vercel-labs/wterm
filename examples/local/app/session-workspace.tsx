@@ -358,9 +358,7 @@ export function SessionWorkspace({
 
         <div
           className="min-h-0 flex-1 overflow-y-auto px-2 py-4"
-          role="tablist"
           aria-label="Terminal sessions"
-          aria-orientation="vertical"
         >
           <div className="px-2 pb-2 text-xs text-[#888]">Sessions</div>
 
@@ -375,8 +373,7 @@ export function SessionWorkspace({
               >
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={selected}
+                  aria-pressed={selected}
                   onClick={() => dispatch({ type: "select", id: session.id })}
                   className="flex min-w-0 flex-1 items-center gap-2 px-2 text-left text-xs"
                 >
@@ -430,6 +427,7 @@ export function SessionWorkspace({
                 className="absolute inset-0"
                 style={{ visibility: active ? "visible" : "hidden" }}
                 aria-hidden={!active}
+                inert={!active}
                 role="tabpanel"
                 aria-label={session.name}
               >
