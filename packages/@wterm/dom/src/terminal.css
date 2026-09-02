@@ -20,10 +20,16 @@
   --term-color-14: #4ec9b0;
   --term-color-15: #ffffff;
 
-  --term-font-family: 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace;
+  --term-font-family:
+    "Menlo", "Consolas", "DejaVu Sans Mono", "Courier New", monospace;
   --term-font-size: 14px;
   --term-line-height: 1.2;
   --term-row-height: 17px;
+  --term-cell-width: 1ch;
+  --term-box-light: 1px;
+  --term-box-heavy: 2px;
+  --term-box-double-line: 1px;
+  --term-box-double-gap: 2px;
 
   position: relative;
   background: var(--term-bg);
@@ -87,6 +93,14 @@
   vertical-align: top;
 }
 
+.term-row > span,
+.term-link > span {
+  box-sizing: border-box;
+  width: calc(var(--term-cell-width, 1ch) * var(--term-cell-count, 1));
+  overflow: hidden;
+  white-space: pre;
+}
+
 .term-link {
   color: inherit;
   cursor: text;
@@ -104,13 +118,35 @@
 }
 
 .term-block {
-  width: 1ch;
-  overflow: hidden;
+  --term-cell-count: 1;
 }
 
 .term-wide {
-  width: 2ch;
-  overflow: hidden;
+  --term-cell-count: 2;
+}
+
+.term-box {
+  --term-cell-count: 1;
+  background: var(--term-box-background, var(--term-bg));
+  color: transparent;
+  text-shadow: none;
+  user-select: text;
+}
+
+.term-measure-probe {
+  position: absolute;
+  height: auto;
+  line-height: var(--term-line-height);
+  font: inherit;
+  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+  white-space: pre;
+}
+
+.term-measure-probe > span {
+  display: inline-block;
+  width: auto !important;
 }
 
 .term-cursor {
@@ -124,13 +160,25 @@
   outline: none;
 }
 
+.wterm.focused .term-box.term-cursor {
+  background: var(--term-cursor) !important;
+  color: transparent !important;
+}
+
 .wterm.focused.cursor-blink .term-cursor {
   animation: cursor-blink 1s step-end infinite;
 }
 
 @keyframes cursor-blink {
-  0%, 100% { background: var(--term-cursor); color: var(--term-bg); }
-  50% { background: transparent; color: inherit; }
+  0%,
+  100% {
+    background: var(--term-cursor);
+    color: var(--term-bg);
+  }
+  50% {
+    background: transparent;
+    color: inherit;
+  }
 }
 
 .wterm.has-scrollback {

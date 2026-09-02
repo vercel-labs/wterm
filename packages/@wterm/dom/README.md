@@ -72,6 +72,12 @@ Ordinary writes schedule `requestAnimationFrame` directly. Multiple writes befor
 
 When a terminal core supplies `CellData.chars`, the renderer paints that complete grapheme string instead of only the cell's base code point.
 
+Rows use the measured narrow-glyph width as their cell grid. Normal text and
+grapheme clusters are sized by their logical cell counts, wide cells occupy two
+cells, and U+2500–U+257F box-drawing characters use cell-bounded CSS strokes so
+panel borders stay aligned across fonts and browsers. Box-drawing characters
+remain text in the DOM for selection, copy, and accessibility.
+
 When a core supplies OSC 8 metadata through `CellData.linkUri` and `CellData.linkKey`, the renderer groups the covered cells into native anchors. Only absolute HTTP and HTTPS URIs become clickable. Invalid, relative, and executable schemes render as ordinary terminal text.
 While hovering an anchor, holding Command on macOS or Control on Windows and Linux reveals its underline and pointer cursor. Plain clicks remain terminal interaction. Command-click, Control-click, or native keyboard activation when an anchor receives focus opens the link. Modified link activation remains available while SGR mouse tracking is active and is not forwarded to the terminal application.
 

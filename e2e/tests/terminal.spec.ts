@@ -37,6 +37,115 @@ test.describe("rendering", () => {
     ).toHaveCount(1);
   });
 
+  test("keeps measured Unicode cells and box borders on one grid", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __wterm: { write: (data: string) => void };
+      };
+      const horizontal = "─".repeat(30);
+      const body = "界 e\u0301  📁 TRAILING";
+      const bodyPadding = " ".repeat(30 - 17);
+      const fixture = [
+        `┌${horizontal}┐`,
+        `│${body}${bodyPadding}│`,
+        `│\x1b]8;;https://wterm.dev\x1b\\LINK\x1b]8;;\x1b\\${" ".repeat(26)}│`,
+        `├${horizontal}┤`,
+        `│${" ".repeat(30)}│`,
+        `└${horizontal}┘`,
+      ].join("\r\n");
+      scope.__wterm.write("\x1b[2J\x1b[H\x1b[?25l" + fixture);
+    });
+
+    await expect(terminal.locator(".term-box").first()).toBeVisible();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+
+    const geometry = await page.evaluate(() => {
+      const terminal = document.querySelector<HTMLElement>(".wterm")!;
+      const width = parseFloat(
+        getComputedStyle(terminal).getPropertyValue("--term-cell-width"),
+      );
+      const spans = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          ".term-row:not(.term-measure-probe) span",
+        ),
+      );
+      const verticals = Array.from(
+        document.querySelectorAll<HTMLElement>(".term-box"),
+      )
+        .filter((span) => span.textContent === "│")
+        .map((span) => span.getBoundingClientRect().left);
+      const verticalColumnCounts = Array.from(
+        verticals
+          .reduce((counts, left) => {
+            const key = left.toFixed(2);
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+            return counts;
+          }, new Map<string, number>())
+          .values(),
+      );
+      return {
+        width,
+        spans: spans.map((span) => ({
+          cells: Number(span.dataset.cellCount),
+          width: span.getBoundingClientRect().width,
+        })),
+        verticals,
+        verticalColumnCounts,
+      };
+    });
+
+    expect(geometry.width).toBeGreaterThan(0);
+    for (const span of geometry.spans) {
+      expect(span.width).toBeCloseTo(span.cells * geometry.width, 1);
+    }
+    expect(Math.max(...geometry.verticalColumnCounts)).toBeGreaterThanOrEqual(
+      3,
+    );
+    await expect(terminal).toContainText("TRAILING");
+    await expect(terminal.locator("a.term-link")).toContainText("LINK");
+
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __wterm: { resize: (cols: number, rows: number) => void };
+      };
+      scope.__wterm.resize(100, 24);
+      document.querySelector<HTMLElement>(".wterm")!.style.fontFamily =
+        "'Courier New', monospace";
+    });
+    await page.waitForTimeout(50);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+
+    const resized = await page.evaluate(() => {
+      const terminal = document.querySelector<HTMLElement>(".wterm")!;
+      const width = parseFloat(
+        getComputedStyle(terminal).getPropertyValue("--term-cell-width"),
+      );
+      const span = document.querySelector<HTMLElement>(
+        ".term-row:not(.term-measure-probe) span",
+      )!;
+      return {
+        width,
+        spanWidth: span.getBoundingClientRect().width,
+        cells: Number(span.dataset.cellCount),
+      };
+    });
+    expect(resized.width).toBeGreaterThan(0);
+    expect(resized.spanWidth).toBeCloseTo(resized.cells * resized.width, 1);
+  });
+
   test("reveals OSC 8 hyperlink decoration on hover", async ({ page }) => {
     await page.evaluate(() => {
       (

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Renderer } from "../renderer.js";
+import { BOX_GLYPHS, getBoxBackground } from "../box-drawing.js";
 import type { CellData, CursorState } from "@wterm/core";
 
 function createMockBridge(cols: number, rows: number, grid: CellData[][] = []) {
@@ -244,6 +245,99 @@ describe("Renderer", () => {
       expect(container.querySelector(".term-wide")?.textContent).toBe(
         String.fromCodePoint(0x1f4c1),
       );
+      expect(container.querySelector(".term-wide")?.dataset.cellCount).toBe(
+        "2",
+      );
+    });
+
+    it("sizes Unicode, grapheme, cursor, and trailing runs by logical cells", () => {
+      const grid = [
+        [
+          { ...makeCell("界"), width: 2 },
+          { char: 0, fg: 256, bg: 256, flags: 0, width: 0 },
+          { ...makeCell("e"), chars: "e\u0301" },
+          makeCell("A"),
+          makeCell("!"),
+        ],
+      ];
+      const bridge = createMockBridge(5, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 3, visible: true });
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any, {
+        scrollTop: 0,
+        clientHeight: 17,
+        rowHeight: 17,
+        charWidth: 9.5,
+      });
+
+      const row = container.querySelector(".term-row")!;
+      const spans = Array.from(row.querySelectorAll("span"));
+      expect(spans.map((span) => span.dataset.cellCount)).toEqual([
+        "2",
+        "1",
+        "1",
+        "1",
+      ]);
+      expect(spans.map((span) => span.textContent)).toEqual([
+        "界",
+        "e\u0301",
+        "A",
+        "!",
+      ]);
+      expect(row.textContent).toBe("界e\u0301A!");
+      expect(container.style.getPropertyValue("--term-cell-width")).toBe(
+        "9.5px",
+      );
+    });
+
+    it("keeps box-drawing source text and a cell-bounded paint description", () => {
+      const chars = "─│┌┬┼═╬╭╮╰╯╱╲╳";
+      const grid = [Array.from(chars, (char) => makeCell(char))];
+      const bridge = createMockBridge(chars.length, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: true });
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+
+      const boxes = Array.from(container.querySelectorAll(".term-box"));
+      expect(boxes).toHaveLength(chars.length);
+      expect(container.querySelector(".term-row")?.textContent).toBe(chars);
+      expect(boxes.every((box) => box.dataset.cellCount === "1")).toBe(true);
+      expect(boxes[0].getAttribute("style")).toContain(
+        "--term-box-background:linear-gradient",
+      );
+      expect(boxes[0].getAttribute("style")).toContain("color:transparent");
+      expect(boxes[0].classList.contains("term-cursor")).toBe(true);
+      expect(Object.keys(BOX_GLYPHS)).toHaveLength(0x80);
+    });
+
+    it("uses the same cell contract for box rows and stored scrollback", () => {
+      const box = makeCell("┌");
+      const bridge = createMockBridge(2, 1, [[box, makeCell("x")]]);
+      bridge.getScrollbackCount = () => 1;
+      bridge.getScrollbackLineLen = () => 2;
+      bridge.getScrollbackCell = (_offset: number, col: number) =>
+        col === 0 ? box : makeCell("x");
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any, {
+        scrollTop: 0,
+        clientHeight: 17,
+        rowHeight: 17,
+        overscanRows: 0,
+        charWidth: 8,
+      });
+
+      const active = container.querySelector(
+        ".term-row:not(.term-scrollback-row)",
+      )!;
+      const history = container.querySelector(".term-scrollback-row")!;
+      expect(active.querySelector(".term-box")?.dataset.cellCount).toBe("1");
+      expect(history.querySelector(".term-box")?.dataset.cellCount).toBe("1");
+    });
+
+    it("maps every box-drawing code point to a cell background", () => {
+      for (let cp = 0x2500; cp <= 0x257f; cp++) {
+        expect(getBoxBackground(cp, "red", "black")).toContain("black");
+      }
     });
 
     it("places the cursor correctly after a wide cell", () => {
