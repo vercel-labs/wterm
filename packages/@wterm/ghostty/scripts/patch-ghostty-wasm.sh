@@ -14,6 +14,9 @@ set -euo pipefail
 GHOSTTY_SRC="$1"
 PAGE_ZIG="$GHOSTTY_SRC/src/terminal/page.zig"
 PAGELIST_ZIG="$GHOSTTY_SRC/src/terminal/PageList.zig"
+TERMINAL_ZIG="$GHOSTTY_SRC/src/terminal/Terminal.zig"
+IMAGE_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_image.zig"
+STORAGE_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_storage.zig"
 
 if [[ ! -f "$PAGE_ZIG" ]]; then
   echo "Error: $PAGE_ZIG not found"
@@ -22,6 +25,9 @@ fi
 
 [[ -f "$PAGE_ZIG.orig" ]] || cp "$PAGE_ZIG" "$PAGE_ZIG.orig"
 [[ -f "$PAGELIST_ZIG.orig" ]] || cp "$PAGELIST_ZIG" "$PAGELIST_ZIG.orig"
+[[ -f "$TERMINAL_ZIG.orig" ]] || cp "$TERMINAL_ZIG" "$TERMINAL_ZIG.orig"
+[[ -f "$IMAGE_ZIG.orig" ]] || cp "$IMAGE_ZIG" "$IMAGE_ZIG.orig"
+[[ -f "$STORAGE_ZIG.orig" ]] || cp "$STORAGE_ZIG" "$STORAGE_ZIG.orig"
 
 # ---------------------------------------------------------------
 # Patch PageList.zig — pageAllocator()
@@ -132,6 +138,91 @@ with open('$PAGELIST_ZIG', 'w') as f:
 
 print('PageList.zig patched for WASM')
 "
+
+# ---------------------------------------------------------------
+# Patch Terminal.Options — the image limit belongs to Screen.Options in
+# Ghostty 1.3.1, but Terminal owns creation of both screen instances.
+# ---------------------------------------------------------------
+python3 -c "
+with open('$TERMINAL_ZIG') as f: src = f.read()
+needle = '''    max_scrollback: usize = 10_000,\n    colors: Colors = .default,'''
+replacement = '''    max_scrollback: usize = 10_000,\n    /// Total decoded Kitty image bytes per screen. Zero disables graphics.\n    kitty_image_storage_limit: usize = 320 * 1000 * 1000,\n    colors: Colors = .default,'''
+if 'kitty_image_storage_limit: usize = 320 * 1000 * 1000' not in src:
+    if needle not in src: raise SystemExit('Terminal.Options shape changed')
+    src = src.replace(needle, replacement, 1)
+old = '''        .max_scrollback = opts.max_scrollback,\n    });'''
+new = '''        .max_scrollback = opts.max_scrollback,\n        .kitty_image_storage_limit = opts.kitty_image_storage_limit,\n    });'''
+if '.kitty_image_storage_limit = opts.kitty_image_storage_limit' not in src:
+    if old not in src: raise SystemExit('Terminal screen initialization shape changed')
+    src = src.replace(old, new, 1)
+with open('$TERMINAL_ZIG', 'w') as f: f.write(src)
+"
+
+# ---------------------------------------------------------------
+# Patch Kitty image storage with an eviction counter. The counter is exposed
+# as a diagnostic only; image ownership and eviction policy remain upstream.
+# ---------------------------------------------------------------
+python3 -c "
+with open('$STORAGE_ZIG') as f: src = f.read()
+if 'evicted_count: usize = 0' not in src:
+    needle = '    total_limit: usize = 320 * 1000 * 1000, // 320MB\\n'
+    if needle not in src: raise SystemExit('Kitty storage limit shape changed')
+    src = src.replace(needle, needle + '    evicted_count: usize = 0,\\n', 1)
+needle = '''                evicted += entry.value_ptr.data.len;
+                self.total_bytes -= entry.value_ptr.data.len;
+
+                entry.value_ptr.deinit(alloc);'''
+replacement = '''                evicted += entry.value_ptr.data.len;
+                self.total_bytes -= entry.value_ptr.data.len;
+                self.evicted_count += 1;
+
+                entry.value_ptr.deinit(alloc);'''
+if 'self.evicted_count += 1;' not in src:
+    if needle not in src: raise SystemExit('Kitty eviction shape changed')
+    src = src.replace(needle, replacement, 1)
+with open('$STORAGE_ZIG', 'w') as f: f.write(src)
+"
+
+# ---------------------------------------------------------------
+# Patch Kitty's WASM-incompatible clock and cap decoder allocations. The
+# timestamp is only used for deterministic eviction ordering, so a monotonic
+# process-local counter is sufficient and avoids importing POSIX timespec.
+# ---------------------------------------------------------------
+python3 -c "
+with open('$IMAGE_ZIG') as f: src = f.read()
+if 'const max_size = 32 * 1024 * 1024' not in src:
+    old = 'const max_size = 400 * 1024 * 1024; // 400MB'
+    if old not in src: raise SystemExit('Kitty image size constant changed')
+    src = src.replace(old, 'const max_size = 32 * 1024 * 1024; // bounded WASM image input', 1)
+marker_direct = '''        if (t.medium == .direct) {
+            try result.addData(alloc, cmd.data);
+            return result;
+        }
+'''
+if 'if (comptime builtin.target.cpu.arch.isWasm()) return error.UnsupportedMedium;' not in src:
+    if marker_direct not in src: raise SystemExit('Kitty image medium dispatch shape changed')
+    src = src.replace(marker_direct, marker_direct + '\n        if (comptime builtin.target.cpu.arch.isWasm()) return error.UnsupportedMedium;\n', 1)
+if 'var next_transmit_time: u64 = 1;' not in src:
+    marker = 'const log = std.log.scoped(.kitty_gfx);'
+    if marker not in src: raise SystemExit('Kitty image log marker changed')
+    src = src.replace(marker, marker + '\n\nvar next_transmit_time: u64 = 1;', 1)
+src = src.replace('self.image.transmit_time = std.time.Instant.now() catch |err| {\n            log.warn(\"failed to get time: {}\", .{err});\n            return error.InternalError;\n        };', 'self.image.transmit_time = next_transmit_time;\n        next_transmit_time +%= 1;', 1)
+if 'transmit_time: std.time.Instant = undefined' in src:
+    src = src.replace('transmit_time: std.time.Instant = undefined', 'transmit_time: u64 = 0', 1)
+with open('$IMAGE_ZIG', 'w') as f: f.write(src)
+"
+
+python3 -c "
+with open('$STORAGE_ZIG') as f: src = f.read()
+src = src.replace('time: std.time.Instant,', 'time: u64,', 1)
+src = src.replace('kv.value_ptr.transmit_time.order(newest.?.transmit_time) == .gt', 'kv.value_ptr.transmit_time > newest.?.transmit_time', 1)
+old = '''if (lhs.used == rhs.used) if (lhs.time != rhs.time) return lhs.time < rhs.time;\n                    return lhs.id < rhs.id;\n\n                    // If not used, then its a better candidate\n                    return !lhs.used;'''
+new = '''if (lhs.used == rhs.used) {\n                        if (lhs.time != rhs.time) return lhs.time < rhs.time;\n                        return lhs.id < rhs.id;\n                    }\n\n                    // If not used, then its a better candidate\n                    return !lhs.used;'''
+if old in src: src = src.replace(old, new, 1)
+with open('$STORAGE_ZIG', 'w') as f: f.write(src)
+"
+
+echo "Applying pinned Ghostty WASM compatibility patches"
 
 # ---------------------------------------------------------------
 # Patch page.zig — mmap/munmap

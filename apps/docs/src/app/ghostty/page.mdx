@@ -8,6 +8,13 @@ wterm ships with a lightweight built-in core (~12 KB WASM) that covers basic VT1
 
 Ghostty's native OSC 8 metadata is preserved through the active viewport, scrollback, and reflow. The DOM renderer resolves it into safe HTTP and HTTPS anchors without exposing Ghostty's page-local numeric IDs.
 
+Ghostty-backed terminals also render direct Kitty Graphics Protocol PNG, RGB,
+and RGBA data through the optional graphics contract. The DOM layer draws
+bounded, transient canvas overlays for pinned placements and follows scrollback,
+resize, and primary/alternate screen changes. Non-direct media is rejected
+before file or shared-memory access; Sixel, iTerm2/OSC 1337, animation, virtual
+Unicode placements, and persistence are outside the supported boundary.
+
 ## Install
 
 ```bash
@@ -121,6 +128,11 @@ const core = await GhosttyCore.load();
         to <code>#1e1e1e</code>.
       </td>
     </tr>
+    <tr>
+      <td><code>imageStorageLimit</code></td>
+      <td><code>number</code></td>
+      <td>Maximum decoded Kitty image bytes per screen (default: 32 MiB). Set to <code>0</code> to disable graphics.</td>
+    </tr>
   </tbody>
 </table>
 
@@ -131,8 +143,16 @@ colors they are actually rendered with:
 const core = await GhosttyCore.load({
   foregroundColor: "#ededed",
   backgroundColor: "#0a0a0a",
+  imageStorageLimit: 32 * 1024 * 1024,
 });
 ```
+
+The core rejects malformed, oversized, and non-direct images before they can
+access a path or shared-memory segment. `getResourceState()` reports graphics
+bytes used/capacity, image and placement counts, rejection and eviction
+counters, and saturation. `GhosttyCore.dispose()` is idempotent and releases
+WASM resources when the application owns the core; `WTerm.destroy()` never
+disposes a caller-supplied core.
 
 ## Bundlers
 

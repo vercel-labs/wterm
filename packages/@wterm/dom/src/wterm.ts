@@ -406,6 +406,7 @@ export class WTerm {
       clientHeight: this.element.clientHeight,
       rowHeight,
       scrollbackDiscardedCount: discardedCount,
+      charWidth: this._charWidth,
     });
 
     if (this.debug) {
@@ -536,6 +537,8 @@ export class WTerm {
     this._cancelSynchronizedOutputFallback();
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.input) this.input.destroy();
+    this.renderer?.destroy();
+    this.renderer = null;
     this.element.removeEventListener("click", this._onClickFocus);
     this.element.removeEventListener("scroll", this._onScroll);
     this.element.ownerDocument.removeEventListener(

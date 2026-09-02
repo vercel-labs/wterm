@@ -49,6 +49,12 @@ The `<Terminal>` component accepts all [shared terminal options](/api-reference#
 
 Because `inheritAttrs` is enabled, standard DOM attributes (`class`, `style`, `id`, ARIA props, etc.) are forwarded to the root `<div>`.
 
+The Vue wrapper delegates rendering to `@wterm/dom`, so a graphics-capable
+core such as `@wterm/ghostty` automatically renders direct Kitty PNG/RGB/RGBA
+images. There are no image-specific Vue props. Image canvases are decorative
+(`aria-hidden`, non-focusable, and pointer-transparent); text remains the
+accessible terminal surface.
+
 ## Events
 
 Input callbacks are exposed as Vue events rather than `onXxx` props:

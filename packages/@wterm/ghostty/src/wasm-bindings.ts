@@ -16,6 +16,7 @@ export interface GhosttyExports {
     max_scrollback: number,
     foreground_rgb: number,
     background_rgb: number,
+    image_storage_limit: number,
   ): number;
   deinit(ptr: number): void;
   resize(ptr: number, cols: number, rows: number): void;
@@ -61,6 +62,28 @@ export interface GhosttyExports {
   synchronized_output(ptr: number): number;
   synchronized_output_generation(ptr: number): number;
   kitty_keyboard_flags?(ptr: number): number;
+
+  graphics_generation?(ptr: number): number;
+  graphics_image_count?(ptr: number): number;
+  graphics_placement_count?(ptr: number): number;
+  graphics_bytes_used?(ptr: number): number;
+  graphics_capacity?(ptr: number): number;
+  graphics_rejected?(ptr: number): number;
+  graphics_evicted?(ptr: number): number;
+  graphics_images?(ptr: number, buf_ptr: number, max_records: number): number;
+  graphics_placements?(
+    ptr: number,
+    buf_ptr: number,
+    max_records: number,
+  ): number;
+  graphics_image_size?(ptr: number, image_id: number, version: number): number;
+  graphics_image_copy?(
+    ptr: number,
+    image_id: number,
+    version: number,
+    buf_ptr: number,
+    buf_len: number,
+  ): number;
 
   // Grid
   get_cols(ptr: number): number;
@@ -234,12 +257,134 @@ export { CELL_BYTES };
  * The caller must free it with freeBuffer when done.
  */
 export function allocBuffer(wasm: GhosttyWasm, size: number): number {
-  return wasm.exports.alloc_buffer(size);
+  if (!Number.isSafeInteger(size) || size <= 0 || size > 0xffffffff) return 0;
+  try {
+    return wasm.exports.alloc_buffer(size);
+  } catch {
+    return 0;
+  }
 }
 
 /** Free a buffer previously allocated with allocBuffer. */
 export function freeBuffer(wasm: GhosttyWasm, ptr: number, size: number): void {
-  wasm.exports.free_buffer(ptr, size);
+  if (ptr === 0 || !Number.isSafeInteger(size) || size <= 0) return;
+  try {
+    wasm.exports.free_buffer(ptr, size);
+  } catch {
+    // A failed cleanup must not turn a recoverable terminal read into a throw.
+  }
+}
+
+export const GRAPHICS_IMAGE_BYTES = 16;
+export const GRAPHICS_PLACEMENT_BYTES = 60;
+
+export interface WasmGraphicsImage {
+  imageId: number;
+  version: number;
+  width: number;
+  height: number;
+}
+
+export interface WasmGraphicsPlacement {
+  placementKey: string;
+  imageId: number;
+  imageVersion: number;
+  row: number;
+  col: number;
+  offsetX: number;
+  offsetY: number;
+  sourceX: number;
+  sourceY: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  columns: number;
+  rows: number;
+  z: number;
+}
+
+export function readGraphicsImages(
+  wasm: GhosttyWasm,
+  termPtr: number,
+  bufPtr: number,
+  capacity: number,
+): WasmGraphicsImage[] {
+  const read = wasm.exports.graphics_images;
+  if (!read || !Number.isSafeInteger(capacity) || capacity < 0) return [];
+  let count: number;
+  try {
+    count = read(termPtr, bufPtr, capacity);
+  } catch {
+    return [];
+  }
+  if (!Number.isSafeInteger(count) || count < 0 || count > capacity) return [];
+  const byteLength = count * GRAPHICS_IMAGE_BYTES;
+  if (!Number.isSafeInteger(byteLength)) return [];
+  let view: DataView;
+  try {
+    view = new DataView(wasm.exports.memory.buffer, bufPtr, byteLength);
+  } catch {
+    return [];
+  }
+  const result: WasmGraphicsImage[] = [];
+  for (let i = 0; i < count; i++) {
+    const offset = i * GRAPHICS_IMAGE_BYTES;
+    result.push({
+      imageId: view.getUint32(offset, true),
+      version: view.getUint32(offset + 4, true),
+      width: view.getUint32(offset + 8, true),
+      height: view.getUint32(offset + 12, true),
+    });
+  }
+  return result;
+}
+
+export function readGraphicsPlacements(
+  wasm: GhosttyWasm,
+  termPtr: number,
+  bufPtr: number,
+  capacity: number,
+): WasmGraphicsPlacement[] {
+  const read = wasm.exports.graphics_placements;
+  if (!read || !Number.isSafeInteger(capacity) || capacity < 0) return [];
+  let count: number;
+  try {
+    count = read(termPtr, bufPtr, capacity);
+  } catch {
+    return [];
+  }
+  if (!Number.isSafeInteger(count) || count < 0 || count > capacity) return [];
+  const byteLength = count * GRAPHICS_PLACEMENT_BYTES;
+  if (!Number.isSafeInteger(byteLength)) return [];
+  let view: DataView;
+  try {
+    view = new DataView(wasm.exports.memory.buffer, bufPtr, byteLength);
+  } catch {
+    return [];
+  }
+  const result: WasmGraphicsPlacement[] = [];
+  for (let i = 0; i < count; i++) {
+    const offset = i * GRAPHICS_PLACEMENT_BYTES;
+    const imageId = view.getUint32(offset, true);
+    const placementId = view.getUint32(offset + 4, true);
+    const placementTag = view.getUint32(offset + 56, true);
+    result.push({
+      placementKey: `${imageId}:${placementId}:${placementTag}`,
+      imageId,
+      imageVersion: view.getUint32(offset + 8, true),
+      row: view.getUint32(offset + 12, true),
+      col: view.getUint32(offset + 16, true),
+      offsetX: view.getUint32(offset + 20, true),
+      offsetY: view.getUint32(offset + 24, true),
+      sourceX: view.getUint32(offset + 28, true),
+      sourceY: view.getUint32(offset + 32, true),
+      sourceWidth: view.getUint32(offset + 36, true),
+      sourceHeight: view.getUint32(offset + 40, true),
+      columns: view.getUint32(offset + 44, true),
+      rows: view.getUint32(offset + 48, true),
+      z: view.getInt32(offset + 52, true),
+    });
+  }
+  return result;
 }
 
 /**
@@ -250,9 +395,10 @@ export function writeString(
   wasm: GhosttyWasm,
   termPtr: number,
   str: string,
+  afterChunk?: () => void,
 ): void {
   const encoded = new TextEncoder().encode(str);
-  writeBytes(wasm, termPtr, encoded);
+  writeBytes(wasm, termPtr, encoded, afterChunk);
 }
 
 /**
@@ -263,11 +409,22 @@ export function writeBytes(
   wasm: GhosttyWasm,
   termPtr: number,
   data: Uint8Array,
+  afterChunk?: () => void,
 ): void {
-  if (data.length === 0) return;
-  const bufPtr = allocBuffer(wasm, data.length);
-  if (bufPtr === 0) return;
-  new Uint8Array(wasm.exports.memory.buffer, bufPtr, data.length).set(data);
-  wasm.exports.write(termPtr, bufPtr, data.length);
-  freeBuffer(wasm, bufPtr, data.length);
+  let offset = 0;
+  while (offset < data.length) {
+    const length = Math.min(data.length - offset, 8192);
+    const bufPtr = allocBuffer(wasm, length);
+    if (bufPtr === 0) return;
+    try {
+      new Uint8Array(wasm.exports.memory.buffer, bufPtr, length).set(
+        data.subarray(offset, offset + length),
+      );
+      wasm.exports.write(termPtr, bufPtr, length);
+    } finally {
+      freeBuffer(wasm, bufPtr, length);
+    }
+    offset += length;
+    afterChunk?.();
+  }
 }

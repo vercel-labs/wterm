@@ -8,6 +8,13 @@ The core exposes SGR mouse tracking (modes 1000, 1002, and 1006), focus reportin
 Combining marks and ZWJ emoji are exposed through `CellData.chars` as complete strings, including after their rows move into scrollback.
 Native OSC 8 hyperlinks are resolved from Ghostty's page-owned metadata and exposed through `CellData.linkUri`, `CellData.linkId`, and `CellData.linkKey` in both the viewport and scrollback.
 
+The Ghostty core also provides the optional terminal graphics API. The DOM
+renderer displays direct Kitty Graphics Protocol PNG/RGB/RGBA images as
+transient, bounded canvas overlays. Pinned placements follow scrollback,
+scrolling, resize, and primary/alternate screen changes. Sixel, iTerm2/OSC
+1337, animation, virtual Unicode placements, file/shared-memory/URL media, and
+image persistence are not supported.
+
 Ghostty also exposes the cumulative number of rows discarded from the oldest end of scrollback. `@wterm/dom` uses that signal to keep retained history anchored when the page budget rolls over.
 
 Kitty keyboard flags stay authoritative in Ghostty's active screen. Queries return the native value, primary and alternate screens negotiate independently, DECSTR preserves the flags, and RIS clears them. `@wterm/dom` encodes browser keyboard events from those flags with the browser limitations documented in its README.
@@ -71,6 +78,7 @@ const core = await GhosttyCore.load();
 | `scrollbackLimit` | `number` | Scrollback budget in bytes, not lines (default: 10000). ghostty allocates history in pages, so the retained row count depends on the terminal width |
 | `foregroundColor` | `string` | Foreground reported by OSC 10 in `#RRGGBB` format (default: `#d4d4d4`) |
 | `backgroundColor` | `string` | Background reported by OSC 11 in `#RRGGBB` format (default: `#1e1e1e`) |
+| `imageStorageLimit` | `number` | Maximum decoded Kitty image bytes per screen (default: 32 MiB; `0` disables graphics) |
 
 When using a custom CSS theme, pass matching foreground and background colors so terminal applications receive the colors they are actually rendered with:
 
@@ -78,8 +86,19 @@ When using a custom CSS theme, pass matching foreground and background colors so
 const core = await GhosttyCore.load({
   foregroundColor: "#ededed",
   backgroundColor: "#0a0a0a",
+  imageStorageLimit: 32 * 1024 * 1024,
 });
 ```
+
+The image limit applies to decoded image storage, not browser canvas count.
+Ghostty rejects oversized, malformed, and non-direct media before any file or
+shared-memory access. `getResourceState()` reports image count, placement
+count, bytes used/capacity, rejections, evictions, and saturation.
+
+The core returns copied metadata and RGBA buffers through the optional
+`TerminalCore` graphics methods. Call `core.dispose()` when the application
+owns the core lifecycle; `WTerm.destroy()` cleans up its DOM layer but never
+disposes a caller-supplied core automatically.
 
 ## Bundlers
 

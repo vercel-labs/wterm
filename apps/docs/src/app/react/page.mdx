@@ -47,6 +47,12 @@ The `<Terminal>` component accepts all [shared terminal options](/api-reference#
 
 Standard `div` props (`className`, `style`, `id`, etc.) are forwarded to the container element.
 
+The React wrapper delegates rendering to `@wterm/dom`, so a graphics-capable
+core such as `@wterm/ghostty` automatically renders direct Kitty PNG/RGB/RGBA
+images. There are no image-specific React props. Image canvases are decorative
+(`aria-hidden`, non-focusable, and pointer-transparent); text remains the
+accessible terminal surface.
+
 ## useTerminal Hook
 
 Returns a ref and imperative helpers:

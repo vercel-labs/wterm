@@ -9,9 +9,20 @@ const color = vt.color;
 const modes = vt.modes;
 const ReadonlyHandler = vt.ReadonlyHandler;
 const StreamAction = vt.StreamAction;
+const KittyHandler = vt.apc.Handler;
+const KittyCommand = vt.kitty.graphics.Command;
+const KittyImage = vt.kitty.graphics.Image;
+const KittyStorage = vt.kitty.graphics.ImageStorage;
 
 const Allocator = std.mem.Allocator;
 const allocator = std.heap.wasm_allocator;
+
+const GRAPHICS_IMAGE_RECORD_BYTES = 16;
+const GRAPHICS_PLACEMENT_RECORD_BYTES = 60;
+const GRAPHICS_MAX_RECORDS = 16 * 1024;
+// Kitty payloads are base64 encoded before the upstream parser sees them.
+// Keep the encoded command bounded as well as the decoded image storage.
+const GRAPHICS_MAX_APC_BYTES = 48 * 1024 * 1024;
 
 pub const std_options: std.Options = .{
     .logFn = wasmLog,
@@ -101,24 +112,114 @@ const ResponseQueue = struct {
 /// actions, which the readonly handler documents as having "no terminal
 /// modifying effect" and drops, are answered here.
 const ResponseHandler = struct {
+    alloc: Allocator,
     inner: ReadonlyHandler,
     queue: *ResponseQueue,
     synchronized_output_generation: *u32,
+    graphics_generation: *u32,
+    image_versions: *std.AutoHashMapUnmanaged(u64, u32),
+    rejected_images: *u32,
+    apc: KittyHandler = .{},
+    apc_bytes: usize = 0,
+    apc_oversized: bool = false,
 
     pub fn init(
+        alloc: Allocator,
         terminal: *Terminal,
         queue: *ResponseQueue,
         generation: *u32,
+        graphics_generation_ptr: *u32,
+        image_versions: *std.AutoHashMapUnmanaged(u64, u32),
+        rejected_images: *u32,
     ) ResponseHandler {
         return .{
+            .alloc = alloc,
             .inner = .init(terminal),
             .queue = queue,
             .synchronized_output_generation = generation,
+            .graphics_generation = graphics_generation_ptr,
+            .image_versions = image_versions,
+            .rejected_images = rejected_images,
         };
     }
 
     pub fn deinit(self: *ResponseHandler) void {
+        self.apc.deinit();
         self.inner.deinit();
+    }
+
+    fn versionKey(terminal: *const Terminal, image_id: u32) u64 {
+        return (@as(u64, @intFromEnum(terminal.screens.active_key)) << 32) | image_id;
+    }
+
+    fn bumpImageVersion(self: *ResponseHandler, image_id: u32) void {
+        if (image_id == 0) return;
+        const key = versionKey(self.inner.terminal, image_id);
+        const entry = self.image_versions.getOrPut(self.alloc, key) catch return;
+        if (entry.found_existing) {
+            entry.value_ptr.* +%= 1;
+            if (entry.value_ptr.* == 0) entry.value_ptr.* = 1;
+        } else {
+            entry.value_ptr.* = 1;
+        }
+    }
+
+    fn imageVersion(self: *const ResponseHandler, image_id: u32) u32 {
+        const key = versionKey(self.inner.terminal, image_id);
+        const base = self.image_versions.get(key) orelse 1;
+        return (base & 0x7fffffff) | (@as(u32, @intFromEnum(self.inner.terminal.screens.active_key)) << 31);
+    }
+
+    fn transmission(cmd: *const KittyCommand) ?@TypeOf(cmd.control.transmit) {
+        return switch (cmd.control) {
+            .query => |value| value,
+            .transmit => |value| value,
+            .transmit_and_display => |value| value.transmission,
+            else => null,
+        };
+    }
+
+    fn rejectNonDirect(self: *ResponseHandler, cmd: *const KittyCommand) bool {
+        const tx = transmission(cmd) orelse return false;
+        if (tx.medium == .direct) return false;
+        // Do not call the upstream executor for non-direct media. In
+        // particular, this keeps file and shared-memory paths out of WASM.
+        self.graphics_generation.* +%= 1;
+        self.rejected_images.* +%= 1;
+        return true;
+    }
+
+    fn handleKittyCommand(self: *ResponseHandler, cmd: *KittyCommand) void {
+        if (self.rejectNonDirect(cmd)) return;
+
+        const before_id = switch (cmd.control) {
+            .delete => |delete| switch (delete) {
+                .id => |value| value.image_id,
+                else => 0,
+            },
+            else => 0,
+        };
+        const response = self.inner.terminal.kittyGraphics(self.alloc, cmd);
+        if (transmission(cmd)) |tx| {
+            if (tx.image_id != 0) {
+                self.bumpImageVersion(tx.image_id);
+            } else if (tx.image_number != 0) {
+                if (self.inner.terminal.screens.active.kitty_images.imageByNumber(tx.image_number)) |image| {
+                    self.bumpImageVersion(image.id);
+                }
+            }
+        }
+        if (before_id != 0) self.bumpImageVersion(before_id);
+        self.graphics_generation.* +%= 1;
+
+        if (response) |resp| {
+            if (!resp.ok()) self.rejected_images.* +%= 1;
+            var buf: [1024]u8 = undefined;
+            var writer: std.Io.Writer = .fixed(&buf);
+            resp.encode(&writer) catch return;
+            const final = writer.buffered();
+            if (final.len > 2) self.queue.push(final);
+        }
     }
 
     pub fn vt(
@@ -239,6 +340,38 @@ const ResponseHandler = struct {
                     self.queue.push(out);
                 }
             },
+            .apc_start => {
+                self.apc.start();
+                self.apc_bytes = 0;
+                self.apc_oversized = false;
+            },
+            .apc_put => {
+                if (self.apc_bytes >= GRAPHICS_MAX_APC_BYTES) {
+                    self.apc_oversized = true;
+                } else {
+                    self.apc_bytes += 1;
+                    self.apc.feed(self.alloc, value);
+                }
+            },
+            .apc_end => {
+                if (self.apc_oversized) {
+                    self.rejected_images.* +%= 1;
+                    self.apc_bytes = 0;
+                    self.apc_oversized = false;
+                    self.apc.state.deinit();
+                    self.apc.state = .{ .inactive = {} };
+                    return;
+                }
+                if (self.apc.end()) |cmd| {
+                    var owned_cmd = cmd;
+                    defer owned_cmd.deinit(self.alloc);
+                    switch (owned_cmd) {
+                        .kitty => |*kitty_cmd| self.handleKittyCommand(kitty_cmd),
+                    }
+                }
+                self.apc_bytes = 0;
+                self.apc_oversized = false;
+            },
             else => try self.inner.vt(action, value),
         }
     }
@@ -252,10 +385,87 @@ const State = struct {
     render: RenderState,
     responses: ResponseQueue,
     synchronized_output_generation: u32,
+    graphics_generation: u32,
+    image_versions: std.AutoHashMapUnmanaged(u64, u32),
+    rejected_images: u32,
+    evicted_images: u32,
 };
 
 fn stateFromPtr(ptr: usize) *State {
     return @ptrFromInt(ptr);
+}
+
+fn activeStorage(state: *State) *KittyStorage {
+    return &state.terminal.screens.active.kitty_images;
+}
+
+fn writeU32(buf: [*]u8, offset: usize, value: u32) void {
+    std.mem.writeInt(u32, buf[offset..][0..4], value, .little);
+}
+
+fn writeI32(buf: [*]u8, offset: usize, value: i32) void {
+    std.mem.writeInt(i32, buf[offset..][0..4], value, .little);
+}
+
+fn graphicsImages(state: *State, buf: [*]u8, max_records: u32) u32 {
+    const capacity = @min(@as(usize, max_records), GRAPHICS_MAX_RECORDS);
+    var count: usize = 0;
+    var it = activeStorage(state).images.iterator();
+    while (it.next()) |entry| {
+        if (count == capacity) break;
+        const image = entry.value_ptr;
+        const offset = count * GRAPHICS_IMAGE_RECORD_BYTES;
+        writeU32(buf, offset, image.id);
+        writeU32(buf, offset + 4, imageVersionFor(state, image.id));
+        writeU32(buf, offset + 8, image.width);
+        writeU32(buf, offset + 12, image.height);
+        count += 1;
+    }
+    return @intCast(count);
+}
+
+fn imageVersionFor(state: *const State, image_id: u32) u32 {
+    const key = (@as(u64, @intFromEnum(state.terminal.screens.active_key)) << 32) | image_id;
+    const base = state.image_versions.get(key) orelse 1;
+    return (base & 0x7fffffff) | (@as(u32, @intFromEnum(state.terminal.screens.active_key)) << 31);
+}
+
+fn graphicsPlacements(state: *State, buf: [*]u8, max_records: u32) u32 {
+    const capacity = @min(@as(usize, max_records), GRAPHICS_MAX_RECORDS);
+    var count: usize = 0;
+    var it = activeStorage(state).placements.iterator();
+    const screen = state.terminal.screens.active;
+    while (it.next()) |entry| {
+        if (count == capacity) break;
+        const placement = entry.value_ptr;
+        const pin = switch (placement.location) {
+            .pin => |p| p,
+            .virtual => continue,
+        };
+        const point = screen.pages.pointFromPin(.screen, pin.*) orelse continue;
+        const image = activeStorage(state).imageById(entry.key_ptr.image_id) orelse continue;
+        const coord = point.coord();
+        const placement_id = entry.key_ptr.placement_id.id;
+        const placement_tag: u32 = @intFromEnum(entry.key_ptr.placement_id.tag);
+        const offset = count * GRAPHICS_PLACEMENT_RECORD_BYTES;
+        writeU32(buf, offset, image.id);
+        writeU32(buf, offset + 4, placement_id);
+        writeU32(buf, offset + 8, imageVersionFor(state, image.id));
+        writeU32(buf, offset + 12, coord.y);
+        writeU32(buf, offset + 16, coord.x);
+        writeU32(buf, offset + 20, placement.x_offset);
+        writeU32(buf, offset + 24, placement.y_offset);
+        writeU32(buf, offset + 28, placement.source_x);
+        writeU32(buf, offset + 32, placement.source_y);
+        writeU32(buf, offset + 36, placement.source_width);
+        writeU32(buf, offset + 40, placement.source_height);
+        writeU32(buf, offset + 44, placement.columns);
+        writeU32(buf, offset + 48, placement.rows);
+        writeI32(buf, offset + 52, placement.z);
+        writeU32(buf, offset + 56, placement_tag);
+        count += 1;
+    }
+    return @intCast(count);
 }
 
 // -- Lifecycle --------------------------------------------------
@@ -266,12 +476,14 @@ export fn init(
     max_scrollback: u32,
     foreground_rgb: u32,
     background_rgb: u32,
+    image_storage_limit: u32,
 ) usize {
     const state = allocator.create(State) catch return 0;
     state.terminal = Terminal.init(allocator, .{
         .cols = cols,
         .rows = rows,
         .max_scrollback = max_scrollback,
+        .kitty_image_storage_limit = image_storage_limit,
         .colors = .{
             .background = .init(.{
                 .r = @truncate(background_rgb >> 16),
@@ -293,10 +505,18 @@ export fn init(
     };
     state.responses = .{};
     state.synchronized_output_generation = 0;
+    state.graphics_generation = 0;
+    state.image_versions = .{};
+    state.rejected_images = 0;
+    state.evicted_images = 0;
     state.stream = .initAlloc(allocator, .init(
+        allocator,
         &state.terminal,
         &state.responses,
         &state.synchronized_output_generation,
+        &state.graphics_generation,
+        &state.image_versions,
+        &state.rejected_images,
     ));
     state.render = RenderState.empty;
     return @intFromPtr(state);
@@ -307,12 +527,14 @@ export fn deinit(ptr: usize) void {
     state.render.deinit(allocator);
     state.stream.deinit();
     state.terminal.deinit(allocator);
+    state.image_versions.deinit(allocator);
     allocator.destroy(state);
 }
 
 export fn resize(ptr: usize, cols: u16, rows: u16) void {
     const state = stateFromPtr(ptr);
     state.terminal.resize(allocator, cols, rows) catch {};
+    state.graphics_generation +%= 1;
 }
 
 // -- Data input -------------------------------------------------
@@ -320,6 +542,7 @@ export fn resize(ptr: usize, cols: u16, rows: u16) void {
 export fn write(ptr: usize, data_ptr: [*]const u8, data_len: u32) void {
     const state = stateFromPtr(ptr);
     state.stream.nextSlice(data_ptr[0..data_len]) catch {};
+    state.graphics_generation +%= 1;
 }
 
 // -- Render state -----------------------------------------------
@@ -686,6 +909,95 @@ export fn synchronized_output_generation(ptr: usize) u32 {
 export fn kitty_keyboard_flags(ptr: usize) u32 {
     const state = stateFromPtr(ptr);
     return state.terminal.screens.active.kitty_keyboard.current().int();
+}
+
+// -- Graphics ---------------------------------------------------
+
+export fn graphics_generation(ptr: usize) u32 {
+    return stateFromPtr(ptr).graphics_generation;
+}
+
+export fn graphics_image_count(ptr: usize) u32 {
+    return @intCast(activeStorage(stateFromPtr(ptr)).images.count());
+}
+
+export fn graphics_placement_count(ptr: usize) u32 {
+    return @intCast(activeStorage(stateFromPtr(ptr)).placements.count());
+}
+
+export fn graphics_bytes_used(ptr: usize) u32 {
+    return @intCast(@min(activeStorage(stateFromPtr(ptr)).total_bytes, std.math.maxInt(u32)));
+}
+
+export fn graphics_capacity(ptr: usize) u32 {
+    return @intCast(@min(activeStorage(stateFromPtr(ptr)).total_limit, std.math.maxInt(u32)));
+}
+
+export fn graphics_rejected(ptr: usize) u32 {
+    return stateFromPtr(ptr).rejected_images;
+}
+
+export fn graphics_evicted(ptr: usize) u32 {
+    return @intCast(@min(activeStorage(stateFromPtr(ptr)).evicted_count, std.math.maxInt(u32)));
+}
+
+export fn graphics_images(ptr: usize, buf_ptr: usize, max_records: u32) u32 {
+    if (buf_ptr == 0) return 0;
+    return graphicsImages(stateFromPtr(ptr), @ptrFromInt(buf_ptr), max_records);
+}
+
+export fn graphics_placements(ptr: usize, buf_ptr: usize, max_records: u32) u32 {
+    if (buf_ptr == 0) return 0;
+    return graphicsPlacements(stateFromPtr(ptr), @ptrFromInt(buf_ptr), max_records);
+}
+
+fn findImage(state: *State, image_id: u32, version: u32) ?KittyImage {
+    const image = activeStorage(state).imageById(image_id) orelse return null;
+    if (imageVersionFor(state, image_id) != version) return null;
+    if (image.format != .rgb and image.format != .rgba) return null;
+    if (image.width == 0 or image.height == 0) return null;
+    const bpp = image.format.bpp();
+    const expected = std.math.mul(
+        usize,
+        std.math.mul(usize, image.width, image.height) catch return null,
+        bpp,
+    ) catch return null;
+    if (image.data.len != expected) return null;
+    return image;
+}
+
+export fn graphics_image_size(ptr: usize, image_id: u32, version: u32) u32 {
+    const image = findImage(stateFromPtr(ptr), image_id, version) orelse return 0;
+    const size = std.math.mul(
+        usize,
+        std.math.mul(usize, image.width, image.height) catch return 0,
+        4,
+    ) catch return 0;
+    return @intCast(size);
+}
+
+export fn graphics_image_copy(ptr: usize, image_id: u32, version: u32, buf_ptr: usize, buf_len: u32) u32 {
+    const image = findImage(stateFromPtr(ptr), image_id, version) orelse return 0;
+    const size = std.math.mul(
+        usize,
+        std.math.mul(usize, image.width, image.height) catch return 0,
+        4,
+    ) catch return 0;
+    if (buf_ptr == 0 or buf_len < size) return 0;
+    const out = @as([*]u8, @ptrFromInt(buf_ptr))[0..size];
+    switch (image.format) {
+        .rgba => @memcpy(out, image.data),
+        .rgb => for (0..@as(usize, image.width) * image.height) |i| {
+            const src = i * 3;
+            const dst = i * 4;
+            out[dst] = image.data[src];
+            out[dst + 1] = image.data[src + 1];
+            out[dst + 2] = image.data[src + 2];
+            out[dst + 3] = 255;
+        },
+        else => return 0,
+    }
+    return @intCast(size);
 }
 
 // -- Grid dimensions --------------------------------------------

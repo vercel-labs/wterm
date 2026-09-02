@@ -57,6 +57,16 @@ Wide single-codepoint characters such as CJK, fullwidth forms, and emoji expose 
 
 Cores that preserve multi-codepoint graphemes expose the complete string as `chars`. Render `chars` when present and fall back to `String.fromCodePoint(char)` otherwise.
 
+### Optional terminal graphics
+
+The `TerminalCore` contract has optional `getGraphicsState()` and
+`getGraphicsImage()` methods. A graphics provider returns copied metadata and
+tightly packed RGBA pixels for direct terminal images, along with pinned
+placements in retained-row coordinates. Existing cores remain compatible when
+these methods are absent. The built-in `WasmBridge` consumes unsupported 7-bit
+Kitty APC payloads safely but does not decode or advertise image data; use the
+Ghostty core for rendering Kitty PNG/RGB/RGBA output.
+
 ## WebSocketTransport
 
 Connect to a PTY backend over WebSocket with automatic reconnection and send buffering.
