@@ -1,8 +1,26 @@
 # Changelog
 
-## 0.3.4
+## 0.4.0
 
 <!-- release:start -->
+
+### New Features
+
+- **Kitty keyboard protocol:** the built-in and Ghostty cores negotiate Kitty keyboard reporting, while the DOM renderer encodes browser keyboard events using the active terminal state.
+- **Kitty terminal images:** Ghostty-backed terminals render bounded direct PNG, RGB, and RGBA graphics through the optional terminal graphics API and a scroll-aware canvas overlay.
+
+### Bug Fixes
+
+- **Fractional scroll ownership:** the DOM renderer preserves follow mode when browser reclamping changes the scroll position during terminal updates.
+
+### Contributors
+
+- @ctate
+- @Railly
+
+<!-- release:end -->
+
+## 0.3.4
 
 ### New Features
 
@@ -22,8 +40,6 @@
 ### Contributors
 
 - @Railly
-
-<!-- release:end -->
 
 ## 0.3.3
 
