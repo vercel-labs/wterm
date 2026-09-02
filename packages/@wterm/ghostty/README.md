@@ -96,6 +96,9 @@ larger `imageStorageLimit` is configured; the larger budget can hold multiple
 smaller images. Each screen also retains at most 4,096 image descriptors and
 4,096 placements, so unique tiny-image churn cannot grow WASM metadata without
 bound; additional records fail closed until existing records are removed.
+The DOM overlay independently caps visible canvas backing stores at 32 MiB and
+bounds each destination canvas to the terminal pixel area; placements that do
+not fit those browser limits are skipped.
 Ghostty rejects oversized, malformed, and non-direct media before any file or
 shared-memory access. `getResourceState()` reports image count, placement
 count, bytes used/capacity, rejections, evictions, and saturation.

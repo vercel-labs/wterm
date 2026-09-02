@@ -72,6 +72,9 @@ The built-in core consumes unsupported 7-bit Kitty APC strings safely but does
 not provide graphics. The Ghostty implementation currently supports direct
 Kitty PNG/RGB/RGBA with a 32 MiB decoded per-screen default; non-direct media,
 Sixel, iTerm2, animation, virtual placements, and persistence are unsupported.
+The DOM overlay also bounds each destination canvas to the terminal pixel area
+and limits all visible canvas backing stores to 32 MiB; placements that exceed
+those browser limits are skipped.
 
 ## Terminal Options
 

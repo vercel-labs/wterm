@@ -616,7 +616,9 @@ export class GhosttyCore implements TerminalCore {
   private _invalidate(): void {
     this._viewportStale = true;
     this._scrollbackOffset = -1;
-    this._graphicsState = this.getGraphicsState();
+    // Graphics state is an O(records) snapshot. Mark it stale here and let
+    // the renderer/resource inspector request it when it is actually needed.
+    this._graphicsState = null;
   }
 
   private _decodeGrapheme(len: number): string | undefined {

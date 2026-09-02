@@ -67,6 +67,11 @@ scroll height, so ordinary text selection, copy, keyboard input, and screen
 reader behavior remain row-based. Image pixels are decorative; provide text
 context separately when the image carries meaning.
 
+For browser safety, every destination canvas is bounded by the active terminal
+pixel area and all visible canvas backing stores share a 32 MiB budget. An
+oversized or otherwise unmaterializable placement is skipped without changing
+the text or scrollback surface.
+
 The default lightweight core safely consumes unsupported Kitty APC data but
 does not render it. Pass a Ghostty core for direct PNG/RGB/RGBA support. Images
 are transient, bounded per-screen state; file/shared-memory/URL media, Sixel,

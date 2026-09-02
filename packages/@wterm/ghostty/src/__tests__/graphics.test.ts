@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { GhosttyCore, type GhosttyOptions } from "../ghostty-core.js";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const WASM_URL = "https://wterm.test/ghostty-vt.wasm";
 const wasmBytes = readFileSync(
@@ -74,6 +74,17 @@ describe("GhosttyCore Kitty graphics", () => {
     expect(core.getGraphicsImage(8, 1)?.rgba).toEqual(
       new Uint8Array([12, 34, 56, 255]),
     );
+  });
+
+  it("refreshes graphics snapshots lazily after writes", async () => {
+    const core = await newCore();
+    const getGraphicsState = vi.spyOn(core, "getGraphicsState");
+
+    core.writeString("ordinary text");
+    expect(getGraphicsState).not.toHaveBeenCalled();
+
+    core.getGraphicsState();
+    expect(getGraphicsState).toHaveBeenCalledTimes(1);
   });
 
   it("refreshes replacement pixels and removes deleted images", async () => {

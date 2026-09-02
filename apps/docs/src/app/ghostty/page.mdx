@@ -159,6 +159,9 @@ byte cap. A larger `imageStorageLimit` is still useful for storing several
 smaller images. Each screen also retains at most 4,096 image descriptors and
 4,096 placements; additional unique records fail closed so tiny-image churn
 cannot grow WASM metadata without bound.
+The DOM overlay independently caps visible canvas backing stores at 32 MiB and
+bounds each destination canvas to the terminal pixel area; placements that
+exceed those browser limits are skipped.
 
 ## Bundlers
 

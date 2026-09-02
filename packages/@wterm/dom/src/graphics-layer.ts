@@ -19,6 +19,15 @@ interface CachedImage {
   refs: number;
 }
 
+/**
+ * Keep browser-owned image backing stores bounded independently of the core's
+ * decoded image budget. This is deliberately a fixed layer limit: placement
+ * geometry is terminal output and must not be allowed to choose an arbitrary
+ * amount of browser memory.
+ */
+const GRAPHICS_CANVAS_BUDGET_BYTES = 32 * 1024 * 1024;
+const MAX_CANVAS_DIMENSION = 32768;
+
 function finitePositive(value: number): boolean {
   return Number.isFinite(value) && value > 0;
 }
@@ -46,6 +55,8 @@ export class GraphicsLayer {
   private container: HTMLElement;
   private layer: HTMLDivElement | null = null;
   private canvases = new Map<string, HTMLCanvasElement>();
+  private canvasAllocations = new Map<string, number>();
+  private canvasBytes = 0;
   private cache = new Map<string, CachedImage>();
   private generation = -1;
 
@@ -104,7 +115,10 @@ export class GraphicsLayer {
         descriptors.set(`${image.imageId}:${image.version}`, image);
       }
     }
-    const visible = this.visiblePlacements(core, state, viewport, descriptors);
+    const bounds = this.visiblePixelArea(core, viewport);
+    const visible = bounds
+      ? this.visiblePlacements(core, state, viewport, descriptors, bounds)
+      : [];
     const wanted = new Set<string>();
     const refs = new Map<string, number>();
     for (const placement of visible) {
@@ -120,8 +134,7 @@ export class GraphicsLayer {
 
     for (const [key, canvas] of this.canvases) {
       if (!wanted.has(key)) {
-        canvas.remove();
-        this.canvases.delete(key);
+        this.removeCanvas(key);
       }
     }
 
@@ -160,13 +173,19 @@ export class GraphicsLayer {
       if (changed || !existingCanvas) {
         let painted = false;
         try {
-          painted = this.paint(canvas, cached.data, placement, viewport);
+          painted = this.paint(
+            canvas,
+            key,
+            cached.data,
+            placement,
+            viewport,
+            bounds,
+          );
         } catch {
           painted = false;
         }
         if (!painted) {
-          canvas.remove();
-          this.canvases.delete(key);
+          this.removeCanvas(key);
         }
       } else {
         this.position(canvas, placement, viewport);
@@ -195,9 +214,18 @@ export class GraphicsLayer {
   }
 
   private clearCanvases(): void {
-    for (const canvas of this.canvases.values()) canvas.remove();
-    this.canvases.clear();
+    for (const key of this.canvases.keys()) this.removeCanvas(key);
+    this.canvasAllocations.clear();
+    this.canvasBytes = 0;
     this.cache.clear();
+  }
+
+  private removeCanvas(key: string): void {
+    this.canvases.get(key)?.remove();
+    this.canvases.delete(key);
+    const bytes = this.canvasAllocations.get(key) ?? 0;
+    this.canvasAllocations.delete(key);
+    this.canvasBytes = Math.max(0, this.canvasBytes - bytes);
   }
 
   private validImage(
@@ -224,6 +252,7 @@ export class GraphicsLayer {
     state: TerminalGraphicsState,
     viewport: GraphicsViewport,
     descriptors: Map<string, (typeof state.images)[number]>,
+    bounds: { width: number; height: number },
   ): TerminalImagePlacement[] {
     if (
       !finitePositive(viewport.rowHeight) ||
@@ -262,6 +291,7 @@ export class GraphicsLayer {
         placement.sourceWidth || image.width,
         placement.sourceHeight || image.height,
         viewport,
+        bounds,
       );
       if (!size) return false;
       const placementRows = Math.max(
@@ -318,9 +348,11 @@ export class GraphicsLayer {
 
   private paint(
     canvas: HTMLCanvasElement,
+    key: string,
     image: TerminalImageData,
     placement: TerminalImagePlacement,
     viewport: GraphicsViewport,
+    bounds: { width: number; height: number } | null,
   ): boolean {
     if (!this.validPlacement(placement, Number.MAX_SAFE_INTEGER)) return false;
     const sourceX = placement.sourceX;
@@ -346,6 +378,7 @@ export class GraphicsLayer {
       sourceWidth,
       sourceHeight,
       viewport,
+      bounds,
     );
     if (!destination) return false;
     const { width: destinationWidth, height: destinationHeight } = destination;
@@ -355,12 +388,16 @@ export class GraphicsLayer {
     if (
       !Number.isSafeInteger(pixelWidth) ||
       !Number.isSafeInteger(pixelHeight) ||
-      pixelWidth > 32768 ||
-      pixelHeight > 32768
+      pixelWidth > MAX_CANVAS_DIMENSION ||
+      pixelHeight > MAX_CANVAS_DIMENSION
     )
       return false;
-    canvas.width = pixelWidth;
-    canvas.height = pixelHeight;
+    const allocationBytes = safeProduct(pixelWidth, pixelHeight, 4);
+    if (
+      allocationBytes === null ||
+      !this.resizeCanvas(canvas, key, pixelWidth, pixelHeight, allocationBytes)
+    )
+      return false;
     this.position(canvas, placement, viewport);
     canvas.style.width = `${destinationWidth}px`;
     canvas.style.height = `${destinationHeight}px`;
@@ -406,6 +443,7 @@ export class GraphicsLayer {
     sourceWidth: number,
     sourceHeight: number,
     viewport: GraphicsViewport,
+    bounds: { width: number; height: number } | null,
   ): { width: number; height: number } | null {
     if (
       !safeNonNegativeInteger(sourceWidth) ||
@@ -435,6 +473,72 @@ export class GraphicsLayer {
       !Number.isFinite(placement.offsetY + destinationHeight)
     )
       return null;
-    return { width: destinationWidth, height: destinationHeight };
+
+    if (!bounds) return null;
+    const boundedWidth = Math.min(destinationWidth, bounds.width);
+    const boundedHeight = Math.min(destinationHeight, bounds.height);
+    if (!finitePositive(boundedWidth) || !finitePositive(boundedHeight))
+      return null;
+    return { width: boundedWidth, height: boundedHeight };
+  }
+
+  private visiblePixelArea(
+    core: TerminalCore,
+    viewport: GraphicsViewport,
+  ): { width: number; height: number } | null {
+    let cols: number;
+    let rows: number;
+    try {
+      cols = core.getCols();
+      rows = core.getRows();
+    } catch {
+      return null;
+    }
+    if (
+      !safeNonNegativeInteger(cols) ||
+      !safeNonNegativeInteger(rows) ||
+      cols <= 0 ||
+      rows <= 0 ||
+      !finitePositive(viewport.charWidth) ||
+      !finitePositive(viewport.rowHeight)
+    )
+      return null;
+
+    const width = cols * viewport.charWidth;
+    const height = rows * viewport.rowHeight;
+    if (
+      !finitePositive(width) ||
+      !finitePositive(height) ||
+      !Number.isSafeInteger(Math.ceil(width)) ||
+      !Number.isSafeInteger(Math.ceil(height))
+    )
+      return null;
+
+    return {
+      width: Math.min(width, MAX_CANVAS_DIMENSION),
+      height: Math.min(height, MAX_CANVAS_DIMENSION),
+    };
+  }
+
+  private resizeCanvas(
+    canvas: HTMLCanvasElement,
+    key: string,
+    width: number,
+    height: number,
+    bytes: number,
+  ): boolean {
+    const previousBytes = this.canvasAllocations.get(key) ?? 0;
+    const available =
+      GRAPHICS_CANVAS_BUDGET_BYTES - this.canvasBytes + previousBytes;
+    if (bytes > available) return false;
+    try {
+      canvas.width = width;
+      canvas.height = height;
+    } catch {
+      return false;
+    }
+    this.canvasBytes = this.canvasBytes - previousBytes + bytes;
+    this.canvasAllocations.set(key, bytes);
+    return true;
   }
 }

@@ -98,6 +98,9 @@ height.
 Image pixels are decorative until an accessible description contract exists.
 Applications should provide equivalent textual context when image meaning is
 important. Unsupported protocols and non-direct Kitty media are ignored safely.
+The browser overlay caps each destination canvas to the active terminal's pixel
+area and enforces a 32 MiB total backing-store budget, independently of the
+Ghostty decoded-image budget; placements that do not fit are skipped.
 
 ### `WebSocketTransport`
 
