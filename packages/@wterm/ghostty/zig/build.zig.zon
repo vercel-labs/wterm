@@ -8,6 +8,10 @@
             .url = "https://github.com/ghostty-org/ghostty/archive/v1.3.1.tar.gz",
             .hash = "ghostty-1.3.1-5UdBCwYm-gQeBa4bu1-sMooCQS4KVriv5wWSIJ_sI-Cb",
         },
+        .wuffs = .{
+            .url = "https://deps.files.ghostty.org/wuffs-122037b39d577ec2db3fd7b2130e7b69ef6cc1807d68607a7c232c958315d381b5cd.tar.gz",
+            .hash = "N-V-__8AAAzZywE3s51XfsLbP9eyEw57ae9swYB9aGB6fCMs",
+        },
     },
     .paths = .{
         "build.zig",

@@ -1,7 +1,12 @@
 export type {
   CellData,
   CursorState,
+  GraphicsResourceState,
   HyperlinkResourceState,
+  TerminalGraphicsState,
+  TerminalImageData,
+  TerminalImageDescriptor,
+  TerminalImagePlacement,
   TerminalResourceState,
   UnhandledSequence,
   TerminalCore,

@@ -1,6 +1,6 @@
 # @wterm/core
 
-Headless terminal emulator core for [wterm](https://github.com/vercel-labs/wterm). Provides the WASM bridge and WebSocket transport — no DOM dependency.
+Headless terminal emulator core for [wterm](https://github.com/vercel-labs/wterm). Provides the WASM bridge, the pluggable `TerminalCore` contract, and WebSocket transport — no DOM dependency.
 
 ## Related Packages
 
@@ -80,10 +80,21 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 | `focusEvents()` | Whether focus reporting is active |
 | `synchronizedOutput()` | Whether synchronized output mode (2026) is active |
 | `synchronizedOutputGeneration()` | Monotonic generation for synchronized output blocks |
+| `kittyKeyboardFlags()` | Active Kitty keyboard protocol flags |
 
 OSC 8 hyperlink metadata is optional so third-party `TerminalCore` implementations remain source-compatible. Cores should expose the resolved URI and an opaque semantic key rather than a private numeric index.
 
+`TerminalCore.kittyKeyboardFlags()` is also optional. The DOM input handler uses it to encode negotiated Kitty keyboard events; cores that omit it retain the existing legacy keyboard behavior.
+
 The built-in core reports its fixed hyperlink identity capacity through `getResourceState()`. When `hyperlinks.saturated` is true, new distinct OSC 8 links render as plain text and `hyperlinks.rejected` counts capacity-rejected opens. Existing identities remain valid.
+
+### Optional terminal graphics
+
+`TerminalCore` also has optional `getGraphicsState()` and `getGraphicsImage()` methods. A provider returns copied image metadata and tightly packed, row-major RGBA bytes for the active screen, plus pinned placements in retained-row coordinates. Rows are zero-based from the oldest retained row; a placement's `col`, `row`, and pixel offsets are measured from the top-left of that retained terminal surface. Image versions identify replacements, and a changed generation invalidates placement and image snapshots.
+
+These methods are optional so existing custom cores and test doubles remain compatible. Missing, malformed, or unavailable graphics return `null` and must not interrupt ordinary terminal writes. Returned arrays and `Uint8Array` buffers are caller-owned copies.
+
+The built-in lightweight core consumes unsupported 7-bit Kitty APC graphics sequences safely but does not advertise a graphics provider. Kitty graphics are currently rendered by the Ghostty backend only; Sixel, iTerm2, virtual Unicode placements, animation, and file/shared-memory/URL media are outside this release.
 
 ### `WebSocketTransport`
 

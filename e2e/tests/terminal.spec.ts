@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/?debug");
@@ -155,6 +155,311 @@ test.describe("rendering", () => {
 });
 
 test.describe("keyboard input", () => {
+  test("Kitty report-all preserves Meta lifecycle and browser shortcuts", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await terminal.click();
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __reviewProbe?: string[];
+        __wterm: {
+          bridge: { kittyKeyboardFlags: () => number };
+          onData: ((data: string) => void) | null;
+        };
+      };
+      scope.__reviewProbe = [];
+      scope.__wterm.bridge.kittyKeyboardFlags = () => 1 | 2 | 8;
+      scope.__wterm.onData = (data) => scope.__reviewProbe?.push(data);
+    });
+
+    await page.keyboard.down("MetaLeft");
+    await page.keyboard.up("MetaLeft");
+    const modifier = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __reviewProbe: string[] })
+          .__reviewProbe,
+    );
+    expect.soft(modifier).toEqual(["\x1b[57444;9u", "\x1b[57444;1:3u"]);
+
+    await page.evaluate(() => {
+      (
+        globalThis as typeof globalThis & { __reviewProbe: string[] }
+      ).__reviewProbe.splice(0);
+    });
+    await page.keyboard.down("KeyA");
+    await page.keyboard.down("MetaLeft");
+    await page.keyboard.down("KeyA");
+    await page.keyboard.up("KeyA");
+    await page.keyboard.up("MetaLeft");
+    const interleaved = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __reviewProbe: string[] })
+          .__reviewProbe,
+    );
+    expect
+      .soft(interleaved)
+      .toEqual([
+        "\x1b[97u",
+        "\x1b[57444;9u",
+        "\x1b[97;9:2u",
+        "\x1b[97;9:3u",
+        "\x1b[57444;1:3u",
+      ]);
+
+    await page.evaluate(() => {
+      (
+        globalThis as typeof globalThis & { __reviewProbe: string[] }
+      ).__reviewProbe.splice(0);
+    });
+    await page.keyboard.down("MetaLeft");
+    await page.keyboard.press("KeyV");
+    await page.keyboard.up("MetaLeft");
+    const shortcut = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __reviewProbe: string[] })
+          .__reviewProbe,
+    );
+    expect.soft(shortcut).toEqual(["\x1b[57444;9u", "\x1b[57444;1:3u"]);
+  });
+
+  test("Kitty encoding follows real Chromium shifted-text and modifier-release events", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await terminal.click();
+
+    const setup = async (flags: number) => {
+      await page.evaluate((nextFlags) => {
+        const scope = globalThis as typeof globalThis & {
+          __kittyProbe?: {
+            events: Array<Record<string, string | boolean>>;
+            received: string[];
+          };
+          __wterm: {
+            bridge: { kittyKeyboardFlags: () => number };
+            onData: ((data: string) => void) | null;
+          };
+        };
+        const textarea = document.querySelector(".wterm textarea");
+        if (!(textarea instanceof HTMLTextAreaElement)) {
+          throw new Error("missing terminal textarea");
+        }
+        const probe = { events: [], received: [] };
+        scope.__kittyProbe = probe;
+        for (const type of ["keydown", "keyup"] as const) {
+          textarea.addEventListener(
+            type,
+            (event) => {
+              const key = event as KeyboardEvent;
+              probe.events.push({
+                type,
+                key: key.key,
+                code: key.code,
+                shiftKey: key.shiftKey,
+                altKey: key.altKey,
+                ctrlKey: key.ctrlKey,
+                metaKey: key.metaKey,
+              });
+            },
+            { capture: true },
+          );
+        }
+        scope.__wterm.bridge.kittyKeyboardFlags = () => nextFlags;
+        scope.__wterm.onData = (data) => probe.received.push(data);
+      }, flags);
+    };
+
+    await setup(1);
+    await page.keyboard.press("Shift+A");
+    const shifted = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect(shifted).toMatchObject({
+      events: [
+        {
+          type: "keydown",
+          key: "Shift",
+          code: "ShiftLeft",
+          shiftKey: true,
+        },
+        {
+          type: "keydown",
+          key: "A",
+          code: "KeyA",
+          shiftKey: true,
+        },
+        {
+          type: "keyup",
+          key: "A",
+          code: "KeyA",
+          shiftKey: true,
+        },
+        {
+          type: "keyup",
+          key: "Shift",
+          code: "ShiftLeft",
+          shiftKey: false,
+        },
+      ],
+    });
+    expect.soft(shifted).toMatchObject({ received: ["A"] });
+
+    await setup(4);
+    await page.keyboard.press("Shift+A");
+    const alternatesOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(alternatesOnly).toMatchObject({ received: ["A"] });
+
+    await setup(4);
+    await page.keyboard.press("Control+A");
+    const controlWithAlternatesOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect
+      .soft(controlWithAlternatesOnly)
+      .toMatchObject({ received: ["\x01"] });
+
+    await setup(4);
+    await page.keyboard.press("Alt+Shift+A");
+    const shiftedAltWithAlternatesOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect
+      .soft(shiftedAltWithAlternatesOnly)
+      .toMatchObject({ received: ["\x1bA"] });
+
+    await setup(4);
+    await page.keyboard.press("Control+;");
+    const unmappedControlWithAlternatesOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect
+      .soft(unmappedControlWithAlternatesOnly)
+      .toMatchObject({ received: [";"] });
+
+    await setup(2);
+    await page.keyboard.press("Control+A");
+    const controlWithEventsOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(controlWithEventsOnly).toMatchObject({
+      received: ["\x01", "\x1b[97;5:3u"],
+    });
+
+    await setup(1 | 2 | 8);
+    await page.keyboard.down("Control");
+    await page.keyboard.up("Control");
+    const control = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect(control).toMatchObject({
+      events: [
+        {
+          type: "keydown",
+          key: "Control",
+          code: "ControlLeft",
+          ctrlKey: true,
+        },
+        {
+          type: "keyup",
+          key: "Control",
+          code: "ControlLeft",
+          ctrlKey: false,
+        },
+      ],
+    });
+    expect.soft(control).toMatchObject({
+      received: ["\x1b[57442;5u", "\x1b[57442;1:3u"],
+    });
+
+    await setup(1 | 2 | 8);
+    await page.keyboard.down("ControlLeft");
+    await page.keyboard.down("ControlRight");
+    await page.keyboard.up("ControlLeft");
+    await page.keyboard.up("ControlRight");
+    const pairedControl = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(pairedControl).toMatchObject({
+      received: [
+        "\x1b[57442;5u",
+        "\x1b[57448;5u",
+        "\x1b[57442;5:3u",
+        "\x1b[57448;1:3u",
+      ],
+    });
+
+    await setup(4);
+    await page.keyboard.press("F1");
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("NumpadEnter");
+    await page.keyboard.press("Numpad8");
+    const legacyFunctional = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(legacyFunctional).toMatchObject({
+      received: ["\x1bOP", "\x1b[Z", "\r", "\x1b[A"],
+    });
+
+    await setup(2);
+    await page.keyboard.down("Escape");
+    const escapePress = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(escapePress).toMatchObject({ received: ["\x1b"] });
+    await page.keyboard.up("Escape");
+
+    await setup(2);
+    await page.keyboard.down("ArrowUp");
+    await page.keyboard.down("ArrowUp");
+    await page.keyboard.up("ArrowUp");
+    const arrowLifecycle = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(arrowLifecycle).toMatchObject({
+      received: ["\x1b[A", "\x1b[1;1:2A", "\x1b[1;1:3A"],
+    });
+
+    await setup(4);
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __wterm: { bridge: { cursorKeysApp: () => boolean } };
+      };
+      scope.__wterm.bridge.cursorKeysApp = () => true;
+    });
+    await page.keyboard.press("ArrowUp");
+    const applicationCursor = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(applicationCursor).toMatchObject({ received: ["\x1bOA"] });
+  });
+
   test("typing a command produces output", async ({ page }) => {
     const terminal = page.locator(".wterm");
     await expect(terminal).toContainText("$", { timeout: 5000 });

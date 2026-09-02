@@ -39,8 +39,62 @@ export interface HyperlinkResourceState {
   saturated: boolean;
 }
 
+/** Metadata for one decoded terminal image. IDs are scoped to the active screen. */
+export interface TerminalImageDescriptor {
+  imageId: number;
+  version: number;
+  width: number;
+  height: number;
+}
+
+/** A pinned, non-virtual image placement in the retained active screen. */
+export interface TerminalImagePlacement {
+  placementKey: string;
+  imageId: number;
+  imageVersion: number;
+  /** Zero-based retained row, with row zero at the oldest retained row. */
+  row: number;
+  col: number;
+  offsetX: number;
+  offsetY: number;
+  sourceX: number;
+  sourceY: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  /** Requested cell dimensions. Zero means that dimension was not specified. */
+  columns: number;
+  rows: number;
+  z: number;
+}
+
+export interface TerminalGraphicsState {
+  generation: number;
+  images: TerminalImageDescriptor[];
+  placements: TerminalImagePlacement[];
+}
+
+export interface TerminalImageData {
+  imageId: number;
+  version: number;
+  width: number;
+  height: number;
+  /** Tightly packed, row-major RGBA bytes. The returned buffer is a copy. */
+  rgba: Uint8Array;
+}
+
+export interface GraphicsResourceState {
+  capacity: number;
+  used: number;
+  imageCount: number;
+  placementCount: number;
+  rejected: number;
+  evicted: number;
+  saturated: boolean;
+}
+
 export interface TerminalResourceState {
   hyperlinks?: HyperlinkResourceState;
+  graphics?: GraphicsResourceState;
 }
 
 /**
@@ -76,11 +130,18 @@ export interface TerminalCore {
   focusEvents?(): boolean;
   synchronizedOutput?(): boolean;
   synchronizedOutputGeneration?(): number;
+  kittyKeyboardFlags?(): number;
 
   // -- Side outputs --
   getTitle(): string | null;
   getResponse(): string | null;
   getResourceState?(): TerminalResourceState;
+
+  // -- Optional terminal graphics --
+  /** Returns a caller-owned snapshot for the active screen, or no state. */
+  getGraphicsState?(): TerminalGraphicsState | null;
+  /** Returns caller-owned RGBA pixels, or null when unavailable/invalid. */
+  getGraphicsImage?(imageId: number, version: number): TerminalImageData | null;
 
   // -- Scrollback --
   getScrollbackCount(): number;

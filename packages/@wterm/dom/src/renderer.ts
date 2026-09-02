@@ -1,4 +1,5 @@
 import type { CellData, TerminalCore } from "@wterm/core";
+import { GraphicsLayer, type GraphicsLayerOptions } from "./graphics-layer.js";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -16,6 +17,7 @@ export interface RenderViewport {
   rowHeight: number;
   overscanRows?: number;
   scrollbackDiscardedCount?: number;
+  charWidth?: number;
 }
 
 function rgbToCSS(packed: number): string {
@@ -255,9 +257,18 @@ export class Renderer {
   private _renderedDiscardedCount = -1;
   private _scrollbackTopSpacer: HTMLDivElement | null = null;
   private _scrollbackBottomSpacer: HTMLDivElement | null = null;
+  private graphics: GraphicsLayer;
 
-  constructor(container: HTMLElement) {
+  get hasImageFlow(): boolean {
+    return (
+      this.container.parentElement?.classList.contains("has-image-flow") ??
+      false
+    );
+  }
+
+  constructor(container: HTMLElement, options: GraphicsLayerOptions = {}) {
     this.container = container;
+    this.graphics = new GraphicsLayer(container, options);
   }
 
   setup(cols: number, rows: number): void {
@@ -287,6 +298,7 @@ export class Renderer {
       this.rowEls.push(rowEl);
     }
     this.container.appendChild(fragment);
+    this.graphics.setup();
     this.prevCursorRow = -1;
     this.prevCursorCol = -1;
   }
@@ -717,5 +729,20 @@ export class Renderer {
     }
 
     core.clearDirty();
+    this.graphics.reconcile(core, {
+      scrollTop: viewport?.scrollTop ?? 0,
+      clientHeight: viewport?.clientHeight ?? 0,
+      rowHeight: viewport?.rowHeight ?? 0,
+      charWidth: viewport?.charWidth ?? 0,
+      overscanRows: viewport?.overscanRows ?? DEFAULT_SCROLLBACK_OVERSCAN_ROWS,
+      scrollbackCount: core.getScrollbackCount(),
+    });
+  }
+
+  destroy(): void {
+    this.graphics.destroy();
+    this.container.innerHTML = "";
+    this.rowEls = [];
+    this._scrollbackRowEls = [];
   }
 }

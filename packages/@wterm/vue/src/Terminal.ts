@@ -81,6 +81,10 @@ const Terminal = defineComponent({
      * @defaultValue false
      */
     autoResize: Boolean,
+    /** Maximum rendered Kitty image width in CSS pixels. */
+    maxImageWidth: Number,
+    /** Maximum rendered Kitty image height in CSS pixels. */
+    maxImageHeight: Number,
     /**
      * Toggles the `cursor-blink` class on the root element.
      * @defaultValue false
@@ -138,6 +142,8 @@ const Terminal = defineComponent({
         core: props.core,
         wasmUrl: props.wasmUrl,
         autoResize: props.autoResize,
+        maxImageWidth: props.maxImageWidth,
+        maxImageHeight: props.maxImageHeight,
         cursorBlink: props.cursorBlink,
         debug: props.debug,
         onData: hasDataListener

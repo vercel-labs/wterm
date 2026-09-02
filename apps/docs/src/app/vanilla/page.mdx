@@ -43,16 +43,46 @@ await term.init();
 
 ## Options and Methods
 
-The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `cursorBlink`, `onData`, `onTitle`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
+The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `onData`, `onTitle`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
 
 See [WTerm Methods](/api-reference#wterm-methods) for the full list of instance methods (`init`, `write`, `resize`, `focus`, `destroy`).
 
 When a terminal application enables SGR mouse tracking or focus reporting, WTerm sends those reports through `onData` with keyboard input and host responses.
 
+When the active core negotiates the Kitty keyboard protocol, WTerm encodes key presses, repeats, and available releases from the core's current flags. The built-in and Ghostty cores keep separate primary and alternate-screen flag stacks. Third-party cores without Kitty state retain legacy keyboard behavior.
+
+Browsers do not expose every native keyboard field. WTerm uses `KeyboardEvent.code` for functional and modifier identity, `KeyboardEvent.key` for text, and reports shifted alternates when available. It does not invent a base-layout alternate, synthesize missing release events, or retain associated text beyond the current press.
+
 Application-provided OSC 8 hyperlinks render as native anchors across both the active viewport and scrollback. Only absolute HTTP and HTTPS URIs become clickable; invalid, relative, and executable schemes remain ordinary terminal text.
 While hovering an anchor, holding Command on macOS or Control on Windows and Linux reveals its underline and pointer cursor. Plain clicks remain terminal interaction. Command-click, Control-click, or native keyboard activation when an anchor receives focus opens the link. Modified link activation remains available while SGR mouse tracking is active and is not forwarded to the terminal application.
 
 Scrollback normally uses a bounded DOM window around the visible rows. An active native text selection keeps its selected range mounted so the browser can preserve it. Native browser find and accessibility inspect the mounted window, not every retained history row. If the terminal is already at the bottom, new output keeps it at the exact bottom; reading older history does not enable auto-follow, and terminal input returns to the bottom.
+
+### Terminal images
+
+When the supplied core exposes the optional graphics methods, `WTerm` renders
+visible pinned Kitty image placements in a separate canvas overlay. The overlay
+is pointer-transparent, non-focusable, `aria-hidden`, and does not change
+scroll height, so ordinary text selection, copy, keyboard input, and screen
+reader behavior remain row-based. Image pixels are decorative; provide text
+context separately when the image carries meaning.
+
+For browser safety, every destination canvas is bounded by the active terminal
+pixel area and all visible canvas backing stores share a 32 MiB budget. An
+oversized or otherwise unmaterializable placement is skipped without changing
+the text or scrollback surface.
+
+The default lightweight core safely consumes unsupported Kitty APC data but
+does not render it. Pass a Ghostty core for direct PNG/RGB/RGBA support. Images
+are transient, bounded per-screen state; file/shared-memory/URL media, Sixel,
+iTerm2, animation, and virtual placements are unsupported.
+Use `maxImageWidth` and/or `maxImageHeight` in the `WTerm` options to constrain
+oversized rendered images. The limits are CSS pixels, preserve aspect ratio,
+and only scale images down.
+
+The DOM wrapper answers Kitty pixel geometry queries (`CSI 14 t` and
+`CSI 16 t`) from the rendered terminal element, allowing Kitty graphics clients
+such as `kitten icat --transfer-mode=stream image.png` to negotiate image size.
 
 ## Themes
 

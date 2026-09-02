@@ -46,9 +46,31 @@
 
 .term-grid {
   display: block;
+  position: relative;
   white-space: pre;
   contain: layout paint style;
   will-change: contents;
+}
+
+.term-images {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 1;
+}
+
+.term-image-flow-spacer {
+  display: block;
+  height: 0;
+  pointer-events: none;
+}
+
+.term-image {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  user-select: none;
 }
 
 .term-row {
@@ -117,7 +139,8 @@
   50% { background: transparent; color: inherit; }
 }
 
-.wterm.has-scrollback {
+.wterm.has-scrollback,
+.wterm.has-image-flow {
   overflow-y: auto;
 }
 

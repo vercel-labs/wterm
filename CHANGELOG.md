@@ -1,8 +1,42 @@
 # Changelog
 
-## 0.3.4
+## 0.4.1
 
 <!-- release:start -->
+
+### New Features
+
+- **Local terminal workspace:** the local example now supports multiple independent shell sessions with an accessible sidebar for creating, switching, and closing sessions, plus live working-directory labels.
+- **Kitty image sizing and geometry:** DOM terminals answer Kitty pixel-geometry queries, configurable image bounds preserve aspect ratio, and the local PTY forwards browser dimensions so Kitty clients can detect image support.
+
+### Improvements
+
+- **Implicit image flow:** auto-sized Kitty images align with the terminal content and reserve their rendered height, keeping following shell prompts visible below the image.
+- **Local example core switching:** built-in and Ghostty terminal sessions share the workspace while the Ghostty route enables bounded Kitty image rendering.
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.4.0
+
+### New Features
+
+- **Kitty keyboard protocol:** the built-in and Ghostty cores negotiate Kitty keyboard reporting, while the DOM renderer encodes browser keyboard events using the active terminal state.
+- **Kitty terminal images:** Ghostty-backed terminals render bounded direct PNG, RGB, and RGBA graphics through the optional terminal graphics API and a scroll-aware canvas overlay.
+
+### Bug Fixes
+
+- **Fractional scroll ownership:** the DOM renderer preserves follow mode when browser reclamping changes the scroll position during terminal updates.
+
+### Contributors
+
+- @ctate
+- @Railly
+
+## 0.3.4
 
 ### New Features
 
@@ -22,8 +56,6 @@
 ### Contributors
 
 - @Railly
-
-<!-- release:end -->
 
 ## 0.3.3
 

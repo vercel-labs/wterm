@@ -44,6 +44,8 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `rows` | `number` | `24` | Initial row count |
 | `wasmUrl` | `string` | — | Optional URL to serve the WASM binary separately (embedded by default) |
 | `autoResize` | `boolean` | `true` | Auto-resize based on container dimensions |
+| `maxImageWidth` | `number` | — | Maximum rendered Kitty image width in CSS pixels. Images larger than the limit are scaled down proportionally. |
+| `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels. Images larger than the limit are scaled down proportionally. |
 | `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
@@ -62,6 +64,10 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 
 When a terminal application enables modes 1000 or 1002 with SGR encoding (1006), pointer input is sent through `onData`. Focus reports are sent when mode 1004 is active.
 
+WTerm implements the Kitty keyboard protocol when the active core exposes negotiated flags. The built-in and Ghostty cores support query, push, pop, set, OR, and NOT operations, with independent state for the primary and alternate screens. Cores without `kittyKeyboardFlags()` keep the legacy keyboard path unchanged.
+
+Browser keyboard events do not expose every native field the protocol can carry. WTerm reports physical functional and modifier keys from `KeyboardEvent.code`, text from `KeyboardEvent.key`, and shifted alternates when available. It does not invent the base-layout alternate, cannot synthesize release events the browser never delivers, and limits associated text to the current press event.
+
 WTerm honors synchronized output mode (CSI `?2026`) by painting the block atomically when the mode closes. Each synchronized block can hold rendering for at most one second from its opening sequence. Ordinary payload does not extend that deadline. If the deadline expires, WTerm resumes painting until a fresh synchronized block begins.
 
 Ordinary writes schedule `requestAnimationFrame` directly. Multiple writes before the frame are coalesced into one render.
@@ -71,9 +77,41 @@ When a terminal core supplies `CellData.chars`, the renderer paints that complet
 When a core supplies OSC 8 metadata through `CellData.linkUri` and `CellData.linkKey`, the renderer groups the covered cells into native anchors. Only absolute HTTP and HTTPS URIs become clickable. Invalid, relative, and executable schemes render as ordinary terminal text.
 While hovering an anchor, holding Command on macOS or Control on Windows and Linux reveals its underline and pointer cursor. Plain clicks remain terminal interaction. Command-click, Control-click, or native keyboard activation when an anchor receives focus opens the link. Modified link activation remains available while SGR mouse tracking is active and is not forwarded to the terminal application.
 
+WTerm answers xterm/Kitty pixel geometry queries (`CSI 14 t` and `CSI 16 t`) from the rendered terminal element and forwards the reports through `onData`, so Kitty graphics clients can size and place images in the browser.
+
 Scrollback normally keeps only the visible rows plus overscan mounted in the DOM. While native text selection is active, the selected range stays mounted so the browser can preserve it. Native browser find and accessibility inspect the mounted window, not every retained history row. Scrolling updates the window, while new output follows the exact bottom only when the terminal was already there.
 
 WTerm owns scrollback anchoring when old history is discarded. The package stylesheet disables browser-native scroll anchoring on the terminal scroller so rollover produces one deterministic adjustment across browsers.
+
+### Terminal images
+
+The DOM renderer consumes the optional `TerminalCore.getGraphicsState()` and
+`getGraphicsImage()` methods when both are present. It creates a separate,
+absolute canvas overlay for visible pinned placements, using copied RGBA bytes
+and the same retained-row coordinates as text and scrollback. Images are
+pointer-transparent, non-focusable, and `aria-hidden`; terminal rows remain the
+semantic surface for selection, copy, keyboard input, and screen readers.
+
+The built-in core deliberately does not provide image data. Use
+`@wterm/ghostty` for direct Kitty Graphics Protocol PNG/RGB/RGBA output. Image
+state is transient and is isolated per primary/alternate screen. Replacement,
+deletion, scrollback movement, resize, and screen changes invalidate the layer;
+off-screen placements are not materialized, and canvases do not add scroll
+height. Implicit Kitty placements (the common auto-sized form) align with the
+terminal content origin and reserve their rendered height in the visual text
+flow, so a prompt produced after an image appears under the image instead of
+behind it.
+
+Set `maxImageWidth` and/or `maxImageHeight` on `WTerm` to constrain rendered
+image dimensions in CSS pixels; the image keeps its aspect ratio and is never
+scaled up. These are display limits and do not reduce decoded image memory.
+
+Image pixels are decorative until an accessible description contract exists.
+Applications should provide equivalent textual context when image meaning is
+important. Unsupported protocols and non-direct Kitty media are ignored safely.
+The browser overlay caps each destination canvas to the active terminal's pixel
+area and enforces a 32 MiB total backing-store budget, independently of the
+Ghostty decoded-image budget; placements that do not fit are skipped.
 
 ### `WebSocketTransport`
 

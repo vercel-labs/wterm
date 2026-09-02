@@ -16,6 +16,41 @@ pub const DEBUG_LOG_MAX: u8 = 32;
 pub const RESPONSE_MAX_BYTES: usize = 64;
 pub const RESPONSE_QUEUE_MAX: u16 = 2048;
 
+const KittyFlagStack = struct {
+    flags: [8]u5 = [_]u5{0} ** 8,
+    index: u3 = 0,
+
+    fn current(self: *const KittyFlagStack) u5 {
+        return self.flags[self.index];
+    }
+
+    fn push(self: *KittyFlagStack, flags: u5) void {
+        self.index +%= 1;
+        self.flags[self.index] = flags;
+    }
+
+    fn pop(self: *KittyFlagStack, count: u16) void {
+        if (count >= self.flags.len) {
+            self.* = .{};
+            return;
+        }
+        var remaining = count;
+        while (remaining > 0) : (remaining -= 1) {
+            self.flags[self.index] = 0;
+            self.index -%= 1;
+        }
+    }
+
+    fn set(self: *KittyFlagStack, flags: u5, mode: u16) void {
+        switch (mode) {
+            1 => self.flags[self.index] = flags,
+            2 => self.flags[self.index] |= flags,
+            3 => self.flags[self.index] &= ~flags,
+            else => {},
+        }
+    }
+};
+
 pub const DebugLogEntry = struct {
     final_byte: u8 = 0,
     private_marker: u8 = 0,
@@ -77,6 +112,8 @@ pub const Terminal = struct {
     alt_saved_flags: u8 = 0,
     alt_saved_link: u16 = 0,
     using_alt_screen: bool = false,
+    primary_kitty_keyboard: KittyFlagStack = .{},
+    alternate_kitty_keyboard: KittyFlagStack = .{},
 
     // Title (from OSC 0 / 2)
     title_buf: [256]u8 = undefined,
@@ -280,6 +317,8 @@ pub const Terminal = struct {
         self.alt_saved_flags = 0;
         self.alt_saved_link = 0;
         self.using_alt_screen = false;
+        self.primary_kitty_keyboard = .{};
+        self.alternate_kitty_keyboard = .{};
         self.title_len = 0;
         self.title_changed = false;
         self.response_head = 0;
@@ -450,6 +489,7 @@ pub const Terminal = struct {
             .csi_dispatch => self.handleCsi(),
             .esc_dispatch => self.handleEsc(),
             .osc_dispatch => self.handleOsc(),
+            .unsupported_apc => {},
         }
     }
 
@@ -637,6 +677,13 @@ pub const Terminal = struct {
     fn handleCsi(self: *Terminal) void {
         const final = self.parser.execute_byte;
 
+        if (final == 'u' and switch (self.parser.csi_private) {
+            '?', '>', '<', '=' => true,
+            else => false,
+        }) {
+            self.handleKittyKeyboard();
+            return;
+        }
         if (self.parser.csi_private == '?') {
             self.handlePrivateMode(final);
             return;
@@ -686,6 +733,54 @@ pub const Terminal = struct {
             '@' => self.insertBlanks(self.parser.getParam(0, 1)),
             '`' => self.cursorToColumn(self.parser.getParam(0, 1)),
             else => self.logUnhandled(final, 0),
+        }
+    }
+
+    fn activeKittyKeyboard(self: *Terminal) *KittyFlagStack {
+        return if (self.using_alt_screen)
+            &self.alternate_kitty_keyboard
+        else
+            &self.primary_kitty_keyboard;
+    }
+
+    pub fn kittyKeyboardFlags(self: *Terminal) u5 {
+        return self.activeKittyKeyboard().current();
+    }
+
+    fn handleKittyKeyboard(self: *Terminal) void {
+        const stack = self.activeKittyKeyboard();
+        switch (self.parser.csi_private) {
+            '?' => {
+                var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
+                const response = std.fmt.bufPrint(
+                    &buf,
+                    "\x1b[?{d}u",
+                    .{stack.current()},
+                ) catch return;
+                self.enqueueResponse(response);
+            },
+            '>' => {
+                const value = if (self.parser.param_count == 1)
+                    self.parser.getParam(0, 0)
+                else
+                    0;
+                if (value <= 31) stack.push(@intCast(value));
+            },
+            '<' => {
+                const count = if (self.parser.param_count == 1)
+                    self.parser.getParam(0, 1)
+                else
+                    1;
+                stack.pop(count);
+            },
+            '=' => {
+                const value = self.parser.getParam(0, 0);
+                const mode = self.parser.getParam(1, 1);
+                if (value <= 31 and mode >= 1 and mode <= 3) {
+                    stack.set(@intCast(value), mode);
+                }
+            },
+            else => unreachable,
         }
     }
 
@@ -1440,6 +1535,66 @@ test "reset clears queued responses" {
     try testing.expectEqual(@as(u16, 2), t.response_count);
     t.reset(80, 24);
     try testing.expectEqual(@as(u8, 0), t.responseLen());
+}
+
+test "kitty keyboard state transitions and query" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[?u");
+    try testing.expectEqualStrings("\x1b[?0u", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    t.write("\x1b[>5u\x1b[=2;2u\x1b[=1;3u\x1b[?u");
+    try testing.expectEqual(@as(u5, 6), t.kittyKeyboardFlags());
+    try testing.expectEqualStrings("\x1b[?6u", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    t.write("\x1b[<u\x1b[?u");
+    try testing.expectEqual(@as(u5, 0), t.kittyKeyboardFlags());
+    try testing.expectEqualStrings("\x1b[?0u", t.responsePtr()[0..t.responseLen()]);
+}
+
+test "kitty keyboard stack wraps and oversized pop clears" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    var count: u8 = 0;
+    while (count < 9) : (count += 1) t.write("\x1b[>1u");
+    try testing.expectEqual(@as(u5, 1), t.kittyKeyboardFlags());
+    t.write("\x1b[<10u");
+    try testing.expectEqual(@as(u5, 0), t.kittyKeyboardFlags());
+}
+
+test "kitty keyboard push and pop default extra parameters" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[>5u\x1b[>7;2u");
+    try testing.expectEqual(@as(u5, 0), t.kittyKeyboardFlags());
+    t.write("\x1b[<u");
+    try testing.expectEqual(@as(u5, 5), t.kittyKeyboardFlags());
+    t.write("\x1b[<1;2u");
+    try testing.expectEqual(@as(u5, 0), t.kittyKeyboardFlags());
+}
+
+test "kitty keyboard state is per screen and follows reset semantics" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    var ag = Grid.init(80, 24);
+    t.alt_grid = &ag;
+    t.write("\x1b[>6u\x1b[?1049h");
+    try testing.expectEqual(@as(u5, 0), t.kittyKeyboardFlags());
+    t.write("\x1b[>9u\x1b[!p");
+    try testing.expectEqual(@as(u5, 9), t.kittyKeyboardFlags());
+    t.write("\x1b[?1049l");
+    try testing.expectEqual(@as(u5, 6), t.kittyKeyboardFlags());
+    t.write("\x1bc");
+    try testing.expectEqual(@as(u5, 0), t.kittyKeyboardFlags());
+    try testing.expect(!t.using_alt_screen);
+}
+
+test "plain CSI u remains cursor restore" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[4;5H\x1b[s\x1b[8;9H\x1b[u");
+    try testing.expectEqual(@as(u16, 3), t.cursor_row);
+    try testing.expectEqual(@as(u16, 4), t.cursor_col);
 }
 
 test "SGR colors" {

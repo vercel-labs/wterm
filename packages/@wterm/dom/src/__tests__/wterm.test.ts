@@ -345,6 +345,54 @@ describe("WTerm", () => {
       callbacks[0](performance.now());
       expect(mockBridge.clearDirty).toHaveBeenCalledTimes(2);
     });
+
+    it("answers Kitty pixel geometry queries from the terminal element", async () => {
+      Object.defineProperty(element, "clientWidth", {
+        configurable: true,
+        value: 824,
+      });
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 432,
+      });
+      const onData = vi.fn();
+      const term = new WTerm(element, { autoResize: false, onData });
+      await term.init();
+      onData.mockClear();
+      (term as unknown as { _charWidth: number })._charWidth = 8;
+      (term as unknown as { _rowHeight: number })._rowHeight = 17;
+
+      term.write("\x1b[14t\x1b[16t");
+
+      expect(onData.mock.calls).toEqual([
+        ["\x1b[4;408;824t"],
+        ["\x1b[6;17;8t"],
+      ]);
+    });
+
+    it("answers a pixel query split across writes", async () => {
+      Object.defineProperty(element, "clientWidth", {
+        configurable: true,
+        value: 800,
+      });
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 400,
+      });
+      const onData = vi.fn();
+      const term = new WTerm(element, { autoResize: false, onData });
+      await term.init();
+      onData.mockClear();
+
+      term.write("\x1b[");
+      expect(onData).not.toHaveBeenCalled();
+
+      term.write("14t");
+      expect(onData).toHaveBeenCalledWith("\x1b[4;376;800t");
+
+      term.write("x");
+      expect(onData).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("resize", () => {

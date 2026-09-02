@@ -38,9 +38,15 @@ By default, typed input is echoed back to the terminal. Pass `onData` when you n
 
 ## Props
 
-The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `cursorBlink`, `debug`) plus [Svelte-only props](/api-reference#svelte-only-props) (`theme`).
+The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `debug`) plus [Svelte-only props](/api-reference#svelte-only-props) (`theme`).
 
 Standard DOM attributes (`class`, `style`, `id`, ARIA props, etc.) are forwarded to the root `<div>`.
+
+The component delegates rendering to `@wterm/dom`, so passing a graphics-capable
+core such as `@wterm/ghostty` renders direct Kitty PNG/RGB/RGBA output. Use
+`maxImageWidth` and/or `maxImageHeight` to constrain oversized images while
+preserving their aspect ratio. Image canvases are decorative and
+`aria-hidden`; they are pointer-transparent and never replace the text rows.
 
 ## Callback Props
 

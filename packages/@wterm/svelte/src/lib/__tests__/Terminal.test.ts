@@ -235,4 +235,14 @@ describe("Terminal component", () => {
       expect.objectContaining({ core }),
     );
   });
+
+  it("passes graphics sizing options to WTerm", async () => {
+    const { WTerm } = await import("@wterm/dom");
+    mountTerminal({ maxImageWidth: 640, maxImageHeight: 480 });
+    await flushPromises();
+    expect(WTerm).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({ maxImageWidth: 640, maxImageHeight: 480 }),
+    );
+  });
 });

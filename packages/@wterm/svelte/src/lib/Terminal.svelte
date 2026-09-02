@@ -25,6 +25,10 @@
      * changes. Defaults to `false` for framework wrappers.
      */
     autoResize?: boolean;
+    /** Maximum rendered Kitty image width in CSS pixels. */
+    maxImageWidth?: number;
+    /** Maximum rendered Kitty image height in CSS pixels. */
+    maxImageHeight?: number;
     /** Toggles the `cursor-blink` class on the root element. */
     cursorBlink?: boolean;
     /** Enable debug mode (init-only — changing after mount has no effect). */
@@ -48,6 +52,8 @@
     wasmUrl,
     theme,
     autoResize = false,
+    maxImageWidth,
+    maxImageHeight,
     cursorBlink = false,
     debug = false,
     onData,
@@ -98,6 +104,8 @@
       core,
       wasmUrl,
       autoResize,
+      maxImageWidth,
+      maxImageHeight,
       cursorBlink,
       debug,
       onData: onData ? (data: string) => onData?.(data) : undefined,

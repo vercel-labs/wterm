@@ -308,6 +308,43 @@ describe("WasmBridge", () => {
   });
 
   describe("terminal responses", () => {
+    it("tracks Kitty keyboard flags per screen with Ghostty-compatible resets", () => {
+      expect(bridge.kittyKeyboardFlags()).toBe(0);
+      bridge.writeString("\x1b[>6u\x1b[?u");
+      expect(bridge.kittyKeyboardFlags()).toBe(6);
+      expect(bridge.getResponse()).toBe("\x1b[?6u");
+
+      bridge.writeString("\x1b[?1049h\x1b[>9u\x1b[!p");
+      expect(bridge.kittyKeyboardFlags()).toBe(9);
+      bridge.writeString("\x1b[?1049l");
+      expect(bridge.kittyKeyboardFlags()).toBe(6);
+
+      bridge.writeString("\x1b[=1;3u");
+      expect(bridge.kittyKeyboardFlags()).toBe(6);
+      bridge.writeString("\x1b[<u");
+      expect(bridge.kittyKeyboardFlags()).toBe(0);
+      bridge.writeString("\x1bc");
+      expect(bridge.kittyKeyboardFlags()).toBe(0);
+    });
+
+    it("wraps the Kitty stack and bounds oversized pops", () => {
+      bridge.writeString("\x1b[>1u".repeat(9));
+      expect(bridge.kittyKeyboardFlags()).toBe(1);
+      bridge.writeString("\x1b[<10u");
+      expect(bridge.kittyKeyboardFlags()).toBe(0);
+    });
+
+    it("treats an older WASM without Kitty state as legacy", () => {
+      const internals = bridge as unknown as {
+        exports: Record<string, WebAssembly.ExportValue>;
+      };
+      const exportsWithoutKitty = { ...internals.exports };
+      delete exportsWithoutKitty.getKittyKeyboardFlags;
+      internals.exports = exportsWithoutKitty;
+
+      expect(bridge.kittyKeyboardFlags()).toBe(0);
+    });
+
     it("dequeues consecutive CPR responses in order", () => {
       bridge.writeString("\x1b[1G\x1b[6n\x1b[2G\x1b[6n");
       expect(bridge.getResponse()).toBe("\x1b[1;1R");

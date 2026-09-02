@@ -39,6 +39,8 @@ describe("Terminal types", () => {
     expectTypeOf<Props["theme"]>().toEqualTypeOf<string | undefined>();
     expectTypeOf<Props["wasmUrl"]>().toEqualTypeOf<string | undefined>();
     expectTypeOf<Props["autoResize"]>().toEqualTypeOf<boolean | undefined>();
+    expectTypeOf<Props["maxImageWidth"]>().toEqualTypeOf<number | undefined>();
+    expectTypeOf<Props["maxImageHeight"]>().toEqualTypeOf<number | undefined>();
     expectTypeOf<Props["cursorBlink"]>().toEqualTypeOf<boolean | undefined>();
     expectTypeOf<Props["debug"]>().toEqualTypeOf<boolean | undefined>();
     expectTypeOf<Props["onData"]>().toEqualTypeOf<

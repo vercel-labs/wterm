@@ -3,6 +3,9 @@ import type {
   CursorState,
   UnhandledSequence,
   TerminalCore,
+  TerminalGraphicsState,
+  TerminalImageData,
+  TerminalResourceState,
 } from "@wterm/core";
 import {
   type GhosttyWasm,
@@ -13,6 +16,10 @@ import {
   allocBuffer,
   freeBuffer,
   CELL_BYTES,
+  GRAPHICS_IMAGE_BYTES,
+  GRAPHICS_PLACEMENT_BYTES,
+  readGraphicsImages,
+  readGraphicsPlacements,
 } from "./wasm-bindings.js";
 
 const DEFAULT_COLOR = 256;
@@ -20,6 +27,10 @@ const GRAPHEME_BUFFER_BYTES = 256;
 const HYPERLINK_BUFFER_BYTES = 1024;
 const DEFAULT_FOREGROUND = "#d4d4d4";
 const DEFAULT_BACKGROUND = "#1e1e1e";
+/** Maximum decoded bytes accepted for one direct Kitty image. */
+export const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+const DEFAULT_IMAGE_STORAGE_LIMIT = MAX_IMAGE_BYTES;
+const MAX_WASM_U32 = 0xffffffff;
 
 const WTERM_FLAG_BOLD = 0x01;
 const WTERM_FLAG_DIM = 0x02;
@@ -63,6 +74,8 @@ export interface GhosttyOptions {
   scrollbackLimit?: number;
   foregroundColor?: string;
   backgroundColor?: string;
+  /** Decoded Kitty image bytes per screen. Zero disables image support. */
+  imageStorageLimit?: number;
 }
 
 function parseColor(value: string, option: string): number {
@@ -70,6 +83,26 @@ function parseColor(value: string, option: string): number {
     throw new Error(`@wterm/ghostty: ${option} must be a #RRGGBB color`);
   }
   return Number.parseInt(value.slice(1), 16);
+}
+
+function imageStorageLimit(options: GhosttyOptions): number {
+  const value = options.imageStorageLimit ?? DEFAULT_IMAGE_STORAGE_LIMIT;
+  if (!Number.isSafeInteger(value) || value < 0 || value > MAX_WASM_U32) {
+    throw new Error(
+      "@wterm/ghostty: imageStorageLimit must be an integer between 0 and 4294967295",
+    );
+  }
+  return value;
+}
+
+function cloneGraphicsState(
+  state: TerminalGraphicsState,
+): TerminalGraphicsState {
+  return {
+    generation: state.generation,
+    images: state.images.map((image) => ({ ...image })),
+    placements: state.placements.map((placement) => ({ ...placement })),
+  };
 }
 
 /**
@@ -113,6 +146,10 @@ export class GhosttyCore implements TerminalCore {
   private _graphemeBufSize = GRAPHEME_BUFFER_BYTES;
   private _hyperlinkBufPtr = 0;
   private _hyperlinkBufSize = HYPERLINK_BUFFER_BYTES;
+  private _graphicsBufPtr = 0;
+  private _graphicsBufSize = 0;
+  private _graphicsState: TerminalGraphicsState | null = null;
+  private _disposed = false;
 
   private constructor(wasm: GhosttyWasm, options: GhosttyOptions) {
     this.wasm = wasm;
@@ -139,6 +176,8 @@ export class GhosttyCore implements TerminalCore {
   // -- Lifecycle --
 
   init(cols: number, rows: number): void {
+    if (this._disposed) return;
+    if (this.termPtr !== 0) this._deinitTerminal();
     this._cols = cols;
     this._rows = rows;
     const scrollback = this._options.scrollbackLimit ?? 10000;
@@ -148,7 +187,11 @@ export class GhosttyCore implements TerminalCore {
       scrollback,
       this._foregroundRgb,
       this._backgroundRgb,
+      imageStorageLimit(this._options),
     );
+    if (this.termPtr === 0) return;
+    if (this._graphemeBufPtr !== 0)
+      freeBuffer(this.wasm, this._graphemeBufPtr, this._graphemeBufSize);
     this._graphemeBufPtr = allocBuffer(this.wasm, GRAPHEME_BUFFER_BYTES);
     if (this._hyperlinkBufPtr !== 0) {
       freeBuffer(this.wasm, this._hyperlinkBufPtr, this._hyperlinkBufSize);
@@ -160,6 +203,7 @@ export class GhosttyCore implements TerminalCore {
   }
 
   resize(cols: number, rows: number): void {
+    if (this._disposed || this.termPtr === 0) return;
     this._cols = cols;
     this._rows = rows;
     this.wasm.exports.resize(this.termPtr, cols, rows);
@@ -169,19 +213,22 @@ export class GhosttyCore implements TerminalCore {
 
   // -- I/O --
 
-  writeString(str: string): void {
-    wasmWriteString(this.wasm, this.termPtr, str);
+  writeString(str: string, afterChunk?: () => void): void {
+    if (this._disposed || this.termPtr === 0) return;
+    wasmWriteString(this.wasm, this.termPtr, str, afterChunk);
     this._invalidate();
   }
 
-  writeRaw(data: Uint8Array): void {
-    wasmWriteBytes(this.wasm, this.termPtr, data);
+  writeRaw(data: Uint8Array, afterChunk?: () => void): void {
+    if (this._disposed || this.termPtr === 0) return;
+    wasmWriteBytes(this.wasm, this.termPtr, data, afterChunk);
     this._invalidate();
   }
 
   // -- Grid --
 
   getCell(row: number, col: number): CellData {
+    if (this._disposed || this.termPtr === 0) return BLANK_CELL;
     this._ensureViewport();
     const view = this._viewportView;
     if (!view) return BLANK_CELL;
@@ -221,11 +268,13 @@ export class GhosttyCore implements TerminalCore {
   }
 
   isDirtyRow(row: number): boolean {
+    if (this._disposed || this.termPtr === 0) return false;
     this._ensureViewport();
     return this.wasm.exports.is_dirty_row(this.termPtr, row) !== 0;
   }
 
   clearDirty(): void {
+    if (this._disposed || this.termPtr === 0) return;
     this.wasm.exports.clear_dirty(this.termPtr);
     this._viewportStale = true;
   }
@@ -241,6 +290,9 @@ export class GhosttyCore implements TerminalCore {
   // -- Cursor --
 
   getCursor(): CursorState {
+    if (this._disposed || this.termPtr === 0) {
+      return { row: 0, col: 0, visible: false };
+    }
     this._ensureViewport();
     return {
       row: this.wasm.exports.get_cursor_row(this.termPtr),
@@ -252,36 +304,252 @@ export class GhosttyCore implements TerminalCore {
   // -- Modes --
 
   cursorKeysApp(): boolean {
+    if (this._disposed || this.termPtr === 0) return false;
     return this.wasm.exports.cursor_keys_app(this.termPtr) !== 0;
   }
 
   bracketedPaste(): boolean {
+    if (this._disposed || this.termPtr === 0) return false;
     return this.wasm.exports.bracketed_paste(this.termPtr) !== 0;
   }
 
   usingAltScreen(): boolean {
+    if (this._disposed || this.termPtr === 0) return false;
     return this.wasm.exports.using_alt_screen(this.termPtr) !== 0;
   }
 
   mouseTracking(): 0 | 1000 | 1002 {
+    if (this._disposed || this.termPtr === 0) return 0;
     const mode = this.wasm.exports.mouse_tracking(this.termPtr);
     return mode === 1000 || mode === 1002 ? mode : 0;
   }
 
   mouseSgr(): boolean {
+    if (this._disposed || this.termPtr === 0) return false;
     return this.wasm.exports.mouse_sgr(this.termPtr) !== 0;
   }
 
   focusEvents(): boolean {
+    if (this._disposed || this.termPtr === 0) return false;
     return this.wasm.exports.focus_events(this.termPtr) !== 0;
   }
 
   synchronizedOutput(): boolean {
+    if (this._disposed || this.termPtr === 0) return false;
     return this.wasm.exports.synchronized_output(this.termPtr) !== 0;
   }
 
   synchronizedOutputGeneration(): number {
+    if (this._disposed || this.termPtr === 0) return 0;
     return this.wasm.exports.synchronized_output_generation(this.termPtr);
+  }
+
+  kittyKeyboardFlags(): number {
+    if (this._disposed || this.termPtr === 0) return 0;
+    return this.wasm.exports.kitty_keyboard_flags?.(this.termPtr) ?? 0;
+  }
+
+  getGraphicsState(): TerminalGraphicsState | null {
+    if (this._disposed || this.termPtr === 0) return null;
+    const generation = this.wasm.exports.graphics_generation?.(this.termPtr);
+    const imageCount =
+      this.wasm.exports.graphics_image_count?.(this.termPtr) ?? 0;
+    const placementCount =
+      this.wasm.exports.graphics_placement_count?.(this.termPtr) ?? 0;
+    if (generation === undefined || !Number.isSafeInteger(generation))
+      return null;
+    if (
+      !Number.isSafeInteger(imageCount) ||
+      !Number.isSafeInteger(placementCount) ||
+      imageCount < 0 ||
+      placementCount < 0
+    )
+      return null;
+    // The WASM record exports are intentionally bounded. Do not expose a
+    // silently truncated snapshot when a malformed or unexpectedly large
+    // backend reports more records than the adapter can copy.
+    if (imageCount > 16384 || placementCount > 16384) return null;
+    const imageCapacity = imageCount;
+    const placementCapacity = placementCount;
+    if (
+      !Number.isSafeInteger(imageCapacity) ||
+      !Number.isSafeInteger(placementCapacity)
+    )
+      return null;
+    const size =
+      imageCapacity * GRAPHICS_IMAGE_BYTES +
+      placementCapacity * GRAPHICS_PLACEMENT_BYTES;
+    if (!Number.isSafeInteger(size)) return null;
+    if (size === 0) {
+      if (this._graphicsBufPtr !== 0)
+        freeBuffer(this.wasm, this._graphicsBufPtr, this._graphicsBufSize);
+      this._graphicsBufPtr = 0;
+      this._graphicsBufSize = 0;
+      const result: TerminalGraphicsState = {
+        generation,
+        images: [],
+        placements: [],
+      };
+      this._graphicsState = result;
+      return cloneGraphicsState(result);
+    }
+    if (size !== this._graphicsBufSize || this._graphicsBufPtr === 0) {
+      if (this._graphicsBufPtr !== 0)
+        freeBuffer(this.wasm, this._graphicsBufPtr, this._graphicsBufSize);
+      this._graphicsBufSize = size;
+      this._graphicsBufPtr = allocBuffer(this.wasm, size);
+    }
+    if (this._graphicsBufPtr === 0) return null;
+    try {
+      const images = readGraphicsImages(
+        this.wasm,
+        this.termPtr,
+        this._graphicsBufPtr,
+        imageCapacity,
+      );
+      const placements = readGraphicsPlacements(
+        this.wasm,
+        this.termPtr,
+        this._graphicsBufPtr + imageCapacity * GRAPHICS_IMAGE_BYTES,
+        placementCapacity,
+      );
+      const result = {
+        generation,
+        images: images.map((image) => ({ ...image })),
+        placements: placements.map((placement) => ({ ...placement })),
+      };
+      this._graphicsState = result;
+      return cloneGraphicsState(result);
+    } catch {
+      return null;
+    }
+  }
+
+  getGraphicsImage(imageId: number, version: number): TerminalImageData | null {
+    if (this._disposed || this.termPtr === 0) return null;
+    const state = this._graphicsState ?? this.getGraphicsState();
+    const image = state?.images.find(
+      (value) => value.imageId === imageId && value.version === version,
+    );
+    if (
+      !image ||
+      !this.wasm.exports.graphics_image_size ||
+      !this.wasm.exports.graphics_image_copy
+    )
+      return null;
+    let size: number;
+    try {
+      size = this.wasm.exports.graphics_image_size(
+        this.termPtr,
+        imageId,
+        version,
+      );
+    } catch {
+      return null;
+    }
+    const expectedSize = image.width * image.height * 4;
+    if (
+      !Number.isSafeInteger(size) ||
+      size <= 0 ||
+      !Number.isSafeInteger(expectedSize) ||
+      size !== expectedSize
+    )
+      return null;
+    const ptr = allocBuffer(this.wasm, size);
+    if (ptr === 0) return null;
+    try {
+      const copied = this.wasm.exports.graphics_image_copy(
+        this.termPtr,
+        imageId,
+        version,
+        ptr,
+        size,
+      );
+      if (copied !== size) return null;
+      const rgba = new Uint8Array(
+        this.wasm.exports.memory.buffer,
+        ptr,
+        copied,
+      ).slice();
+      return {
+        imageId,
+        version,
+        width: image.width,
+        height: image.height,
+        rgba,
+      };
+    } catch {
+      return null;
+    } finally {
+      freeBuffer(this.wasm, ptr, size);
+    }
+  }
+
+  getResourceState(): TerminalResourceState {
+    const limit = imageStorageLimit(this._options);
+    if (
+      this._disposed ||
+      !this.termPtr ||
+      !this.wasm.exports.graphics_image_count
+    )
+      return {};
+    const state = this.getGraphicsState();
+    const used = this.wasm.exports.graphics_bytes_used?.(this.termPtr) ?? 0;
+    const capacity =
+      this.wasm.exports.graphics_capacity?.(this.termPtr) ?? limit;
+    const rejected = this.wasm.exports.graphics_rejected?.(this.termPtr) ?? 0;
+    const evicted = this.wasm.exports.graphics_evicted?.(this.termPtr) ?? 0;
+    return {
+      graphics: {
+        capacity: Number.isSafeInteger(capacity) ? capacity : limit,
+        used: Number.isSafeInteger(used) ? used : 0,
+        imageCount: state?.images.length ?? 0,
+        placementCount: state?.placements.length ?? 0,
+        rejected: Number.isSafeInteger(rejected) ? rejected : 0,
+        evicted: Number.isSafeInteger(evicted) ? evicted : 0,
+        saturated: limit > 0 && used >= limit,
+      },
+    };
+  }
+
+  dispose(): void {
+    if (this._disposed) return;
+    this._disposed = true;
+    this._deinitTerminal();
+    this._cols = 0;
+    this._rows = 0;
+  }
+
+  private _deinitTerminal(): void {
+    if (this.termPtr !== 0) {
+      try {
+        this.wasm.exports.deinit(this.termPtr);
+      } catch {
+        // Disposal is best-effort when an older or already-invalid WASM
+        // instance is supplied by an application.
+      }
+    }
+    this.termPtr = 0;
+    for (const [ptr, size] of [
+      [this._viewportBufPtr, this._viewportBufSize],
+      [this._scrollbackBufPtr, this._scrollbackBufSize],
+      [this._graphemeBufPtr, this._graphemeBufSize],
+      [this._hyperlinkBufPtr, this._hyperlinkBufSize],
+      [this._graphicsBufPtr, this._graphicsBufSize],
+    ] as const)
+      if (ptr !== 0) freeBuffer(this.wasm, ptr, size);
+    this._viewportBufPtr =
+      this._scrollbackBufPtr =
+      this._graphemeBufPtr =
+      this._hyperlinkBufPtr =
+      this._graphicsBufPtr =
+        0;
+    this._viewportBufSize = this._scrollbackBufSize = this._graphicsBufSize = 0;
+    this._viewportView = this._scrollbackView = null;
+    this._scrollbackOffset = -1;
+    this._scrollbackLen = 0;
+    this._viewportStale = true;
+    this._graphicsState = null;
   }
 
   // -- Side outputs --
@@ -294,6 +562,7 @@ export class GhosttyCore implements TerminalCore {
   }
 
   getResponse(): string | null {
+    if (this._disposed || this.termPtr === 0) return null;
     const bufSize = 4096;
     const bufPtr = allocBuffer(this.wasm, bufSize);
     if (bufPtr === 0) return null;
@@ -311,14 +580,17 @@ export class GhosttyCore implements TerminalCore {
   // -- Scrollback --
 
   getScrollbackCount(): number {
+    if (this._disposed || this.termPtr === 0) return 0;
     return this.wasm.exports.get_scrollback_count(this.termPtr);
   }
 
   getScrollbackDiscardedCount(): number {
+    if (this._disposed || this.termPtr === 0) return 0;
     return this.wasm.exports.get_scrollback_discarded_count(this.termPtr);
   }
 
   getScrollbackCell(offset: number, col: number): CellData {
+    if (this._disposed || this.termPtr === 0) return BLANK_CELL;
     const len = this._ensureScrollbackLine(offset);
     const view = this._scrollbackView;
     if (!view || col >= len) return BLANK_CELL;
@@ -343,6 +615,7 @@ export class GhosttyCore implements TerminalCore {
   }
 
   getScrollbackLineLen(offset: number): number {
+    if (this._disposed || this.termPtr === 0) return 0;
     return this._ensureScrollbackLine(offset);
   }
 
@@ -357,6 +630,9 @@ export class GhosttyCore implements TerminalCore {
   private _invalidate(): void {
     this._viewportStale = true;
     this._scrollbackOffset = -1;
+    // Graphics state is an O(records) snapshot. Mark it stale here and let
+    // the renderer/resource inspector request it when it is actually needed.
+    this._graphicsState = null;
   }
 
   private _decodeGrapheme(len: number): string | undefined {

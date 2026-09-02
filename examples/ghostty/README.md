@@ -18,6 +18,7 @@ Opens at `ghostty-example.wterm.localhost` via [portless](https://github.com/ver
 - `@wterm/ghostty` loads the ghostty-vt WASM binary (~400 KB, built from upstream ghostty source) and creates a `GhosttyCore` instance
 - The core is passed to `WTerm` via the `core` option — from that point on, everything works identically to the built-in core
 - `@wterm/dom` renders the terminal grid into the DOM as usual, consuming `TerminalCore` methods
+- `src/main.ts` emits a small direct RGB Kitty Graphics Protocol image, which appears as a decorative canvas overlay without changing the text rows or scroll height
 
 ## Key Files
 

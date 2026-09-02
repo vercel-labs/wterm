@@ -45,9 +45,19 @@ function onData(chunk: string) {
 
 ## Props
 
-The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `cursorBlink`) plus [Vue-only props](/api-reference#vue-only-props) (`theme`). Pass a [`TerminalCore`](/ghostty) instance to the `core` prop to use an alternative emulation backend.
+The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`) plus [Vue-only props](/api-reference#vue-only-props) (`theme`). Pass a [`TerminalCore`](/ghostty) instance to the `core` prop to use an alternative emulation backend.
 
 Because `inheritAttrs` is enabled, standard DOM attributes (`class`, `style`, `id`, ARIA props, etc.) are forwarded to the root `<div>`.
+
+The Vue wrapper delegates rendering to `@wterm/dom`, so a graphics-capable
+core such as `@wterm/ghostty` automatically renders direct Kitty PNG/RGB/RGBA
+images. Set `maxImageWidth` and/or `maxImageHeight` to constrain their rendered
+size in CSS pixels; images preserve their aspect ratio and are never enlarged.
+Image canvases are decorative (`aria-hidden`, non-focusable, and
+pointer-transparent); text remains the accessible terminal surface.
+
+The underlying DOM terminal also answers Kitty pixel geometry queries from the
+rendered viewport, so direct image clients can negotiate their display size.
 
 ## Events
 

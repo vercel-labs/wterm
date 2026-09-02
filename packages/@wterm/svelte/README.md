@@ -21,7 +21,7 @@ npm install @wterm/dom @wterm/svelte
 
 ## Props
 
-`Terminal` accepts all shared terminal options: `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `cursorBlink`, and `debug`.
+`Terminal` accepts all shared terminal options: `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, and `debug`.
 
 It also accepts a `theme` prop, which applies a `theme-<name>` class to the root element. Standard `div` attributes like `class`, `style`, `id`, and ARIA props are forwarded to the root element.
 
@@ -40,6 +40,12 @@ Svelte 5 uses callback props for component events:
 ```
 
 When no `onData` callback is provided, input is echoed back automatically by `@wterm/dom`.
+
+The component delegates rendering to `@wterm/dom`, so passing a graphics-capable
+core such as `@wterm/ghostty` renders direct Kitty PNG/RGB/RGBA output. Use
+`maxImageWidth` and/or `maxImageHeight` to constrain oversized images while
+preserving their aspect ratio. Image canvases are decorative and
+`aria-hidden`; they are pointer-transparent and never replace the text rows.
 
 ## Imperative API
 
