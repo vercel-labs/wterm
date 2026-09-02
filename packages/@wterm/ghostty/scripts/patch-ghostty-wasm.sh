@@ -31,13 +31,23 @@ if [[ ! -f "$PAGE_ZIG" ]]; then
   exit 1
 fi
 
-[[ -f "$PAGE_ZIG.orig" ]] || cp "$PAGE_ZIG" "$PAGE_ZIG.orig"
-[[ -f "$PAGELIST_ZIG.orig" ]] || cp "$PAGELIST_ZIG" "$PAGELIST_ZIG.orig"
-[[ -f "$TERMINAL_ZIG.orig" ]] || cp "$TERMINAL_ZIG" "$TERMINAL_ZIG.orig"
-[[ -f "$IMAGE_ZIG.orig" ]] || cp "$IMAGE_ZIG" "$IMAGE_ZIG.orig"
-[[ -f "$STORAGE_ZIG.orig" ]] || cp "$STORAGE_ZIG" "$STORAGE_ZIG.orig"
-[[ -f "$EXEC_ZIG.orig" ]] || cp "$EXEC_ZIG" "$EXEC_ZIG.orig"
-[[ -f "$UNICODE_ZIG.orig" ]] || cp "$UNICODE_ZIG" "$UNICODE_ZIG.orig"
+# Keep a pristine copy of every pinned upstream file and always start from it.
+# The Zig package cache is shared between builds, so patching the current file
+# in place and trying to recognize every transformed shape is fragile: a
+# second invocation must produce the same source as the first one. The .orig
+# files are deliberately adjacent to the cache entries and are not part of the
+# generated WASM artifact.
+for source in \
+  "$PAGE_ZIG" \
+  "$PAGELIST_ZIG" \
+  "$TERMINAL_ZIG" \
+  "$IMAGE_ZIG" \
+  "$STORAGE_ZIG" \
+  "$EXEC_ZIG" \
+  "$UNICODE_ZIG"; do
+  [[ -f "$source.orig" ]] || cp "$source" "$source.orig"
+  cp "$source.orig" "$source"
+done
 
 # ---------------------------------------------------------------
 # Patch PageList.zig — pageAllocator()

@@ -53,6 +53,9 @@ echo "ghostty source: $GHOSTTY_SRC"
 # ---------------------------------------------------------------------------
 echo "Applying WASM patches..."
 bash "$SCRIPT_DIR/patch-ghostty-wasm.sh" "$GHOSTTY_SRC"
+# The patch script operates on the shared Zig package cache. Run it again as a
+# regression check so a reused cache cannot make rebuilds depend on history.
+bash "$SCRIPT_DIR/patch-ghostty-wasm.sh" "$GHOSTTY_SRC"
 
 # ---------------------------------------------------------------------------
 # 4. Build
