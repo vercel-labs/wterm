@@ -2,11 +2,15 @@
 # Patches ghostty source for wasm32-freestanding compatibility.
 #
 # The pinned Ghostty source needs these targeted WASM patches:
-#   1. page.zig — uses posix.mmap/munmap for page memory
-#   2. PageList.zig — pageAllocator() returns Mach VM allocator on macOS
+#   1. Terminal.zig — forwards the per-screen Kitty image limit
+#   2. kitty/graphics_image.zig — bounds direct decoding and removes POSIX time
+#   3. kitty/graphics_storage.zig — bounds and compacts image/placement storage
+#   4. page.zig — uses posix.mmap/munmap for page memory
+#   5. PageList.zig — pageAllocator() returns Mach VM allocator on macOS
 #
-# Page memory is replaced with wasm_allocator on WASM targets using
-# comptime isWasm() checks, matching ghostty's own conditional style.
+# Page memory is replaced with wasm_allocator on WASM targets, Kitty file and
+# shared-memory media are disabled, Wuffs gets freestanding compatibility
+# declarations, and image metadata is compacted after eviction.
 #
 # Pinned to ghostty v1.3.1 — verify after version bumps.
 set -euo pipefail
@@ -158,9 +162,11 @@ if '.kitty_image_storage_limit = opts.kitty_image_storage_limit' not in src:
 with open('$TERMINAL_ZIG', 'w') as f: f.write(src)
 "
 
-# ---------------------------------------------------------------
-# Patch Kitty image storage with an eviction counter. The counter is exposed
-# as a diagnostic only; image ownership and eviction policy remain upstream.
+# Patch Kitty image storage with an eviction counter and bounded metadata.
+# The upstream maps use tombstones after removeByPtr. Repeated image IDs can
+# therefore grow their backing allocation even while decoded bytes stay under
+# the configured limit. Compact the image map after eviction/deletion and
+# reject new placements once the independent placement budget is full.
 # ---------------------------------------------------------------
 python3 -c "
 with open('$STORAGE_ZIG') as f: src = f.read()
@@ -183,6 +189,100 @@ if 'self.evicted_count += 1;' not in src:
 with open('$STORAGE_ZIG', 'w') as f: f.write(src)
 "
 
+# Bound metadata independently of decoded pixels. AutoHashMapUnmanaged keeps
+# its backing allocation after removeByPtr, so compact the image map whenever
+# an eviction or deletion changes its resident set. Placements are capped and
+# reject new entries at capacity; failed placement commands release their pin
+# in Ghostty's executor and leave the bounded set intact.
+python3 -c "
+with open('$STORAGE_ZIG') as f: src = f.read()
+
+if 'const wterm_max_placements: usize = 4096;' not in src:
+    marker = 'const log = std.log.scoped(.kitty_gfx);'
+    if marker not in src: raise SystemExit('Kitty storage log marker changed')
+    src = src.replace(
+        marker,
+        marker + '\\n\\n/// Bound placement metadata independently of decoded image bytes.\\n'
+        'const wterm_max_placements: usize = 4096;',
+        1,
+    )
+
+placement_marker = '        const gop = try self.placements.getOrPut(alloc, key);\\n'
+placement_guard = (
+    '        if (self.placements.count() >= wterm_max_placements and\\n'
+    '            self.placements.get(key) == null)\\n'
+    '        {\\n'
+    '            return error.OutOfMemory;\\n'
+    '        }\\n\\n'
+)
+if placement_guard not in src:
+    if placement_marker not in src: raise SystemExit('Kitty placement insertion shape changed')
+    src = src.replace(placement_marker, placement_guard + placement_marker, 1)
+
+compact_helper = (
+    '\\n    /// Rebuild the image map with capacity proportional to resident entries.\\n'
+    '    /// Image values contain borrowed slices here; their owned pixel data is\\n'
+    '    /// intentionally not deinitialized while the map is replaced.\\n'
+    '    fn compactImages(self: *ImageStorage, alloc: Allocator) void {\\n'
+    '        if (self.images.count() == 0) {\\n'
+    '            self.images.clearAndFree(alloc);\\n'
+    '            return;\\n'
+    '        }\\n'
+    '        const compacted = self.images.clone(alloc) catch return;\\n'
+    '        self.images.deinit(alloc);\\n'
+    '        self.images = compacted;\\n'
+    '    }\\n'
+)
+if 'fn compactImages(self: *ImageStorage' not in src:
+    marker = '    pub fn imageById(self: *const ImageStorage, image_id: u32) ?Image {\\n'
+    if marker not in src: raise SystemExit('Kitty image lookup shape changed')
+    src = src.replace(marker, compact_helper + marker, 1)
+
+delete_marker = '        }\\n    }\\n\\n    fn deleteById(\\n'
+delete_replacement = (
+    '        }\\n\\n'
+    '        self.compactImages(alloc);\\n'
+    '    }\\n\\n'
+    '    fn deleteById(\\n'
+)
+if 'self.compactImages(alloc);\\n    }\\n\\n    fn deleteById' not in src:
+    if delete_marker not in src: raise SystemExit('Kitty delete function shape changed')
+    src = src.replace(delete_marker, delete_replacement, 1)
+
+evict_success = '                if (evicted > req) return true;'
+if 'self.compactImages(alloc);\\n                    return true;' not in src:
+    if evict_success not in src: raise SystemExit('Kitty eviction completion shape changed')
+    src = src.replace(
+        evict_success,
+        '                if (evicted > req) {\\n'
+        '                    self.compactImages(alloc);\\n'
+        '                    return true;\\n'
+        '                }',
+        1,
+    )
+
+evict_end = '        return false;\\n    }\\n\\n    /// Every placement is uniquely identified'
+if 'self.compactImages(alloc);\\n        return false;\\n    }\\n\\n    /// Every placement' not in src:
+    if evict_end not in src: raise SystemExit('Kitty eviction return shape changed')
+    src = src.replace(
+        evict_end,
+        '        self.compactImages(alloc);\\n'
+        '        return false;\\n    }\\n\\n'
+        '    /// Every placement is uniquely identified',
+        1,
+    )
+
+required = [
+    'const wterm_max_placements: usize = 4096;',
+    placement_guard,
+    'fn compactImages(self: *ImageStorage',
+    'self.compactImages(alloc);',
+]
+missing = [needle for needle in required if needle not in src]
+if missing: raise SystemExit(f'Kitty storage bound patch failed: {missing}')
+
+with open('$STORAGE_ZIG', 'w') as f: f.write(src)
+"
 # ---------------------------------------------------------------
 # Patch Kitty's WASM-incompatible clock, cap decoder allocations, and reject
 # oversized PNG dimensions before Wuffs can allocate a decoded pixel buffer.

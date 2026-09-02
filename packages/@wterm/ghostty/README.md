@@ -139,7 +139,15 @@ The WASM binary is built from upstream [ghostty-org/ghostty](https://github.com/
 ghostty (Zig dep)  →  WASM patches  →  wasm_api.zig (~300 LOC)  →  ghostty-vt.wasm  →  TypeScript bindings
 ```
 
-ghostty's `Terminal` and `Page` types use `posix.mmap` and Mach VM allocators internally, which don't exist on `wasm32-freestanding`. The build script applies small, targeted patches to replace these with `std.heap.wasm_allocator` and expose the discarded-row count from `PageList` (see `scripts/patch-ghostty-wasm.sh`). The patches are pinned to ghostty v1.3.1 and only touch two files: `page.zig` and `PageList.zig`.
+ghostty's `Terminal` and `Page` types use `posix.mmap` and Mach VM allocators internally, which don't exist on `wasm32-freestanding`. The build script applies small, targeted patches to replace these with `std.heap.wasm_allocator`, expose the discarded-row count from `PageList`, forward the per-screen image limit, bound and compact Kitty image/placement metadata, and make direct PNG decoding work without POSIX time. It also adds the Wuffs freestanding compatibility include/source configuration in `zig/build.zig`. The patches are pinned to ghostty v1.3.1 and touch these upstream files:
+
+- `src/terminal/Terminal.zig`
+- `src/terminal/kitty/graphics_image.zig`
+- `src/terminal/kitty/graphics_storage.zig`
+- `src/terminal/page.zig`
+- `src/terminal/PageList.zig`
+
+The Wuffs compatibility headers used by the build are `zig/src/wuffs-compat/{stdbool.h,stddef.h,stdint.h,stdlib.h,string.h}`; Wuffs itself is fetched from the pinned dependency in `zig/build.zig.zon`.
 
 The committed `wasm/ghostty-vt.wasm` binary means consumers never need Zig installed. Only maintainers rebuilding the WASM need Zig 0.15.x.
 

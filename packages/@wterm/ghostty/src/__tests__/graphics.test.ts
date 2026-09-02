@@ -130,4 +130,31 @@ describe("GhosttyCore Kitty graphics", () => {
       console.log = log;
     }
   });
+
+  it("bounds placement metadata when implicit placements are repeated", async () => {
+    const log = console.log;
+    console.log = () => {};
+    try {
+      const core = await newCore({ imageStorageLimit: 100 });
+      core.writeString(rgbImage(10, [1, 2, 3]));
+      const memory = (
+        core as unknown as {
+          wasm: { exports: { memory: WebAssembly.Memory } };
+        }
+      ).wasm.exports.memory;
+      const initialBytes = memory.buffer.byteLength;
+
+      for (let i = 0; i < 10_000; i++) {
+        core.writeString("\x1b_Ga=p,i=10\x1b\\");
+      }
+
+      const resource = core.getResourceState().graphics;
+      expect(resource?.placementCount).toBeLessThanOrEqual(4096);
+      expect(memory.buffer.byteLength).toBeLessThan(
+        initialBytes + 2 * 1024 * 1024,
+      );
+    } finally {
+      console.log = log;
+    }
+  }, 30_000);
 });
