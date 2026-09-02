@@ -260,6 +260,32 @@ describe("WTerm", () => {
       expect(rows.length).toBe(24);
     });
 
+    it("publishes the measured cell width without adding a selectable row", async () => {
+      const original = HTMLElement.prototype.getBoundingClientRect;
+      vi.spyOn(
+        HTMLElement.prototype,
+        "getBoundingClientRect",
+      ).mockImplementation(function () {
+        if (this.classList.contains("term-measure-probe")) {
+          return { width: 0, height: 18 } as DOMRect;
+        }
+        if (this.parentElement?.classList.contains("term-measure-probe")) {
+          return { width: 9.5, height: 18 } as DOMRect;
+        }
+        return original.call(this);
+      });
+
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+
+      expect(element.style.getPropertyValue("--term-cell-width")).toBe("9.5px");
+      expect(element.querySelectorAll(".term-row")).toHaveLength(24);
+      expect(element.querySelector(".term-measure-probe")?.textContent).toBe(
+        "W",
+      );
+      term.destroy();
+    });
+
     it("creates a hidden textarea for input", async () => {
       const term = new WTerm(element);
       await term.init();

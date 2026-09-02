@@ -28,8 +28,8 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Themes** — CSS custom properties with built-in Default, Solarized Dark, Monokai, and Light themes
 - **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly
 - **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window
-- **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws aligned
-- **Grapheme strings** — the Ghostty core preserves combining marks and ZWJ emoji through the DOM renderer and scrollback
+- **Stable Unicode cell alignment** — measured cell geometry keeps CJK, fullwidth, emoji, and grapheme runs aligned
+- **Cell-bounded box drawing** — CSS-painted U+2500–U+257F strokes join across cells and rows while remaining selectable text
 - **Kitty terminal images** — Ghostty-backed terminals render bounded direct PNG/RGB/RGBA graphics in a scroll-aware canvas overlay
 - **24-bit color** — full RGB SGR support
 - **Auto-resize** — `ResizeObserver`-based terminal resizing

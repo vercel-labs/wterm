@@ -50,6 +50,11 @@ export class WTerm {
   private _pendingResizeScrollTop: number | null = null;
   private _rowHeight = 0;
   private _charWidth = 0;
+  private _measureProbe: HTMLDivElement | null = null;
+  private _fontReadyHandler: (() => void) | null = null;
+  private _measureObserver: ResizeObserver | null = null;
+  private _lastContentWidth = 0;
+  private _lastContentHeight = 0;
   private _onClickFocus: (event: MouseEvent) => void;
   private _onScroll: () => void;
   private _onModifierChange: (event: KeyboardEvent) => void;
@@ -187,6 +192,8 @@ export class WTerm {
       } else {
         this._lockHeight();
       }
+
+      this._setupFontMeasurementTrigger();
 
       this.input.focus();
       this._initialRender();
@@ -486,41 +493,109 @@ export class WTerm {
     charWidth: number;
     rowHeight: number;
   } | null {
-    const row = document.createElement("div");
-    row.className = "term-row";
-    row.style.visibility = "hidden";
-    row.style.position = "absolute";
+    if (!this._measureProbe) {
+      const row = document.createElement("div");
+      row.className = "term-measure-probe";
+      const probe = document.createElement("span");
+      probe.textContent = "W";
+      row.appendChild(probe);
+      // Keep the probe outside the renderer-owned grid. Renderer.setup clears
+      // the grid when dimensions change, while this probe must remain alive so
+      // font and layout changes can be observed without rebuilding rows.
+      this.element.appendChild(row);
+      this._measureProbe = row;
+    }
 
-    const probe = document.createElement("span");
-    probe.textContent = "W";
-    row.appendChild(probe);
-
-    this._container.appendChild(row);
+    const probe = this._measureProbe.firstElementChild;
+    if (!(probe instanceof HTMLElement)) return null;
     const charWidth = probe.getBoundingClientRect().width;
-    const rowHeight = row.getBoundingClientRect().height;
-    row.remove();
+    const measuredRowHeight = this._measureProbe.getBoundingClientRect().height;
 
-    if (charWidth === 0 || rowHeight === 0) return null;
+    if (charWidth === 0 || measuredRowHeight === 0) return null;
+    // Keep the established integer row contract used by scrollback and input
+    // coordinates while retaining fractional precision for horizontal cells.
+    const rowHeight = Math.ceil(measuredRowHeight);
     this._charWidth = charWidth;
     this._rowHeight = rowHeight;
+    this.element.style.setProperty("--term-cell-width", `${charWidth}px`);
+    this.element.style.setProperty("--term-row-height", `${rowHeight}px`);
     return { charWidth, rowHeight };
+  }
+
+  private _setupFontMeasurementTrigger(): void {
+    const probe = this._measureProbe;
+    if (probe && typeof ResizeObserver !== "undefined") {
+      let lastWidth = this._charWidth;
+      let lastHeight = this._rowHeight;
+      this._measureObserver = new ResizeObserver(() => {
+        const measured = this._measureCharSize();
+        if (
+          measured &&
+          (measured.charWidth !== lastWidth ||
+            measured.rowHeight !== lastHeight)
+        ) {
+          lastWidth = measured.charWidth;
+          lastHeight = measured.rowHeight;
+          if (this.autoResize && this._lastContentWidth > 0) {
+            const newCols = Math.max(
+              1,
+              Math.floor(this._lastContentWidth / measured.charWidth),
+            );
+            const newRows = Math.max(
+              1,
+              Math.floor(this._lastContentHeight / measured.rowHeight),
+            );
+            if (newCols !== this.cols || newRows !== this.rows) {
+              this.resize(newCols, newRows);
+              return;
+            }
+          }
+          this._scheduleRender();
+        }
+      });
+      const measuredCell = probe.firstElementChild;
+      if (measuredCell) this._measureObserver.observe(measuredCell);
+      this._measureObserver.observe(probe);
+    }
+
+    const fontSet = (
+      this.element.ownerDocument as Document & {
+        fonts?: FontFaceSet;
+      }
+    ).fonts;
+    if (!fontSet) return;
+
+    this._fontReadyHandler = () => {
+      const previousWidth = this._charWidth;
+      const previousHeight = this._rowHeight;
+      const measured = this._measureCharSize();
+      if (
+        measured &&
+        (measured.charWidth !== previousWidth ||
+          measured.rowHeight !== previousHeight)
+      ) {
+        if (!this.autoResize) this._lockHeight();
+        this._scheduleRender();
+      }
+    };
+    fontSet.addEventListener("loadingdone", this._fontReadyHandler);
+    fontSet.addEventListener("loadingerror", this._fontReadyHandler);
   }
 
   private _setupResizeObserver(): void {
     const initial = this._measureCharSize();
     if (!initial) return;
 
-    let { charWidth, rowHeight } = initial;
-
     this.resizeObserver = new ResizeObserver((entries) => {
-      const measured = this._measureCharSize();
-      if (measured) {
-        charWidth = measured.charWidth;
-        rowHeight = measured.rowHeight;
-      }
+      this._measureCharSize();
+      const charWidth = this._charWidth;
+      const rowHeight = this._rowHeight;
+      if (charWidth <= 0 || rowHeight <= 0) return;
 
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
+        this._lastContentWidth = width;
+        this._lastContentHeight = height;
         const newCols = Math.max(1, Math.floor(width / charWidth));
         const newRows = Math.max(1, Math.floor(height / rowHeight));
         if (newCols !== this.cols || newRows !== this.rows) {
@@ -536,6 +611,18 @@ export class WTerm {
     this._cancelScheduledRender();
     this._cancelSynchronizedOutputFallback();
     if (this.resizeObserver) this.resizeObserver.disconnect();
+    if (this._measureObserver) this._measureObserver.disconnect();
+    this._measureObserver = null;
+    const fontSet = (
+      this.element.ownerDocument as Document & {
+        fonts?: FontFaceSet;
+      }
+    ).fonts;
+    if (fontSet && this._fontReadyHandler) {
+      fontSet.removeEventListener("loadingdone", this._fontReadyHandler);
+      fontSet.removeEventListener("loadingerror", this._fontReadyHandler);
+    }
+    this._fontReadyHandler = null;
     if (this.input) this.input.destroy();
     this.renderer?.destroy();
     this.renderer = null;
@@ -555,6 +642,7 @@ export class WTerm {
     );
     this.element.classList.remove("link-modifier-active");
     this.element.innerHTML = "";
+    this._measureProbe = null;
     if (
       this.debug &&
       (globalThis as Record<string, unknown>).__wterm === this

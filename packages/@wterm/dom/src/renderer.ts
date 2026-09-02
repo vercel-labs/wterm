@@ -1,5 +1,6 @@
 import type { CellData, TerminalCore } from "@wterm/core";
 import { GraphicsLayer } from "./graphics-layer.js";
+import { getBoxBackground, hasBoxDrawingMapping } from "./box-drawing.js";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -57,6 +58,7 @@ function buildCellStyle(
   flags: number,
   fgRgb?: number,
   bgRgb?: number,
+  includeBackground = true,
 ): string {
   let fgIdx = fg,
     bgIdx = bg,
@@ -79,7 +81,7 @@ function buildCellStyle(
 
   let style = "";
   if (fgCSS) style += `color:${fgCSS};`;
-  if (bgCSS) style += `background:${bgCSS};`;
+  if (includeBackground && bgCSS) style += `background:${bgCSS};`;
   if (flags & FLAG_BOLD) style += "font-weight:bold;";
   if (flags & FLAG_DIM) style += "opacity:0.5;";
   if (flags & FLAG_ITALIC) style += "font-style:italic;";
@@ -330,8 +332,7 @@ export class Renderer {
     };
 
     const flushRun = (endCol: number) => {
-      if (!runText) return;
-      const escaped = escapeHTML(runText);
+      if (runCells.length === 0) return;
       let content = "";
 
       if (cursorCol >= runStart && cursorCol < endCol) {
@@ -341,26 +342,34 @@ export class Renderer {
         const after = runCells.slice(offset + 1).join("");
 
         if (before) {
-          content += runStyle
-            ? `<span style="${runStyle}">${escapeHTML(before)}</span>`
-            : `<span>${escapeHTML(before)}</span>`;
+          content += spanHTML("", runStyle, before, offset);
         }
-        content += runStyle
-          ? `<span class="term-cursor" style="${runStyle}">${escapeHTML(cursorChar)}</span>`
-          : `<span class="term-cursor">${escapeHTML(cursorChar)}</span>`;
+        content += spanHTML("term-cursor", runStyle, cursorChar, 1);
         if (after) {
-          content += runStyle
-            ? `<span style="${runStyle}">${escapeHTML(after)}</span>`
-            : `<span>${escapeHTML(after)}</span>`;
+          content += spanHTML(
+            "",
+            runStyle,
+            after,
+            runCells.length - offset - 1,
+          );
         }
       } else {
-        content += runStyle
-          ? `<span style="${runStyle}">${escaped}</span>`
-          : `<span>${escaped}</span>`;
+        content += spanHTML("", runStyle, runText, runCells.length);
       }
       appendContent(content, runLinkKey, runLinkUri);
       runText = "";
       runCells = [];
+    };
+
+    const spanHTML = (
+      className: string,
+      style: string,
+      text: string,
+      cellCount: number,
+    ): string => {
+      const classAttr = className ? ` class="${className}"` : "";
+      const styleAttr = ` style="--term-cell-count:${cellCount};${style}"`;
+      return `<span${classAttr}${styleAttr} data-cell-count="${cellCount}">${escapeHTML(text)}</span>`;
     };
 
     const appendStyledSpan = (
@@ -369,11 +378,10 @@ export class Renderer {
       text: string,
       linkKey: string,
       linkUri?: string,
+      cellCount = 1,
     ) => {
-      const classAttr = className ? ` class="${className}"` : "";
-      const styleAttr = style ? ` style="${style}"` : "";
       appendContent(
-        `<span${classAttr}${styleAttr}>${escapeHTML(text)}</span>`,
+        spanHTML(className, style, text, cellCount),
         linkKey,
         linkUri,
       );
@@ -448,7 +456,7 @@ export class Renderer {
           cursorCol >= col && cursorCol < col + 2
             ? "term-wide term-cursor"
             : "term-wide";
-        appendStyledSpan(cls, style, ch, cellLinkKey, cellLinkUri);
+        appendStyledSpan(cls, style, ch, cellLinkKey, cellLinkUri, 2);
 
         runStyle = "";
         runLinkKey = "";
@@ -459,7 +467,45 @@ export class Renderer {
         continue;
       }
 
-      if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
+      if (inBounds && hasBoxDrawingMapping(cp)) {
+        flushRun(col);
+
+        const colors = resolveColors(
+          cell.fg,
+          cell.bg,
+          cell.flags,
+          cell.fgRgb,
+          cell.bgRgb,
+        );
+        const cls = col === cursorCol ? "term-box term-cursor" : "term-box";
+        const background = getBoxBackground(cp, colors.fg, colors.bg);
+        const style =
+          `--term-box-background:${background};` +
+          `--term-box-foreground:${colors.fg};` +
+          buildCellStyle(
+            cell.fg,
+            cell.bg,
+            cell.flags,
+            cell.fgRgb,
+            cell.bgRgb,
+            false,
+          ) +
+          "color:transparent;";
+        appendStyledSpan(
+          cls,
+          style,
+          String.fromCodePoint(cp),
+          cellLinkKey,
+          cellLinkUri,
+        );
+
+        runStyle = "";
+        runLinkKey = "";
+        runLinkUri = undefined;
+        runText = "";
+        runCells = [];
+        runStart = col + 1;
+      } else if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
         flushRun(col);
 
         const colors = resolveColors(
@@ -472,8 +518,10 @@ export class Renderer {
         const cls = col === cursorCol ? "term-block term-cursor" : "term-block";
         const bg = getBlockBackground(cp, colors.fg, colors.bg);
         const dim = cell.flags & FLAG_DIM ? "opacity:0.5;" : "";
-        appendContent(
-          `<span class="${cls}" style="background:${bg};${dim}"></span>`,
+        appendStyledSpan(
+          cls,
+          `background:${bg};${dim}`,
+          "",
           cellLinkKey,
           cellLinkUri,
         );
@@ -668,6 +716,19 @@ export class Renderer {
   render(core: TerminalCore, viewport?: RenderViewport): void {
     const rows = core.getRows();
     const cols = core.getCols();
+
+    if (viewport?.charWidth && viewport.charWidth > 0) {
+      this.container.style.setProperty(
+        "--term-cell-width",
+        `${viewport.charWidth}px`,
+      );
+    }
+    if (viewport?.rowHeight && viewport.rowHeight > 0) {
+      this.container.style.setProperty(
+        "--term-row-height",
+        `${viewport.rowHeight}px`,
+      );
+    }
 
     let resized = false;
     if (rows !== this.rows || cols !== this.cols) {

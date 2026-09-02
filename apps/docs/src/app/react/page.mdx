@@ -53,6 +53,9 @@ images. There are no image-specific React props. Image canvases are decorative
 (`aria-hidden`, non-focusable, and pointer-transparent); text remains the
 accessible terminal surface.
 
+It also inherits the DOM renderer's measured cell alignment for graphemes, wide
+Unicode cells, and cell-bounded box-drawing borders.
+
 ## useTerminal Hook
 
 Returns a ref and imperative helpers:

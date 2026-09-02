@@ -55,6 +55,9 @@ images. There are no image-specific Vue props. Image canvases are decorative
 (`aria-hidden`, non-focusable, and pointer-transparent); text remains the
 accessible terminal surface.
 
+It also inherits the DOM renderer's measured cell alignment for graphemes, wide
+Unicode cells, and cell-bounded box-drawing borders.
+
 ## Events
 
 Input callbacks are exposed as Vue events rather than `onXxx` props:
