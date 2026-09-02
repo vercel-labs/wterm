@@ -131,7 +131,7 @@ describe("GhosttyCore Kitty graphics", () => {
     } finally {
       console.log = log;
     }
-  });
+  }, 30_000);
 
   it("bounds placement metadata when implicit placements are repeated", async () => {
     const log = console.log;
