@@ -319,7 +319,7 @@ if 'self.compactImages(alloc);\\n                    self.compactPlacements(allo
     if evict_success not in src: raise SystemExit('Kitty eviction completion shape changed')
     src = src.replace(
         evict_success,
-        '                if (evicted > req) {\\n'
+        '                if (evicted >= req) {\\n'
         '                    self.compactImages(alloc);\\n'
         '                    self.compactPlacements(alloc);\\n'
         '                    return true;\\n'

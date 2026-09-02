@@ -97,6 +97,30 @@ describe("GhosttyCore Kitty graphics", () => {
     expect(core.getGraphicsState()?.placements).toEqual([]);
   });
 
+  it("admits an image after evicting an exact-limit resident image", async () => {
+    const core = await newCore({ imageStorageLimit: 3 });
+
+    core.writeString(rgbImage(10, [255, 0, 0]));
+    core.writeString(rgbImage(11, [0, 255, 0]));
+
+    expect(core.getGraphicsImage(10, 1)).toBeNull();
+    const image = core
+      .getGraphicsState()
+      ?.images.find((value) => value.imageId === 11);
+    expect(image).toBeDefined();
+    expect(core.getGraphicsImage(11, image!.version)?.rgba).toEqual(
+      new Uint8Array([0, 255, 0, 255]),
+    );
+    expect(core.getResourceState().graphics).toMatchObject({
+      capacity: 3,
+      used: 3,
+      imageCount: 1,
+      placementCount: 1,
+      evicted: 1,
+      rejected: 0,
+    });
+  });
+
   it("keeps version tracking bounded to resident images after eviction", async () => {
     const log = console.log;
     console.log = () => {};
