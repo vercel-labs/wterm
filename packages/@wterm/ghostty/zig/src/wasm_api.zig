@@ -117,7 +117,6 @@ const ResponseHandler = struct {
     queue: *ResponseQueue,
     synchronized_output_generation: *u32,
     graphics_generation: *u32,
-    image_versions: *std.AutoHashMapUnmanaged(u64, u32),
     rejected_images: *u32,
     apc: KittyHandler = .{},
     apc_bytes: usize = 0,
@@ -129,7 +128,6 @@ const ResponseHandler = struct {
         queue: *ResponseQueue,
         generation: *u32,
         graphics_generation_ptr: *u32,
-        image_versions: *std.AutoHashMapUnmanaged(u64, u32),
         rejected_images: *u32,
     ) ResponseHandler {
         return .{
@@ -138,7 +136,6 @@ const ResponseHandler = struct {
             .queue = queue,
             .synchronized_output_generation = generation,
             .graphics_generation = graphics_generation_ptr,
-            .image_versions = image_versions,
             .rejected_images = rejected_images,
         };
     }
@@ -146,28 +143,6 @@ const ResponseHandler = struct {
     pub fn deinit(self: *ResponseHandler) void {
         self.apc.deinit();
         self.inner.deinit();
-    }
-
-    fn versionKey(terminal: *const Terminal, image_id: u32) u64 {
-        return (@as(u64, @intFromEnum(terminal.screens.active_key)) << 32) | image_id;
-    }
-
-    fn bumpImageVersion(self: *ResponseHandler, image_id: u32) void {
-        if (image_id == 0) return;
-        const key = versionKey(self.inner.terminal, image_id);
-        const entry = self.image_versions.getOrPut(self.alloc, key) catch return;
-        if (entry.found_existing) {
-            entry.value_ptr.* +%= 1;
-            if (entry.value_ptr.* == 0) entry.value_ptr.* = 1;
-        } else {
-            entry.value_ptr.* = 1;
-        }
-    }
-
-    fn imageVersion(self: *const ResponseHandler, image_id: u32) u32 {
-        const key = versionKey(self.inner.terminal, image_id);
-        const base = self.image_versions.get(key) orelse 1;
-        return (base & 0x7fffffff) | (@as(u32, @intFromEnum(self.inner.terminal.screens.active_key)) << 31);
     }
 
     fn transmission(cmd: *const KittyCommand) ?@TypeOf(cmd.control.transmit) {
@@ -192,24 +167,7 @@ const ResponseHandler = struct {
     fn handleKittyCommand(self: *ResponseHandler, cmd: *KittyCommand) void {
         if (self.rejectNonDirect(cmd)) return;
 
-        const before_id = switch (cmd.control) {
-            .delete => |delete| switch (delete) {
-                .id => |value| value.image_id,
-                else => 0,
-            },
-            else => 0,
-        };
         const response = self.inner.terminal.kittyGraphics(self.alloc, cmd);
-        if (transmission(cmd)) |tx| {
-            if (tx.image_id != 0) {
-                self.bumpImageVersion(tx.image_id);
-            } else if (tx.image_number != 0) {
-                if (self.inner.terminal.screens.active.kitty_images.imageByNumber(tx.image_number)) |image| {
-                    self.bumpImageVersion(image.id);
-                }
-            }
-        }
-        if (before_id != 0) self.bumpImageVersion(before_id);
         self.graphics_generation.* +%= 1;
 
         if (response) |resp| {
@@ -386,7 +344,6 @@ const State = struct {
     responses: ResponseQueue,
     synchronized_output_generation: u32,
     graphics_generation: u32,
-    image_versions: std.AutoHashMapUnmanaged(u64, u32),
     rejected_images: u32,
     evicted_images: u32,
 };
@@ -425,9 +382,16 @@ fn graphicsImages(state: *State, buf: [*]u8, max_records: u32) u32 {
 }
 
 fn imageVersionFor(state: *const State, image_id: u32) u32 {
-    const key = (@as(u64, @intFromEnum(state.terminal.screens.active_key)) << 32) | image_id;
-    const base = state.image_versions.get(key) orelse 1;
-    return (base & 0x7fffffff) | (@as(u32, @intFromEnum(state.terminal.screens.active_key)) << 31);
+    const storage: *const KittyStorage = &state.terminal.screens.active.kitty_images;
+    const image = storage.imageById(image_id) orelse return 1;
+    // Ghostty's image loader stamps every completed image with a monotonic
+    // transmit counter. Use that resident value as the cache-busting version
+    // instead of keeping a side map of every ID ever mentioned by a terminal.
+    // This means evicted/deleted IDs release all version metadata immediately.
+    var base: u32 = @truncate(image.transmit_time);
+    base &= 0x7fffffff;
+    if (base == 0) base = 1;
+    return base | (@as(u32, @intFromEnum(state.terminal.screens.active_key)) << 31);
 }
 
 fn graphicsPlacements(state: *State, buf: [*]u8, max_records: u32) u32 {
@@ -506,7 +470,6 @@ export fn init(
     state.responses = .{};
     state.synchronized_output_generation = 0;
     state.graphics_generation = 0;
-    state.image_versions = .{};
     state.rejected_images = 0;
     state.evicted_images = 0;
     state.stream = .initAlloc(allocator, .init(
@@ -515,7 +478,6 @@ export fn init(
         &state.responses,
         &state.synchronized_output_generation,
         &state.graphics_generation,
-        &state.image_versions,
         &state.rejected_images,
     ));
     state.render = RenderState.empty;
@@ -527,7 +489,6 @@ export fn deinit(ptr: usize) void {
     state.render.deinit(allocator);
     state.stream.deinit();
     state.terminal.deinit(allocator);
-    state.image_versions.deinit(allocator);
     allocator.destroy(state);
 }
 
