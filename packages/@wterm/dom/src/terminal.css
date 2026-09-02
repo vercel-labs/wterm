@@ -161,8 +161,8 @@
 }
 
 .wterm.focused .term-box.term-cursor {
-  background: var(--term-cursor) !important;
-  color: transparent !important;
+  background: var(--term-cursor);
+  color: transparent;
 }
 
 .wterm.focused.cursor-blink .term-cursor {
@@ -178,6 +178,25 @@
   50% {
     background: transparent;
     color: inherit;
+  }
+}
+
+/* Box glyphs paint their source character through a background. Keep the
+   cursor fill in the animation cascade so the off phase can reveal the
+   underlying cell-bounded stroke instead of being held by !important. */
+.wterm.focused.cursor-blink .term-box.term-cursor {
+  animation: box-cursor-blink 1s step-end infinite;
+}
+
+@keyframes box-cursor-blink {
+  0%,
+  100% {
+    background: var(--term-cursor);
+    color: transparent;
+  }
+  50% {
+    background: var(--term-box-background, var(--term-bg));
+    color: transparent;
   }
 }
 

@@ -58,6 +58,7 @@ function buildCellStyle(
   flags: number,
   fgRgb?: number,
   bgRgb?: number,
+  includeBackground = true,
 ): string {
   let fgIdx = fg,
     bgIdx = bg,
@@ -80,7 +81,7 @@ function buildCellStyle(
 
   let style = "";
   if (fgCSS) style += `color:${fgCSS};`;
-  if (bgCSS) style += `background:${bgCSS};`;
+  if (includeBackground && bgCSS) style += `background:${bgCSS};`;
   if (flags & FLAG_BOLD) style += "font-weight:bold;";
   if (flags & FLAG_DIM) style += "opacity:0.5;";
   if (flags & FLAG_ITALIC) style += "font-style:italic;";
@@ -481,8 +482,14 @@ export class Renderer {
         const style =
           `--term-box-background:${background};` +
           `--term-box-foreground:${colors.fg};` +
-          buildCellStyle(cell.fg, cell.bg, cell.flags, cell.fgRgb, cell.bgRgb) +
-          "background:var(--term-box-background);" +
+          buildCellStyle(
+            cell.fg,
+            cell.bg,
+            cell.flags,
+            cell.fgRgb,
+            cell.bgRgb,
+            false,
+          ) +
           "color:transparent;";
         appendStyledSpan(
           cls,

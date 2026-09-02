@@ -340,6 +340,59 @@ describe("Renderer", () => {
       }
     });
 
+    it("uses the Unicode direction and weight for mixed junctions", () => {
+      const expected: Record<
+        number,
+        [
+          string | undefined,
+          string | undefined,
+          string | undefined,
+          string | undefined,
+        ]
+      > = {
+        // top, right, bottom, left
+        0x251d: ["light", "heavy", "light", undefined],
+        0x251f: ["light", "light", "heavy", undefined],
+        0x2521: ["heavy", "heavy", "light", undefined],
+        0x2522: ["light", "heavy", "heavy", undefined],
+        0x252d: [undefined, "light", "light", "heavy"],
+        0x252f: [undefined, "heavy", "light", "heavy"],
+        0x2527: ["light", undefined, "heavy", "light"],
+        0x2535: ["light", "light", undefined, "heavy"],
+        0x2539: ["heavy", "light", undefined, "heavy"],
+        0x253d: ["light", "light", "light", "heavy"],
+        0x253f: ["light", "heavy", "light", "heavy"],
+        0x2540: ["heavy", "light", "light", "light"],
+        0x2543: ["heavy", "light", "light", "heavy"],
+        0x2547: ["heavy", "heavy", "light", "heavy"],
+        0x2548: ["light", "heavy", "heavy", "heavy"],
+        0x2549: ["heavy", "light", "heavy", "heavy"],
+        0x254a: ["heavy", "heavy", "heavy", "light"],
+      };
+
+      for (const [codePoint, arms] of Object.entries(expected)) {
+        const glyph = BOX_GLYPHS[Number(codePoint)];
+        expect([glyph.top, glyph.right, glyph.bottom, glyph.left]).toEqual(
+          arms,
+        );
+      }
+    });
+
+    it("puts rounded arcs at the corner named by the glyph", () => {
+      const backgrounds = [
+        [0x256d, "0 0"],
+        [0x256e, "100% 0"],
+        [0x256f, "100% 100%"],
+        [0x2570, "0 100%"],
+      ] as const;
+
+      for (const [codePoint, corner] of backgrounds) {
+        expect(getBoxBackground(codePoint, "red", "black")).toContain(
+          `circle at ${corner}`,
+        );
+      }
+    });
+
     it("places the cursor correctly after a wide cell", () => {
       const grid = [
         [
