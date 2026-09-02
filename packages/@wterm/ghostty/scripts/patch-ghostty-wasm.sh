@@ -5,8 +5,10 @@
 #   1. Terminal.zig — forwards the per-screen Kitty image limit
 #   2. kitty/graphics_image.zig — bounds direct decoding and removes POSIX time
 #   3. kitty/graphics_storage.zig — bounds and compacts image/placement storage
-#   4. page.zig — uses posix.mmap/munmap for page memory
-#   5. PageList.zig — pageAllocator() returns Mach VM allocator on macOS
+#   4. kitty/graphics_exec.zig — passes the owning screen to image storage
+#   5. kitty/graphics_unicode.zig — updates upstream image-storage tests
+#   6. page.zig — uses posix.mmap/munmap for page memory
+#   7. PageList.zig — pageAllocator() returns Mach VM allocator on macOS
 #
 # Page memory is replaced with wasm_allocator on WASM targets, Kitty file and
 # shared-memory media are disabled, Wuffs gets freestanding compatibility
@@ -21,6 +23,8 @@ PAGELIST_ZIG="$GHOSTTY_SRC/src/terminal/PageList.zig"
 TERMINAL_ZIG="$GHOSTTY_SRC/src/terminal/Terminal.zig"
 IMAGE_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_image.zig"
 STORAGE_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_storage.zig"
+EXEC_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_exec.zig"
+UNICODE_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_unicode.zig"
 
 if [[ ! -f "$PAGE_ZIG" ]]; then
   echo "Error: $PAGE_ZIG not found"
@@ -32,6 +36,8 @@ fi
 [[ -f "$TERMINAL_ZIG.orig" ]] || cp "$TERMINAL_ZIG" "$TERMINAL_ZIG.orig"
 [[ -f "$IMAGE_ZIG.orig" ]] || cp "$IMAGE_ZIG" "$IMAGE_ZIG.orig"
 [[ -f "$STORAGE_ZIG.orig" ]] || cp "$STORAGE_ZIG" "$STORAGE_ZIG.orig"
+[[ -f "$EXEC_ZIG.orig" ]] || cp "$EXEC_ZIG" "$EXEC_ZIG.orig"
+[[ -f "$UNICODE_ZIG.orig" ]] || cp "$UNICODE_ZIG" "$UNICODE_ZIG.orig"
 
 # ---------------------------------------------------------------
 # Patch PageList.zig — pageAllocator()
@@ -190,8 +196,8 @@ with open('$STORAGE_ZIG', 'w') as f: f.write(src)
 "
 
 # Bound metadata independently of decoded pixels. AutoHashMapUnmanaged keeps
-# its backing allocation after removeByPtr, so compact the image map whenever
-# an eviction or deletion changes its resident set. Placements are capped and
+# its backing allocation after removeByPtr, so compact both maps whenever an
+# eviction or deletion changes their resident sets. Placements are capped and
 # reject new entries at capacity; failed placement commands release their pin
 # in Ghostty's executor and leave the bounded set intact.
 python3 -c "
@@ -238,24 +244,46 @@ if 'fn compactImages(self: *ImageStorage' not in src:
     if marker not in src: raise SystemExit('Kitty image lookup shape changed')
     src = src.replace(marker, compact_helper + marker, 1)
 
+placement_compact_helper = (
+    '\\n    /// Rebuild placement metadata after removals so tombstones cannot\\n'
+    '    /// grow the WASM heap beyond the bounded resident set. Placement\\n'
+    '    /// values contain borrowed page-pin pointers, so cloning the map\\n'
+    '    /// does not transfer ownership of those pins.\\n'
+    '    fn compactPlacements(self: *ImageStorage, alloc: Allocator) void {\\n'
+    '        if (self.placements.count() == 0) {\\n'
+    '            self.placements.clearAndFree(alloc);\\n'
+    '            return;\\n'
+    '        }\\n'
+    '        const compacted = self.placements.clone(alloc) catch return;\\n'
+    '        self.placements.deinit(alloc);\\n'
+    '        self.placements = compacted;\\n'
+    '    }\\n'
+)
+if 'fn compactPlacements(self: *ImageStorage' not in src:
+    marker = '    pub fn imageById(self: *const ImageStorage, image_id: u32) ?Image {\\n'
+    if marker not in src: raise SystemExit('Kitty placement lookup shape changed')
+    src = src.replace(marker, placement_compact_helper + marker, 1)
+
 delete_marker = '        }\\n    }\\n\\n    fn deleteById(\\n'
 delete_replacement = (
     '        }\\n\\n'
     '        self.compactImages(alloc);\\n'
+    '        self.compactPlacements(alloc);\\n'
     '    }\\n\\n'
     '    fn deleteById(\\n'
 )
-if 'self.compactImages(alloc);\\n    }\\n\\n    fn deleteById' not in src:
+if 'self.compactImages(alloc);\\n        self.compactPlacements(alloc);\\n    }\\n\\n    fn deleteById' not in src:
     if delete_marker not in src: raise SystemExit('Kitty delete function shape changed')
     src = src.replace(delete_marker, delete_replacement, 1)
 
 evict_success = '                if (evicted > req) return true;'
-if 'self.compactImages(alloc);\\n                    return true;' not in src:
+if 'self.compactImages(alloc);\\n                    self.compactPlacements(alloc);\\n                    return true;' not in src:
     if evict_success not in src: raise SystemExit('Kitty eviction completion shape changed')
     src = src.replace(
         evict_success,
         '                if (evicted > req) {\\n'
         '                    self.compactImages(alloc);\\n'
+        '                    self.compactPlacements(alloc);\\n'
         '                    return true;\\n'
         '                }',
         1,
@@ -267,6 +295,7 @@ if 'self.compactImages(alloc);\\n        return false;\\n    }\\n\\n    /// Ever
     src = src.replace(
         evict_end,
         '        self.compactImages(alloc);\\n'
+        '        self.compactPlacements(alloc);\\n'
         '        return false;\\n    }\\n\\n'
         '    /// Every placement is uniquely identified',
         1,
@@ -276,12 +305,95 @@ required = [
     'const wterm_max_placements: usize = 4096;',
     placement_guard,
     'fn compactImages(self: *ImageStorage',
+    'fn compactPlacements(self: *ImageStorage',
     'self.compactImages(alloc);',
+    'self.compactPlacements(alloc);',
 ]
 missing = [needle for needle in required if needle not in src]
 if missing: raise SystemExit(f'Kitty storage bound patch failed: {missing}')
 
 with open('$STORAGE_ZIG', 'w') as f: f.write(src)
+"
+
+# Eviction removes placements as well as images. Deinitialize each placement
+# first so its tracked page pin is released; otherwise repeated image churn
+# grows the page-list metadata and eventually the WASM heap despite bounded
+# image and placement counts. The active screen is available at every call
+# site, including the upstream storage tests.
+python3 -c "
+with open('$STORAGE_ZIG') as f: src = f.read()
+
+old_signature = 'fn evictImage(self: *ImageStorage, alloc: Allocator, req: usize) !bool {'
+new_signature = 'fn evictImage(self: *ImageStorage, alloc: Allocator, s: *terminal.Screen, req: usize) !bool {'
+if old_signature in src:
+    src = src.replace(old_signature, new_signature, 1)
+elif new_signature not in src:
+    raise SystemExit('Kitty eviction signature shape changed')
+
+old_add = 'pub fn addImage(self: *ImageStorage, alloc: Allocator, img: Image) Allocator.Error!void {'
+new_add = 'pub fn addImage(self: *ImageStorage, alloc: Allocator, s: *terminal.Screen, img: Image) Allocator.Error!void {'
+if old_add in src:
+    src = src.replace(old_add, new_add, 1)
+elif new_add not in src:
+    raise SystemExit('Kitty addImage signature shape changed')
+
+src = src.replace('self.evictImage(alloc, req_bytes)', 'self.evictImage(alloc, s, req_bytes)')
+
+old_remove = '''                if (entry.key_ptr.image_id == c.id) {
+                    self.placements.removeByPtr(entry.key_ptr);
+                }'''
+new_remove = '''                if (entry.key_ptr.image_id == c.id) {
+                    entry.value_ptr.deinit(s);
+                    self.placements.removeByPtr(entry.key_ptr);
+                }'''
+if old_remove in src:
+    src = src.replace(old_remove, new_remove, 1)
+elif new_remove not in src:
+    raise SystemExit('Kitty eviction placement cleanup shape changed')
+
+required = [
+    new_signature,
+    new_add,
+    'self.evictImage(alloc, s, req_bytes)',
+    'entry.value_ptr.deinit(s);\n                    self.placements.removeByPtr(entry.key_ptr);',
+]
+missing = [needle for needle in required if needle not in src]
+if missing: raise SystemExit(f'Kitty eviction pin cleanup patch failed: {missing}')
+
+with open('$STORAGE_ZIG', 'w') as f: f.write(src)
+"
+
+# Match the new storage API at every upstream call site. These are the
+# executor and unicode-placement tests; all have the owning Terminal in
+# scope, so use its active screen for page-pin cleanup during eviction.
+python3 -c "
+import re
+
+for path in ('$EXEC_ZIG', '$UNICODE_ZIG', '$STORAGE_ZIG'):
+    with open(path) as f: src = f.read()
+    src = re.sub(
+        r'(?<![A-Za-z0-9_])([a-zA-Z_][A-Za-z0-9_]*)\\.addImage\\(alloc, (?!t\\.screens\\.active,)',
+        r'\\1.addImage(alloc, t.screens.active, ',
+        src,
+    )
+    with open(path, 'w') as f: f.write(src)
+
+with open('$EXEC_ZIG') as f: exec_src = f.read()
+with open('$UNICODE_ZIG') as f: unicode_src = f.read()
+with open('$STORAGE_ZIG') as f: storage_src = f.read()
+if 'storage.addImage(alloc, t.screens.active, img);' in exec_src:
+    exec_src = exec_src.replace(
+        'storage.addImage(alloc, t.screens.active, img);',
+        'storage.addImage(alloc, terminal.screens.active, img);',
+        1,
+    )
+    with open('$EXEC_ZIG', 'w') as f: f.write(exec_src)
+if 'storage.addImage(alloc, terminal.screens.active, img);' not in exec_src:
+    raise SystemExit('Kitty executor addImage call site was not patched')
+if 's.addImage(alloc, t.screens.active, image);' not in unicode_src:
+    raise SystemExit('Kitty unicode addImage call sites were not patched')
+if re.search(r'(?<!pub fn )\\b[a-zA-Z_]\\w*\\.addImage\\(alloc, (?!t\\.screens\\.active,)', storage_src):
+    raise SystemExit('Kitty storage test addImage call site was not patched')
 "
 # ---------------------------------------------------------------
 # Patch Kitty's WASM-incompatible clock, cap decoder allocations, and reject

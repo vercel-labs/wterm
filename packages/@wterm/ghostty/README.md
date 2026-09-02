@@ -144,6 +144,8 @@ ghostty's `Terminal` and `Page` types use `posix.mmap` and Mach VM allocators in
 - `src/terminal/Terminal.zig`
 - `src/terminal/kitty/graphics_image.zig`
 - `src/terminal/kitty/graphics_storage.zig`
+- `src/terminal/kitty/graphics_exec.zig`
+- `src/terminal/kitty/graphics_unicode.zig`
 - `src/terminal/page.zig`
 - `src/terminal/PageList.zig`
 

@@ -109,7 +109,9 @@ describe("GhosttyCore Kitty graphics", () => {
       ).wasm.exports.memory;
       const initialBytes = memory.buffer.byteLength;
 
-      for (let id = 1; id <= 5000; id++) {
+      // Keep this intentionally long: a leak that is invisible in a short
+      // burst can still exhaust WASM linear memory over a terminal session.
+      for (let id = 1; id <= 100_000; id++) {
         core.writeString(rgbImage(id, [id & 0xff, 0, 0]));
       }
 
@@ -119,7 +121,7 @@ describe("GhosttyCore Kitty graphics", () => {
         used: 99,
         imageCount: 33,
         placementCount: 33,
-        evicted: 4967,
+        evicted: 99_967,
       });
       // The image budget bounds pixel storage and the version bookkeeping
       // must not add one retained entry per evicted image.
