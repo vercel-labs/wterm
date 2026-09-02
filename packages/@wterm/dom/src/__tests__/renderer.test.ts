@@ -275,6 +275,46 @@ describe("Renderer", () => {
       expect(cursor?.textContent).toBe("A");
     });
 
+    it("keeps explicit cell colors overridable on cursor spans", () => {
+      const grid = [[makeCell("A", 1, 4)]];
+      const bridge = createMockBridge(1, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: true });
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+
+      const style = container
+        .querySelector(".term-cursor")
+        ?.getAttribute("style");
+      expect(style).toContain("--term-cell-fg:var(--term-color-1);");
+      expect(style).toContain("--term-cell-bg:var(--term-color-4);");
+      expect(style).not.toMatch(/(?:^|;)(?:color|background):/);
+    });
+
+    it("keeps explicit backgrounds overridable for wide, block, and blank cursors", () => {
+      const cases: CellData[][] = [
+        [
+          makeCell("界", 1, 4, 0, 2),
+          { char: 0, fg: 1, bg: 4, flags: 0, width: 0 },
+        ],
+        [makeCell("█", 1, 4)],
+        [{ char: 0, fg: 1, bg: 4, flags: 0, width: 1 }],
+      ];
+
+      for (const grid of cases) {
+        const caseContainer = document.createElement("div");
+        document.body.appendChild(caseContainer);
+        const bridge = createMockBridge(grid.length, 1, [grid]);
+        bridge.getCursor = () => ({ row: 0, col: 0, visible: true });
+        new Renderer(caseContainer).render(bridge as any);
+
+        const style = caseContainer
+          .querySelector(".term-cursor")
+          ?.getAttribute("style");
+        expect(style).toContain("--term-cell-bg:");
+        expect(style).not.toMatch(/(?:^|;)(?:color|background):/);
+      }
+    });
+
     it("re-renders on resize", () => {
       const bridge1 = createMockBridge(2, 1, [[makeCell("X")]]);
       const renderer = new Renderer(container);
@@ -300,6 +340,7 @@ describe("Renderer", () => {
     it("applies styled spans for colored cells", () => {
       const grid = [[makeCell("C", 1, 256, 0)]];
       const bridge = createMockBridge(1, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
       const renderer = new Renderer(container);
       renderer.render(bridge as any);
 
