@@ -27,7 +27,9 @@ const GRAPHEME_BUFFER_BYTES = 256;
 const HYPERLINK_BUFFER_BYTES = 1024;
 const DEFAULT_FOREGROUND = "#d4d4d4";
 const DEFAULT_BACKGROUND = "#1e1e1e";
-const DEFAULT_IMAGE_STORAGE_LIMIT = 32 * 1024 * 1024;
+/** Maximum decoded bytes accepted for one direct Kitty image. */
+export const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+const DEFAULT_IMAGE_STORAGE_LIMIT = MAX_IMAGE_BYTES;
 const MAX_WASM_U32 = 0xffffffff;
 
 const WTERM_FLAG_BOLD = 0x01;

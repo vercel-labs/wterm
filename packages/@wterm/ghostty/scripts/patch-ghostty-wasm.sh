@@ -1,11 +1,11 @@
 #!/bin/bash
 # Patches ghostty source for wasm32-freestanding compatibility.
 #
-# Two files need patching:
+# The pinned Ghostty source needs these targeted WASM patches:
 #   1. page.zig — uses posix.mmap/munmap for page memory
 #   2. PageList.zig — pageAllocator() returns Mach VM allocator on macOS
 #
-# Both are replaced with wasm_allocator on WASM targets using
+# Page memory is replaced with wasm_allocator on WASM targets using
 # comptime isWasm() checks, matching ghostty's own conditional style.
 #
 # Pinned to ghostty v1.3.1 — verify after version bumps.
@@ -184,41 +184,135 @@ with open('$STORAGE_ZIG', 'w') as f: f.write(src)
 "
 
 # ---------------------------------------------------------------
-# Patch Kitty's WASM-incompatible clock and cap decoder allocations. The
+# Patch Kitty's WASM-incompatible clock, cap decoder allocations, and reject
+# oversized PNG dimensions before Wuffs can allocate a decoded pixel buffer.
 # timestamp is only used for deterministic eviction ordering, so a monotonic
 # process-local counter is sufficient and avoids importing POSIX timespec.
 # ---------------------------------------------------------------
 python3 -c "
+import re
+
 with open('$IMAGE_ZIG') as f: src = f.read()
-if 'const max_size = 32 * 1024 * 1024' not in src:
-    old = 'const max_size = 400 * 1024 * 1024; // 400MB'
-    if old not in src: raise SystemExit('Kitty image size constant changed')
-    src = src.replace(old, 'const max_size = 32 * 1024 * 1024; // bounded WASM image input', 1)
+old_size = 'const max_size = 400 * 1024 * 1024; // 400MB'
+new_size = 'const max_size = 32 * 1024 * 1024; // bounded WASM image input'
+if old_size in src:
+    src = src.replace(old_size, new_size, 1)
+elif new_size not in src:
+    raise SystemExit('Kitty image size constant shape changed')
 marker_direct = '''        if (t.medium == .direct) {
             try result.addData(alloc, cmd.data);
             return result;
         }
 '''
-if 'if (comptime builtin.target.cpu.arch.isWasm()) return error.UnsupportedMedium;' not in src:
+direct_guard = '        if (comptime builtin.target.cpu.arch.isWasm()) return error.UnsupportedMedium;'
+if direct_guard not in src:
     if marker_direct not in src: raise SystemExit('Kitty image medium dispatch shape changed')
     src = src.replace(marker_direct, marker_direct + '\n        if (comptime builtin.target.cpu.arch.isWasm()) return error.UnsupportedMedium;\n', 1)
 if 'var next_transmit_time: u64 = 1;' not in src:
     marker = 'const log = std.log.scoped(.kitty_gfx);'
     if marker not in src: raise SystemExit('Kitty image log marker changed')
     src = src.replace(marker, marker + '\n\nvar next_transmit_time: u64 = 1;', 1)
-src = src.replace('self.image.transmit_time = std.time.Instant.now() catch |err| {\n            log.warn(\"failed to get time: {}\", .{err});\n            return error.InternalError;\n        };', 'self.image.transmit_time = next_transmit_time;\n        next_transmit_time +%= 1;', 1)
+old_clock = '''self.image.transmit_time = std.time.Instant.now() catch |err| {
+            log.warn(\"failed to get time: {}\", .{err});
+            return error.InternalError;
+        };'''
+new_clock = '''self.image.transmit_time = next_transmit_time;
+        next_transmit_time +%= 1;'''
+if old_clock in src:
+    src = src.replace(old_clock, new_clock, 1)
+elif new_clock not in src:
+    raise SystemExit('Kitty image timestamp shape changed')
 if 'transmit_time: std.time.Instant = undefined' in src:
     src = src.replace('transmit_time: std.time.Instant = undefined', 'transmit_time: u64 = 0', 1)
+elif 'transmit_time: u64 = 0' not in src:
+    raise SystemExit('Kitty image timestamp field shape changed')
+
+png_preflight = '''        // Wuffs allocates the decoded output from the dimensions in the
+        // PNG header. Validate those dimensions and the RGBA byte count
+        // before entering Wuffs so a tiny compressed PNG cannot request a
+        // huge allocation and only fail after it has completed.
+        if (self.data.items.len < 33 or
+            self.data.items[0] != 0x89 or self.data.items[1] != 0x50 or
+            self.data.items[2] != 0x4e or self.data.items[3] != 0x47 or
+            self.data.items[4] != 0x0d or self.data.items[5] != 0x0a or
+            self.data.items[6] != 0x1a or self.data.items[7] != 0x0a or
+            std.mem.readInt(u32, self.data.items[8..12], .big) != 13 or
+            self.data.items[12] != 'I' or self.data.items[13] != 'H' or
+            self.data.items[14] != 'D' or self.data.items[15] != 'R')
+        {
+            return error.InvalidData;
+        }
+        const png_width = std.mem.readInt(u32, self.data.items[16..20], .big);
+        const png_height = std.mem.readInt(u32, self.data.items[20..24], .big);
+        if (png_width == 0 or png_height == 0 or
+            png_width > max_dimension or png_height > max_dimension)
+        {
+            return error.DimensionsTooLarge;
+        }
+        const png_pixels = std.math.mul(
+            usize,
+            @as(usize, png_width),
+            @as(usize, png_height),
+        ) catch return error.InvalidData;
+        const png_rgba_size = std.math.mul(usize, png_pixels, 4) catch
+            return error.InvalidData;
+        if (png_rgba_size > max_size) return error.InvalidData;
+'''
+png_pattern = re.compile(
+    '        // Wuffs allocates the decoded output from the dimensions in the\n'
+    '        // PNG header\..*?'
+    '        if \(png_rgba_size > max_size\) return error\.InvalidData;\n',
+    re.S,
+)
+if not png_pattern.search(src):
+    marker = '        assert(self.image.format == .png);\n'
+    if marker not in src: raise SystemExit('Kitty PNG decoder shape changed')
+    src = src.replace(marker, marker + '\n' + png_preflight, 1)
+else:
+    src = png_pattern.sub(png_preflight, src, count=1)
+
+required = [
+    new_size,
+    direct_guard,
+    new_clock,
+    'transmit_time: u64 = 0',
+    'const png_width = std.mem.readInt(u32, self.data.items[16..20], .big);',
+    'const png_height = std.mem.readInt(u32, self.data.items[20..24], .big);',
+]
+missing = [needle for needle in required if needle not in src]
+if missing: raise SystemExit(f'Kitty image patch failed: {missing}')
 with open('$IMAGE_ZIG', 'w') as f: f.write(src)
 "
 
 python3 -c "
 with open('$STORAGE_ZIG') as f: src = f.read()
-src = src.replace('time: std.time.Instant,', 'time: u64,', 1)
-src = src.replace('kv.value_ptr.transmit_time.order(newest.?.transmit_time) == .gt', 'kv.value_ptr.transmit_time > newest.?.transmit_time', 1)
-old = '''if (lhs.used == rhs.used) if (lhs.time != rhs.time) return lhs.time < rhs.time;\n                    return lhs.id < rhs.id;\n\n                    // If not used, then its a better candidate\n                    return !lhs.used;'''
-new = '''if (lhs.used == rhs.used) {\n                        if (lhs.time != rhs.time) return lhs.time < rhs.time;\n                        return lhs.id < rhs.id;\n                    }\n\n                    // If not used, then its a better candidate\n                    return !lhs.used;'''
-if old in src: src = src.replace(old, new, 1)
+old_time = 'time: std.time.Instant,'
+new_time = 'time: u64,'
+if old_time in src:
+    src = src.replace(old_time, new_time, 1)
+elif new_time not in src:
+    raise SystemExit('Kitty storage candidate timestamp shape changed')
+old_number = 'kv.value_ptr.transmit_time.order(newest.?.transmit_time) == .gt'
+new_number = 'kv.value_ptr.transmit_time > newest.?.transmit_time'
+if old_number in src:
+    src = src.replace(old_number, new_number, 1)
+elif new_number not in src:
+    raise SystemExit('Kitty image-number timestamp comparison shape changed')
+old_order = '''                    if (lhs.used == rhs.used) return switch (lhs.time.order(rhs.time)) {
+                        .lt => true,
+                        .gt => false,
+                        .eq => lhs.id < rhs.id,
+                    };'''
+new_order = '''                    if (lhs.used == rhs.used) {
+                        if (lhs.time != rhs.time) return lhs.time < rhs.time;
+                        return lhs.id < rhs.id;
+                    }'''
+if old_order in src:
+    src = src.replace(old_order, new_order, 1)
+elif new_order not in src:
+    raise SystemExit('Kitty eviction timestamp sort shape changed')
+if '.order(' in src or 'time: std.time.Instant,' in src:
+    raise SystemExit('Kitty storage still contains the POSIX timestamp comparison')
 with open('$STORAGE_ZIG', 'w') as f: f.write(src)
 "
 

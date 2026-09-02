@@ -131,7 +131,7 @@ const core = await GhosttyCore.load();
     <tr>
       <td><code>imageStorageLimit</code></td>
       <td><code>number</code></td>
-      <td>Maximum decoded Kitty image bytes per screen (default: 32 MiB). Set to <code>0</code> to disable graphics.</td>
+      <td>Maximum decoded Kitty image bytes per screen (default: 32 MiB). Set to <code>0</code> to disable graphics. One image is capped at <code>MAX_IMAGE_BYTES</code> (32 MiB).</td>
     </tr>
   </tbody>
 </table>
@@ -153,6 +153,10 @@ bytes used/capacity, image and placement counts, rejection and eviction
 counters, and saturation. `GhosttyCore.dispose()` is idempotent and releases
 WASM resources when the application owns the core; `WTerm.destroy()` never
 disposes a caller-supplied core.
+
+The exported `MAX_IMAGE_BYTES` constant documents the hard per-image decoded
+byte cap. A larger `imageStorageLimit` is still useful for storing several
+smaller images.
 
 ## Bundlers
 
