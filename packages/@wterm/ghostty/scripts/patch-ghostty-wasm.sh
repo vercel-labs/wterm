@@ -3,12 +3,13 @@
 #
 # The pinned Ghostty source needs these targeted WASM patches:
 #   1. Terminal.zig — forwards the per-screen Kitty image limit
-#   2. kitty/graphics_image.zig — bounds direct decoding and removes POSIX time
-#   3. kitty/graphics_storage.zig — bounds and compacts image/placement storage
-#   4. kitty/graphics_exec.zig — passes the owning screen to image storage
-#   5. kitty/graphics_unicode.zig — updates upstream image-storage tests
-#   6. page.zig — uses posix.mmap/munmap for page memory
-#   7. PageList.zig — pageAllocator() returns Mach VM allocator on macOS
+#   2. Screen.zig — preserves the Kitty image limit across RIS
+#   3. kitty/graphics_image.zig — bounds direct decoding and removes POSIX time
+#   4. kitty/graphics_storage.zig — bounds and compacts image/placement storage
+#   5. kitty/graphics_exec.zig — passes the owning screen to image storage
+#   6. kitty/graphics_unicode.zig — updates upstream image-storage tests
+#   7. page.zig — uses posix.mmap/munmap for page memory
+#   8. PageList.zig — pageAllocator() returns Mach VM allocator on macOS
 #
 # Page memory is replaced with wasm_allocator on WASM targets, Kitty file and
 # shared-memory media are disabled, Wuffs gets freestanding compatibility
@@ -21,6 +22,7 @@ GHOSTTY_SRC="$1"
 PAGE_ZIG="$GHOSTTY_SRC/src/terminal/page.zig"
 PAGELIST_ZIG="$GHOSTTY_SRC/src/terminal/PageList.zig"
 TERMINAL_ZIG="$GHOSTTY_SRC/src/terminal/Terminal.zig"
+SCREEN_ZIG="$GHOSTTY_SRC/src/terminal/Screen.zig"
 IMAGE_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_image.zig"
 STORAGE_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_storage.zig"
 EXEC_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_exec.zig"
@@ -41,6 +43,7 @@ for source in \
   "$PAGE_ZIG" \
   "$PAGELIST_ZIG" \
   "$TERMINAL_ZIG" \
+  "$SCREEN_ZIG" \
   "$IMAGE_ZIG" \
   "$STORAGE_ZIG" \
   "$EXEC_ZIG" \
@@ -176,6 +179,39 @@ if '.kitty_image_storage_limit = opts.kitty_image_storage_limit' not in src:
     if old not in src: raise SystemExit('Terminal screen initialization shape changed')
     src = src.replace(old, new, 1)
 with open('$TERMINAL_ZIG', 'w') as f: f.write(src)
+"
+
+# Preserve the configured Kitty image budget when RIS rebuilds the screen's
+# image storage. Upstream resets the storage with a default struct literal,
+# which otherwise silently changes both a disabled limit and any custom limit
+# back to Ghostty's 320 MiB default.
+# ---------------------------------------------------------------
+python3 -c "
+with open('$SCREEN_ZIG') as f: src = f.read()
+old = '''    if (comptime build_options.kitty_graphics) {
+        // Reset kitty graphics storage
+        self.kitty_images.deinit(self.alloc, self);
+        self.kitty_images = .{ .dirty = true };
+    }'''
+new = '''    if (comptime build_options.kitty_graphics) {
+        // Reset kitty graphics storage while preserving the configured limit.
+        const kitty_image_storage_limit = self.kitty_images.total_limit;
+        self.kitty_images.deinit(self.alloc, self);
+        self.kitty_images = .{
+            .dirty = true,
+            .total_limit = kitty_image_storage_limit,
+        };
+    }'''
+if new not in src:
+    if old not in src: raise SystemExit('Screen.reset Kitty storage shape changed')
+    src = src.replace(old, new, 1)
+required = [
+    'const kitty_image_storage_limit = self.kitty_images.total_limit;',
+    '.total_limit = kitty_image_storage_limit,',
+]
+missing = [needle for needle in required if needle not in src]
+if missing: raise SystemExit(f'Screen reset image limit patch failed: {missing}')
+with open('$SCREEN_ZIG', 'w') as f: f.write(src)
 "
 
 # Patch Kitty image storage with an eviction counter and bounded metadata.

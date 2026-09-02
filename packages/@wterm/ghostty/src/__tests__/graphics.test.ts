@@ -152,6 +152,28 @@ describe("GhosttyCore Kitty graphics", () => {
     });
   });
 
+  it("preserves the configured image limit across RIS", async () => {
+    const disabled = await newCore({ imageStorageLimit: 0 });
+    disabled.writeString("\x1bc");
+    disabled.writeString(rgbImage(20, [255, 0, 0]));
+    expect(disabled.getResourceState().graphics).toMatchObject({
+      capacity: 0,
+      used: 0,
+      imageCount: 0,
+      placementCount: 0,
+    });
+
+    const limited = await newCore({ imageStorageLimit: 3 });
+    limited.writeString("\x1bc");
+    limited.writeString(rgbImage(21, [0, 255, 0]));
+    expect(limited.getResourceState().graphics).toMatchObject({
+      capacity: 3,
+      used: 3,
+      imageCount: 1,
+      placementCount: 1,
+    });
+  });
+
   it("keeps version tracking bounded to resident images after eviction", async () => {
     const log = console.log;
     console.log = () => {};
