@@ -368,6 +368,8 @@ describe("Renderer", () => {
         0x2548: ["light", "heavy", "heavy", "heavy"],
         0x2549: ["heavy", "light", "heavy", "heavy"],
         0x254a: ["heavy", "heavy", "heavy", "light"],
+        0x2560: ["double", "light", "double", undefined],
+        0x2563: ["double", undefined, "double", "light"],
       };
 
       for (const [codePoint, arms] of Object.entries(expected)) {

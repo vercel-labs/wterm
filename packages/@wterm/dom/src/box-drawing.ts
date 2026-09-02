@@ -153,10 +153,13 @@ const BOX_GLYPHS: Record<number, BoxGlyph> = {
   0x255d: glyph(DOUBLE, undefined, undefined, DOUBLE),
   0x255e: glyph(LIGHT, DOUBLE, LIGHT, undefined),
   0x255f: glyph(DOUBLE, LIGHT, DOUBLE, undefined),
-  0x2560: glyph(DOUBLE, DOUBLE, DOUBLE, undefined),
+  // U+2560/2563 have a double vertical axis but a single/light branch on
+  // the side named by Unicode. Keeping that branch light is important when
+  // it joins a neighboring U+2500 cell.
+  0x2560: glyph(DOUBLE, LIGHT, DOUBLE, undefined),
   0x2561: glyph(LIGHT, undefined, LIGHT, DOUBLE),
   0x2562: glyph(DOUBLE, undefined, DOUBLE, LIGHT),
-  0x2563: glyph(DOUBLE, undefined, DOUBLE, DOUBLE),
+  0x2563: glyph(DOUBLE, undefined, DOUBLE, LIGHT),
   0x2564: glyph(undefined, DOUBLE, LIGHT, DOUBLE),
   0x2565: glyph(undefined, LIGHT, DOUBLE, LIGHT),
   0x2566: glyph(undefined, DOUBLE, DOUBLE, DOUBLE),
