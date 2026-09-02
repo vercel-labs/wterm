@@ -64,6 +64,26 @@ describe("GhosttyCore Kitty graphics", () => {
     });
   });
 
+  it("does not let callers mutate the graphics image lookup metadata", async () => {
+    const core = await newCore();
+    core.writeString(rgbImage(7, [255, 0, 32]));
+
+    const state = core.getGraphicsState();
+    const image = state?.images[0];
+    expect(image).toBeDefined();
+
+    image!.width = 2;
+    state!.placements[0].sourceWidth = 2;
+
+    expect(core.getGraphicsImage(7, image!.version)).toMatchObject({
+      imageId: 7,
+      version: image!.version,
+      width: 1,
+      height: 1,
+      rgba: new Uint8Array([255, 0, 32, 255]),
+    });
+  });
+
   it("accepts an APC split at every raw write boundary", async () => {
     const core = await newCore();
     const bytes = new TextEncoder().encode(rgbImage(8, [12, 34, 56]));

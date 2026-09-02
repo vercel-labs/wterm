@@ -95,6 +95,16 @@ function imageStorageLimit(options: GhosttyOptions): number {
   return value;
 }
 
+function cloneGraphicsState(
+  state: TerminalGraphicsState,
+): TerminalGraphicsState {
+  return {
+    generation: state.generation,
+    images: state.images.map((image) => ({ ...image })),
+    placements: state.placements.map((placement) => ({ ...placement })),
+  };
+}
+
 /**
  * Terminal core powered by libghostty built from source. Implements the
  * same `TerminalCore` interface as wterm's built-in Zig core, providing
@@ -375,9 +385,13 @@ export class GhosttyCore implements TerminalCore {
         freeBuffer(this.wasm, this._graphicsBufPtr, this._graphicsBufSize);
       this._graphicsBufPtr = 0;
       this._graphicsBufSize = 0;
-      const result = { generation, images: [], placements: [] };
+      const result: TerminalGraphicsState = {
+        generation,
+        images: [],
+        placements: [],
+      };
       this._graphicsState = result;
-      return result;
+      return cloneGraphicsState(result);
     }
     if (size !== this._graphicsBufSize || this._graphicsBufPtr === 0) {
       if (this._graphicsBufPtr !== 0)
@@ -405,7 +419,7 @@ export class GhosttyCore implements TerminalCore {
         placements: placements.map((placement) => ({ ...placement })),
       };
       this._graphicsState = result;
-      return result;
+      return cloneGraphicsState(result);
     } catch {
       return null;
     }
