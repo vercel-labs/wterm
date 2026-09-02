@@ -59,6 +59,11 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 
 Standard `div` props (`className`, `style`, `id`, etc.) are forwarded to the container element.
 
+The component delegates rendering to `@wterm/dom`, so passing a graphics-capable
+core such as `@wterm/ghostty` renders direct Kitty PNG/RGB/RGBA output without
+any image-specific React props. Image canvases are decorative and
+`aria-hidden`; they are pointer-transparent and never replace the text rows.
+
 ## `useTerminal` Hook
 
 Returns a ref and imperative helpers for controlling the terminal:

@@ -46,9 +46,25 @@
 
 .term-grid {
   display: block;
+  position: relative;
   white-space: pre;
   contain: layout paint style;
   will-change: contents;
+}
+
+.term-images {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 1;
+}
+
+.term-image {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  user-select: none;
 }
 
 .term-row {

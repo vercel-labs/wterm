@@ -57,6 +57,11 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 
 Standard DOM attributes (`class`, `style`, `id`, ARIA props, etc.) are forwarded to the root `<div>` via `inheritAttrs`.
 
+The component delegates rendering to `@wterm/dom`, so passing a graphics-capable
+core such as `@wterm/ghostty` renders direct Kitty PNG/RGB/RGBA output without
+any image-specific Vue props. Image canvases are decorative and
+`aria-hidden`; they are pointer-transparent and never replace the text rows.
+
 ## Events
 
 | Event | Payload | Description |

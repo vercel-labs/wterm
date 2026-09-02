@@ -79,6 +79,29 @@ Scrollback normally keeps only the visible rows plus overscan mounted in the DOM
 
 WTerm owns scrollback anchoring when old history is discarded. The package stylesheet disables browser-native scroll anchoring on the terminal scroller so rollover produces one deterministic adjustment across browsers.
 
+### Terminal images
+
+The DOM renderer consumes the optional `TerminalCore.getGraphicsState()` and
+`getGraphicsImage()` methods when both are present. It creates a separate,
+absolute canvas overlay for visible pinned placements, using copied RGBA bytes
+and the same retained-row coordinates as text and scrollback. Images are
+pointer-transparent, non-focusable, and `aria-hidden`; terminal rows remain the
+semantic surface for selection, copy, keyboard input, and screen readers.
+
+The built-in core deliberately does not provide image data. Use
+`@wterm/ghostty` for direct Kitty Graphics Protocol PNG/RGB/RGBA output. Image
+state is transient and is isolated per primary/alternate screen. Replacement,
+deletion, scrollback movement, resize, and screen changes invalidate the layer;
+off-screen placements are not materialized, and canvases do not add scroll
+height.
+
+Image pixels are decorative until an accessible description contract exists.
+Applications should provide equivalent textual context when image meaning is
+important. Unsupported protocols and non-direct Kitty media are ignored safely.
+The browser overlay caps each destination canvas to the active terminal's pixel
+area and enforces a 32 MiB total backing-store budget, independently of the
+Ghostty decoded-image budget; placements that do not fit are skipped.
+
 ### `WebSocketTransport`
 
 Connect to a PTY backend over WebSocket (re-exported from `@wterm/core`).

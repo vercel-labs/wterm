@@ -30,6 +30,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window
 - **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws aligned
 - **Grapheme strings** — the Ghostty core preserves combining marks and ZWJ emoji through the DOM renderer and scrollback
+- **Kitty terminal images** — Ghostty-backed terminals render bounded direct PNG/RGB/RGBA graphics in a scroll-aware canvas overlay
 - **24-bit color** — full RGB SGR support
 - **Auto-resize** — `ResizeObserver`-based terminal resizing
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
@@ -85,6 +86,22 @@ Serve the `web/` directory with any static file server:
 ```bash
 cd web && python3 -m http.server 8000
 ```
+
+For Kitty image support, use the Ghostty example instead. It loads
+`@wterm/ghostty`, which provides the graphics-capable core; the built-in core
+consumes unsupported Kitty APC payloads safely but does not decode images.
+
+```bash
+pnpm --filter ghostty-example dev
+```
+
+All terminal graphics are transient browser/WASM memory. Direct media is
+accepted only within the Ghostty image budget (32 MiB by default), with a
+32 MiB hard cap per image and 4,096 resident image/placement records per
+screen; the DOM overlay separately caps visible canvas backing stores at 32 MiB
+and bounds each canvas to the terminal pixel area. Set `imageStorageLimit: 0`
+to disable Ghostty graphics. File paths, shared memory, URLs, Sixel,
+iTerm2, animation, and virtual placements are not loaded.
 
 ### Run the Next.js example
 

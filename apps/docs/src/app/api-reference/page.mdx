@@ -35,6 +35,47 @@ Complete reference for all wterm options, methods, types, and transport APIs.
 
 These fields are optional so custom `TerminalCore` implementations remain source-compatible.
 
+## Terminal Graphics
+
+Graphics methods are optional. Cores that support them return a snapshot for
+the active primary or alternate screen and copied image data:
+
+<table>
+  <thead>
+    <tr><th>Type</th><th>Key fields</th><th>Meaning</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>TerminalImageDescriptor</code></td>
+      <td><code>imageId</code>, <code>version</code>, <code>width</code>, <code>height</code></td>
+      <td>Intrinsic image metadata. A new version replaces the prior pixels.</td>
+    </tr>
+    <tr>
+      <td><code>TerminalImagePlacement</code></td>
+      <td><code>row</code>, <code>col</code>, offsets, source rectangle, cell size, <code>z</code></td>
+      <td>Pinned placement in the retained active screen. Row zero is the oldest retained row; coordinates are top-left based.</td>
+    </tr>
+    <tr>
+      <td><code>TerminalImageData</code></td>
+      <td><code>rgba: Uint8Array</code></td>
+      <td>Copied row-major RGBA pixels. Invalid or unavailable data returns <code>null</code>.</td>
+    </tr>
+  </tbody>
+</table>
+
+`getGraphicsState()` and `getGraphicsImage(imageId, version)` are optional and
+must not be assumed by custom renderers. Returned snapshots and byte arrays
+are caller-owned copies. A state generation changes when image content,
+placements, screen, scrollback, or size changes.
+
+The built-in core consumes unsupported 7-bit Kitty APC strings safely but does
+not provide graphics. The Ghostty implementation currently supports direct
+Kitty PNG/RGB/RGBA with a 32 MiB decoded per-screen default; non-direct media,
+Sixel, iTerm2, animation, virtual placements, and persistence are unsupported.
+The DOM overlay also bounds each destination canvas to the terminal pixel area
+and limits all visible canvas backing stores to 32 MiB; placements that exceed
+those browser limits are skipped.
+
 ## Terminal Options
 
 The React and Vue `<Terminal>` components and the vanilla `WTerm` constructor all accept these options:

@@ -489,6 +489,7 @@ pub const Terminal = struct {
             .csi_dispatch => self.handleCsi(),
             .esc_dispatch => self.handleEsc(),
             .osc_dispatch => self.handleOsc(),
+            .unsupported_apc => {},
         }
     }
 
