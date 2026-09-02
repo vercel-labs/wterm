@@ -116,7 +116,6 @@ const ResponseHandler = struct {
     inner: ReadonlyHandler,
     queue: *ResponseQueue,
     synchronized_output_generation: *u32,
-    graphics_generation: *u32,
     rejected_images: *u32,
     apc: KittyHandler = .{},
     apc_bytes: usize = 0,
@@ -127,7 +126,6 @@ const ResponseHandler = struct {
         terminal: *Terminal,
         queue: *ResponseQueue,
         generation: *u32,
-        graphics_generation_ptr: *u32,
         rejected_images: *u32,
     ) ResponseHandler {
         return .{
@@ -135,7 +133,6 @@ const ResponseHandler = struct {
             .inner = .init(terminal),
             .queue = queue,
             .synchronized_output_generation = generation,
-            .graphics_generation = graphics_generation_ptr,
             .rejected_images = rejected_images,
         };
     }
@@ -159,7 +156,6 @@ const ResponseHandler = struct {
         if (tx.medium == .direct) return false;
         // Do not call the upstream executor for non-direct media. In
         // particular, this keeps file and shared-memory paths out of WASM.
-        self.graphics_generation.* +%= 1;
         self.rejected_images.* +%= 1;
         return true;
     }
@@ -168,7 +164,6 @@ const ResponseHandler = struct {
         if (self.rejectNonDirect(cmd)) return;
 
         const response = self.inner.terminal.kittyGraphics(self.alloc, cmd);
-        self.graphics_generation.* +%= 1;
 
         if (response) |resp| {
             if (!resp.ok()) self.rejected_images.* +%= 1;
@@ -344,6 +339,8 @@ const State = struct {
     responses: ResponseQueue,
     synchronized_output_generation: u32,
     graphics_generation: u32,
+    graphics_fingerprint: u64,
+    graphics_screen: u32,
     rejected_images: u32,
     evicted_images: u32,
 };
@@ -354,6 +351,100 @@ fn stateFromPtr(ptr: usize) *State {
 
 fn activeStorage(state: *State) *KittyStorage {
     return &state.terminal.screens.active.kitty_images;
+}
+
+/// Return a cheap, order-independent fingerprint of the browser-visible
+/// graphics state. Image bytes are deliberately not scanned here: completed
+/// Kitty images receive a new transmit_time on replacement, which is already
+/// the cache-busting component of imageVersionFor(). Placement coordinates and
+/// metadata are included because pinned images move as pages scroll, reflow,
+/// or are switched between the primary and alternate screens.
+fn graphicsFingerprint(state: *State) u64 {
+    var fingerprint: u64 = 0xcbf29ce484222325;
+
+    const mix = struct {
+        fn value(target: *u64, value_: u64) void {
+            // XOR makes the reduction independent of HashMap iteration order.
+            // The avalanche step makes adjacent IDs and coordinates contribute
+            // distinct bits without retaining any graphics metadata.
+            var mixed = value_;
+            mixed ^= mixed >> 30;
+            mixed *%= 0xbf58476d1ce4e5b9;
+            mixed ^= mixed >> 27;
+            mixed *%= 0x94d049bb133111eb;
+            mixed ^= mixed >> 31;
+            target.* ^= mixed;
+        }
+    }.value;
+
+    mix(&fingerprint, @intFromEnum(state.terminal.screens.active_key));
+    mix(&fingerprint, activeStorage(state).images.count());
+    var images = activeStorage(state).images.iterator();
+    while (images.next()) |entry| {
+        const image = entry.value_ptr;
+        mix(&fingerprint, image.id);
+        mix(&fingerprint, image.transmit_time);
+        mix(&fingerprint, image.width);
+        mix(&fingerprint, image.height);
+        mix(&fingerprint, @intFromEnum(image.format));
+        mix(&fingerprint, image.data.len);
+    }
+
+    mix(&fingerprint, activeStorage(state).placements.count());
+    var placements = activeStorage(state).placements.iterator();
+    const screen = state.terminal.screens.active;
+    while (placements.next()) |entry| {
+        const placement = entry.value_ptr;
+        const pin = switch (placement.location) {
+            .pin => |p| p,
+            .virtual => continue,
+        };
+        const point = screen.pages.pointFromPin(.screen, pin.*) orelse {
+            mix(&fingerprint, entry.key_ptr.image_id);
+            mix(&fingerprint, entry.key_ptr.placement_id.id);
+            mix(&fingerprint, @intFromEnum(entry.key_ptr.placement_id.tag));
+            mix(&fingerprint, 0xffffffffffffffff);
+            continue;
+        };
+        const coord = point.coord();
+        mix(&fingerprint, entry.key_ptr.image_id);
+        mix(&fingerprint, entry.key_ptr.placement_id.id);
+        mix(&fingerprint, @intFromEnum(entry.key_ptr.placement_id.tag));
+        mix(&fingerprint, coord.x);
+        mix(&fingerprint, coord.y);
+        mix(&fingerprint, placement.x_offset);
+        mix(&fingerprint, placement.y_offset);
+        mix(&fingerprint, placement.source_x);
+        mix(&fingerprint, placement.source_y);
+        mix(&fingerprint, placement.source_width);
+        mix(&fingerprint, placement.source_height);
+        mix(&fingerprint, placement.columns);
+        mix(&fingerprint, placement.rows);
+        mix(&fingerprint, @as(u64, @as(u32, @bitCast(placement.z))));
+    }
+    return fingerprint;
+}
+
+/// Refresh the browser-facing generation only when Ghostty says the active
+/// image state may have changed. Ordinary text writes do not dirty Kitty
+/// storage, so they avoid both the metadata scan and the DOM pixel repaint.
+/// Switching screens is checked separately because the newly active storage
+/// may not itself have been marked dirty.
+fn refreshGraphicsGeneration(state: *State) void {
+    const screen = @intFromEnum(state.terminal.screens.active_key);
+    const storage = activeStorage(state);
+    if (!storage.dirty and state.graphics_screen == screen) return;
+
+    const fingerprint = graphicsFingerprint(state);
+    if (fingerprint != state.graphics_fingerprint) {
+        state.graphics_generation +%= 1;
+        state.graphics_fingerprint = fingerprint;
+    }
+    state.graphics_screen = screen;
+    // This field is informational in upstream Ghostty. Clearing it here
+    // makes it a useful change hint for this adapter without affecting the
+    // terminal's image storage or compositor behavior.
+    storage.dirty = false;
 }
 
 fn writeU32(buf: [*]u8, offset: usize, value: u32) void {
@@ -477,10 +568,12 @@ export fn init(
         &state.terminal,
         &state.responses,
         &state.synchronized_output_generation,
-        &state.graphics_generation,
         &state.rejected_images,
     ));
     state.render = RenderState.empty;
+    state.graphics_fingerprint = graphicsFingerprint(state);
+    state.graphics_screen = @intFromEnum(state.terminal.screens.active_key);
+    activeStorage(state).dirty = false;
     return @intFromPtr(state);
 }
 
@@ -495,7 +588,7 @@ export fn deinit(ptr: usize) void {
 export fn resize(ptr: usize, cols: u16, rows: u16) void {
     const state = stateFromPtr(ptr);
     state.terminal.resize(allocator, cols, rows) catch {};
-    state.graphics_generation +%= 1;
+    refreshGraphicsGeneration(state);
 }
 
 // -- Data input -------------------------------------------------
@@ -503,7 +596,7 @@ export fn resize(ptr: usize, cols: u16, rows: u16) void {
 export fn write(ptr: usize, data_ptr: [*]const u8, data_len: u32) void {
     const state = stateFromPtr(ptr);
     state.stream.nextSlice(data_ptr[0..data_len]) catch {};
-    state.graphics_generation +%= 1;
+    refreshGraphicsGeneration(state);
 }
 
 // -- Render state -----------------------------------------------

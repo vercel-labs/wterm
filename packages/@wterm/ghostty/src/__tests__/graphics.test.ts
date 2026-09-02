@@ -107,6 +107,20 @@ describe("GhosttyCore Kitty graphics", () => {
     expect(getGraphicsState).toHaveBeenCalledTimes(1);
   });
 
+  it("does not advance graphics generation for ordinary text writes", async () => {
+    const core = await newCore();
+    core.writeString(rgbImage(12, [255, 0, 32]));
+    const before = core.getGraphicsState();
+    expect(before?.placements).toHaveLength(1);
+
+    core.writeString("ordinary text");
+    const after = core.getGraphicsState();
+
+    expect(after?.generation).toBe(before?.generation);
+    expect(after?.images).toEqual(before?.images);
+    expect(after?.placements).toEqual(before?.placements);
+  });
+
   it("refreshes replacement pixels and removes deleted images", async () => {
     const core = await newCore();
     core.writeString(rgbImage(9, [255, 0, 0]));

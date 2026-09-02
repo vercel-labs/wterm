@@ -132,6 +132,40 @@ describe("GraphicsLayer", () => {
     expect(container.querySelectorAll("canvas")).toHaveLength(0);
   });
 
+  it("repositions without repainting when graphics generation is unchanged", () => {
+    const layer = new GraphicsLayer(container);
+    layer.setup();
+    const core = coreWith(state);
+    const context = {
+      putImageData: vi.fn(),
+      clearRect: vi.fn(),
+      drawImage: vi.fn(),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      context as unknown as CanvasRenderingContext2D,
+    );
+    const viewport = {
+      scrollTop: 34,
+      clientHeight: 17,
+      rowHeight: 17,
+      charWidth: 8,
+      overscanRows: 0,
+      scrollbackCount: 2,
+    };
+
+    layer.reconcile(core, viewport);
+    const initialDraws = context.drawImage.mock.calls.length;
+    const initialClears = context.clearRect.mock.calls.length;
+    viewport.scrollTop = 51;
+    layer.reconcile(core, viewport);
+
+    expect(context.drawImage).toHaveBeenCalledTimes(initialDraws);
+    expect(context.clearRect).toHaveBeenCalledTimes(initialClears);
+    expect(
+      (container.querySelector("canvas") as HTMLCanvasElement).style.top,
+    ).toBe("38px");
+  });
+
   it("bounds hostile placement geometry to the terminal pixel area", () => {
     const layer = new GraphicsLayer(container);
     layer.setup();
