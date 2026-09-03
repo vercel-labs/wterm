@@ -120,6 +120,8 @@
 }
 
 .term-cursor {
+  color: var(--term-cell-fg, inherit);
+  background: var(--term-cell-bg, transparent);
   outline: 1px solid var(--term-cursor);
   outline-offset: -1px;
 }

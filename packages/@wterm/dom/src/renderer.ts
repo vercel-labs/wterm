@@ -93,6 +93,16 @@ function buildCellStyle(
   return style;
 }
 
+// Cell colors are normally inline styles so each run can be painted without
+// extra classes. Cursor styles need to remain overridable by the focused
+// cursor rule, though, so move only those two declarations to custom
+// properties when a cursor span reuses a cell style.
+function cursorCellStyle(style: string): string {
+  return style
+    .replace(/(^|;)color:/g, "$1--term-cell-fg:")
+    .replace(/(^|;)background:/g, "$1--term-cell-bg:");
+}
+
 function appendRun(parent: HTMLElement, text: string, style: string): void {
   const span = document.createElement("span");
   if (style) span.style.cssText = style;
@@ -352,8 +362,9 @@ export class Renderer {
             ? `<span style="${runStyle}">${escapeHTML(before)}</span>`
             : `<span>${escapeHTML(before)}</span>`;
         }
-        content += runStyle
-          ? `<span class="term-cursor" style="${runStyle}">${escapeHTML(cursorChar)}</span>`
+        const cursorStyle = cursorCellStyle(runStyle);
+        content += cursorStyle
+          ? `<span class="term-cursor" style="${cursorStyle}">${escapeHTML(cursorChar)}</span>`
           : `<span class="term-cursor">${escapeHTML(cursorChar)}</span>`;
         if (after) {
           content += runStyle
@@ -402,9 +413,17 @@ export class Renderer {
         // would shorten the row.
         const continuesWide = col > 0 && (getCell(col - 1).width ?? 1) === 2;
         if (!continuesWide) {
+          const style = buildCellStyle(
+            cell.fg,
+            cell.bg,
+            cell.flags,
+            cell.fgRgb,
+            cell.bgRgb,
+          );
+          const cursor = col === cursorCol;
           appendStyledSpan(
-            col === cursorCol ? "term-cursor" : "",
-            "",
+            cursor ? "term-cursor" : "",
+            cursor ? cursorCellStyle(style) : style,
             " ",
             cellLinkKey,
             cellLinkUri,
@@ -427,9 +446,17 @@ export class Renderer {
         // continuation is outside the row. Drawing the pair here would spill
         // a second column past the row.
         if (col + 1 >= this.cols) {
+          const style = buildCellStyle(
+            cell.fg,
+            cell.bg,
+            cell.flags,
+            cell.fgRgb,
+            cell.bgRgb,
+          );
+          const cursor = col === cursorCol;
           appendStyledSpan(
-            col === cursorCol ? "term-cursor" : "",
-            "",
+            cursor ? "term-cursor" : "",
+            cursor ? cursorCellStyle(style) : style,
             " ",
             cellLinkKey,
             cellLinkUri,
@@ -451,11 +478,15 @@ export class Renderer {
           cell.fgRgb,
           cell.bgRgb,
         );
-        const cls =
-          cursorCol >= col && cursorCol < col + 2
-            ? "term-wide term-cursor"
-            : "term-wide";
-        appendStyledSpan(cls, style, ch, cellLinkKey, cellLinkUri);
+        const cursor = cursorCol >= col && cursorCol < col + 2;
+        const cls = cursor ? "term-wide term-cursor" : "term-wide";
+        appendStyledSpan(
+          cls,
+          cursor ? cursorCellStyle(style) : style,
+          ch,
+          cellLinkKey,
+          cellLinkUri,
+        );
 
         runStyle = "";
         runLinkKey = "";
@@ -479,8 +510,12 @@ export class Renderer {
         const cls = col === cursorCol ? "term-block term-cursor" : "term-block";
         const bg = getBlockBackground(cp, colors.fg, colors.bg);
         const dim = cell.flags & FLAG_DIM ? "opacity:0.5;" : "";
+        const blockStyle =
+          col === cursorCol
+            ? `--term-cell-bg:${bg};${dim}`
+            : `background:${bg};${dim}`;
         appendContent(
-          `<span class="${cls}" style="background:${bg};${dim}"></span>`,
+          `<span class="${cls}" style="${blockStyle}"></span>`,
           cellLinkKey,
           cellLinkUri,
         );
