@@ -10,6 +10,7 @@ export const PAGE_TITLES: Record<string, string> = {
   ghostty: "Ghostty Core",
   "just-bash": "Just Bash",
   markdown: "Markdown",
+  serialize: "Serialize",
   core: "Core / Advanced",
   "api-reference": "API Reference",
 };

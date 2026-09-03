@@ -1,0 +1,46 @@
+{
+  "name": "@wterm/serialize",
+  "version": "0.1.8",
+  "description": "Serialize and restore wterm terminal state",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "pnpm build",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@internal/ts": "workspace:*",
+    "typescript": "^6.0.2"
+  },
+  "peerDependencies": {
+    "@wterm/core": "workspace:*",
+    "@wterm/dom": "workspace:*"
+  },
+  "keywords": [
+    "terminal",
+    "wterm",
+    "serialize",
+    "persistence",
+    "ansi"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://wterm.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vercel-labs/wterm",
+    "directory": "packages/@wterm/serialize"
+  }
+}
