@@ -104,8 +104,7 @@ function cwdLabel(cwd: string | null): string {
 }
 
 type ServerMessage =
-  | { type: "output"; data: string }
-  | { type: "cwd"; cwd: string };
+  { type: "output"; data: string } | { type: "cwd"; cwd: string };
 
 function parseServerMessage(data: string): ServerMessage | null {
   try {

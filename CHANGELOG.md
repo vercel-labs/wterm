@@ -1,8 +1,25 @@
 # Changelog
 
-## 0.4.1
+## 0.5.0
 
 <!-- release:start -->
+
+### New Features
+
+- **Svelte support:** added `@wterm/svelte` with a Svelte 5 `<Terminal />` component, callbacks, imperative controls, SSR-safe initialization, and shared DOM/core exports, plus documentation and an example.
+
+### Bug Fixes
+
+- **Focused cursor visibility:** cell foreground and background styles are now overridable by the cursor rule, keeping the focused cursor visible over colored, wide, block, and blank cells.
+
+### Contributors
+
+- @ctate
+- @jaredevans
+
+<!-- release:end -->
+
+## 0.4.1
 
 ### New Features
 
@@ -17,8 +34,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.4.0
 
