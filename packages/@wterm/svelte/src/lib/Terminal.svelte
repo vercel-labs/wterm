@@ -42,6 +42,10 @@
 
 <script lang="ts">
   import { createEventDispatcher, onMount } from "svelte";
+  // Svelte does not expose the legacy component event map through its public
+  // API. The event dispatcher stores it on the current legacy effect context.
+  // @ts-ignore -- svelte/internal/client intentionally has no public types.
+  import { active_effect } from "svelte/internal/client";
   import { WTerm, type TerminalCore } from "@wterm/dom";
 
   const dispatch = createEventDispatcher<TerminalEvents>();
@@ -72,6 +76,7 @@
 
   let element: HTMLDivElement;
   export let instance: WTerm | null = null;
+  let legacyDataListener = false;
 
   $: classes = [
     "wterm",
@@ -106,6 +111,20 @@
     dispatch("resize", [nextCols, nextRows]);
   }
 
+  function hasLegacyDataListener(): boolean {
+    const props = (active_effect as any)?.ctx?.s as
+      | Record<string, unknown>
+      | undefined;
+    const events = props?.["$$events"] as
+      | Record<string, unknown>
+      | undefined;
+    return Boolean(events?.data);
+  }
+
+  function hasDataHandler(): boolean {
+    return Boolean(onData || ondata || legacyDataListener);
+  }
+
   export function write(data: string | Uint8Array): void {
     instance?.write(data);
   }
@@ -119,6 +138,8 @@
   }
 
   onMount(() => {
+    let disposed = false;
+    legacyDataListener = hasLegacyDataListener();
     const wt = new WTerm(element, {
       cols,
       rows,
@@ -129,7 +150,7 @@
       maxImageHeight,
       cursorBlink,
       debug,
-      onData: onData || ondata ? handleData : undefined,
+      onData: hasDataHandler() ? handleData : undefined,
       onTitle: handleTitle,
       onResize: handleResize,
     });
@@ -138,11 +159,13 @@
 
     wt.init()
       .then(() => {
+        if (disposed) return;
         onReady?.(wt);
         onready?.(wt);
         dispatch("ready", wt);
       })
       .catch((error: unknown) => {
+        if (disposed) return;
         onError?.(error);
         onerror?.(error);
         dispatch("error", error);
@@ -150,6 +173,7 @@
       });
 
     return () => {
+      disposed = true;
       wt.destroy();
       if (instance === wt) instance = null;
     };
@@ -162,7 +186,7 @@
       instance.resize(cols, rows);
     }
     instance.element.classList.toggle("cursor-blink", cursorBlink);
-    instance.onData = onData || ondata ? handleData : null;
+    instance.onData = hasDataHandler() ? handleData : null;
   }
 </script>
 
@@ -171,8 +195,8 @@
   {...$$restProps}
   class={classes}
   style={mergedStyle || undefined}
-  role="textbox"
-  aria-label="Terminal"
-  aria-multiline="true"
-  aria-roledescription="terminal"
+  role={$$restProps.role ?? "textbox"}
+  aria-label={$$restProps["aria-label"] ?? "Terminal"}
+  aria-multiline={$$restProps["aria-multiline"] ?? "true"}
+  aria-roledescription={$$restProps["aria-roledescription"] ?? "terminal"}
 ></div>

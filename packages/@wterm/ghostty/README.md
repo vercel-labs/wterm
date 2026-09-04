@@ -74,13 +74,22 @@ const core = await GhosttyCore.load();
 
 ```svelte
 <script lang="ts">
+import { onMount } from "svelte";
 import { Terminal } from "@wterm/svelte";
 import { GhosttyCore } from "@wterm/ghostty";
 
-const core = await GhosttyCore.load();
+let core: GhosttyCore | undefined;
+
+onMount(() => {
+  void GhosttyCore.load().then((loaded) => {
+    core = loaded;
+  });
+});
 </script>
 
-<Terminal {core} />
+{#if core}
+  <Terminal {core} />
+{/if}
 ```
 
 ## Options

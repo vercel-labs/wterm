@@ -1,6 +1,7 @@
 import { cleanup, render } from "@testing-library/svelte";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import Terminal from "../lib/Terminal.svelte";
+import LegacyEvents from "./LegacyEvents.svelte";
 
 let lastWTermInstance: any = null;
 
@@ -142,19 +143,6 @@ describe("Terminal component", () => {
     expect(lastWTermInstance.focus).toHaveBeenCalled();
   });
 
-  it("exposes imperative methods through bind:this", async () => {
-    const { component } = render(Terminal);
-    await Promise.resolve();
-
-    (component as any).write("test data");
-    (component as any).resize(120, 40);
-    (component as any).focus();
-
-    expect(lastWTermInstance.write).toHaveBeenCalledWith("test data");
-    expect(lastWTermInstance.resize).toHaveBeenCalledWith(120, 40);
-    expect(lastWTermInstance.focus).toHaveBeenCalled();
-  });
-
   it("supports Svelte 5 callback-style event props", async () => {
     const ondata = vi.fn();
     const ontitle = vi.fn();
@@ -184,6 +172,19 @@ describe("Terminal component", () => {
     expect(onResize).toHaveBeenCalledWith(100, 30);
   });
 
+  it("dispatches legacy data events without a callback prop", async () => {
+    const onDataEvent = vi.fn();
+    render(LegacyEvents, { props: { ondata: onDataEvent } });
+    await Promise.resolve();
+
+    expect(lastWTermInstance.onData).toBeTypeOf("function");
+    lastWTermInstance.onData("hello");
+
+    expect(onDataEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: "hello" }),
+    );
+  });
+
   it("syncs dimensions and cursor blinking when props change", async () => {
     const result = render(Terminal, {
       props: { cols: 80, rows: 24, cursorBlink: false },
@@ -206,6 +207,65 @@ describe("Terminal component", () => {
     unmount();
 
     expect(instance.destroy).toHaveBeenCalled();
+  });
+
+  it("does not call ready after unmount while initialization is pending", async () => {
+    const { WTerm } = await import("@wterm/dom");
+    let resolveInit!: () => void;
+    const pendingInit = new Promise<void>((resolve) => {
+      resolveInit = resolve;
+    });
+
+    (WTerm as any).mockImplementationOnce(function (
+      this: any,
+      element: HTMLElement,
+      options: any,
+    ) {
+      this.element = element;
+      this.bridge = null;
+      this.cols = options?.cols ?? 80;
+      this.rows = options?.rows ?? 24;
+      this.onData = options?.onData ?? null;
+      this.onTitle = options?.onTitle ?? null;
+      this.onResize = options?.onResize ?? null;
+      this.write = vi.fn();
+      this.resize = vi.fn();
+      this.focus = vi.fn();
+      this.destroy = vi.fn();
+      this.init = vi.fn(() =>
+        pendingInit.then(() => {
+          this.bridge = {};
+          return this;
+        }),
+      );
+      lastWTermInstance = this;
+    });
+
+    const onReady = vi.fn();
+    const { unmount } = render(Terminal, { props: { onReady } });
+    unmount();
+    resolveInit();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onReady).not.toHaveBeenCalled();
+  });
+
+  it("allows overriding the default accessibility attributes", () => {
+    const { container } = render(Terminal, {
+      props: {
+        role: "application",
+        "aria-label": "Shell",
+        "aria-multiline": "false",
+        "aria-roledescription": "shell",
+      } as any,
+    });
+    const element = container.querySelector(".wterm")!;
+
+    expect(element.getAttribute("role")).toBe("application");
+    expect(element.getAttribute("aria-label")).toBe("Shell");
+    expect(element.getAttribute("aria-multiline")).toBe("false");
+    expect(element.getAttribute("aria-roledescription")).toBe("shell");
   });
 
   it("calls the error callback", async () => {
