@@ -120,6 +120,17 @@ cp web/wterm.wasm examples/nextjs/public/
 pnpm --filter nextjs dev
 ```
 
+### Run the Svelte example
+
+The Svelte example uses `@wterm/svelte` with an in-browser `just-bash` shell,
+theme switching, and imperative terminal controls:
+
+```bash
+pnpm --filter svelte-example dev
+```
+
+It opens at `svelte-example.wterm.localhost` through Portless.
+
 ### Run Zig tests
 
 ```bash
