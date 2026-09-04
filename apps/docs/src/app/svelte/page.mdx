@@ -1,0 +1,119 @@
+# Svelte
+
+The `@wterm/svelte` package provides a `<Terminal>` component for Svelte 5
+applications. It re-exports the DOM and core APIs from `@wterm/dom` so the
+component and terminal types can come from one import.
+
+## Install
+
+```bash
+npm install @wterm/dom @wterm/svelte svelte
+```
+
+## Basic Usage
+
+```svelte
+<script lang="ts">
+import { Terminal } from "@wterm/svelte";
+import "@wterm/svelte/css";
+</script>
+
+<Terminal />
+```
+
+The WASM binary is embedded in the package — no extra setup is required. To
+serve it separately, pass `wasmUrl`.
+
+## Custom Input Handling
+
+Typed input is echoed back by default. In Svelte 5, pass `onData` when input
+should be sent to a PTY or another backend:
+
+```svelte
+<script lang="ts">
+import { Terminal } from "@wterm/svelte";
+import "@wterm/svelte/css";
+
+function onData(data: string) {
+  socket.send(data);
+}
+</script>
+
+<Terminal {onData} />
+```
+
+The other callback props are `onTitle`, `onResize`, `onReady`, and `onError`.
+`onReady` receives the underlying `WTerm` instance.
+
+## Props
+
+The component accepts the shared terminal options `cols`, `rows`, `core`,
+`wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, and
+`debug`, plus the `theme` prop. Standard `<div>` attributes such as `class`,
+`style`, `id`, and ARIA attributes are forwarded to the root element.
+
+See the [Terminal Options](/api-reference#terminal-options) and
+[Svelte-only Props](/api-reference#svelte-only-props) reference sections for
+details.
+
+The Svelte wrapper delegates rendering to `@wterm/dom`, so a graphics-capable
+core such as `@wterm/ghostty` automatically renders direct Kitty PNG/RGB/RGBA
+images. Set `maxImageWidth` and/or `maxImageHeight` to constrain rendered
+images while preserving their aspect ratio.
+
+## Events
+
+The component dispatches `data`, `title`, `resize`, `ready`, and `error` events
+for Svelte's legacy `on:event` syntax:
+
+```svelte
+<Terminal on:title={(event) => (document.title = event.detail)} />
+```
+
+The `resize` event's `event.detail` is a `[cols, rows]` tuple. Svelte 5
+applications should generally use the typed callback props instead.
+
+## Imperative Control
+
+Bind the component instance to call `write`, `resize`, and `focus`:
+
+```svelte
+<script lang="ts">
+import { Terminal, type TerminalHandle } from "@wterm/svelte";
+
+let terminal: TerminalHandle;
+</script>
+
+<Terminal bind:this={terminal} />
+```
+
+To access the underlying `WTerm`, bind the `instance` prop:
+
+```svelte
+<script lang="ts">
+import { Terminal, type WTerm } from "@wterm/svelte";
+
+let instance: WTerm | null = null;
+</script>
+
+<Terminal bind:instance />
+```
+
+## Themes
+
+Import the stylesheet and pass the theme name:
+
+```svelte
+<script lang="ts">
+import { Terminal } from "@wterm/svelte";
+import "@wterm/svelte/css";
+</script>
+
+<Terminal theme="monokai" />
+```
+
+Built-in themes are `solarized-dark`, `monokai`, and `light`. Define custom
+themes with CSS custom properties.
+
+The component initializes in `onMount`, so it is safe to render from an SSR
+application.

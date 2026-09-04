@@ -12,6 +12,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 | [`@wterm/dom`](packages/@wterm/dom) | DOM renderer, input handler — vanilla JS terminal |
 | [`@wterm/react`](packages/@wterm/react) | React component + `useTerminal` hook (TypeScript) |
 | [`@wterm/vue`](packages/@wterm/vue) | Vue 3 component + template ref API |
+| [`@wterm/svelte`](packages/@wterm/svelte) | Svelte component + callback/event API |
 | [`@wterm/ghostty`](packages/@wterm/ghostty) | Full-featured VT emulation core powered by libghostty |
 | [`@wterm/just-bash`](packages/@wterm/just-bash) | In-browser Bash shell powered by just-bash |
 | [`@wterm/markdown`](packages/@wterm/markdown) | Render Markdown in the terminal |
@@ -33,6 +34,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Kitty terminal images** — Ghostty-backed terminals render direct PNG/RGB/RGBA graphics in a scroll-aware canvas overlay with configurable display bounds; implicit image placements keep following prompts visually below the image
 - **24-bit color** — full RGB SGR support
 - **Auto-resize** — `ResizeObserver`-based terminal resizing
+- **Framework bindings** — React, Vue 3, and Svelte components
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
 - **Mouse and focus reporting** — DOM input for SGR mouse tracking and terminal focus events
 - **Kitty keyboard protocol**: negotiated key disambiguation, event types, alternate keys, all-key reporting, and associated text

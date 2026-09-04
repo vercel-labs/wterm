@@ -70,6 +70,19 @@ const core = await GhosttyCore.load();
 </template>
 ```
 
+### Svelte
+
+```svelte
+<script lang="ts">
+import { Terminal } from "@wterm/svelte";
+import { GhosttyCore } from "@wterm/ghostty";
+
+const core = await GhosttyCore.load();
+</script>
+
+<Terminal {core} />
+```
+
 ## Options
 
 `GhosttyCore.load()` accepts an options object:

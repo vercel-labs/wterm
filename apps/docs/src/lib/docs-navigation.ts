@@ -27,6 +27,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { name: "React", href: "/react" },
       { name: "Vue", href: "/vue" },
+      { name: "Svelte", href: "/svelte" },
       { name: "Vanilla JS", href: "/vanilla" },
     ],
   },
@@ -95,6 +96,11 @@ export const navGroups: NavGroup[] = [
       {
         name: "@wterm/vue",
         href: `${GITHUB}/tree/main/packages/@wterm/vue`,
+        external: true,
+      },
+      {
+        name: "@wterm/svelte",
+        href: `${GITHUB}/tree/main/packages/@wterm/svelte`,
         external: true,
       },
       {

@@ -1,0 +1,62 @@
+{
+  "name": "@wterm/svelte",
+  "version": "0.4.1",
+  "description": "Svelte component for wterm — a terminal emulator for the web",
+  "type": "module",
+  "svelte": "./dist/index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./css": {
+      "style": "./src/terminal.css",
+      "import": "./src/terminal.css",
+      "default": "./src/terminal.css"
+    }
+  },
+  "files": [
+    "dist",
+    "src/terminal.css"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepublishOnly": "pnpm build",
+    "test": "vitest run",
+    "type-check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "keywords": [
+    "terminal",
+    "emulator",
+    "wasm",
+    "zig",
+    "svelte",
+    "xterm"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://wterm.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vercel-labs/wterm",
+    "directory": "packages/@wterm/svelte"
+  },
+  "devDependencies": {
+    "@internal/ts": "workspace:*",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@testing-library/svelte": "^5.4.2",
+    "@wterm/dom": "workspace:*",
+    "jsdom": "^29.0.2",
+    "svelte": "^5.57.0",
+    "svelte-check": "^4.7.6",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.11"
+  },
+  "peerDependencies": {
+    "@wterm/dom": "workspace:*",
+    "svelte": "^5.57.0"
+  }
+}
