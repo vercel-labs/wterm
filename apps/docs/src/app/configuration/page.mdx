@@ -2,7 +2,7 @@
 
 ## Options
 
-The React and Vue `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, and `debug` — plus event callbacks `onData`, `onTitle`, and `onResize` (exposed as `@data`, `@title`, `@resize` events in Vue).
+The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, and `debug` — plus event callbacks `onData`, `onTitle`, and `onResize` (exposed as `@data`, `@title`, and `@resize` events in Vue).
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
 
@@ -31,6 +31,15 @@ See [React-Only Props](/api-reference#react-only-props) for details.
 The Vue `Terminal` component adds a `theme` prop. `onReady` and `onError` are exposed as `@ready` and `@error` events instead of props. Standard DOM attributes (`class`, `style`, `id`, ARIA props, etc.) are forwarded to the root `<div>` via the default `inheritAttrs` behavior.
 
 See [Vue-Only Props](/api-reference#vue-only-props) and [Vue Events](/api-reference#vue-events) for details.
+
+### Svelte-only
+
+The Svelte `Terminal` component adds the `theme` prop and forwards standard
+`<div>` attributes such as `class`, `style`, `id`, and ARIA attributes. Svelte 5
+applications can use the `onData`, `onTitle`, `onResize`, `onReady`, and
+`onError` callback props.
+
+See [Svelte-only Props](/api-reference#svelte-only-props) for details.
 
 ## Imperative Handle (React)
 
@@ -77,6 +86,22 @@ function onReady(wt: WTerm) {
 ```
 
 See the full [Template Ref (Vue)](/api-reference#template-ref-vue) reference for all exposed methods.
+
+## Imperative Handle (Svelte)
+
+Bind the Svelte component instance to call its imperative methods:
+
+```svelte
+<script lang="ts">
+import { Terminal, type TerminalHandle } from "@wterm/svelte";
+
+let terminal: TerminalHandle;
+</script>
+
+<Terminal bind:this={terminal} />
+```
+
+See the full [Imperative Handle (Svelte)](/api-reference#imperative-handle-svelte) reference for all exposed methods.
 
 ## WebSocket Transport
 

@@ -78,7 +78,7 @@ those browser limits are skipped.
 
 ## Terminal Options
 
-The React and Vue `<Terminal>` components and the vanilla `WTerm` constructor all accept these options:
+The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` constructor all accept these options:
 
 <table>
   <thead>
@@ -117,7 +117,7 @@ The React and Vue `<Terminal>` components and the vanilla `WTerm` constructor al
     <tr>
       <td><code>autoResize</code></td>
       <td><code>boolean</code></td>
-      <td><code>true</code> (vanilla) / <code>false</code> (React, Vue)</td>
+      <td><code>true</code> (vanilla) / <code>false</code> (React, Vue, Svelte)</td>
       <td>Automatically resize the terminal to fit its container using a <code>ResizeObserver</code></td>
     </tr>
     <tr>
@@ -256,6 +256,54 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
   </tbody>
 </table>
 
+## Svelte-only Props
+
+The Svelte `<Terminal>` component adds `theme` and forwards standard HTML
+attributes such as `class`, `style`, `id`, and ARIA attributes to its root
+`div`. Svelte 5 callback props are listed below.
+
+<table>
+  <thead>
+    <tr>
+      <th>Prop</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>theme</code></td>
+      <td><code>string</code></td>
+      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>). Applied as a <code>theme-&lt;name&gt;</code> class.</td>
+    </tr>
+    <tr>
+      <td><code>onData</code></td>
+      <td><code>(data: string) =&gt; void</code></td>
+      <td>Called for terminal input and host responses. When omitted, input is echoed automatically.</td>
+    </tr>
+    <tr>
+      <td><code>onTitle</code></td>
+      <td><code>(title: string) =&gt; void</code></td>
+      <td>Called when the terminal title changes.</td>
+    </tr>
+    <tr>
+      <td><code>onResize</code></td>
+      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>Called after the terminal is resized.</td>
+    </tr>
+    <tr>
+      <td><code>onReady</code></td>
+      <td><code>(wt: WTerm) =&gt; void</code></td>
+      <td>Called after WASM loads and initialization completes.</td>
+    </tr>
+    <tr>
+      <td><code>onError</code></td>
+      <td><code>(error: unknown) =&gt; void</code></td>
+      <td>Called if WASM loading or initialization fails.</td>
+    </tr>
+  </tbody>
+</table>
+
 ## WTerm Methods
 
 Instance methods on the vanilla `WTerm` class:
@@ -302,7 +350,6 @@ The `useTerminal` hook returns a ref and convenience methods that delegate to th
 ```tsx
 const { ref, write, resize, focus } = useTerminal();
 ```
-
 <table>
   <thead>
     <tr>
@@ -394,6 +441,60 @@ const term = useTemplateRef("term");
     </tr>
   </tbody>
 </table>
+
+## Imperative Handle (Svelte)
+
+Bind the Svelte component instance to access its imperative methods:
+
+```svelte
+<script lang="ts">
+import { Terminal, type TerminalHandle } from "@wterm/svelte";
+
+let terminal: TerminalHandle;
+</script>
+
+<Terminal bind:this={terminal} />
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Member</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>write</code></td>
+      <td><code>(data: string | Uint8Array) =&gt; void</code></td>
+      <td>Write data to the terminal. Calls before initialization are ignored.</td>
+    </tr>
+    <tr>
+      <td><code>resize</code></td>
+      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>Resize the terminal grid.</td>
+    </tr>
+    <tr>
+      <td><code>focus</code></td>
+      <td><code>() =&gt; void</code></td>
+      <td>Focus the terminal input.</td>
+    </tr>
+  </tbody>
+</table>
+
+To access the underlying <code>WTerm</code>, bind the component's
+<code>instance</code> prop:
+
+```svelte
+<script lang="ts">
+import { Terminal, type WTerm } from "@wterm/svelte";
+
+let instance: WTerm | null = null;
+</script>
+
+<Terminal bind:instance />
+```
 
 ## WebSocketTransport
 

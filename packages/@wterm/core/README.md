@@ -9,6 +9,7 @@ Headless terminal emulator core for [wterm](https://github.com/vercel-labs/wterm
 | [`@wterm/dom`](https://www.npmjs.com/package/@wterm/dom) | DOM renderer, input handler — vanilla JS terminal |
 | [`@wterm/react`](https://www.npmjs.com/package/@wterm/react) | React component + `useTerminal` hook |
 | [`@wterm/vue`](https://www.npmjs.com/package/@wterm/vue) | Vue 3 component + template ref API |
+| [`@wterm/svelte`](https://www.npmjs.com/package/@wterm/svelte) | Svelte component + callback API |
 | [`@wterm/ghostty`](https://www.npmjs.com/package/@wterm/ghostty) | Full-featured VT emulation core powered by libghostty |
 | [`@wterm/just-bash`](https://www.npmjs.com/package/@wterm/just-bash) | In-browser Bash shell powered by just-bash |
 | [`@wterm/markdown`](https://www.npmjs.com/package/@wterm/markdown) | Streaming Markdown-to-ANSI renderer for terminals |
