@@ -25,11 +25,11 @@
     "type-check": "turbo run type-check"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
-    "@vitest/coverage-v8": "^4.1.4",
-    "prettier": "^3.8.2",
-    "turbo": "^2.9.6",
-    "vitest": "^4.1.4"
+    "@playwright/test": "^1.62.1",
+    "@vitest/coverage-v8": "^4.1.11",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.12",
+    "vitest": "^4.1.11"
   },
   "packageManager": "pnpm@11.1.3"
 }
