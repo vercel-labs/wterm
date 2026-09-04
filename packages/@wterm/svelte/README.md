@@ -62,17 +62,6 @@ core such as `@wterm/ghostty` renders direct Kitty PNG/RGB/RGBA images. Use
 `maxImageWidth` and/or `maxImageHeight` to constrain oversized images while
 preserving their aspect ratio.
 
-## Events
-
-The component dispatches typed `data`, `title`, `resize`, `ready`, and `error`
-events for Svelte's legacy `on:event` syntax. The `resize` event carries a
-`[cols, rows]` tuple in `event.detail`; the other events carry their value
-directly. Svelte 5 applications can use the callback props above instead.
-
-```svelte
-<Terminal on:title={(event) => (document.title = event.detail)} />
-```
-
 ## Imperative control
 
 Bind the component instance to call `write`, `resize`, and `focus`:

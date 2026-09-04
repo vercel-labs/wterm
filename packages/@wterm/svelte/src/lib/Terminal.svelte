@@ -1,16 +1,5 @@
 <script context="module" lang="ts">
-  import type {
-    WTerm as WTermType,
-    WTermOptions,
-  } from "@wterm/dom";
-
-  export interface TerminalEvents {
-    data: string;
-    title: string;
-    resize: [cols: number, rows: number];
-    ready: WTermType;
-    error: unknown;
-  }
+  import type { WTerm as WTermType, WTermOptions } from "@wterm/dom";
 
   export interface TerminalProps
     extends Omit<WTermOptions, "onData" | "onTitle" | "onResize"> {
@@ -41,14 +30,8 @@
 </script>
 
 <script lang="ts">
-  import { createEventDispatcher, onMount } from "svelte";
-  // Svelte does not expose the legacy component event map through its public
-  // API. The event dispatcher stores it on the current legacy effect context.
-  // @ts-ignore -- svelte/internal/client intentionally has no public types.
-  import { active_effect } from "svelte/internal/client";
+  import { onMount } from "svelte";
   import { WTerm, type TerminalCore } from "@wterm/dom";
-
-  const dispatch = createEventDispatcher<TerminalEvents>();
 
   export let cols = 80;
   export let rows = 24;
@@ -76,8 +59,7 @@
 
   let element: HTMLDivElement;
   export let instance: WTerm | null = null;
-  let legacyDataListener = false;
-  let legacyProps: Record<string, unknown> | undefined;
+  let initialized = false;
 
   $: classes = [
     "wterm",
@@ -97,37 +79,20 @@
   function handleData(data: string): void {
     onData?.(data);
     ondata?.(data);
-    dispatch("data", data);
   }
 
   function handleTitle(title: string): void {
     onTitle?.(title);
     ontitle?.(title);
-    dispatch("title", title);
   }
 
   function handleResize(nextCols: number, nextRows: number): void {
     onResize?.(nextCols, nextRows);
     onresize?.(nextCols, nextRows);
-    dispatch("resize", [nextCols, nextRows]);
-  }
-
-  function hasLegacyDataListener(): boolean {
-    const props =
-      legacyProps ??
-      ((active_effect as any)?.ctx?.s as
-        | Record<string, unknown>
-        | undefined);
-    legacyProps ??= props;
-    const events = props?.["$$events"] as Record<string, unknown> | undefined;
-    const dataHandlers = events?.data;
-    return Array.isArray(dataHandlers)
-      ? dataHandlers.length > 0
-      : Boolean(dataHandlers);
   }
 
   function hasDataHandler(): boolean {
-    return Boolean(onData || ondata || legacyDataListener);
+    return Boolean(onData || ondata);
   }
 
   export function write(data: string | Uint8Array): void {
@@ -144,7 +109,6 @@
 
   onMount(() => {
     let disposed = false;
-    legacyDataListener = hasLegacyDataListener();
     const wt = new WTerm(element, {
       cols,
       rows,
@@ -165,15 +129,14 @@
     wt.init()
       .then(() => {
         if (disposed) return;
+        initialized = true;
         onReady?.(wt);
         onready?.(wt);
-        dispatch("ready", wt);
       })
       .catch((error: unknown) => {
         if (disposed) return;
         onError?.(error);
         onerror?.(error);
-        dispatch("error", error);
         if (!onError && !onerror) console.error(error);
       });
 
@@ -186,13 +149,13 @@
 
   // Keep the small set of mutable options that WTerm supports in sync with
   // the component. Core, WASM source, and image sizing are init-time options.
-  $: if (instance?.bridge) {
-    legacyDataListener = hasLegacyDataListener();
+  $: if (initialized && instance?.bridge) {
+    const dataHandler = Boolean(onData || ondata);
     if (!autoResize && (instance.cols !== cols || instance.rows !== rows)) {
       instance.resize(cols, rows);
     }
     instance.element.classList.toggle("cursor-blink", cursorBlink);
-    instance.onData = hasDataHandler() ? handleData : null;
+    instance.onData = dataHandler ? handleData : null;
   }
 </script>
 

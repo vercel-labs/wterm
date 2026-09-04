@@ -260,8 +260,7 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
 
 The Svelte `<Terminal>` component adds `theme` and forwards standard HTML
 attributes such as `class`, `style`, `id`, and ARIA attributes to its root
-`div`. Svelte 5 callback props are listed below. The legacy `on:event` syntax
-is also supported for the events that follow.
+`div`. Svelte 5 callback props are listed below.
 
 <table>
   <thead>
@@ -301,49 +300,6 @@ is also supported for the events that follow.
       <td><code>onError</code></td>
       <td><code>(error: unknown) =&gt; void</code></td>
       <td>Called if WASM loading or initialization fails.</td>
-    </tr>
-  </tbody>
-</table>
-
-## Svelte Events
-
-The component dispatches these events for Svelte's legacy <code>on:event</code>
-syntax. The <code>resize</code> event carries a <code>[cols, rows]</code> tuple
-in <code>event.detail</code>; the other events carry their value directly.
-
-<table>
-  <thead>
-    <tr>
-      <th>Event</th>
-      <th>Detail</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>data</code></td>
-      <td><code>string</code></td>
-      <td>Terminal input or a host response, when an <code>onData</code>/<code>ondata</code> callback or legacy listener is configured.</td>
-    </tr>
-    <tr>
-      <td><code>title</code></td>
-      <td><code>string</code></td>
-      <td>Terminal title changes.</td>
-    </tr>
-    <tr>
-      <td><code>resize</code></td>
-      <td><code>[cols: number, rows: number]</code></td>
-      <td>Terminal dimensions after a resize.</td>
-    </tr>
-    <tr>
-      <td><code>ready</code></td>
-      <td><code>WTerm</code></td>
-      <td>Emitted after initialization completes.</td>
-    </tr>
-    <tr>
-      <td><code>error</code></td>
-      <td><code>unknown</code></td>
-      <td>Emitted if initialization fails.</td>
     </tr>
   </tbody>
 </table>

@@ -1,7 +1,7 @@
 import { cleanup, render } from "@testing-library/svelte";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { tick } from "svelte";
 import Terminal from "../lib/Terminal.svelte";
-import LegacyEvents from "./LegacyEvents.svelte";
 
 let lastWTermInstance: any = null;
 
@@ -80,6 +80,7 @@ describe("Terminal component", () => {
     const { WTerm } = await import("@wterm/dom");
     render(Terminal);
     await Promise.resolve();
+    await tick();
 
     expect(WTerm).toHaveBeenCalled();
     expect(lastWTermInstance.init).toHaveBeenCalled();
@@ -130,6 +131,70 @@ describe("Terminal component", () => {
     expect(onData).toHaveBeenCalledWith("hello");
   });
 
+  it("updates the WTerm input handler when onData changes", async () => {
+    const result = render(Terminal);
+    await Promise.resolve();
+
+    expect(lastWTermInstance.onData).toBeNull();
+
+    const onData = vi.fn();
+    await result.rerender({ onData });
+
+    expect(lastWTermInstance.onData).toBeTypeOf("function");
+    lastWTermInstance.onData("hello");
+    expect(onData).toHaveBeenCalledWith("hello");
+
+    await result.rerender({ onData: undefined });
+    expect(lastWTermInstance.onData).toBeNull();
+  });
+
+  it("applies callback changes made while initialization is pending", async () => {
+    const { WTerm } = await import("@wterm/dom");
+    let resolveInit!: () => void;
+    const pendingInit = new Promise<void>((resolve) => {
+      resolveInit = resolve;
+    });
+
+    (WTerm as any).mockImplementationOnce(function (
+      this: any,
+      element: HTMLElement,
+      options: any,
+    ) {
+      this.element = element;
+      this.bridge = null;
+      this.cols = options?.cols ?? 80;
+      this.rows = options?.rows ?? 24;
+      this.onData = options?.onData ?? null;
+      this.onTitle = options?.onTitle ?? null;
+      this.onResize = options?.onResize ?? null;
+      this.write = vi.fn();
+      this.resize = vi.fn();
+      this.focus = vi.fn();
+      this.destroy = vi.fn();
+      this.init = vi.fn(() =>
+        pendingInit.then(() => {
+          this.bridge = {};
+          return this;
+        }),
+      );
+      lastWTermInstance = this;
+    });
+
+    const result = render(Terminal);
+    const onData = vi.fn();
+    await result.rerender({ onData });
+
+    expect(lastWTermInstance.onData).toBeNull();
+    resolveInit();
+    await Promise.resolve();
+    await Promise.resolve();
+    await tick();
+
+    expect(lastWTermInstance.onData).toBeTypeOf("function");
+    lastWTermInstance.onData("hello");
+    expect(onData).toHaveBeenCalledWith("hello");
+  });
+
   it("exposes imperative methods through bind:this", async () => {
     const { component } = render(Terminal);
     await Promise.resolve();
@@ -170,35 +235,6 @@ describe("Terminal component", () => {
 
     expect(onTitle).toHaveBeenCalledWith("my title");
     expect(onResize).toHaveBeenCalledWith(100, 30);
-  });
-
-  it("dispatches legacy data events without a callback prop", async () => {
-    const onDataEvent = vi.fn();
-    render(LegacyEvents, { props: { ondata: onDataEvent } });
-    await Promise.resolve();
-
-    expect(lastWTermInstance.onData).toBeTypeOf("function");
-    lastWTermInstance.onData("hello");
-
-    expect(onDataEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ detail: "hello" }),
-    );
-  });
-
-  it("keeps legacy data events wired after reactive updates", async () => {
-    const onDataEvent = vi.fn();
-    const result = render(LegacyEvents, {
-      props: { ondata: onDataEvent, rows: 24 },
-    });
-    await Promise.resolve();
-
-    await result.rerender({ ondata: onDataEvent, rows: 25 });
-
-    expect(lastWTermInstance.onData).toBeTypeOf("function");
-    lastWTermInstance.onData("hello");
-    expect(onDataEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ detail: "hello" }),
-    );
   });
 
   it("syncs dimensions and cursor blinking when props change", async () => {

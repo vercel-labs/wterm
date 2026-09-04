@@ -1,14 +1,6 @@
 import type { SvelteComponentTyped } from "svelte";
 import type { WTerm, WTermOptions } from "@wterm/dom";
 
-export interface TerminalEvents {
-  data: string;
-  title: string;
-  resize: [cols: number, rows: number];
-  ready: WTerm;
-  error: unknown;
-}
-
 export interface TerminalProps extends Omit<
   WTermOptions,
   "onData" | "onTitle" | "onResize"
@@ -39,14 +31,7 @@ export interface TerminalHandle {
   focus(): void;
 }
 
-type TerminalEventMap = {
-  [K in keyof TerminalEvents]: CustomEvent<TerminalEvents[K]>;
-};
-
-export default class Terminal extends SvelteComponentTyped<
-  TerminalProps,
-  TerminalEventMap
-> {
+export default class Terminal extends SvelteComponentTyped<TerminalProps> {
   write(data: string | Uint8Array): void;
   resize(cols: number, rows: number): void;
   focus(): void;

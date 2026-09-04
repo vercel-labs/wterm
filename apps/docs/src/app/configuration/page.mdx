@@ -2,7 +2,7 @@
 
 ## Options
 
-The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, and `debug` — plus event callbacks `onData`, `onTitle`, and `onResize` (exposed as `@data`, `@title`, and `@resize` events in Vue, or `on:event` events in Svelte).
+The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, and `debug` — plus event callbacks `onData`, `onTitle`, and `onResize` (exposed as `@data`, `@title`, and `@resize` events in Vue).
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
 
@@ -37,9 +37,9 @@ See [Vue-Only Props](/api-reference#vue-only-props) and [Vue Events](/api-refere
 The Svelte `Terminal` component adds the `theme` prop and forwards standard
 `<div>` attributes such as `class`, `style`, `id`, and ARIA attributes. Svelte 5
 applications can use the `onData`, `onTitle`, `onResize`, `onReady`, and
-`onError` callback props. Svelte's legacy `on:event` syntax is also supported.
+`onError` callback props.
 
-See [Svelte-only Props](/api-reference#svelte-only-props) and [Svelte Events](/api-reference#svelte-events) for details.
+See [Svelte-only Props](/api-reference#svelte-only-props) for details.
 
 ## Imperative Handle (React)
 
