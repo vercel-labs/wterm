@@ -185,6 +185,22 @@ describe("Terminal component", () => {
     );
   });
 
+  it("keeps legacy data events wired after reactive updates", async () => {
+    const onDataEvent = vi.fn();
+    const result = render(LegacyEvents, {
+      props: { ondata: onDataEvent, rows: 24 },
+    });
+    await Promise.resolve();
+
+    await result.rerender({ ondata: onDataEvent, rows: 25 });
+
+    expect(lastWTermInstance.onData).toBeTypeOf("function");
+    lastWTermInstance.onData("hello");
+    expect(onDataEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: "hello" }),
+    );
+  });
+
   it("syncs dimensions and cursor blinking when props change", async () => {
     const result = render(Terminal, {
       props: { cols: 80, rows: 24, cursorBlink: false },

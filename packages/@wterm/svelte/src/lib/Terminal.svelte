@@ -77,6 +77,7 @@
   let element: HTMLDivElement;
   export let instance: WTerm | null = null;
   let legacyDataListener = false;
+  let legacyProps: Record<string, unknown> | undefined;
 
   $: classes = [
     "wterm",
@@ -112,13 +113,17 @@
   }
 
   function hasLegacyDataListener(): boolean {
-    const props = (active_effect as any)?.ctx?.s as
-      | Record<string, unknown>
-      | undefined;
-    const events = props?.["$$events"] as
-      | Record<string, unknown>
-      | undefined;
-    return Boolean(events?.data);
+    const props =
+      legacyProps ??
+      ((active_effect as any)?.ctx?.s as
+        | Record<string, unknown>
+        | undefined);
+    legacyProps ??= props;
+    const events = props?.["$$events"] as Record<string, unknown> | undefined;
+    const dataHandlers = events?.data;
+    return Array.isArray(dataHandlers)
+      ? dataHandlers.length > 0
+      : Boolean(dataHandlers);
   }
 
   function hasDataHandler(): boolean {
@@ -182,6 +187,7 @@
   // Keep the small set of mutable options that WTerm supports in sync with
   // the component. Core, WASM source, and image sizing are init-time options.
   $: if (instance?.bridge) {
+    legacyDataListener = hasLegacyDataListener();
     if (!autoResize && (instance.cols !== cols || instance.rows !== rows)) {
       instance.resize(cols, rows);
     }
