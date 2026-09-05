@@ -103,8 +103,7 @@ export class BashShell {
         this._busy = true;
 
         try {
-          const wrapped = `cd ${JSON.stringify(this._cwd)} && ${cmd}`;
-          const result = await this._bash.exec(wrapped);
+          const result = await this._bash.exec(cmd, { cwd: this._cwd });
           if (result.stdout) {
             write(result.stdout.replace(/\n/g, "\r\n"));
             if (!result.stdout.endsWith("\n")) write("\r\n");
@@ -113,12 +112,9 @@ export class BashShell {
             write(`\x1b[31m${result.stderr.replace(/\n/g, "\r\n")}\x1b[0m`);
             if (!result.stderr.endsWith("\n")) write("\r\n");
           }
-          const pwdResult = await this._bash.exec(
-            `cd ${JSON.stringify(this._cwd)} 2>/dev/null; ${cmd} >/dev/null 2>&1; pwd`,
-          );
-          const lines = pwdResult.stdout?.trim().split("\n") ?? [];
-          const lastLine = lines[lines.length - 1]?.trim();
-          if (lastLine?.startsWith("/")) this._cwd = lastLine;
+          // exec runs in a subshell; its returned environment contains the final cwd.
+          const cwd = result.env.PWD;
+          if (cwd?.startsWith("/")) this._cwd = cwd;
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Unknown error";
           write(`\x1b[31m${msg}\x1b[0m\r\n`);
