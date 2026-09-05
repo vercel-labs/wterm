@@ -72,6 +72,8 @@ new BashShell(options?: ShellOptions)
 | `attach(write): Promise<void>` | Connect to a terminal write function |
 | `handleInput(data): Promise<void>` | Process terminal input (keystrokes) |
 
+Each submitted command executes once. Directory changes are carried into subsequent commands using the execution's returned working directory, without replaying the command.
+
 **Properties:**
 
 | Property | Type | Description |
