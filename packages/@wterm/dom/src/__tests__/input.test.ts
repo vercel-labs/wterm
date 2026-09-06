@@ -423,6 +423,24 @@ describe("InputHandler", () => {
       expect(received).toEqual(["é"]);
     });
 
+    it("ignores the first keydown signaled as composing", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(createKeyboardEvent("s", { isComposing: true }));
+      ta.dispatchEvent(new CompositionEvent("compositionend", { data: "你" }));
+      expect(received).toEqual(["你"]);
+    });
+
+    it("ignores the legacy IME processing keydown", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("s", { code: "KeyS", keyCode: 229 }),
+      );
+      ta.dispatchEvent(createKeyUpEvent("s", { code: "KeyS" }));
+      ta.dispatchEvent(new CompositionEvent("compositionend", { data: "好" }));
+      expect(received).toEqual(["好"]);
+    });
+
     it("clears a stale shortcut suppression on the next real keydown", () => {
       bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
       const ta = getTextarea();
