@@ -199,7 +199,7 @@ export class InputHandler {
     if (physicalModifier) {
       this.pressedModifiers.add(e.code);
     }
-    if (this.composing) {
+    if (this.composing || e.isComposing || e.keyCode === 229) {
       this.suppressedKeyUps.add(keyId);
       return;
     }
