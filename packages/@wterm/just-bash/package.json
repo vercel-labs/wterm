@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@internal/ts": "workspace:*",
-    "just-bash": "^2",
+    "just-bash": "^2.14.2",
     "typescript": "^6.0.2"
   },
   "keywords": [

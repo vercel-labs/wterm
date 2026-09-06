@@ -20,3 +20,6 @@ allowBuilds:
 
 patchedDependencies:
   "next-themes@0.4.6": "patches/next-themes@0.4.6.patch"
+
+overrides:
+  ip-address@<=10.3.0: ^10.3.1

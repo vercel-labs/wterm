@@ -18,13 +18,13 @@
     "@wterm/ghostty": "workspace:*",
     "@wterm/react": "workspace:*",
     "lucide-react": "^1.8.0",
-    "next": "16.2.3",
-    "node-pty": "^1.0.0",
-    "postcss": "^8.5.9",
+    "next": "16.3.4",
+    "node-pty": "^1.1.0",
+    "postcss": "^8.5.28",
     "react": "19.2.5",
     "react-dom": "19.2.5",
     "tailwindcss": "^4.2.2",
-    "ws": "^8.18.2"
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
@@ -32,8 +32,8 @@
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
     "eslint": "^9.39.4",
-    "eslint-config-next": "16.2.3",
-    "tsx": "^4.19.4",
+    "eslint-config-next": "16.3.4",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   }
 }

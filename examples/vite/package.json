@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "typescript": "^6.0.2",
-    "vite": "^6.3.5",
+    "vite": "^6.4.3",
     "vite-plugin-node-polyfills": "^0.26.0"
   }
 }
