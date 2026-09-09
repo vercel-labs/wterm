@@ -20,6 +20,10 @@
   #nd-page > .text-gray-900:first-child {
     @apply hidden;
   }
+
+  #nd-page > div:has(> h1) + div {
+    margin-top: 0;
+  }
 }
 
 #nd-toc {

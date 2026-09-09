@@ -598,7 +598,7 @@ export function DocsChat() {
       {!open && (
         <button
           onClick={() => updateOpen(true)}
-          className="fixed z-50 bottom-4 left-1/2 -translate-x-1/2 sm:bottom-20 sm:left-auto sm:translate-x-0 sm:right-4 flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground shadow-lg hover:opacity-90 transition-opacity text-sm font-medium"
+          className="fixed z-50 bottom-4 left-1/2 -translate-x-1/2 sm:bottom-20 sm:left-auto sm:translate-x-0 sm:right-4 flex min-h-11 items-center gap-2 px-4 py-2 rounded-lg bg-gray-1000 text-background-100 shadow-lg hover:opacity-90 transition-opacity text-sm font-medium"
           aria-label="Ask AI"
         >
           Ask AI
