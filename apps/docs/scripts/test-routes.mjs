@@ -1,4 +1,6 @@
+import { spawn } from "node:child_process";
 import { createServer } from "node:net";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 const cwd = fileURLToPath(new URL("../", import.meta.url));
@@ -12,9 +14,25 @@ await new Promise((resolve, reject) =>
   socket.close((error) => (error ? reject(error) : resolve())),
 );
 
-const server = Bun.spawn(
+function launch(args, env) {
+  const child = spawn(process.execPath, args, { cwd, stdio: "inherit", env });
+  const result = { child, done: false, exited: undefined };
+  result.exited = new Promise((resolve) => {
+    child.once("error", (error) => {
+      console.error(error.message);
+      result.done = true;
+      resolve(1);
+    });
+    child.once("exit", (code) => {
+      result.done = true;
+      resolve(code ?? 1);
+    });
+  });
+  return result;
+}
+
+const server = launch(
   [
-    "node",
     fileURLToPath(import.meta.resolve("next/dist/bin/next")),
     "start",
     "--hostname",
@@ -22,24 +40,21 @@ const server = Bun.spawn(
     "--port",
     String(port),
   ],
-  {
-    cwd,
-    stdout: "inherit",
-    stderr: "inherit",
-    env: { ...process.env, NODE_ENV: "production" },
-  },
+  { ...process.env, NODE_ENV: "production" },
 );
 const url = `http://localhost:${port}`;
 let tests;
 let shutdown;
+let stopping = false;
 const stop = () => {
+  stopping = true;
   shutdown ??= Promise.all(
-    [tests, server].map(async (child) => {
-      if (!child || child.exitCode !== null) return;
-      child.kill("SIGTERM");
-      const deadline = setTimeout(() => child.kill("SIGKILL"), 5000);
+    [tests, server].map(async (process) => {
+      if (!process || process.done) return;
+      process.child.kill("SIGTERM");
+      const deadline = setTimeout(() => process.child.kill("SIGKILL"), 5000);
       try {
-        await child.exited;
+        await process.exited;
       } finally {
         clearTimeout(deadline);
       }
@@ -59,9 +74,9 @@ for (const [signal, code] of [
 try {
   const deadline = Date.now() + 60000;
   let ready = false;
-  while (Date.now() < deadline) {
-    if (server.exitCode !== null)
-      throw new Error(`Docs server exited with ${server.exitCode}`);
+  while (Date.now() < deadline && !stopping) {
+    if (server.done)
+      throw new Error(`Docs server exited with ${await server.exited}`);
     try {
       const response = await fetch(`${url}/robots.txt`, {
         signal: AbortSignal.timeout(1000),
@@ -72,19 +87,19 @@ try {
         break;
       }
     } catch {}
-    await Bun.sleep(100);
+    await sleep(100);
   }
-  if (!ready)
+  if (!ready && !stopping)
     throw new Error(
       "Docs server did not become ready. Run the docs build first.",
     );
-  tests = Bun.spawn([process.execPath, "test", "tests/docs-routes.test.mjs"], {
-    cwd,
-    stdout: "inherit",
-    stderr: "inherit",
-    env: { ...process.env, DOCS_TEST_URL: url },
-  });
-  process.exitCode = await tests.exited;
+  if (!stopping) {
+    tests = launch(["--test", "tests/docs-routes.test.mjs"], {
+      ...process.env,
+      DOCS_TEST_URL: url,
+    });
+    process.exitCode = await tests.exited;
+  }
 } finally {
   await stop();
 }

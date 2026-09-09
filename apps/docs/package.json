@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "type-check": "tsc --noEmit",
-    "test:routes": "bun scripts/test-routes.mjs",
+    "test:routes": "node scripts/test-routes.mjs",
     "lint": "eslint"
   },
   "dependencies": {

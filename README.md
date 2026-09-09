@@ -92,10 +92,10 @@ pnpm --filter @wterm/docs dev
 
 Portless prints the local URL for `docs.wterm.localhost`. Documentation search, per-page Markdown (`/react.md`), `/llms.txt`, and `/sitemap.md` share the same content source. Compatible browsers expose the read-only WebMCP tools `search_docs` and `read_current_page`; ordinary browsers need no experimental features. Configuration lives in `apps/docs/src/lib/geistdocs/config.tsx`.
 
-With the server running, verify the public route contract with Bun, using the exact URL printed by Portless:
+With the server running, verify the public route contract with Node.js, using the exact URL printed by Portless:
 
 ```bash
-NODE_EXTRA_CA_CERTS="$HOME/.portless/ca.pem" DOCS_TEST_URL=https://docs.wterm.localhost:1355 bun test apps/docs/tests/docs-routes.test.mjs
+NODE_EXTRA_CA_CERTS="$HOME/.portless/ca.pem" DOCS_TEST_URL=https://docs.wterm.localhost:1355 node --test apps/docs/tests/docs-routes.test.mjs
 ```
 
 CI also checks the production build with `pnpm --filter @wterm/docs test:routes`. This starts an isolated loopback server on an available port, runs the route suite, and shuts the server down. Build the docs first with `pnpm --filter @wterm/docs build`. Running the suite without a URL fails rather than silently skipping it.
