@@ -43,6 +43,10 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - run: pnpm install --frozen-lockfile
 
       - name: Format check
@@ -50,6 +54,9 @@ jobs:
 
       - name: Build packages
         run: pnpm build
+
+      - name: Docs route contract
+        run: pnpm --filter @wterm/docs test:routes
 
       - name: Test
         run: pnpm test

@@ -31,11 +31,11 @@ Do **not** add `--port` flags — portless handles port assignment automatically
 
 For any user-facing change (new feature, option, API change, bug fix, etc.), update all relevant documentation:
 
-- **Docs app** (`apps/docs/src/app/`): Update the corresponding MDX pages (e.g. `get-started/page.mdx`, `vanilla/page.mdx`, `react/page.mdx`, `configuration/page.mdx`, `themes/page.mdx`). Tables in MDX must use `<table>` HTML elements, not markdown table syntax.
+- **Docs content** (`apps/docs/content/docs/`): Update the corresponding MDX pages (e.g. `get-started.mdx`, `vanilla.mdx`, `react.mdx`, `configuration.mdx`, `themes.mdx`). Geistdocs renders the frontmatter title; do not repeat it as an H1 in the body. Tables in MDX must use `<table>` HTML elements, not markdown table syntax. Public URLs remain at the site root.
 - **Root README** (`README.md`): Keep the package table, features list, and development instructions current.
 - **Package READMEs**: Each package under `packages/@wterm/` has its own `README.md`. Update the relevant one when its API, options, or usage changes.
 - **`@wterm/core` README**: Must link to every other `@wterm/*` package. When adding or removing a package, update the "Related Packages" section in `packages/@wterm/core/README.md`.
-- **Navigation** (`apps/docs/src/lib/docs-navigation.ts`): Update if adding or renaming pages.
+- **Navigation** (`apps/docs/content/docs/meta.json`): Update if adding or renaming pages. Shared docs behavior and WebMCP are configured in `apps/docs/src/lib/geistdocs/config.tsx`.
 - **Page titles** (`apps/docs/src/lib/page-titles.ts`): Update if adding new pages.
 - **Example READMEs**: Each example under `examples/` must have a `README.md` covering what it does, setup steps, how it works, and key files.
 - **Code examples in docs**: Ensure import paths match the current package structure (e.g. `@wterm/dom` for vanilla JS, `@wterm/react` for React).

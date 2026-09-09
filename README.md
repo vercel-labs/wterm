@@ -81,6 +81,49 @@ node scripts/gen-unicode-width.mjs
 pnpm build
 ```
 
+### Run the documentation
+
+The docs use Geistdocs with content in `apps/docs/content/docs`. Existing URLs stay at the site root, including `/get-started`, `/react`, and `/api-reference`. The homepage keeps the interactive terminal, and Ask AI keeps the wterm chat interface.
+
+```bash
+pnpm exec turbo run build --filter='@wterm/docs^...'
+pnpm --filter @wterm/docs dev
+```
+
+Portless prints the local URL for `docs.wterm.localhost`. Documentation search, per-page Markdown (`/react.md`), `/llms.txt`, and `/sitemap.md` share the same content source. Compatible browsers expose the read-only WebMCP tools `search_docs` and `read_current_page`; ordinary browsers need no experimental features. Configuration lives in `apps/docs/src/lib/geistdocs/config.tsx`.
+
+With the server running, verify the public route contract with Bun, using the exact URL printed by Portless:
+
+```bash
+NODE_EXTRA_CA_CERTS="$HOME/.portless/ca.pem" DOCS_TEST_URL=https://docs.wterm.localhost:1355 bun test apps/docs/tests/docs-routes.test.mjs
+```
+
+CI also checks the production build with `pnpm --filter @wterm/docs test:routes`. This starts an isolated loopback server on an available port, runs the route suite, and shuts the server down. Build the docs first with `pnpm --filter @wterm/docs build`. Running the suite without a URL fails rather than silently skipping it.
+
+To test WebMCP with [agent-browser](https://github.com/vercel-labs/agent-browser), use a separate browser session and the local URL printed by Portless:
+
+```bash
+export AGENT_BROWSER_SESSION=wterm-webmcp-test
+agent-browser --headed open https://docs.wterm.localhost:1355
+agent-browser webmcp list
+agent-browser --json webmcp invoke search_docs --params '{"query":"WebSocketTransport"}'
+agent-browser open https://docs.wterm.localhost:1355/react
+agent-browser --json webmcp invoke read_current_page --params '{}'
+```
+
+Both invocations should report `data.status: "completed"`. Reading after navigation should return the React documentation, not the homepage. The tools are read-only; they do not navigate automatically, run terminal commands, or send data to a model.
+
+The full search payload includes highlighting and page/heading/text matches for agents and the search UI. For a compact manual view with `jq`:
+
+```bash
+agent-browser --json webmcp invoke search_docs --params '{"query":"WebSocketTransport"}' |
+  jq -er 'if .success and .data.status == "completed" then .data.output[] | select(.type == "page" or .type == "heading") | [.content, .url] | @tsv else error("WebMCP search failed") end'
+```
+
+When finished, run `agent-browser close` to close only the test session.
+
+Ask AI still requires the KV rate-limit configuration and model access; it returns 503 when KV is not configured. Search and WebMCP do not require model credentials.
+
 ### Run the vanilla demo
 
 Serve the `web/` directory with any static file server:

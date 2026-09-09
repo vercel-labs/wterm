@@ -6,6 +6,8 @@ packages:
   - "examples/*"
 
 minimumReleaseAge: 2880
+minimumReleaseAgeExclude:
+  - "@vercel/geistdocs@1.28.1"
 
 allowBuilds:
   "@mongodb-js/zstd": false
@@ -17,6 +19,3 @@ allowBuilds:
   "sharp": false
   "ssh2": false
   "unrs-resolver": false
-
-patchedDependencies:
-  "next-themes@0.4.6": "patches/next-themes@0.4.6.patch"

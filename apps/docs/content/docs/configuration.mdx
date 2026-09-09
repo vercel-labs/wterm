@@ -1,0 +1,143 @@
+---
+title: "Configuration"
+navTitle: "Configuration"
+---
+
+## Options
+
+The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, and `debug` — plus event callbacks `onData`, `onTitle`, and `onResize` (exposed as `@data`, `@title`, and `@resize` events in Vue).
+
+See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
+
+### Pluggable cores
+
+By default, wterm uses its built-in lightweight Zig WASM core (~12 KB). To use a different terminal emulation backend, pass a `TerminalCore` instance via the `core` option. See the [Ghostty Core](/ghostty) page for an example using libghostty.
+
+Graphics support is optional on `TerminalCore`. The built-in core safely
+consumes unsupported Kitty APC payloads without rendering image bytes;
+`@wterm/ghostty` provides bounded direct Kitty PNG/RGB/RGBA rendering. Its
+decoded image budget defaults to 32 MiB and can be disabled with
+`imageStorageLimit: 0`. Use `maxImageWidth` and/or `maxImageHeight` to cap the
+rendered dimensions of decoded images without changing that storage budget.
+The DOM wrapper answers Kitty pixel geometry queries (`CSI 14 t` and
+`CSI 16 t`) from the rendered terminal element and forwards the reports
+through `onData`.
+
+### React-only
+
+The React `Terminal` component adds `theme`, `onReady`, and `onError` on top of the shared options. It also spreads standard HTML attributes onto the root `div`, so you can pass `className`, `style`, ARIA attributes, and other DOM props directly.
+
+See [React-Only Props](/api-reference#react-only-props) for details.
+
+### Vue-only
+
+The Vue `Terminal` component adds a `theme` prop. `onReady` and `onError` are exposed as `@ready` and `@error` events instead of props. Standard DOM attributes (`class`, `style`, `id`, ARIA props, etc.) are forwarded to the root `<div>` via the default `inheritAttrs` behavior.
+
+See [Vue-Only Props](/api-reference#vue-only-props) and [Vue Events](/api-reference#vue-events) for details.
+
+### Svelte-only
+
+The Svelte `Terminal` component adds the `theme` prop and forwards standard
+`<div>` attributes such as `class`, `style`, `id`, and ARIA attributes. Svelte 5
+applications can use the `onData`, `onTitle`, `onResize`, `onReady`, and
+`onError` callback props.
+
+See [Svelte-only Props](/api-reference#svelte-only-props) for details.
+
+## Imperative Handle (React)
+
+When using `useTerminal`, the returned ref exposes an imperative handle:
+
+```tsx
+import { Terminal, useTerminal } from "@wterm/react";
+
+function App() {
+  const { ref } = useTerminal();
+
+  return (
+    <Terminal
+      ref={ref}
+      onReady={(wt) => {
+        wt.resize(120, 40);
+      }}
+    />
+  );
+}
+```
+
+See the full [Imperative Handle](/api-reference#imperative-handle-react) reference for all returned methods.
+
+## Template Ref (Vue)
+
+Access imperative methods on the Vue component via a template ref:
+
+```vue
+<script setup lang="ts">
+import { useTemplateRef } from "vue";
+import { Terminal, type WTerm } from "@wterm/vue";
+
+const term = useTemplateRef("term");
+
+function onReady(wt: WTerm) {
+  wt.resize(120, 40);
+}
+</script>
+
+<template>
+  <Terminal ref="term" @ready="onReady" />
+</template>
+```
+
+See the full [Template Ref (Vue)](/api-reference#template-ref-vue) reference for all exposed methods.
+
+## Imperative Handle (Svelte)
+
+Bind the Svelte component instance to call its imperative methods:
+
+```svelte
+<script lang="ts">
+import { Terminal, type TerminalHandle } from "@wterm/svelte";
+
+let terminal: TerminalHandle;
+</script>
+
+<Terminal bind:this={terminal} />
+```
+
+See the full [Imperative Handle (Svelte)](/api-reference#imperative-handle-svelte) reference for all exposed methods.
+
+## WebSocket Transport
+
+For connecting to a remote shell over WebSocket, use the built-in `WebSocketTransport`:
+
+```ts
+import { WTerm, WebSocketTransport } from "@wterm/dom";
+
+const ws = new WebSocketTransport({
+  url: "wss://your-server.example/shell",
+  reconnect: true,
+  maxReconnectDelay: 5000,
+  onData(data) {
+    term.write(data);
+  },
+  onOpen() {
+    console.log("connected");
+  },
+  onClose() {
+    console.log("disconnected");
+  },
+});
+
+const term = new WTerm(document.getElementById("terminal"), {
+  onData(data) {
+    ws.send(data);
+  },
+});
+
+await term.init();
+ws.connect();
+```
+
+See the full [WebSocketTransport](/api-reference#websockettransport) reference for all options, methods, and properties.
+
+The transport buffers any `send()` calls made before the connection is open and flushes them automatically on connect.
