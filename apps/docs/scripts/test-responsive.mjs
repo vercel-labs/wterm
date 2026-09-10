@@ -60,17 +60,17 @@ const measure = `(() => {
     pageHeight: document.documentElement.scrollHeight,
     scrollY,
     heading: rect(heading),
-    search: rect([...document.querySelectorAll('[data-header-actions] button')].find(element => element.textContent.includes('Search') && visible(element))),
-    github: rect([...document.querySelectorAll('[data-header-actions] a[aria-label="GitHub repository"]')].find(visible)),
+    footerTheme: rect([...document.querySelectorAll('footer label[for^="theme-switch-"]')].find(visible)),
+    footerThemeGroup: rect(document.querySelector('footer input[id^="theme-switch-"]')?.closest('fieldset')),
+    search: rect([...document.querySelectorAll('header button')].find(element => element.textContent.includes('Search') && visible(element))),
+    github: rect([...document.querySelectorAll('header a[aria-label="GitHub repository"]')].find(visible)),
     actionGap: copy && heading ? copy.getBoundingClientRect().top - heading.getBoundingClientRect().bottom : null,
     tocOverlapsHeading: toc && visible(toc) && overlap(rect(toc), rect(heading)),
     triggers: triggers.map(element => ({
-      location: element.closest('[data-wterm-header]') ? 'header' : 'floating',
+      location: element.closest('[data-docs-chat-launcher]') ? 'floating' : 'inline',
       box: rect(element),
-      navigationBox: rect(element.closest('[data-wterm-header]')),
-      navigationBackground: getComputedStyle(element.closest('[data-wterm-header]')).backgroundColor,
       background: getComputedStyle(element).backgroundColor,
-      borderWidth: parseFloat(getComputedStyle(element).borderTopWidth),
+      primary: element.classList.contains('bg-gray-1000') && element.classList.contains('text-background-100'),
       overlapsTheme: themes.some(theme => overlap(rect(element), rect(theme))),
       overlapsHeading: overlap(rect(element), rect(heading)),
     })),
@@ -83,6 +83,10 @@ try {
   evaluate("document.fonts.ready.then(() => true)");
   for (const theme of ["dark", "light"]) {
     viewport(1440, 900);
+    browser("scroll", "down", "100000");
+    evaluate(
+      "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))",
+    );
     browser("click", `footer label[for^="theme-switch-${theme}-"]`);
     browser(
       "wait",
@@ -97,6 +101,9 @@ try {
       for (const position of ["top", "middle", "bottom"]) {
         if (position === "middle") browser("scroll", "down", "600");
         if (position === "bottom") browser("scroll", "down", "100000");
+        evaluate(
+          "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))",
+        );
         const data = evaluate(measure);
         const label = `${theme}/${width}/${position}`;
         results.push({ theme, position, ...data });
@@ -119,34 +126,57 @@ try {
             );
         }
         for (const trigger of data.triggers) {
-          assert.ok(
-            trigger.borderWidth >= 1,
-            `${label}: Ask AI is not outline`,
+          assert.equal(
+            trigger.primary,
+            true,
+            `${label}: Ask AI is not primary`,
           );
-          if (data.search) {
+          if (width < 640) {
             assert.ok(
-              data.search.right <= trigger.box.left,
-              `${label}: Ask AI must follow Search`,
+              Math.abs((trigger.box.left + trigger.box.right) / 2 - width / 2) <
+                1,
+              `${label}: mobile launcher is not centered`,
             );
-            assert.equal(
-              data.search.height,
-              trigger.box.height,
-              `${label}: header control heights differ`,
-            );
+            if (position === "bottom") {
+              assert.ok(data.footerTheme, `${label}: theme control missing`);
+              assert.ok(
+                Math.abs(
+                  (trigger.box.top + trigger.box.bottom) / 2 -
+                    (data.footerTheme.top + data.footerTheme.bottom) / 2,
+                ) < 1,
+                `${label}: launcher is not aligned with theme controls`,
+              );
+            }
+          } else {
+            const theme = data.footerThemeGroup;
+            assert.ok(theme, `${label}: theme control missing`);
+            const rightInset = (width - theme.right) * 0.8;
+            const actualRight = width - trigger.box.right;
             assert.ok(
-              data.search.width <= 150,
-              `${label}: Search is not compact`,
+              actualRight >= rightInset - 1 &&
+                actualRight <= width - theme.right + 1,
+            );
+            if (theme.top < 844) {
+              assert.ok(
+                Math.abs(trigger.box.right - theme.right) < 1,
+                `${label}: launcher must align with the theme control at the footer`,
+              );
+            } else if (theme.top >= 924) {
+              assert.ok(
+                Math.abs(actualRight - rightInset) < 1,
+                `${label}: desktop right margin must be reduced by 20% away from the footer`,
+              );
+            }
+            const expectedBottom = Math.max(rightInset, 844 - theme.top + 16);
+            assert.ok(
+              Math.abs(844 - trigger.box.bottom - expectedBottom) < 1,
+              `${label}: bottom must match the right inset unless avoiding footer controls`,
             );
           }
-          if (data.github)
-            assert.ok(
-              trigger.box.right <= data.github.left,
-              `${label}: Ask AI must precede GitHub`,
-            );
-          assert.notEqual(
+          assert.equal(
             trigger.location,
             "floating",
-            `${label}: floating launcher`,
+            `${label}: launcher is not floating`,
           );
           assert.equal(
             trigger.overlapsTheme,
@@ -164,18 +194,15 @@ try {
             `${label}: transparent launcher`,
           );
           assert.ok(
-            trigger.box.height >= 32 && trigger.box.height <= 34,
-            `${label}: header button is not compact`,
-          );
-          assert.notEqual(
-            trigger.navigationBackground,
-            "rgba(0, 0, 0, 0)",
-            `${label}: transparent navigation bar`,
+            trigger.box.height >= 40 && trigger.box.height <= 44,
+            `${label}: unexpected launcher height`,
           );
           assert.ok(
-            trigger.box.bottom <= trigger.navigationBox.bottom + 1 &&
-              trigger.box.top >= trigger.navigationBox.top - 1,
-            `${label}: launcher outside navigation bar`,
+            trigger.box.left >= 0 &&
+              trigger.box.right <= width &&
+              trigger.box.top >= 64 &&
+              trigger.box.bottom <= 844 - (width < 640 ? 15 : 7),
+            `${label}: launcher outside safe bounds`,
           );
         }
         if ([390, 768, 960, 1440].includes(width))
@@ -186,10 +213,56 @@ try {
       }
     }
   }
-  for (const width of [390, 640, 800, 1024, 1440]) {
+  for (const width of [1024, 1440, 1920]) {
+    viewport(width);
+    for (const distance of [160, 120, 80, 40, 0, 40, 80, 160]) {
+      browser("scroll", "down", "100000");
+      if (distance) browser("scroll", "up", String(distance));
+      evaluate(
+        "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))",
+      );
+      const data = evaluate(measure);
+      const trigger = data.triggers[0];
+      const theme = data.footerThemeGroup;
+      assert.ok(
+        trigger && theme,
+        `${width}/${distance}: docking elements missing`,
+      );
+      assert.equal(
+        trigger.overlapsTheme,
+        false,
+        `${width}/${distance}: theme controls covered during docking`,
+      );
+      const rightInset = (width - theme.right) * 0.8;
+      const actualRight = width - trigger.box.right;
+      assert.ok(
+        actualRight >= rightInset - 1 && actualRight <= width - theme.right + 1,
+      );
+      if (theme.top < 844) {
+        assert.ok(
+          Math.abs(trigger.box.right - theme.right) < 1,
+          `${width}/${distance}: footer alignment missing`,
+        );
+      } else if (theme.top >= 924) {
+        assert.ok(
+          Math.abs(actualRight - rightInset) < 1,
+          `${width}/${distance}: reduced margin not restored`,
+        );
+      }
+      assert.ok(
+        Math.abs(
+          844 - trigger.box.bottom - Math.max(rightInset, 844 - theme.top + 16),
+        ) < 1,
+      );
+      results.push({ interaction: "footer-docking", width, distance, ...data });
+      if (distance === 0)
+        browser("screenshot", resolve(output, `footer-docked-${width}.png`));
+    }
+  }
+  for (const width of [390, 430, 639, 640, 800, 1024, 1440]) {
     viewport(width);
     browser("scroll", "up", "100000");
-    browser("click", '[data-wterm-header] button[aria-label="Ask AI"]');
+    browser("click", '[data-docs-chat-launcher] button[aria-label="Ask AI"]');
     const id = width >= 640 ? "wterm-chat-desktop" : "wterm-chat-mobile";
     browser(
       "wait",
@@ -207,16 +280,12 @@ try {
         "--fn",
         `Math.abs(parseFloat(getComputedStyle(document.body).paddingRight) - document.getElementById('wterm-chat-desktop').getBoundingClientRect().width) < 1`,
       );
-      const header = evaluate(
-        `({width:document.querySelector('[data-wterm-header]').getBoundingClientRect().width, brandRight:document.querySelector('[data-wterm-header] a[href="/"]').getBoundingClientRect().right, askLeft:document.querySelector('[data-wterm-header] button[aria-label="Ask AI"]').getBoundingClientRect().left})`,
+      const headerWidth = evaluate(
+        "document.querySelector('header').getBoundingClientRect().width",
       );
       assert.ok(
-        header.width >= 319,
+        headerWidth >= 319,
         `${width}: chat leaves insufficient room for documentation`,
-      );
-      assert.ok(
-        header.brandRight + 8 <= header.askLeft,
-        `${width}: open chat crowds the header`,
       );
     }
     const panel = evaluate(
@@ -234,7 +303,11 @@ try {
       );
     settleAnimations(`#${id}`);
     browser("screenshot", resolve(output, `chat-${width}.png`));
-    browser("press", "Escape");
+    assert.equal(
+      evaluate("document.querySelectorAll('[data-docs-chat-launcher]').length"),
+      0,
+    );
+    browser("click", `#${id} button[aria-label="Close panel"]`);
     browser(
       "wait",
       "--fn",
@@ -249,15 +322,28 @@ try {
     );
     results.push({ interaction: "chat-open-close", width, panel });
   }
+  viewport(1440);
+  assert.equal(
+    evaluate(
+      "document.querySelectorAll('header [aria-label=\"Product navigation\"]').length",
+    ),
+    1,
+  );
   viewport(390);
   browser("scroll", "up", "100000");
-  browser("click", '[data-wterm-header] button[aria-label="Open menu"]');
+  browser("click", 'header [data-slot="mobile-menu-toggle"]');
   browser(
     "wait",
     "--fn",
-    `document.getElementById('wterm-header-menu')?.hidden === false`,
+    `document.querySelector('header [data-slot="mobile-menu-toggle"]')?.getAttribute('aria-expanded') === 'true'`,
   );
-  browser("click", "[data-header-menu-search] button");
+  assert.equal(
+    evaluate(
+      `[...document.querySelectorAll("header summary")].some(e => e.textContent.includes("Vercel OSS"))`,
+    ),
+    true,
+  );
+  browser("find", "role", "button", "click", "--name", "Search");
   browser(
     "wait",
     "--fn",
@@ -277,18 +363,18 @@ try {
     "--fn",
     `[...document.querySelectorAll('[data-geistdocs-command-modal] button')].some(button => button.textContent.includes('API Reference'))`,
   );
-  browser("press", "Escape");
+  browser("find", "role", "button", "click", "--name", "ESC");
   browser(
     "wait",
     "--fn",
     "!document.querySelector('[data-geistdocs-command-modal]')",
   );
-  browser("click", '[data-wterm-header] button[aria-label="Open menu"]');
+  browser("click", 'header [data-slot="mobile-menu-toggle"]');
   viewport(1440);
   browser(
     "wait",
     "--fn",
-    `document.getElementById('wterm-header-menu')?.hidden === true && getComputedStyle(document.body).overflow !== 'hidden'`,
+    `document.querySelector('header [data-slot="mobile-menu-toggle"]')?.getAttribute('aria-expanded') === 'false' && getComputedStyle(document.body).overflow !== 'hidden'`,
   );
   viewport(390);
   browser("scroll", "up", "100000");

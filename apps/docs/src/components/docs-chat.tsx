@@ -520,10 +520,10 @@ export function DocsChatTrigger() {
   return (
     <Button
       type="button"
-      variant="outline"
+      variant="default"
       size="sm"
       onClick={() => updateOpen((previous) => !previous)}
-      className="shrink-0 px-3 shadow-none"
+      className="h-10 shrink-0 px-4 shadow-sm"
       aria-label="Ask AI"
       aria-expanded={open}
       aria-controls={isDesktop ? "wterm-chat-desktop" : "wterm-chat-mobile"}
@@ -547,6 +547,57 @@ export function DocsChat() {
   );
   const showTerminal = open || hasBeenOpened;
   const isDraggingRef = useRef(false);
+  const launcherRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const launcher = launcherRef.current;
+    if (!isDesktop || open || !launcher) return;
+    const footer = document.querySelector("footer");
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const theme = footer
+        ?.querySelector('input[id^="theme-switch-"]')
+        ?.closest("fieldset")
+        ?.getBoundingClientRect();
+      const themeInset =
+        theme && theme.width > 0
+          ? Math.max(0, document.documentElement.clientWidth - theme.right)
+          : 24;
+      const baseInset = themeInset * 0.8;
+      const proximity =
+        theme && theme.width > 0 && theme.bottom > 0
+          ? Math.min(1, Math.max(0, (window.innerHeight + 80 - theme.top) / 80))
+          : 0;
+      const right = baseInset + (themeInset - baseInset) * proximity;
+      const bottom =
+        theme && theme.width > 0 && theme.bottom > 0
+          ? Math.max(baseInset, window.innerHeight - theme.top + 16)
+          : baseInset;
+      launcher.style.setProperty("--chat-launcher-bottom", `${bottom}px`);
+      launcher.style.setProperty("--chat-launcher-right", `${right}px`);
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    const resize = new ResizeObserver(schedule);
+    resize.observe(document.body);
+    const mutation = new MutationObserver(schedule);
+    if (footer) {
+      resize.observe(footer);
+      mutation.observe(footer, { childList: true, subtree: true });
+    }
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    update();
+    return () => {
+      cancelAnimationFrame(frame);
+      resize.disconnect();
+      mutation.disconnect();
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [isDesktop, open]);
 
   const updateDesktopWidth = useCallback(
     (next: number) => setWidthStr(String(next)),
@@ -645,9 +696,18 @@ export function DocsChat() {
 
   return (
     <>
+      {!open && (
+        <div
+          ref={launcherRef}
+          className="fixed left-1/2 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-30 -translate-x-1/2 min-[640px]:left-auto min-[640px]:right-[var(--chat-launcher-right,19.2px)] min-[640px]:bottom-[var(--chat-launcher-bottom,19.2px)] min-[640px]:translate-x-0"
+          data-docs-chat-launcher
+        >
+          <DocsChatTrigger />
+        </div>
+      )}
       <aside
         id="wterm-chat-desktop"
-        className={`hidden sm:flex fixed top-0 right-0 bottom-0 z-40 border-l border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 transition-transform duration-150 ease-in-out ${open ? "translate-x-0" : "translate-x-full"}`}
+        className={`hidden min-[640px]:flex fixed top-0 right-0 bottom-0 z-40 border-l border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 transition-transform duration-150 ease-in-out ${open ? "translate-x-0" : "translate-x-full"}`}
         style={{ width: `min(${desktopWidth}px, calc(100vw - 320px))` }}
         aria-hidden={!open || !isDesktop}
         inert={!open || !isDesktop}

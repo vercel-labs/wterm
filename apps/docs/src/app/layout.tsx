@@ -1,5 +1,6 @@
 import { Footer } from "@vercel/geistdocs/footer";
-import { DocsHeader } from "@/components/docs-header";
+import { Navbar } from "@vercel/geistdocs/navbar";
+import { config } from "@/lib/geistdocs/config";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import type { Metadata, Viewport } from "next";
@@ -50,7 +51,7 @@ export default function RootLayout({
       <body>
         <DocsProvider>
           <DocsChatProvider>
-            <DocsHeader />
+            <Navbar config={config} />
             {children}
             <Footer />
             <DocsChat />
