@@ -11,6 +11,7 @@
     "start": "next start",
     "type-check": "tsc --noEmit",
     "test:routes": "node scripts/test-routes.mjs",
+    "test:responsive": "node scripts/test-responsive.mjs",
     "lint": "eslint"
   },
   "dependencies": {

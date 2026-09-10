@@ -100,6 +100,10 @@ NODE_EXTRA_CA_CERTS="$HOME/.portless/ca.pem" DOCS_TEST_URL=https://docs.wterm.lo
 
 CI also checks the production build with `pnpm --filter @wterm/docs test:routes`. This starts an isolated loopback server on an available port, runs the route suite, and shuts the server down. Build the docs first with `pnpm --filter @wterm/docs build`. Running the suite without a URL fails rather than silently skipping it.
 
+For responsive browser checks, install `agent-browser` separately and run `DOCS_TEST_URL=https://docs.wterm.localhost:1355 pnpm --filter @wterm/docs test:responsive`. It checks narrow, intermediate, and desktop widths in both themes, top/middle/bottom scroll positions, and chat opening/closing without making model requests. Screenshots and measurements go to `apps/docs/test-results/docs-responsive`, or `DOCS_ARTIFACT_DIR` when set. This optional browser check is separate from the dependency-free Node route suite in CI.
+
+Ask AI is a compact outline button in the sticky header, immediately after Search on desktop and before the menu on smaller layouts. The mobile docs menu and sticky table-of-contents button remain separate from the header. The existing chat modes remain: a full-screen sheet below 640px and a resizable side panel on wider screens. The side panel leaves at least 320px for the documentation and header. The small-screen header menu is a non-modal dropdown, so opening Search and resizing do not leave a modal scroll lock behind.
+
 To test WebMCP with [agent-browser](https://github.com/vercel-labs/agent-browser), use a separate browser session and the local URL printed by Portless:
 
 ```bash

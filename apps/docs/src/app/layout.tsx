@@ -1,11 +1,10 @@
 import { Footer } from "@vercel/geistdocs/footer";
-import { Navbar } from "@vercel/geistdocs/navbar";
+import { DocsHeader } from "@/components/docs-header";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import type { Metadata, Viewport } from "next";
-import { DocsChat } from "@/components/docs-chat";
+import { DocsChat, DocsChatProvider } from "@/components/docs-chat";
 import { DocsProvider } from "@/components/geistdocs-provider";
-import { config } from "@/lib/geistdocs/config";
 import "./globals.css";
 
 export const viewport: Viewport = { viewportFit: "cover" };
@@ -50,10 +49,12 @@ export default function RootLayout({
     >
       <body>
         <DocsProvider>
-          <Navbar config={config} />
-          {children}
-          <Footer />
-          <DocsChat />
+          <DocsChatProvider>
+            <DocsHeader />
+            {children}
+            <Footer />
+            <DocsChat />
+          </DocsChatProvider>
         </DocsProvider>
       </body>
     </html>
