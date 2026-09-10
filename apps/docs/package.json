@@ -5,19 +5,20 @@
   "scripts": {
     "predev": "mkdir -p public && cp node_modules/@wterm/core/wasm/wterm.wasm public/wterm.wasm && (command -v portless >/dev/null 2>&1 || (echo '\\nportless is required but not installed. Run: npm i -g portless\\nSee: https://github.com/vercel-labs/portless\\n' && exit 1))",
     "dev": "portless docs.wterm next dev --turbopack",
-    "prebuild": "mkdir -p public && cp node_modules/@wterm/core/wasm/wterm.wasm public/wterm.wasm",
+    "postinstall": "fumadocs-mdx",
+    "prebuild": "fumadocs-mdx && mkdir -p public && cp node_modules/@wterm/core/wasm/wterm.wasm public/wterm.wasm",
     "build": "next build",
     "start": "next start",
     "type-check": "tsc --noEmit",
+    "test:routes": "node scripts/test-routes.mjs",
+    "test:responsive": "node scripts/test-responsive.mjs",
     "lint": "eslint"
   },
   "dependencies": {
     "@ai-sdk/react": "^3",
-    "@mdx-js/loader": "^3",
-    "@mdx-js/react": "^3",
-    "@next/mdx": "^16.2.3",
     "@upstash/ratelimit": "^2",
     "@upstash/redis": "^1",
+    "@vercel/geistdocs": "^1.28.1",
     "@wterm/core": "workspace:*",
     "@wterm/dom": "workspace:*",
     "@wterm/just-bash": "workspace:*",
@@ -26,9 +27,11 @@
     "ai": "^6",
     "bash-tool": "^1",
     "clsx": "^2",
+    "fumadocs-core": "^16.15.8",
+    "fumadocs-mdx": "^14.0.4",
     "geist": "^1",
     "just-bash": "^2",
-    "next": "^16.2.3",
+    "next": "^16.3.4",
     "next-themes": "^0.4",
     "radix-ui": "^1",
     "react": "^19.2.5",
@@ -36,7 +39,8 @@
     "shiki": "^4.0.2",
     "streamdown": "^2",
     "tailwind-merge": "^3",
-    "tailwindcss-animate": "^1"
+    "tailwindcss-animate": "^1",
+    "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

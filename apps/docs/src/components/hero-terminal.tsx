@@ -161,10 +161,11 @@ export function HeroSection() {
           <button
             key={value}
             onClick={() => setTheme(value)}
+            aria-pressed={theme === value}
             className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
               theme === value
                 ? "bg-neutral-200 text-neutral-900 dark:bg-neutral-700 dark:text-neutral-100"
-                : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-300"
+                : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
             }`}
           >
             {label}
@@ -173,7 +174,7 @@ export function HeroSection() {
         <div className="ml-auto">
           <button
             onClick={() => setFullscreen((f) => !f)}
-            className="rounded-md px-2 py-1 text-neutral-500 hover:text-neutral-700 transition-colors dark:text-neutral-500 dark:hover:text-neutral-300"
+            className="rounded-md px-2 py-1 text-neutral-500 hover:text-neutral-700 transition-colors dark:text-neutral-400 dark:hover:text-neutral-300"
             title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
           >
             {fullscreen ? <CollapseIcon /> : <FullscreenIcon />}
@@ -198,6 +199,7 @@ export function HeroSection() {
                   <button
                     key={value}
                     onClick={() => setTheme(value)}
+                    aria-pressed={theme === value}
                     className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
                       theme === value
                         ? "bg-neutral-700 text-neutral-100"

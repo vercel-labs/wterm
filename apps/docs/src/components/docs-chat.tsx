@@ -1,13 +1,18 @@
 "use client";
 
 import {
+  createContext,
+  useContext,
+  useMemo,
   useRef,
   useEffect,
   useState,
   useCallback,
   useSyncExternalStore,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { Button } from "@vercel/geistdocs/components/button";
 import { Terminal, useTerminal } from "@wterm/react";
 import "@wterm/react/css";
 import { MarkdownRenderer } from "@wterm/markdown";
@@ -470,26 +475,26 @@ function useCookieState(
   return [value, setValue];
 }
 
-export function DocsChat() {
+type DocsChatState = {
+  open: boolean;
+  isDesktop: boolean;
+  hasBeenOpened: boolean;
+  updateOpen: (next: boolean | ((previous: boolean) => boolean)) => void;
+};
+
+const DocsChatContext = createContext<DocsChatState | null>(null);
+
+function useDocsChat() {
+  const context = useContext(DocsChatContext);
+  if (!context) throw new Error("DocsChatProvider is required");
+  return context;
+}
+
+export function DocsChatProvider({ children }: { children: ReactNode }) {
   const isDesktop = useMediaQuery("(min-width: 640px)");
-  const hasMounted = useMounted();
-
   const [openStr, setOpenStr] = useCookieState("docs-chat-open", "false");
-  const [widthStr, setWidthStr] = useCookieState(
-    "docs-chat-width",
-    String(DESKTOP_DEFAULT_WIDTH),
-  );
-
-  const open = openStr === "true";
-  const desktopWidth = Math.min(
-    DESKTOP_MAX_WIDTH,
-    Math.max(DESKTOP_MIN_WIDTH, Number(widthStr) || DESKTOP_DEFAULT_WIDTH),
-  );
-
   const [hasBeenOpened, setHasBeenOpened] = useState(false);
-  const showTerminal = open || hasBeenOpened;
-  const isDraggingRef = useRef(false);
-
+  const open = openStr === "true";
   const updateOpen = useCallback(
     (next: boolean | ((prev: boolean) => boolean)) => {
       const current = readCookie("docs-chat-open") === "true";
@@ -499,6 +504,100 @@ export function DocsChat() {
     },
     [setOpenStr],
   );
+  const value = useMemo(
+    () => ({ open, isDesktop, hasBeenOpened, updateOpen }),
+    [open, isDesktop, hasBeenOpened, updateOpen],
+  );
+  return (
+    <DocsChatContext.Provider value={value}>
+      {children}
+    </DocsChatContext.Provider>
+  );
+}
+
+export function DocsChatTrigger() {
+  const { open, isDesktop, updateOpen } = useDocsChat();
+  return (
+    <Button
+      type="button"
+      variant="default"
+      size="sm"
+      onClick={() => updateOpen((previous) => !previous)}
+      className="h-10 shrink-0 px-4 shadow-sm"
+      aria-label="Ask AI"
+      aria-expanded={open}
+      aria-controls={isDesktop ? "wterm-chat-desktop" : "wterm-chat-mobile"}
+      aria-keyshortcuts="Meta+I Control+I"
+    >
+      Ask AI
+    </Button>
+  );
+}
+
+export function DocsChat() {
+  const { open, isDesktop, hasBeenOpened, updateOpen } = useDocsChat();
+  const hasMounted = useMounted();
+  const [widthStr, setWidthStr] = useCookieState(
+    "docs-chat-width",
+    String(DESKTOP_DEFAULT_WIDTH),
+  );
+  const desktopWidth = Math.min(
+    DESKTOP_MAX_WIDTH,
+    Math.max(DESKTOP_MIN_WIDTH, Number(widthStr) || DESKTOP_DEFAULT_WIDTH),
+  );
+  const showTerminal = open || hasBeenOpened;
+  const isDraggingRef = useRef(false);
+  const launcherRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const launcher = launcherRef.current;
+    if (!isDesktop || open || !launcher) return;
+    const footer = document.querySelector("footer");
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const theme = footer
+        ?.querySelector('input[id^="theme-switch-"]')
+        ?.closest("fieldset")
+        ?.getBoundingClientRect();
+      const themeInset =
+        theme && theme.width > 0
+          ? Math.max(0, document.documentElement.clientWidth - theme.right)
+          : 24;
+      const baseInset = themeInset * 0.8;
+      const proximity =
+        theme && theme.width > 0 && theme.bottom > 0
+          ? Math.min(1, Math.max(0, (window.innerHeight + 80 - theme.top) / 80))
+          : 0;
+      const right = baseInset + (themeInset - baseInset) * proximity;
+      const bottom =
+        theme && theme.width > 0 && theme.bottom > 0
+          ? Math.max(baseInset, window.innerHeight - theme.top + 16)
+          : baseInset;
+      launcher.style.setProperty("--chat-launcher-bottom", `${bottom}px`);
+      launcher.style.setProperty("--chat-launcher-right", `${right}px`);
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    const resize = new ResizeObserver(schedule);
+    resize.observe(document.body);
+    const mutation = new MutationObserver(schedule);
+    if (footer) {
+      resize.observe(footer);
+      mutation.observe(footer, { childList: true, subtree: true });
+    }
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    update();
+    return () => {
+      cancelAnimationFrame(frame);
+      resize.disconnect();
+      mutation.disconnect();
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [isDesktop, open]);
 
   const updateDesktopWidth = useCallback(
     (next: number) => setWidthStr(String(next)),
@@ -524,7 +623,7 @@ export function DocsChat() {
   useEffect(() => {
     const body = document.body;
     if (isDesktop && open) {
-      body.style.paddingRight = `${desktopWidth}px`;
+      body.style.paddingRight = `min(${desktopWidth}px, calc(100vw - 320px))`;
       if (!isDraggingRef.current) {
         body.style.transition = "padding-right 150ms ease";
       }
@@ -544,7 +643,9 @@ export function DocsChat() {
       isDraggingRef.current = true;
       document.documentElement.style.transition = "none";
       const startX = e.clientX;
-      const startWidth = desktopWidth;
+      const startWidth =
+        e.currentTarget.parentElement?.getBoundingClientRect().width ??
+        desktopWidth;
 
       const onPointerMove = (ev: globalThis.PointerEvent) => {
         const delta = startX - ev.clientX;
@@ -596,22 +697,20 @@ export function DocsChat() {
   return (
     <>
       {!open && (
-        <button
-          onClick={() => updateOpen(true)}
-          className="fixed z-50 bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-4 flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground shadow-lg hover:opacity-90 transition-opacity text-sm font-medium"
-          aria-label="Ask AI"
+        <div
+          ref={launcherRef}
+          className="fixed left-1/2 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-30 -translate-x-1/2 min-[640px]:left-auto min-[640px]:right-[var(--chat-launcher-right,19.2px)] min-[640px]:bottom-[var(--chat-launcher-bottom,19.2px)] min-[640px]:translate-x-0"
+          data-docs-chat-launcher
         >
-          Ask AI
-          <kbd className="hidden sm:inline-flex items-center gap-0.5 text-xs opacity-60 font-mono">
-            <span>&#8984;</span>I
-          </kbd>
-        </button>
+          <DocsChatTrigger />
+        </div>
       )}
-
       <aside
-        className={`hidden sm:flex fixed top-0 right-0 bottom-0 z-40 border-l border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 transition-transform duration-150 ease-in-out ${open ? "translate-x-0" : "translate-x-full"}`}
-        style={{ width: desktopWidth }}
-        aria-hidden={!open}
+        id="wterm-chat-desktop"
+        className={`hidden min-[640px]:flex fixed top-0 right-0 bottom-0 z-40 border-l border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 transition-transform duration-150 ease-in-out ${open ? "translate-x-0" : "translate-x-full"}`}
+        style={{ width: `min(${desktopWidth}px, calc(100vw - 320px))` }}
+        aria-hidden={!open || !isDesktop}
+        inert={!open || !isDesktop}
       >
         <div
           onPointerDown={handleResizePointerDown}
@@ -625,6 +724,7 @@ export function DocsChat() {
       {hasMounted && !isDesktop && (
         <Sheet open={open} onOpenChange={updateOpen}>
           <SheetContent
+            id="wterm-chat-mobile"
             side="right"
             showCloseButton={false}
             overlayClassName="bg-white! dark:bg-neutral-950!"

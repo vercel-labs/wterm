@@ -51,6 +51,9 @@ jobs:
       - name: Build packages
         run: pnpm build
 
+      - name: Docs route contract
+        run: pnpm --filter @wterm/docs test:routes
+
       - name: Test
         run: pnpm test
 
