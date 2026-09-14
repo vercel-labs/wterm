@@ -33,7 +33,7 @@
     "@wterm/dom": "workspace:*",
     "jsdom": "^29.0.2",
     "typescript": "^6.0.2",
-    "vitest": "^2.1.9",
+    "vitest": "^5.0.0",
     "vue": "^3.5.0"
   },
   "peerDependencies": {

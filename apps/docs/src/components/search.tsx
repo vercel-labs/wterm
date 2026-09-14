@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -28,36 +22,21 @@ function subscribeToKeyboard(callback: () => void) {
   return () => document.removeEventListener("keydown", handler);
 }
 
-let cmdKPressed = false;
-function useCmdK() {
-  return useSyncExternalStore(
-    (notify) =>
-      subscribeToKeyboard(() => {
-        cmdKPressed = !cmdKPressed;
-        notify();
-      }),
-    () => cmdKPressed,
-    () => false,
-  );
-}
-
 export function Search() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [resolvedQuery, setResolvedQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const cmdK = useCmdK();
-  const prevCmdKRef = useRef(cmdK);
-  if (cmdK !== prevCmdKRef.current) {
-    prevCmdKRef.current = cmdK;
-    setOpen((prev) => !prev);
-  }
+  useEffect(
+    () => subscribeToKeyboard(() => setOpen((previous) => !previous)),
+    [],
+  );
 
   const navigate = useCallback(
     (href: string) => {
@@ -88,12 +67,9 @@ export function Search() {
   useEffect(() => {
     const q = query.trim();
     if (!q) {
-      setResults([]);
-      setLoading(false);
       return;
     }
 
-    setLoading(true);
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -116,7 +92,7 @@ export function Search() {
         }
       } finally {
         if (!controller.signal.aborted) {
-          setLoading(false);
+          setResolvedQuery(q);
         }
       }
     }, 150);
@@ -153,7 +129,9 @@ export function Search() {
     }
   }
 
-  const hasQuery = query.trim().length > 0;
+  const normalizedQuery = query.trim();
+  const hasQuery = normalizedQuery.length > 0;
+  const loading = hasQuery && resolvedQuery !== normalizedQuery;
 
   return (
     <>
@@ -227,14 +205,21 @@ export function Search() {
             <input
               ref={inputRef}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setResolvedQuery("");
+              }}
               onKeyDown={handleKeyDown}
               placeholder="Search docs..."
               className="flex-1 bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground"
             />
             {query && (
               <button
-                onClick={() => setQuery("")}
+                onClick={() => {
+                  setQuery("");
+                  setResolvedQuery("");
+                  setResults([]);
+                }}
                 className="text-muted-foreground hover:text-foreground"
               >
                 <svg
