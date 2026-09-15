@@ -70,6 +70,53 @@ describe("GhosttyCore terminal responses", () => {
     ]);
   });
 
+  it("reports the current size when in-band resize mode is enabled", async () => {
+    const core = await newCore(80, 24);
+    core.writeString("\x1b[?2048$p\x1b[?204");
+    core.writeRaw(new TextEncoder().encode("8h\x1b[?2048$p"));
+    expect(drain(core)).toEqual([
+      "\x1b[?2048;2$y",
+      "\x1b[48;24;80;0;0t",
+      "\x1b[?2048;1$y",
+    ]);
+    core.writeString("\x1b[?2048h");
+    expect(drain(core)).toEqual(["\x1b[48;24;80;0;0t"]);
+  });
+
+  it("reports changed sizes only while mode 2048 is enabled", async () => {
+    const core = await newCore(80, 24);
+    core.resize(90, 25);
+    expect(drain(core)).toEqual([]);
+    core.writeString("\x1b[?2048h");
+    expect(drain(core)).toEqual(["\x1b[48;25;90;0;0t"]);
+    for (const [cols, rows] of [
+      [100, 30],
+      [60, 20],
+      [120, 40],
+    ]) {
+      core.resize(cols, rows);
+      expect(drain(core)).toEqual([`\x1b[48;${rows};${cols};0;0t`]);
+    }
+    core.resize(120, 40);
+    expect(drain(core)).toEqual([]);
+    core.writeString("\x1b[?2048l");
+    core.resize(80, 24);
+    expect(drain(core)).toEqual([]);
+  });
+
+  it("uses the saved and reset mode state for in-band resize reports", async () => {
+    const core = await newCore(80, 24);
+    core.writeString("\x1b[?2048h\x1b[?2048s\x1b[?2048l");
+    expect(drain(core)).toEqual(["\x1b[48;24;80;0;0t"]);
+    core.resize(100, 30);
+    core.writeString("\x1b[?2048r");
+    expect(drain(core)).toEqual(["\x1b[48;30;100;0;0t"]);
+    core.writeString("\x1bc");
+    core.resize(80, 24);
+    core.writeString("\x1b[?2048$p");
+    expect(drain(core)).toEqual(["\x1b[?2048;2$y"]);
+  });
+
   it("exposes synchronized output state and generations", async () => {
     const core = await newCore();
     expect(core.synchronizedOutput?.()).toBe(false);

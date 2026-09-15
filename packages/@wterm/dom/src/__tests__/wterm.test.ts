@@ -419,6 +419,56 @@ describe("WTerm", () => {
       expect(onResize).toHaveBeenCalledWith(100, 30);
     });
 
+    it.each([false, true])(
+      "delivers resize responses immediately with synchronized output %s",
+      async (synchronized) => {
+        const onData = vi.fn();
+        const term = new WTerm(element, { autoResize: false, onData });
+        await term.init();
+        try {
+          vi.mocked(mockBridge.synchronizedOutput!).mockReturnValue(
+            synchronized,
+          );
+          vi.mocked(mockBridge.resize).mockImplementation(() => {
+            vi.mocked(mockBridge.getResponse)
+              .mockReturnValueOnce("\x1b[48;30;100;0;0t")
+              .mockReturnValueOnce(null);
+          });
+          term.resize(100, 30);
+          expect(onData.mock.calls).toEqual([["\x1b[48;30;100;0;0t"]]);
+          term.write("");
+          expect(onData).toHaveBeenCalledTimes(1);
+        } finally {
+          term.destroy();
+        }
+      },
+    );
+
+    it("drains all resize responses before rethrowing a delivery error", async () => {
+      const error = new Error("consumer failed");
+      const onData = vi.fn().mockImplementationOnce(() => {
+        throw error;
+      });
+      const onResize = vi.fn();
+      const term = new WTerm(element, { autoResize: false, onData, onResize });
+      await term.init();
+      try {
+        vi.mocked(mockBridge.resize).mockImplementation(() => {
+          vi.mocked(mockBridge.getResponse)
+            .mockReturnValueOnce("response-a")
+            .mockReturnValueOnce("response-b")
+            .mockReturnValueOnce(null);
+        });
+        expect(() => term.resize(100, 30)).toThrow(error);
+        expect(onResize).toHaveBeenCalledWith(100, 30);
+        expect(onData.mock.calls).toEqual([["response-a"], ["response-b"]]);
+        expect(term.cols).toBe(100);
+        expect(term.rows).toBe(30);
+      } finally {
+        term.destroy();
+      }
+    });
+
     it("preserves the scroll offset while rebuilding virtualized rows", async () => {
       vi.mocked(mockBridge.getScrollbackCount).mockReturnValue(100);
       vi.mocked(mockBridge.getCols).mockReturnValue(100);
