@@ -190,6 +190,11 @@ const ResponseHandler = struct {
                 {
                     self.synchronized_output_generation.* +%= 1;
                 }
+                if (value.mode == .in_band_size_reports and
+                    self.inner.terminal.modes.get(.in_band_size_reports))
+                {
+                    queueSizeReport(self.inner.terminal, self.queue);
+                }
             },
             .restore_mode => {
                 const was_synchronized = self.inner.terminal.modes.get(.synchronized_output);
@@ -199,6 +204,11 @@ const ResponseHandler = struct {
                     self.inner.terminal.modes.get(.synchronized_output))
                 {
                     self.synchronized_output_generation.* +%= 1;
+                }
+                if (value.mode == .in_band_size_reports and
+                    self.inner.terminal.modes.get(.in_band_size_reports))
+                {
+                    queueSizeReport(self.inner.terminal, self.queue);
                 }
             },
             .device_attributes => switch (value) {
@@ -585,10 +595,23 @@ export fn deinit(ptr: usize) void {
     allocator.destroy(state);
 }
 
+fn queueSizeReport(terminal: *const Terminal, queue: *ResponseQueue) void {
+    var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
+    // Pixel dimensions are unavailable to this core; zero denotes unknown.
+    const report = std.fmt.bufPrint(&buf, "\x1b[48;{d};{d};0;0t", .{
+        terminal.rows, terminal.cols,
+    }) catch return;
+    queue.push(report);
+}
+
 export fn resize(ptr: usize, cols: u16, rows: u16) void {
     const state = stateFromPtr(ptr);
-    state.terminal.resize(allocator, cols, rows) catch {};
+    const changed = state.terminal.cols != cols or state.terminal.rows != rows;
+    state.terminal.resize(allocator, cols, rows) catch return;
     refreshGraphicsGeneration(state);
+    if (changed and state.terminal.modes.get(.in_band_size_reports)) {
+        queueSizeReport(&state.terminal, &state.responses);
+    }
 }
 
 // -- Data input -------------------------------------------------
