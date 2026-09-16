@@ -85,7 +85,8 @@ new BashShell(options?: ShellOptions)
 - Command history (up/down arrows)
 - Tab completion (files + commands)
 - Ctrl+C to cancel, Ctrl+L to clear
-- Directory-aware prompt updates
+- Each submitted command executes once
+- Directory-aware prompt updates after every command, including nonzero exits
 
 ## License
 

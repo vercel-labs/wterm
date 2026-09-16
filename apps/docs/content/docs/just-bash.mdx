@@ -51,6 +51,8 @@ function App() {
 
 Use a ref to hold the `BashShell` instance so it's accessible from both the `onReady` and `onData` callbacks.
 
+Each submitted command runs once. After it completes, the shell automatically updates its working directory and prompt from the command's final directory, including when a command exits with a nonzero status.
+
 ## Options
 
 <table>
