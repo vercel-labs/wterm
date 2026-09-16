@@ -20,7 +20,12 @@ describe("BashShell", () => {
     vi.clearAllMocks();
     output = [];
     write = (data: string) => output.push(data);
-    mockExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+    mockExec.mockResolvedValue({
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      env: { PWD: "/home/user" },
+    });
   });
 
   describe("constructor", () => {
@@ -108,36 +113,13 @@ describe("BashShell", () => {
       expect(joined).toContain("$");
     });
 
-    it("executes command via bash.exec", async () => {
+    it("writes stdout to terminal", async () => {
       mockExec.mockResolvedValue({
-        stdout: "hello\n",
+        stdout: "file.txt\n",
         stderr: "",
         exitCode: 0,
+        env: { PWD: "/home/user" },
       });
-      await shell.handleInput("l");
-      await shell.handleInput("s");
-      await shell.handleInput("\r");
-
-      expect(mockExec).toHaveBeenCalled();
-      const calls = mockExec.mock.calls;
-      const execCall = calls.find(
-        (c: string[]) => typeof c[0] === "string" && c[0].includes("ls"),
-      );
-      expect(execCall).toBeDefined();
-    });
-
-    it("writes stdout to terminal", async () => {
-      mockExec
-        .mockResolvedValueOnce({
-          stdout: "file.txt\n",
-          stderr: "",
-          exitCode: 0,
-        })
-        .mockResolvedValueOnce({
-          stdout: "/home/user\n",
-          stderr: "",
-          exitCode: 0,
-        });
 
       await shell.handleInput("l");
       await shell.handleInput("s");
@@ -148,17 +130,12 @@ describe("BashShell", () => {
     });
 
     it("writes stderr in red", async () => {
-      mockExec
-        .mockResolvedValueOnce({
-          stdout: "",
-          stderr: "not found",
-          exitCode: 1,
-        })
-        .mockResolvedValueOnce({
-          stdout: "/home/user\n",
-          stderr: "",
-          exitCode: 0,
-        });
+      mockExec.mockResolvedValue({
+        stdout: "",
+        stderr: "not found",
+        exitCode: 1,
+        env: { PWD: "/home/user" },
+      });
 
       await shell.handleInput("x");
       await shell.handleInput("\r");
@@ -169,7 +146,12 @@ describe("BashShell", () => {
     });
 
     it("adds command to history", async () => {
-      mockExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+      mockExec.mockResolvedValue({
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+        env: { PWD: "/home/user" },
+      });
       await shell.handleInput("e");
       await shell.handleInput("c");
       await shell.handleInput("h");
@@ -241,7 +223,12 @@ describe("BashShell", () => {
     beforeEach(async () => {
       shell = new BashShell();
       await shell.attach(write);
-      mockExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+      mockExec.mockResolvedValue({
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+        env: { PWD: "/home/user" },
+      });
       await shell.handleInput("first");
       await shell.handleInput("\r");
       await shell.handleInput("second");
