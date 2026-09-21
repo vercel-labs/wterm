@@ -519,9 +519,8 @@ export function DocsChatTrigger() {
   const { open, isDesktop, updateOpen } = useDocsChat();
   return (
     <Button
-      type="button"
       variant="default"
-      size="sm"
+      size="small"
       onClick={() => updateOpen((previous) => !previous)}
       className="h-10 shrink-0 px-4 shadow-sm"
       aria-label="Ask AI"
