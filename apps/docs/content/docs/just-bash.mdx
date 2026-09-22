@@ -65,13 +65,13 @@ Use a ref to hold the `BashShell` instance so it's accessible from both the `onR
   <tbody>
     <tr>
       <td><code>files</code></td>
-      <td><code>Record&lt;string, string&gt;</code></td>
+      <td><code>{"Record<string, string>"}</code></td>
       <td><code>&#123;&#125;</code></td>
       <td>Virtual filesystem (keys are absolute paths, values are file contents)</td>
     </tr>
     <tr>
       <td><code>env</code></td>
-      <td><code>Record&lt;string, string&gt;</code></td>
+      <td><code>{"Record<string, string>"}</code></td>
       <td><code>&#123; SHELL, TERM &#125;</code></td>
       <td>Environment variables</td>
     </tr>
@@ -113,11 +113,11 @@ Use a ref to hold the `BashShell` instance so it's accessible from both the `onR
   </thead>
   <tbody>
     <tr>
-      <td><code>attach(write): Promise&lt;void&gt;</code></td>
+      <td><code>{"attach(write): Promise<void>"}</code></td>
       <td>Connect to a terminal write function. Loads just-bash, prints the greeting, and displays the initial prompt.</td>
     </tr>
     <tr>
-      <td><code>handleInput(data): Promise&lt;void&gt;</code></td>
+      <td><code>{"handleInput(data): Promise<void>"}</code></td>
       <td>Process terminal input (keystrokes, paste). Call this from the terminal's <code>onData</code> callback.</td>
     </tr>
   </tbody>

@@ -6,6 +6,7 @@ export const config = defineConfig({
   defaultLanguage: "en",
   logo: <span className="font-medium">wterm</span>,
   navbarActiveProduct: "wterm",
+  navbarBrand: "labs",
   github: {
     owner: "vercel-labs",
     repo: "wterm",

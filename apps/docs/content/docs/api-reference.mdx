@@ -215,7 +215,7 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
     <tr>
       <td><code>theme</code></td>
       <td><code>string</code></td>
-      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>). Applied as a <code>theme-&lt;name&gt;</code> class on the root element.</td>
+      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>). Applied as a <code>{"theme-<name>"}</code> class on the root element.</td>
     </tr>
   </tbody>
 </table>
@@ -277,7 +277,7 @@ attributes such as `class`, `style`, `id`, and ARIA attributes to its root
     <tr>
       <td><code>theme</code></td>
       <td><code>string</code></td>
-      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>). Applied as a <code>theme-&lt;name&gt;</code> class.</td>
+      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>). Applied as a <code>{"theme-<name>"}</code> class.</td>
     </tr>
     <tr>
       <td><code>onData</code></td>
@@ -324,7 +324,7 @@ Outside synchronized output, writes request the next animation frame directly. W
   </thead>
   <tbody>
     <tr>
-      <td><code>init(): Promise&lt;WTerm&gt;</code></td>
+      <td><code>{"init(): Promise<WTerm>"}</code></td>
       <td>Load WASM and start rendering</td>
     </tr>
     <tr>
@@ -364,8 +364,8 @@ const { ref, write, resize, focus } = useTerminal();
   <tbody>
     <tr>
       <td><code>ref</code></td>
-      <td><code>RefObject&lt;TerminalHandle&gt;</code></td>
-      <td>Pass to <code>&lt;Terminal ref=&#123;ref&#125;&gt;</code></td>
+      <td><code>{"RefObject<TerminalHandle>"}</code></td>
+      <td>Pass to <code>{"<Terminal ref={ref}>"}</code></td>
     </tr>
     <tr>
       <td><code>write</code></td>
@@ -630,7 +630,7 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
   </thead>
   <tbody>
     <tr>
-      <td><code>WasmBridge.load(url?): Promise&lt;WasmBridge&gt;</code></td>
+      <td><code>{"WasmBridge.load(url?): Promise<WasmBridge>"}</code></td>
       <td>Load the WASM binary and return a new bridge instance</td>
     </tr>
     <tr>
