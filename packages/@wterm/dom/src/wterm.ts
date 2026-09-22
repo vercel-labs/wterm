@@ -287,6 +287,10 @@ export class WTerm {
       this._scheduleRender();
     }
     if (this.onResize) this.onResize(cols, rows);
+    // Resize can queue in-band size reports even while rendering is held by
+    // synchronized output. Deliver them without waiting for another write/RAF.
+    const result = this._drainResponses();
+    if (result.hasError) throw result.error;
   }
 
   focus(): void {
