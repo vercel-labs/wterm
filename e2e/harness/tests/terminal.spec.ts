@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { attachReport } from "./report";
 
 for (const core of ["builtin", "ghostty"]) {
   test.describe(core, () => {
@@ -15,23 +14,11 @@ for (const core of ["builtin", "ghostty"]) {
       if (!page.isClosed()) {
         const report = await page.evaluate(() => window.ptyHarness?.report());
         if (report) {
-          const reportPath = testInfo.outputPath("pty-baseline.json");
-          await mkdir(dirname(reportPath), { recursive: true });
-          await writeFile(
-            reportPath,
-            JSON.stringify(
-              {
-                test: testInfo.title,
-                browser: browser.version(),
-                ...report,
-              },
-              null,
-              2,
-            ),
-          );
-          await testInfo.attach("pty-baseline.json", {
-            path: reportPath,
-            contentType: "application/json",
+          await attachReport(testInfo, "pty-baseline.json", {
+            test: testInfo.title,
+            project: testInfo.project.name,
+            browser: browser.version(),
+            ...report,
           });
         }
       }

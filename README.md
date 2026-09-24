@@ -191,20 +191,23 @@ It opens at `svelte-example.wterm.localhost` through Portless.
 zig build test
 ```
 
-### Run the real PTY baseline
+### Run PTY and terminal replay tests
 
-On macOS or Linux, test both the built-in and Ghostty cores against a real
-`/bin/sh` PTY:
+On macOS or Linux, test both cores against a real `/bin/sh` PTY and recorded
+Neovim/tmux output in Chromium, Firefox, and WebKit:
 
 ```bash
-pnpm exec playwright install chromium
+pnpm exec playwright install chromium firefox webkit
 pnpm test:pty
 ```
 
 The runner builds the terminal packages and owns an isolated server on an
 available loopback port. Tests cover browser keyboard input, shell execution,
-resize, and exit, with JSON timing reports and failure traces under
-`e2e/test-results/pty/`. CI runs the suite and uploads those artifacts.
+resize, and exit. Replay cases check Unicode, styles, alternate screens,
+history, and synchronized output. JSON timing reports, a combined `baseline.json`,
+and failure traces are saved under `e2e/test-results/pty/`. CI runs the suite
+and uploads those artifacts. Playback uses checked-in bytes; Neovim and tmux
+are only needed to regenerate the recordings.
 Linux requires a C++/Python toolchain for the permitted `node-pty` native build.
 
 For interactive checks, run `pnpm --filter @internal/pty-harness dev` after the
