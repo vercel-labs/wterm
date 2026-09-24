@@ -191,6 +191,28 @@ It opens at `svelte-example.wterm.localhost` through Portless.
 zig build test
 ```
 
+### Run the real PTY baseline
+
+On macOS or Linux, test both the built-in and Ghostty cores against a real
+`/bin/sh` PTY:
+
+```bash
+pnpm exec playwright install chromium
+pnpm test:pty
+```
+
+The runner builds the terminal packages and owns an isolated server on an
+available loopback port. Tests cover browser keyboard input, shell execution,
+resize, and exit, with JSON timing reports and failure traces under
+`e2e/test-results/pty/`. CI runs the suite and uploads those artifacts.
+Linux requires a C++/Python toolchain for the permitted `node-pty` native build.
+
+For interactive checks, run `pnpm --filter @internal/pty-harness dev` after the
+package build above. Portless prints the URL for `pty-harness.wterm.localhost`.
+The harness includes core switching and a round-trip probe. Timing callbacks
+measure frame opportunities, not physical display latency. See the
+[harness README](e2e/harness/README.md) for setup and measurement details.
+
 ## License
 
 Apache-2.0

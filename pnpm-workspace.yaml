@@ -4,6 +4,7 @@ packages:
   - "packages/@internal/*"
   - "apps/*"
   - "examples/*"
+  - "e2e/harness"
 
 minimumReleaseAge: 2880
 minimumReleaseAgeExclude:
@@ -14,7 +15,7 @@ allowBuilds:
   "cpu-features": false
   "esbuild": false
   "msw": false
-  "node-pty": false
+  "node-pty": true
   "node-liblzma": false
   "sharp": false
   "ssh2": false
