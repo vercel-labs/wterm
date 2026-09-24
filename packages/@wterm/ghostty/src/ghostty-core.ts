@@ -559,10 +559,14 @@ export class GhosttyCore implements TerminalCore {
   // -- Side outputs --
 
   getTitle(): string | null {
-    // Title changes are delivered through OSC sequences which the
-    // ReadonlyStream handler doesn't capture. A full stream handler
-    // would be needed for title support.
-    return null;
+    if (this._disposed || this.termPtr === 0) return null;
+    const { get_title_len, get_title_ptr, memory } = this.wasm.exports;
+    if (!get_title_len || !get_title_ptr) return null;
+    const len = get_title_len(this.termPtr);
+    if (len < 0) return null;
+    return new TextDecoder().decode(
+      new Uint8Array(memory.buffer, get_title_ptr(this.termPtr), len),
+    );
   }
 
   getResponse(): string | null {

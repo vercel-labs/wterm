@@ -39,6 +39,7 @@ let terminal: WTerm;
 let socket: WebSocket;
 let outputTail = "";
 const responses: string[] = [];
+const titles: string[] = [];
 let pendingProbe: {
   marker: string;
   matched: boolean;
@@ -120,6 +121,7 @@ function snapshot() {
       },
     ),
     responses: [...responses],
+    titles: [...titles],
   };
 }
 
@@ -246,6 +248,7 @@ async function init() {
       ? params.get("cursorBlink") === "true"
       : undefined,
     onData: sendInput,
+    onTitle: (title) => titles.push(title),
     onResize: (cols, rows) => {
       if (socket?.readyState === WebSocket.OPEN)
         socket.send(JSON.stringify({ type: "resize", cols, rows }));
