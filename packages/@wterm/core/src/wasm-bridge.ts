@@ -18,6 +18,8 @@ interface WasmExports {
   getCursorRow(): number;
   getCursorCol(): number;
   getCursorVisible(): number;
+  getCursorShape?(): number;
+  getCursorBlinking?(): number;
   getCols(): number;
   getRows(): number;
   getCursorKeysApp(): number;
@@ -164,10 +166,13 @@ export class WasmBridge implements TerminalCore {
   }
 
   getCursor(): CursorState {
+    const shape = this.exports.getCursorShape?.() ?? 0;
     return {
       row: this.exports.getCursorRow(),
       col: this.exports.getCursorCol(),
       visible: this.exports.getCursorVisible() !== 0,
+      shape: shape === 1 ? "underline" : shape === 2 ? "bar" : "block",
+      blinking: (this.exports.getCursorBlinking?.() ?? 0) !== 0,
     };
   }
 

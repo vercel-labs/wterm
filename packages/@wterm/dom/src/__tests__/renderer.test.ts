@@ -61,6 +61,33 @@ describe("Renderer", () => {
   });
 
   describe("render", () => {
+    it("supports legacy cursor state and updates metadata without replacing clean rows", () => {
+      const bridge = createMockBridge(4, 1);
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+      expect(container.dataset.cursorShape).toBe("block");
+      expect(container.dataset.cursorBlink).toBe("false");
+      const row = container.querySelector(".term-row")!;
+      const cursor = row.querySelector(".term-cursor");
+      bridge.getCursor = () => ({
+        row: 0,
+        col: 0,
+        visible: true,
+        shape: "bar",
+        blinking: true,
+      });
+      renderer.render(bridge as any);
+      expect(container.dataset.cursorShape).toBe("bar");
+      expect(container.dataset.cursorBlink).toBe("true");
+      expect(row.querySelector(".term-cursor")).toBe(cursor);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      renderer.render(bridge as any);
+      expect(row.querySelector(".term-cursor")).toBeNull();
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: true });
+      renderer.render(bridge as any);
+      expect(row.querySelector(".term-cursor")).not.toBeNull();
+    });
+
     it("renders contiguous OSC 8 cells as one safe anchor", () => {
       const grid = [
         [

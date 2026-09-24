@@ -35,6 +35,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Synchronized output** — mode 2026 blocks paint atomically with a bounded recovery deadline
 - **Themes** — CSS custom properties with built-in Default, Solarized Dark, Monokai, and Light themes
 - **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly
+- **Application-controlled cursors** — block, bar, and underline shapes with terminal-requested blinking and a host override
 - **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window
 - **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws aligned
 - **Grapheme strings** — the Ghostty core preserves combining marks and ZWJ emoji through the DOM renderer and scrollback

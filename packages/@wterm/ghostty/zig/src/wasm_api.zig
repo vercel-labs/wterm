@@ -914,6 +914,18 @@ export fn get_cursor_visible(ptr: usize) u32 {
     return if (state.render.cursor.visible) 1 else 0;
 }
 
+export fn get_cursor_shape(ptr: usize) u32 {
+    return switch (stateFromPtr(ptr).render.cursor.visual_style) {
+        .block, .block_hollow => 0,
+        .underline => 1,
+        .bar => 2,
+    };
+}
+
+export fn get_cursor_blinking(ptr: usize) u32 {
+    return if (stateFromPtr(ptr).render.cursor.blinking) 1 else 0;
+}
+
 // -- Modes ------------------------------------------------------
 
 export fn cursor_keys_app(ptr: usize) u32 {

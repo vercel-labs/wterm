@@ -24,13 +24,17 @@ pnpm --filter @internal/pty-harness test
 pnpm --filter @internal/pty-harness type-check
 ```
 
-The last two commands run server lifecycle tests and TypeScript checks. The normal repository test and type-check tasks also include this workspace; server lifecycle tests are skipped on Windows. The browser suite remains a separate `test:pty` task, which CI runs after the existing E2E suite. It has 48 cases: three live-PTY cases and five replay workloads for each of two cores in three browsers. Playwright WebKit coverage does not replace testing the Safari desktop application.
+The last two commands run server lifecycle tests and TypeScript checks. The normal repository test and type-check tasks also include this workspace; server lifecycle tests are skipped on Windows. The browser suite remains a separate `test:pty` task, which CI runs after the existing E2E suite. It has 66 cases: three live-PTY cases, five replay workloads, and three cursor appearance cases for each of two cores in three browsers. Playwright WebKit coverage does not replace testing the Safari desktop application.
 
 ## Recorded workloads
 
 Fixtures live in [`e2e/fixtures/`](../fixtures/README.md). The application captures include Neovim editing and tmux pane input, Unicode, two resizes, and exit/detach. Protocol fixtures check split UTF-8 and escape sequences, wide cells, ANSI styles, cursor reports, alternate-screen restoration, history, and synchronized output.
 
 Replay opens `?mode=replay&core=builtin` or `?mode=replay&core=ghostty`, without starting a PTY. The browser receives raw byte arrays through `WTerm.write`: application output in chunks of at most seven bytes, protocol output one byte at a time. Captured timestamps document event order; CI skips the delays. Recorded inputs describe the original session and are never executed during replay. Each checkpoint compares explicit expected state with core cells and rendered DOM rows; selected styles are checked through computed CSS.
+
+`cursor.spec.ts` checks application-controlled cursor shape, blink-off colors,
+focus/visibility changes, and the host blink override. Add `cursorBlink=true`
+or `cursorBlink=false` to the harness URL to exercise that override manually.
 
 To regenerate the application recordings, install `nvim`, `tmux`, and `infocmp` on macOS or Linux, then run:
 

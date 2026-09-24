@@ -19,10 +19,16 @@ export interface CellData {
   linkKey?: string;
 }
 
+export type CursorShape = "block" | "underline" | "bar";
+
 export interface CursorState {
   row: number;
   col: number;
   visible: boolean;
+  /** Application-requested shape. Omitted by older/custom cores; defaults to block. */
+  shape?: CursorShape;
+  /** Application-requested blinking. Omitted by older/custom cores; defaults to false. */
+  blinking?: boolean;
 }
 
 export interface UnhandledSequence {

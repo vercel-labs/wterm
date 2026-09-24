@@ -9,6 +9,21 @@ The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constru
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
 
+### Cursor appearance
+
+Both cores honor application requests for block, bar, and underline cursors
+(DECSCUSR), plus cursor blink mode (`CSI ? 12 h/l`). This lets editors change
+the cursor when switching between normal and insert mode. Unfocused terminals
+show a steady outline, and hiding the cursor with mode 25 takes effect even
+when no text changes.
+
+Omit `cursorBlink` to follow the application (initially steady). Set it to
+`true` to force blinking or `false` to keep the cursor steady, regardless of
+application requests. React, Vue, and Svelte also support changing this prop
+after mounting; set it back to `undefined` to follow the application again.
+Cursor shape always follows the core. Custom cores can omit the optional
+`CursorState.shape` and `blinking` fields for a steady block fallback.
+
 ### Pluggable cores
 
 By default, wterm uses its built-in lightweight Zig WASM core (~12 KB). To use a different terminal emulation backend, pass a `TerminalCore` instance via the `core` option. See the [Ghostty Core](/ghostty) page for an example using libghostty.

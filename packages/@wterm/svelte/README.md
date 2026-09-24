@@ -57,6 +57,11 @@ Standard `<div>` attributes, including `class`, `style`, `id`, and ARIA
 attributes, are forwarded to the root element. `className` is also accepted as
 a convenience for code shared with React.
 
+Cursor shape follows the application (block, bar, or underline). Omit
+`cursorBlink` to follow its blink requests, initially steady; set it to `true`
+or `false` to force blinking on or off. Changing the prop back to `undefined`
+restores application control without remounting the terminal.
+
 The component delegates rendering to `@wterm/dom`, so passing a graphics-capable
 core such as `@wterm/ghostty` renders direct Kitty PNG/RGB/RGBA images. Use
 `maxImageWidth` and/or `maxImageHeight` to constrain oversized images while

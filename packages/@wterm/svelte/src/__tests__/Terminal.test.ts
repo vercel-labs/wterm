@@ -242,11 +242,30 @@ describe("Terminal component", () => {
       props: { cols: 80, rows: 24, cursorBlink: false },
     });
     await Promise.resolve();
+    lastWTermInstance.element.classList.add("focused", "has-scrollback");
 
     await result.rerender({ cols: 120, rows: 40, cursorBlink: true });
 
     expect(lastWTermInstance.resize).toHaveBeenCalledWith(120, 40);
     expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      true,
+    );
+    await result.rerender({ cursorBlink: false });
+    expect(lastWTermInstance.element.classList.contains("cursor-steady")).toBe(
+      true,
+    );
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      false,
+    );
+    await result.rerender({ cursorBlink: undefined });
+    expect(lastWTermInstance.element.classList.contains("cursor-steady")).toBe(
+      false,
+    );
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      false,
+    );
+    expect(lastWTermInstance.element.classList.contains("focused")).toBe(true);
+    expect(lastWTermInstance.element.classList.contains("has-scrollback")).toBe(
       true,
     );
   });

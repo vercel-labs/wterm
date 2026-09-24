@@ -46,7 +46,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `autoResize` | `boolean` | `true` | Auto-resize based on container dimensions |
 | `maxImageWidth` | `number` | — | Maximum rendered Kitty image width in CSS pixels. Images larger than the limit are scaled down proportionally. |
 | `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels. Images larger than the limit are scaled down proportionally. |
-| `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
+| `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
@@ -63,6 +63,13 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `destroy()` | Clean up event listeners and DOM |
 
 When a terminal application enables modes 1000 or 1002 with SGR encoding (1006), pointer input is sent through `onData`. Focus reports are sent when mode 1004 is active.
+
+Both cores expose application-requested block, bar, and underline cursors through
+`CursorState.shape` and blink mode through `CursorState.blinking`. The renderer
+updates these independently of dirty text rows, preserves cell colors during
+blink-off frames, and shows a steady outline when unfocused. Custom cores can
+omit the new fields for the existing steady block fallback. `cursorBlink`
+overrides blinking when explicitly set; shape always follows the core.
 
 WTerm implements the Kitty keyboard protocol when the active core exposes negotiated flags. The built-in and Ghostty cores support query, push, pop, set, OR, and NOT operations, with independent state for the primary and alternate screens. Cores without `kittyKeyboardFlags()` keep the legacy keyboard path unchanged.
 

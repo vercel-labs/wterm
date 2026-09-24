@@ -41,7 +41,7 @@
   export let autoResize = false;
   export let maxImageWidth: number | undefined = undefined;
   export let maxImageHeight: number | undefined = undefined;
-  export let cursorBlink = false;
+  export let cursorBlink: boolean | undefined = undefined;
   export let debug = false;
   export let className = "";
   export let onData: ((data: string) => void) | undefined = undefined;
@@ -64,7 +64,6 @@
   $: classes = [
     "wterm",
     theme ? `theme-${theme}` : "",
-    cursorBlink ? "cursor-blink" : "",
     className,
     typeof $$restProps.class === "string" ? $$restProps.class : "",
   ]
@@ -154,7 +153,6 @@
     if (!autoResize && (instance.cols !== cols || instance.rows !== rows)) {
       instance.resize(cols, rows);
     }
-    instance.element.classList.toggle("cursor-blink", cursorBlink);
     instance.onData = dataHandler ? handleData : null;
   }
 </script>
@@ -163,6 +161,8 @@
   bind:this={element}
   {...$$restProps}
   class={classes}
+  class:cursor-blink={cursorBlink === true}
+  class:cursor-steady={cursorBlink === false}
   style={mergedStyle || undefined}
   role={$$restProps.role ?? "textbox"}
   aria-label={$$restProps["aria-label"] ?? "Terminal"}

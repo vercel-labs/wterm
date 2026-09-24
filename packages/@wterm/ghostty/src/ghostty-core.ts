@@ -294,10 +294,14 @@ export class GhosttyCore implements TerminalCore {
       return { row: 0, col: 0, visible: false };
     }
     this._ensureViewport();
+    const shape = this.wasm.exports.get_cursor_shape?.(this.termPtr) ?? 0;
     return {
       row: this.wasm.exports.get_cursor_row(this.termPtr),
       col: this.wasm.exports.get_cursor_col(this.termPtr),
       visible: this.wasm.exports.get_cursor_visible(this.termPtr) !== 0,
+      shape: shape === 1 ? "underline" : shape === 2 ? "bar" : "block",
+      blinking:
+        (this.wasm.exports.get_cursor_blinking?.(this.termPtr) ?? 0) !== 0,
     };
   }
 
