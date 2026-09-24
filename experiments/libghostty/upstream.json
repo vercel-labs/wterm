@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/ghostty-org/ghostty",
+  "revision": "7c40388b2c63b7dcc5d6c9b9804e40fb2574444f",
+  "archiveSha256": "07eb5e29a425aebcb30fb633ecdfa95fd42fac9479a29680b2d566c9d6b4d8f4",
+  "zigVersion": "0.16.0",
+  "target": "wasm32-freestanding",
+  "optimize": "ReleaseSmall"
+}
