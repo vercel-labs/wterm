@@ -1,0 +1,28 @@
+{
+  "name": "@internal/pty-harness",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "node prepare-pty.mjs && (command -v portless >/dev/null 2>&1 || (echo '\\nportless is required. Run: npm i -g portless\\nSee: https://github.com/vercel-labs/portless\\n' && exit 1))",
+    "dev": "portless pty-harness.wterm node server.mjs",
+    "build": "vite build",
+    "pretest": "node prepare-pty.mjs",
+    "test": "node --test tests/server.test.mjs",
+    "pretest:e2e": "node prepare-pty.mjs",
+    "test:e2e": "node run-e2e.mjs",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@wterm/core": "workspace:*",
+    "@wterm/dom": "workspace:*",
+    "@wterm/ghostty": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.2",
+    "node-pty": "^1.1.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "ws": "^8.21.3"
+  }
+}

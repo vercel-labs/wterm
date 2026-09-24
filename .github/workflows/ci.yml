@@ -68,3 +68,14 @@ jobs:
 
       - name: E2E tests
         run: pnpm test:e2e
+
+      - name: Real PTY smoke tests
+        run: pnpm test:pty
+
+      - name: Upload PTY baseline reports and failure traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pty-baseline
+          path: e2e/test-results/pty/
+          if-no-files-found: ignore

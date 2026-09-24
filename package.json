@@ -22,10 +22,11 @@
     "test": "turbo run test",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "test:e2e:ui": "playwright test --config e2e/playwright.config.ts --ui",
+    "test:pty": "turbo run build --filter='@internal/pty-harness^...' && pnpm --filter @internal/pty-harness test:e2e",
     "type-check": "turbo run type-check"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
     "@vitest/coverage-v8": "^5.0.0",
     "prettier": "^3.9.6",
     "turbo": "^2.10.12",
