@@ -35,6 +35,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Synchronized output** — mode 2026 blocks paint atomically with a bounded recovery deadline
 - **Themes** — CSS custom properties with built-in Default, Solarized Dark, Monokai, and Light themes
 - **Cell backgrounds** — colored and reversed cells stay within their columns; uniformly colored rows fill the available width
+- **Fixed cell widths** — braille, box drawing, and fallback glyphs keep borders and cursors aligned with the measured terminal grid
 - **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly
 - **Application-controlled cursors** — block, bar, and underline shapes with terminal-requested blinking and a host override
 - **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window

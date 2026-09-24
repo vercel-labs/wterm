@@ -155,6 +155,13 @@ element.classList.add("theme-monokai");
 
 All colors use CSS custom properties (`--term-fg`, `--term-bg`, `--term-color-0` through `--term-color-15`, etc.) so you can define your own theme with plain CSS.
 
+Use a monospace font through `--term-font-family`. Cells use its measured width,
+so braille, box drawing, and other fallback glyphs cannot push later columns out
+of alignment. Wide characters occupy two cells, and oversized glyphs are clipped
+to their cells. Widths update when fonts load or the font size changes, including
+with `autoResize: false`. Unicode text remains selectable and OSC 8 links keep
+their text together.
+
 Colored and reversed cells keep their backgrounds within their columns, including
 the last column and rows in scrollback. A complete row with one shared, opaque
 background extends that color to the container's right edge, so full-width

@@ -103,6 +103,10 @@ function cursorCellStyle(style: string): string {
     .replace(/(^|;)background:/g, "$1--term-cell-bg:");
 }
 
+function columnStyle(columns: number): string {
+  return columns === 1 ? "" : `--term-span-cols:${columns};`;
+}
+
 function appendRun(parent: HTMLElement, text: string, style: string): void {
   const span = document.createElement("span");
   if (style) span.style.cssText = style;
@@ -360,8 +364,9 @@ export class Renderer {
         const after = runCells.slice(offset + 1).join("");
 
         if (before) {
-          content += runStyle
-            ? `<span style="${runStyle}">${escapeHTML(before)}</span>`
+          const style = columnStyle(offset) + runStyle;
+          content += style
+            ? `<span style="${style}">${escapeHTML(before)}</span>`
             : `<span>${escapeHTML(before)}</span>`;
         }
         const cursorStyle = cursorCellStyle(runStyle);
@@ -369,13 +374,15 @@ export class Renderer {
           ? `<span class="term-cursor" style="${cursorStyle}">${escapeHTML(cursorChar)}</span>`
           : `<span class="term-cursor">${escapeHTML(cursorChar)}</span>`;
         if (after) {
-          content += runStyle
-            ? `<span style="${runStyle}">${escapeHTML(after)}</span>`
+          const style = columnStyle(runCells.length - offset - 1) + runStyle;
+          content += style
+            ? `<span style="${style}">${escapeHTML(after)}</span>`
             : `<span>${escapeHTML(after)}</span>`;
         }
       } else {
-        content += runStyle
-          ? `<span style="${runStyle}">${escaped}</span>`
+        const style = columnStyle(runCells.length) + runStyle;
+        content += style
+          ? `<span style="${style}">${escaped}</span>`
           : `<span>${escaped}</span>`;
       }
       appendContent(content, runLinkKey, runLinkUri);
@@ -559,6 +566,26 @@ export class Renderer {
         const style = inBounds
           ? buildCellStyle(cell.fg, cell.bg, cell.flags, cell.fgRgb, cell.bgRgb)
           : "";
+
+        // Font fallback can give a narrow Unicode glyph a different advance
+        // from ASCII. Bound each such cell (including complete graphemes) so
+        // it cannot move later cells within a text run.
+        if (ch.length !== 1 || ch.charCodeAt(0) > 0x7e) {
+          flushRun(col);
+          const cursor = col === cursorCol;
+          appendStyledSpan(
+            cursor ? "term-cursor" : "",
+            cursor ? cursorCellStyle(style) : style,
+            ch,
+            cellLinkKey,
+            cellLinkUri,
+          );
+          runStyle = "";
+          runLinkKey = "";
+          runLinkUri = undefined;
+          runStart = col + 1;
+          continue;
+        }
 
         if (style !== runStyle || cellLinkKey !== runLinkKey) {
           flushRun(col);
