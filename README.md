@@ -38,7 +38,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly
 - **Application-controlled cursors** — block, bar, and underline shapes with terminal-requested blinking and a host override
 - **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window
-- **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws aligned
+- **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws and column insertions/deletions aligned
 - **Grapheme strings** — the Ghostty core preserves combining marks and ZWJ emoji through the DOM renderer and scrollback
 - **Kitty terminal images** — Ghostty-backed terminals render direct PNG/RGB/RGBA graphics in a scroll-aware canvas overlay with configurable display bounds; implicit image placements keep following prompts visually below the image
 - **24-bit color** — full RGB SGR support
