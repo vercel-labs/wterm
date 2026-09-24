@@ -155,6 +155,12 @@ element.classList.add("theme-monokai");
 
 All colors use CSS custom properties (`--term-fg`, `--term-bg`, `--term-color-0` through `--term-color-15`, etc.) so you can define your own theme with plain CSS.
 
+Colored and reversed cells keep their backgrounds within their columns, including
+the last column and rows in scrollback. A complete row with one shared, opaque
+background extends that color to the container's right edge, so full-width
+status bars stay filled. Mixed, dim, or hidden cells do not change the background
+behind neighboring cells or other rows.
+
 ## License
 
 Apache-2.0

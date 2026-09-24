@@ -259,7 +259,6 @@ export class Renderer {
   private prevCursorRow = -1;
   private prevCursorCol = -1;
   private prevCursorVisible = false;
-  private prevContainerBg = "";
   private prevRowBg: string[] = [];
 
   private _scrollbackRowEls: HTMLDivElement[] = [];
@@ -329,6 +328,8 @@ export class Renderer {
     let runLinkKey = "";
     let runLinkUri: string | undefined;
     let outputLinkKey = "";
+    let rowBackground: string | undefined;
+    let uniformBackground = lineLen >= this.cols;
 
     const appendContent = (
       content: string,
@@ -406,13 +407,38 @@ export class Renderer {
       const cellLinkKey = inBounds ? linkIdentity(cell) : "";
       const cellLinkUri = inBounds ? cell.linkUri : undefined;
 
+      // Only a shared, opaque background can fill the unused row width.
+      // Otherwise it would also show through default, dim, or hidden cells.
+      // A wide continuation is painted by its lead, not by its own style.
+      const continuesWide =
+        inBounds &&
+        width === 0 &&
+        col > 0 &&
+        (getCell(col - 1).width ?? 1) === 2;
+      if (uniformBackground && !continuesWide) {
+        const bg = resolveColors(
+          cell.fg,
+          cell.bg,
+          cell.flags,
+          cell.fgRgb,
+          cell.bgRgb,
+        ).bg;
+        if (
+          cell.flags & (FLAG_DIM | FLAG_INVISIBLE) ||
+          (rowBackground !== undefined && rowBackground !== bg)
+        ) {
+          uniformBackground = false;
+        } else {
+          rowBackground = bg;
+        }
+      }
+
       if (inBounds && width === 0) {
         flushRun(col);
         // Skipping is only right when this continues the wide cell to the
         // left, which already covers both columns and its cursor. A width-0
         // cell with no wide cell before it owns its column, so dropping it
         // would shorten the row.
-        const continuesWide = col > 0 && (getCell(col - 1).width ?? 1) === 2;
         if (!continuesWide) {
           const style = buildCellStyle(
             cell.fg,
@@ -553,28 +579,17 @@ export class Renderer {
 
     rowEl.innerHTML = html;
 
-    let bgCss = "";
-    if (lineLen >= this.cols && this.cols > 0) {
-      const lastCell = getCell(this.cols - 1);
-      let bgIdx = lastCell.bg;
-      let bgR = lastCell.bgRgb;
-      if (lastCell.flags & FLAG_REVERSE) {
-        bgIdx = lastCell.fg;
-        bgR = lastCell.fgRgb;
-        if (bgR === undefined && bgIdx === DEFAULT_COLOR) bgIdx = 7;
-      }
-      bgCss = cellBgCSS(bgIdx, bgR) || "";
-    }
-    const boxShadow = bgCss ? `0 1px 0 ${bgCss}` : "";
+    const bgCss =
+      uniformBackground && rowBackground !== "var(--term-bg)"
+        ? (rowBackground ?? "")
+        : "";
     if (rowIndex >= 0) {
       if (bgCss !== (this.prevRowBg[rowIndex] ?? "")) {
         rowEl.style.background = bgCss;
-        rowEl.style.boxShadow = boxShadow;
         this.prevRowBg[rowIndex] = bgCss;
       }
     } else {
       rowEl.style.background = bgCss;
-      rowEl.style.boxShadow = boxShadow;
     }
   }
 
@@ -755,24 +770,6 @@ export class Renderer {
     this.prevCursorRow = cursor.row;
     this.prevCursorCol = cursor.col;
     this.prevCursorVisible = cursorVisible;
-
-    const lastRowDirty = resized || core.isDirtyRow(this.rows - 1);
-    if (lastRowDirty) {
-      const bottomRight = core.getCell(this.rows - 1, this.cols - 1);
-      let gridBgIdx = bottomRight.bg;
-      let gridBgRgb = bottomRight.bgRgb;
-      if (bottomRight.flags & FLAG_REVERSE) {
-        gridBgIdx = bottomRight.fg;
-        gridBgRgb = bottomRight.fgRgb;
-        if (gridBgRgb === undefined && gridBgIdx === DEFAULT_COLOR)
-          gridBgIdx = 7;
-      }
-      const containerBg = cellBgCSS(gridBgIdx, gridBgRgb) || "";
-      if (containerBg !== this.prevContainerBg) {
-        this.container.style.background = containerBg;
-        this.prevContainerBg = containerBg;
-      }
-    }
 
     core.clearDirty();
     this.graphics.reconcile(core, {

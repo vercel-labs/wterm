@@ -24,7 +24,7 @@ pnpm --filter @internal/pty-harness test
 pnpm --filter @internal/pty-harness type-check
 ```
 
-The last two commands run server lifecycle tests and TypeScript checks. The normal repository test and type-check tasks also include this workspace; server lifecycle tests are skipped on Windows. The browser suite remains a separate `test:pty` task, which CI runs after the existing E2E suite. It has 66 cases: three live-PTY cases, five replay workloads, and three cursor appearance cases for each of two cores in three browsers. Playwright WebKit coverage does not replace testing the Safari desktop application.
+The last two commands run server lifecycle tests and TypeScript checks. The normal repository test and type-check tasks also include this workspace; server lifecycle tests are skipped on Windows. The browser suite remains a separate `test:pty` task, which CI runs after the existing E2E suite. It has 78 cases: three live-PTY cases, five replay workloads, three cursor appearance cases, and two background rendering cases for each of two cores in three browsers. Playwright WebKit coverage does not replace testing the Safari desktop application.
 
 ## Recorded workloads
 
@@ -35,6 +35,9 @@ Replay opens `?mode=replay&core=builtin` or `?mode=replay&core=ghostty`, without
 `cursor.spec.ts` checks application-controlled cursor shape, blink-off colors,
 focus/visibility changes, and the host blink override. Add `cursorBlink=true`
 or `cursorBlink=false` to the harness URL to exercise that override manually.
+
+`background.spec.ts` samples rendered pixels to check edge-cell and scrollback
+backgrounds, full-width status bars, partial redraws, screen changes, and resize.
 
 To regenerate the application recordings, install `nvim`, `tmux`, and `infocmp` on macOS or Linux, then run:
 
