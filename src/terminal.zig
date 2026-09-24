@@ -5,6 +5,7 @@ const parser_mod = @import("parser.zig");
 const scrollback_mod = @import("scrollback.zig");
 const hyperlink_mod = @import("hyperlink.zig");
 const unicode_width = @import("unicode_width.zig");
+const charset_mod = @import("charset.zig");
 
 const Cell = cell_mod.Cell;
 const Grid = grid_mod.Grid;
@@ -92,6 +93,11 @@ pub const Terminal = struct {
     current_bg: u16 = cell_mod.DEFAULT_COLOR,
     current_flags: u8 = 0,
     current_link: u16 = 0,
+
+    charset: charset_mod.State = .{},
+    // DECSC character-set snapshots belong to their screen.
+    saved_charset: [2]charset_mod.State = [_]charset_mod.State{.{}} ** 2,
+    alt_saved_charset: charset_mod.State = .{},
 
     scroll_top: u16 = 0,
     scroll_bottom: u16 = 0,
@@ -222,6 +228,9 @@ pub const Terminal = struct {
         self.current_bg = cell_mod.DEFAULT_COLOR;
         self.current_flags = 0;
         self.current_link = 0;
+        self.charset = .{};
+        self.saved_charset = [_]charset_mod.State{.{}} ** 2;
+        self.alt_saved_charset = .{};
         self.scroll_top = 0;
         self.scroll_bottom = rows;
         self.auto_wrap = true;
@@ -426,7 +435,7 @@ pub const Terminal = struct {
             self.wrap_pending = false;
         }
 
-        var char = codepoint;
+        var char = self.charset.map(codepoint);
         var width = unicode_width.displayWidth(char);
         if (width == cell_mod.WIDTH_WIDE and self.cols < 2) {
             // A one-column grid cannot hold a wide pair. Consume a blank
@@ -488,6 +497,8 @@ pub const Terminal = struct {
                 if (self.linefeed_mode) self.carriageReturn();
             },
             0x0D => self.carriageReturn(),
+            0x0E => self.charset.gl = 1, // SO / LS1
+            0x0F => self.charset.gl = 0, // SI / LS0
             else => {},
         }
     }
@@ -530,11 +541,19 @@ pub const Terminal = struct {
 
     fn handleEsc(self: *Terminal) void {
         const byte = self.parser.execute_byte;
-        const has_inter = self.parser.intermediate_count > 0;
-        const inter0 = if (has_inter) self.parser.intermediates[0] else @as(u8, 0);
-
-        if (has_inter and inter0 == '#' and byte == '8') {
-            self.decaln();
+        if (self.parser.intermediate_count > 0) {
+            if (self.parser.intermediate_count != 1) return;
+            switch (self.parser.intermediates[0]) {
+                '(', ')', '*', '+' => |intermediate| {
+                    if (charset_mod.Charset.fromDesignator(byte)) |charset| {
+                        self.charset.slots[intermediate - '('] = charset;
+                    }
+                },
+                '#' => if (byte == '8') self.decaln(),
+                else => {},
+            }
+            // An unsupported designation must not dispatch its final byte
+            // as a bare ESC command (e.g. ESC ( c must not reset the screen).
             return;
         }
 
@@ -549,6 +568,10 @@ pub const Terminal = struct {
             'M' => self.reverseIndex(),
             'c' => self.fullReset(),
             'H' => self.setTabStop(),
+            'n' => self.charset.gl = 2, // LS2
+            'o' => self.charset.gl = 3, // LS3
+            'N' => self.charset.single_shift = 2, // SS2
+            'O' => self.charset.single_shift = 3, // SS3
             else => {},
         }
     }
@@ -577,6 +600,7 @@ pub const Terminal = struct {
         self.saved_fg = self.current_fg;
         self.saved_bg = self.current_bg;
         self.saved_flags = self.current_flags;
+        self.saved_charset[@intFromBool(self.using_alt_screen)] = self.charset;
     }
 
     fn restoreCursor(self: *Terminal) void {
@@ -585,6 +609,7 @@ pub const Terminal = struct {
         self.current_fg = self.saved_fg;
         self.current_bg = self.saved_bg;
         self.current_flags = self.saved_flags;
+        self.charset = self.saved_charset[@intFromBool(self.using_alt_screen)];
         self.wrap_pending = false;
     }
 
@@ -816,6 +841,7 @@ pub const Terminal = struct {
         self.alt_saved_fg = self.current_fg;
         self.alt_saved_bg = self.current_bg;
         self.alt_saved_flags = self.current_flags;
+        self.alt_saved_charset = self.charset;
     }
 
     fn restoreCursorFromAlt(self: *Terminal) void {
@@ -824,10 +850,13 @@ pub const Terminal = struct {
         self.current_fg = self.alt_saved_fg;
         self.current_bg = self.alt_saved_bg;
         self.current_flags = self.alt_saved_flags;
+        self.charset = self.alt_saved_charset;
         self.wrap_pending = false;
     }
 
     fn softReset(self: *Terminal) void {
+        self.charset = .{};
+        self.saved_charset[@intFromBool(self.using_alt_screen)] = .{};
         self.cursor_visible = true;
         self.origin_mode = false;
         self.auto_wrap = true;
@@ -1321,6 +1350,106 @@ test "OSC 8 identities remain stable across RIS" {
         "https://b.example",
         t.hyperlinks.get(second_link).?.uri[0..t.hyperlinks.get(second_link).?.uri_len],
     );
+}
+
+test "DEC special graphics translates fragmented output with style and links intact" {
+    var t = Terminal.init(32, 2);
+    const input = "\x1b[1;31;44m\x1b]8;;https://example.com\x07\x1b(0_`abcdefghijklmnopqrstuvwxyz{|}~";
+    for (input) |byte| t.write(&.{byte});
+    try expectRowCells(&t, 0, "_◆▒␉␌␍␊°±␤␋┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£·");
+    const link = t.grid.getCell(0, 0).link;
+    try std.testing.expect(link != 0);
+    for (0..32) |col| {
+        const cell = t.grid.getCell(0, @intCast(col));
+        try std.testing.expectEqual(@as(u8, 1), cell.width);
+        try std.testing.expectEqual(@as(u16, 1), cell.fg);
+        try std.testing.expectEqual(@as(u16, 4), cell.bg);
+        try std.testing.expectEqual(cell_mod.FLAG_BOLD, cell.flags);
+        try std.testing.expectEqual(link, cell.link);
+    }
+    t.write("\x1b(B\r\nqxa");
+    try std.testing.expectEqual(@as(u32, 'q'), t.grid.getCell(1, 0).char);
+    try std.testing.expectEqual(@as(u32, 'x'), t.grid.getCell(1, 1).char);
+    try std.testing.expectEqual(@as(u32, 'a'), t.grid.getCell(1, 2).char);
+}
+
+test "G0 and G1 designation and locking shifts leave the cursor and existing cells alone" {
+    var t = Terminal.init(8, 2);
+    t.write("q");
+    t.grid.clearDirty();
+    t.write("\x1b)0\x0e");
+    try std.testing.expectEqual(@as(u16, 1), t.cursor_col);
+    try std.testing.expectEqual(@as(u8, 0), t.grid.dirty[0]);
+    try std.testing.expectEqual(@as(u32, 'q'), t.grid.getCell(0, 0).char);
+    t.write("qx\x0fq\x1b(0q\x1b(Bq");
+    try expectRowCells(&t, 0, "q─│q─q  ");
+}
+
+test "G2 and G3 support single and locking shifts and the British set" {
+    var t = Terminal.init(12, 2);
+    t.write("\x1b*0\x1b+Aq\x1bNqq\x1bO##\x1bnq\x1bo#\x0f#");
+    try expectRowCells(&t, 0, "q─q£#─£#    ");
+    t.write("\r\n\x1bN\rqq");
+    try expectRowCells(&t, 1, "─q          ");
+    t.write("\r\x1bN qq");
+    try expectRowCells(&t, 1, " qq         ");
+}
+
+test "character set translation preserves UTF-8 and wide-cell pairing" {
+    var t = Terminal.init(8, 2);
+    const input = "\x1b(0é界🙂q";
+    for (input) |byte| t.write(&.{byte});
+    try expectRowCells(&t, 0, "é界\x00🙂\x00─  ");
+    try std.testing.expectEqual(@as(u16, 6), t.cursor_col);
+    t.write("\x1b(B\r\n\x1b*0\x1bN界q");
+    try expectRowCells(&t, 1, "界\x00q     ");
+}
+
+test "cursor saves restore all character set designations and pending single shifts" {
+    var t = Terminal.init(8, 2);
+    t.write("\x1b)0\x0e\x1b7\x1b)B\x0f\x1b8q");
+    try expectRowCells(&t, 0, "─       ");
+    t.write("\x0f\x1b*0\x1bN\x1b[sq\x1b*B\x1b[uqq");
+    try expectRowCells(&t, 0, "──q     ");
+}
+
+test "alternate screen cursor restoration preserves primary character sets" {
+    var alt = Grid.init(8, 2);
+    var t = Terminal.init(8, 2);
+    t.alt_grid = &alt;
+    t.write("\x1b(0\x1b7\x1b[?1049hq");
+    try expectRowCells(&t, 0, "─       ");
+    t.write("\x1b(B\x1b[H\x1b7q\x1b[?1049lq");
+    try expectRowCells(&t, 0, "─       ");
+    // Saving an alternate-screen charset must not overwrite primary DECSC.
+    t.write("\x1b(B\x1b8q");
+    try expectRowCells(&t, 0, "─       ");
+    t.write("\x1b[?47h\x1b(B\x1b[?47lq");
+    try expectRowCells(&t, 0, "─q      ");
+}
+
+test "hard and soft resets clear character set designations and saved shifts" {
+    for ([_][]const u8{ "\x1bc", "\x1b[!p" }) |reset_sequence| {
+        var t = Terminal.init(8, 2);
+        t.write("\x1b(0\x1b)0\x1b*0\x1b+0\x0e\x1bN\x1b7");
+        t.write(reset_sequence);
+        t.write("q\x0eq\x1bnq\x1boq\x1bNq\x1bOq");
+        try expectRowCells(&t, 0, "qqqqqq  ");
+        t.write("\x1b8q");
+        try std.testing.expectEqual(@as(u32, 'q'), t.grid.getCell(0, 0).char);
+    }
+}
+
+test "unsupported and cancelled designations do not execute bare ESC commands" {
+    var t = Terminal.init(8, 2);
+    t.write("AB\x1b7CD\x1b(0\x1b(c\x1b(D\x1b(8\x1b(7\x1b( M\x1b((Bq");
+    try expectRowCells(&t, 0, "ABCD─   ");
+    try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+    try std.testing.expectEqual(@as(u16, 5), t.cursor_col);
+    t.write("\x1b(\x18q\x1b(\x1b(Bq");
+    try expectRowCells(&t, 0, "ABCD──q ");
+    t.write("\x1b8q");
+    try expectRowCells(&t, 0, "ABqD──q ");
 }
 
 test "wide characters advance by two cells" {

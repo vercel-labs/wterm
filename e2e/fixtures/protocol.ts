@@ -24,6 +24,64 @@ const resize = (cols: number, rows: number): ReplayEvent => ({
 export const protocolFixtures: ReplayFixture[] = [
   {
     schemaVersion: 1,
+    id: "dec-special-graphics",
+    cols: 16,
+    rows: 6,
+    source: { kind: "protocol" },
+    events: [
+      output("\x1b[1;38;5;196m\x1b(0lqqk\r\nx  x\r\nmqqj\x1b(B\x1b[0m"),
+      checkpoint("DEC border glyphs", {
+        rows: { 0: "┌──┐", 1: "│  │", 2: "└──┘" },
+        cursor: { row: 2, col: 4 },
+        cells: [
+          { row: 0, col: 0, value: { char: 9484, width: 1, flags: 1 } },
+          { row: 0, col: 1, value: { char: 9472, width: 1 } },
+          { row: 1, col: 0, value: { char: 9474, width: 1 } },
+        ],
+        styles: [
+          { row: 0, text: "┌──┐", color: "rgb(255, 0, 0)", fontWeight: "700" },
+        ],
+      }),
+      output("\r\n\x1b)0q\x0eqx\x0fq\x1b(A#\x1b(B#"),
+      checkpoint("G1 locking shifts and ASCII restoration", {
+        rows: { 3: "q─│q£#" },
+        cursor: { row: 3, col: 6 },
+      }),
+      output("\r\n\x1b*0\x1b+Aq\x1bNqq\x1bO##\x1bnq\x1bo#\x0f#"),
+      checkpoint("G2 and G3 single and locking shifts", {
+        rows: { 4: "q─q£#─£#" },
+        cursor: { row: 4, col: 8 },
+      }),
+      output("\r\n\x1b(0\x1b7\x1b(Bq\x1b8q\x1b(Bq"),
+      checkpoint("saved cursor restores character sets", {
+        rows: { 5: "─q" },
+        cursor: { row: 5, col: 2 },
+      }),
+      output("\x1b(0\x1b[?1049h\x1b[Hq\x1b(Bq"),
+      checkpoint("alternate screen inherits the active character set", {
+        rows: { 0: "─q", 1: "" },
+        modes: { alternateScreen: true },
+      }),
+      output("\x1b[?1049lq\x1b(Bq"),
+      checkpoint("returning restores the primary character set", {
+        rows: { 0: "┌──┐", 5: "─q─q" },
+        cursor: { row: 5, col: 4 },
+        modes: { alternateScreen: false },
+      }),
+      output("\x1bc\x1b[Hq\x0eq\x1bnq\x1boq\x0f"),
+      checkpoint("reset clears character sets", {
+        rows: { 0: "qqqq", 1: "", 5: "" },
+        cursor: { row: 0, col: 4 },
+      }),
+      output("\x1b(c\x1b(D\x1b(8q"),
+      checkpoint("unsupported designations do not run bare ESC commands", {
+        rows: { 0: "qqqqq", 1: "" },
+        cursor: { row: 0, col: 5 },
+      }),
+    ],
+  },
+  {
+    schemaVersion: 1,
     id: "wide-character-editing",
     cols: 8,
     rows: 4,
