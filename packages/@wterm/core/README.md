@@ -84,6 +84,8 @@ const cursor = bridge.getCursor();  // { row, col, visible, shape, blinking }
 
 OSC 8 hyperlink metadata is optional so third-party `TerminalCore` implementations remain source-compatible. Cores should expose the resolved URI and an opaque semantic key rather than a private numeric index.
 
+Wide CJK, fullwidth, and emoji codepoints occupy a leading cell with `width: 2` and a continuation with `width: 0`. Character insertion (`ICH`) and deletion (`DCH`) shift the requested number of columns from the cursor, replacing split wide characters with background-colored spaces. With automatic wrapping disabled, a wide character that cannot fit at the right edge leaves the row unchanged. A one-column terminal consumes wide characters as spaces.
+
 `CursorState.shape` (`"block"`, `"bar"`, or `"underline"`) and `blinking` are
 optional for custom cores. The built-in and Ghostty cores expose both fields
 from DECSCUSR (`CSI Ps SP q`) and cursor blink mode (`CSI ? 12 h/l`). Missing

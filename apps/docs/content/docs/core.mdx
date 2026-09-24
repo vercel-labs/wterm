@@ -58,6 +58,8 @@ const cursor = bridge.getCursor();
 
 Wide single-codepoint characters such as CJK, fullwidth forms, and emoji expose `width: 2` on the leading cell and `width: 0` on the continuation cell. Custom renderers should skip continuation cells.
 
+Character insertion (`ICH`) and deletion (`DCH`) shift exactly the requested number of columns from the cursor, up to the right edge. If an edit splits a wide character, its remaining cells become spaces with the current background color. With automatic wrapping disabled (`CSI ? 7 l`), a wide character that cannot fit at the right edge leaves the row unchanged. In a one-column terminal, wide characters are consumed as spaces with normal cursor and wrapping behavior.
+
 Cores that preserve multi-codepoint graphemes expose the complete string as `chars`. Render `chars` when present and fall back to `String.fromCodePoint(char)` otherwise.
 
 ### Optional terminal graphics

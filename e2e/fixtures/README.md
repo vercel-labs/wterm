@@ -2,7 +2,7 @@
 
 `neovim-edit.json` and `tmux-pane.json` contain raw output captured from real PTYs, generated input, resize events, and authored screen checkpoints. The capture metadata includes application version, OS, architecture, locale, TERM, and the complete terminfo entry with its SHA-256 hash. They use generated sample content and isolated app configuration; normal CI does not run either application.
 
-`protocol.ts` contains small authored streams for byte-fragmented Unicode and SGR, alternate-screen restoration, cursor responses, repeated resizing, retained history, and synchronized output. These streams have no capture clock; their `atMs` values are zero. They are not application recordings.
+`protocol.ts` contains small authored streams for byte-fragmented Unicode and SGR, wide-character insertion/deletion and right-edge wrapping, alternate-screen restoration, cursor responses, repeated resizing, retained history, and synchronized output. These streams have no capture clock; their `atMs` values are zero. They are not application recordings.
 
 Application capture does not emulate a terminal or send capability responses; applications use TERM/terminfo and their own query fallbacks. During replay, wterm responses are captured in the checkpoint reports, without changing the recorded application's output. The explicit cursor-report fixture asserts an exact reply.
 
