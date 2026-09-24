@@ -1,6 +1,6 @@
 # PTY and terminal replay harness
 
-This workspace tests the built-in and Ghostty cores in Chromium, Firefox, and WebKit. Live `/bin/sh` sessions through `node-pty` and WebSocket exercise keyboard input, shell round trips, resize, and exit. Recorded Neovim/tmux sessions and explicit protocol fixtures exercise rendering and terminal state. Server tests verify PTY cleanup and rejection of invalid requests.
+This workspace tests the built-in and Ghostty cores in Chromium, Firefox, and WebKit. Live `/bin/sh` sessions through `node-pty` and WebSocket exercise keyboard input, shell round trips, resize, and exit. Recorded Neovim/tmux sessions and explicit protocol fixtures exercise rendering and terminal state. Synthetic output workloads measure browser behavior under load. Server tests verify PTY cleanup and rejection of invalid requests.
 
 ## Setup
 
@@ -67,6 +67,77 @@ Open the URL Portless prints for `pty-harness.wterm.localhost`. Choose Built-in 
 
 Each connection runs `/bin/sh -i` with a controlled environment and prompt, in its own temporary working directory. Shell startup files are not loaded. Working directories are removed when the harness stops. The server binds to `127.0.0.1` and accepts only its exact HTTP Host and WebSocket Origin, including the URL supplied by Portless. It is a local development/test harness, not a deployed session service. Disconnect destroys the shell.
 
+## Output-load measurements
+
+From the repository root:
+
+```bash
+pnpm bench:terminal
+WTERM_LOAD_PROFILE=stress pnpm bench:terminal --project chromium --repeat-each 3
+```
+
+The default `smoke` profile delivers 1 MiB per case; `stress` delivers 100 MiB.
+Each profile runs plain-text scrolling, ANSI-colored scrolling, and full-screen
+redraws for both cores in Chromium, Firefox, and WebKit. Targets round up to a
+whole numbered line or frame. Each case gets a fresh browser context and terminal
+at 80 × 24 cells. The runner serves an in-memory production bundle, with no Vite
+development client or hot-reload connection. An untimed single-line write and two
+animation callbacks warm the render path. Default adapter history settings are preserved; retained row
+counts are reported because the cores have different retention policies.
+
+The producer generates the same numbered records incrementally, retains only
+one record and a 16 KiB write buffer, and submits one chunk per zero-delay timer
+task. Browser timer clamping and all intervening work affect the delivered rate.
+This is a fixed pacing policy, not a saturation-throughput or transport
+backpressure test. It uses no PTY, network output, user input, or model calls.
+Generation, timer scheduling, instrumentation, and periodic resource sampling
+are included in elapsed time. Setup, workload hashing, and final assertions are
+outside it. Two animation callbacks after the final write allow rendering to
+settle. Hidden-page runs fail because background throttling changes the workload.
+
+| Field | Boundary |
+| --- | --- |
+| `writeMs` | Each synchronous `WTerm.write` call, including core writes, responses, and scheduling |
+| `coreWriteMs` | Nested `TerminalCore.writeRaw` call, including byte transfer, parsing, invalidation, and chunk callbacks; included in `writeMs` |
+| `renderMs` | Each `Renderer.render` call, including core state extraction, DOM updates, and any layout it forces; excludes later WTerm scroll adjustments and browser paint |
+| `frameIntervalMs` | Time between animation callback executions; a scheduling signal, not a dropped-frame count or presentation measurement |
+| `taskDelayMs` | Lateness of a recurring 16 ms timer; a main-thread scheduling signal, not keyboard latency |
+| `longTaskMs` | Browser Long Tasks entries during the measurement; `null` when unsupported, distinct from zero observed long tasks |
+| `deliveredMiBPerSecond` | Submitted bytes divided by elapsed wall time, including the producer's timer pacing |
+| `resources` | Samples before, every 64 chunks, and after the load: WASM linear-memory capacity, optional JS heap usage, terminal DOM element/row counts, and retained history rows |
+
+Timing summaries contain count, retained count, mean, max, p50, p95, and p99.
+Mean/max cover the complete run; percentiles use at most the latest 16,384 samples.
+Stage durations overlap and must not be added together. The harness temporarily
+wraps the core write and renderer methods and restores them even on failure;
+published package code and APIs have no instrumentation changes. State extraction
+and DOM work are currently combined in `renderMs`.
+
+WASM capacity is read through benchmark-only adapter internals and is not live
+allocation or process RSS. JS heap usage is available in Chromium with precise
+memory reporting enabled; other browsers report `null`. It includes harness
+allocations and follows ordinary garbage collection. Samples can miss transient
+peaks and do not establish leak freedom or a process-memory cap. The DOM count
+covers terminal elements, not text nodes or the browser's full DOM.
+
+The suite asserts submitted byte/chunk counts, final numbered screen rows,
+finite timing samples, and bounded mounted rows. It does not prove preservation
+of every discarded history line. No speed or memory-size thresholds run on shared
+CI. Tracing and video are disabled to reduce measurement overhead; failure
+screenshots are taken after the measured work.
+
+Per-case `load.json` attachments and a combined `e2e/test-results/load/load.json`
+record success/failure, core, profile, repeat index, input SHA-256, source commit
+and dirty status, both WASM hashes, browser version, host/CPU, viewport, font
+stack, and cell geometry. Failed cases remain in the combined report; a missing
+measurement is `null`. CI uploads this directory as `terminal-output-load`.
+
+For comparisons, use the same profile, core, browser build, hardware, power mode,
+font installation, and display settings, close unrelated workloads, and run
+multiple repetitions. Keep per-run results rather than pooling samples across
+machines. These reports do not compare wterm with desktop Ghostty or xterm.js,
+measure startup/idle CPU, or certify input latency or multi-terminal behavior.
+
 ## What the measurements mean
 
 The harness instruments its own call sites and leaves the terminal packages' runtime APIs unchanged. Debug escape-sequence tracing is disabled.
@@ -99,6 +170,11 @@ If a native binding is missing, install the platform build prerequisites and run
 | `prepare-pty.mjs` | Makes the macOS prebuilt spawn helper executable |
 | `src/main.ts` | Both core paths, interactive controls, snapshots, and timing probes |
 | `src/metrics.ts` | Bounded samples and timing summaries |
+| `src/load-workloads.ts` | Numbered output streams, bounded chunk generation, and final row expectations |
+| `src/load.ts` | Output-load timing, scheduling probes, and sampled resources |
+| `load.html`, `src/load-main.ts` | Isolated browser page for automated load measurements |
+| `load.config.ts`, `tests/load.bench.ts` | Separate load runner configuration and correctness assertions |
+| `tests/load-reporter.ts` | Combined load measurements, provenance, and failed-case reports |
 | `tests/terminal.spec.ts` | Real browser input, shell output, resize, exit, and report attachments |
 | `tests/replay.spec.ts` | Byte-stream playback and semantic/DOM checkpoint assertions |
 | `tests/baseline-reporter.ts` | Combined measurement and outcome report |

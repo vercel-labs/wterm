@@ -8,7 +8,7 @@ import { once } from "node:events";
 import { createRequire } from "node:module";
 import * as pty from "node-pty";
 import { WebSocket, WebSocketServer } from "ws";
-import { createServer as createViteServer } from "vite";
+import { build, createServer as createViteServer } from "vite";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const require = createRequire(import.meta.url);
@@ -34,7 +34,11 @@ function validSize(message) {
   );
 }
 
-export async function createHarnessServer({ port = 0, origin } = {}) {
+export async function createHarnessServer({
+  port = 0,
+  origin,
+  load = false,
+} = {}) {
   if (process.platform === "win32") {
     throw new Error(
       "The PTY baseline harness requires macOS or Linux /bin/sh.",
@@ -45,6 +49,7 @@ export async function createHarnessServer({ port = 0, origin } = {}) {
   let closing;
   let allowedOrigin;
   let vite;
+  let staticFiles;
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
   const server = createServer((request, response) => {
     if (request.headers.host !== new URL(allowedOrigin).host) {
@@ -53,7 +58,23 @@ export async function createHarnessServer({ port = 0, origin } = {}) {
     }
     if (request.url === "/health") {
       response.setHeader("Content-Type", "application/json");
-      response.end(JSON.stringify({ activePtys: sessions.size, ...metadata }));
+      response.end(
+        JSON.stringify({
+          activePtys: sessions.size,
+          serving: load ? "production" : "development",
+          ...metadata,
+        }),
+      );
+      return;
+    }
+    if (staticFiles) {
+      const file = staticFiles.get(request.url?.split("?")[0]);
+      if (!file) {
+        response.writeHead(404).end();
+        return;
+      }
+      response.setHeader("Content-Type", file.type);
+      response.end(file.body);
       return;
     }
     vite.middlewares(request, response);
@@ -181,11 +202,42 @@ export async function createHarnessServer({ port = 0, origin } = {}) {
   }
 
   try {
-    vite = await createViteServer({
-      root,
-      configFile: false,
-      server: { middlewareMode: true, hmr: false, ws: false, watch: null },
-    });
+    if (load) {
+      // Serve an in-memory production build so Vite's development client and
+      // module transforms cannot affect the timed browser workloads.
+      const built = await build({
+        root,
+        configFile: false,
+        logLevel: "warn",
+        build: {
+          write: false,
+          rollupOptions: { input: join(root, "load.html") },
+        },
+      });
+      const types = {
+        html: "text/html",
+        js: "text/javascript",
+        css: "text/css",
+        wasm: "application/wasm",
+      };
+      staticFiles = new Map();
+      for (const result of Array.isArray(built) ? built : [built]) {
+        for (const file of result.output) {
+          staticFiles.set(`/${file.fileName}`, {
+            type:
+              types[file.fileName.split(".").at(-1)] ??
+              "application/octet-stream",
+            body: file.type === "chunk" ? file.code : Buffer.from(file.source),
+          });
+        }
+      }
+    } else {
+      vite = await createViteServer({
+        root,
+        configFile: false,
+        server: { middlewareMode: true, hmr: false, ws: false, watch: null },
+      });
+    }
     server.listen(port, "127.0.0.1");
     await once(server, "listening");
     const url = `http://127.0.0.1:${server.address().port}`;

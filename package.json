@@ -23,6 +23,7 @@
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "test:e2e:ui": "playwright test --config e2e/playwright.config.ts --ui",
     "test:pty": "turbo run build --filter='@internal/pty-harness^...' && pnpm --filter @internal/pty-harness test:e2e",
+    "bench:terminal": "turbo run build --filter='@internal/pty-harness^...' && pnpm --filter @internal/pty-harness bench",
     "test:libghostty": "node experiments/libghostty/build.mjs && node --test experiments/libghostty/probe.test.mjs experiments/libghostty/browser.test.mjs",
     "type-check": "turbo run type-check"
   },
