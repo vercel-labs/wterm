@@ -258,6 +258,7 @@ export class Renderer {
   private rowEls: HTMLDivElement[] = [];
   private prevCursorRow = -1;
   private prevCursorCol = -1;
+  private prevCursorVisible = false;
   private prevContainerBg = "";
   private prevRowBg: string[] = [];
 
@@ -721,9 +722,18 @@ export class Renderer {
 
     const cursor = core.getCursor();
     const cursorVisible = cursor.visible;
+    const shape = cursor.shape ?? "block";
+    const blink = String(cursor.blinking ?? false);
+    // Shape and blink changes need no cell replacement: CSS reads the grid state.
+    if (this.container.dataset.cursorShape !== shape)
+      this.container.dataset.cursorShape = shape;
+    if (this.container.dataset.cursorBlink !== blink)
+      this.container.dataset.cursorBlink = blink;
 
     const needsCursorUpdate =
-      cursor.row !== this.prevCursorRow || cursor.col !== this.prevCursorCol;
+      cursor.row !== this.prevCursorRow ||
+      cursor.col !== this.prevCursorCol ||
+      cursorVisible !== this.prevCursorVisible;
 
     for (let r = 0; r < this.rows; r++) {
       const isDirty = resized || core.isDirtyRow(r);
@@ -744,6 +754,7 @@ export class Renderer {
 
     this.prevCursorRow = cursor.row;
     this.prevCursorCol = cursor.col;
+    this.prevCursorVisible = cursorVisible;
 
     const lastRowDirty = resized || core.isDirtyRow(this.rows - 1);
     if (lastRowDirty) {

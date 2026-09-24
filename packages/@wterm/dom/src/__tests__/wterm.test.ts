@@ -75,6 +75,13 @@ describe("WTerm", () => {
     it("does not add cursor-blink class by default", () => {
       new WTerm(element);
       expect(element.classList.contains("cursor-blink")).toBe(false);
+      expect(element.classList.contains("cursor-steady")).toBe(false);
+    });
+
+    it("forces a steady cursor when cursorBlink is explicitly false", () => {
+      new WTerm(element, { cursorBlink: false });
+      expect(element.classList.contains("cursor-blink")).toBe(false);
+      expect(element.classList.contains("cursor-steady")).toBe(true);
     });
 
     it("defaults to 80 cols and 24 rows", () => {

@@ -2,6 +2,7 @@ import {
   useRef,
   useCallback,
   useImperativeHandle,
+  useLayoutEffect,
   forwardRef,
   type HTMLAttributes,
 } from "react";
@@ -27,6 +28,7 @@ export interface TerminalProps extends Omit<
   maxImageWidth?: number;
   /** Maximum rendered Kitty image height in CSS pixels. */
   maxImageHeight?: number;
+  /** Force blinking on/off; omit to follow the terminal application's request. */
   cursorBlink?: boolean;
   /** Enable debug mode (init-only — changing after mount has no effect). */
   debug?: boolean;
@@ -54,7 +56,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     autoResize = false,
     maxImageWidth,
     maxImageHeight,
-    cursorBlink = false,
+    cursorBlink,
     debug = false,
     onData,
     onTitle,
@@ -149,18 +151,20 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     if (!autoResizeRef.current && (wt.cols !== cols || wt.rows !== rows)) {
       wt.resize(cols, rows);
     }
-    const el = wt.element;
-    if (cursorBlink && !el.classList.contains("cursor-blink")) {
-      el.classList.add("cursor-blink");
-    } else if (!cursorBlink && el.classList.contains("cursor-blink")) {
-      el.classList.remove("cursor-blink");
-    }
     if (onData && !wt.onData) {
       wt.onData = (data: string) => callbacksRef.current.onData?.(data);
     } else if (!onData && wt.onData) {
       wt.onData = null;
     }
   }
+
+  // Update individual classes after React commits so blink changes preserve
+  // the focus and scrollback classes managed by WTerm.
+  useLayoutEffect(() => {
+    const el = wtermRef.current?.element;
+    el?.classList.toggle("cursor-blink", cursorBlink === true);
+    el?.classList.toggle("cursor-steady", cursorBlink === false);
+  });
 
   const themeClass = theme ? `theme-${theme}` : "";
   const classes = ["wterm", themeClass, className].filter(Boolean).join(" ");

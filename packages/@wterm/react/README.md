@@ -52,7 +52,7 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 | `autoResize` | `boolean` | `false` | Auto-resize based on container dimensions |
 | `maxImageWidth` | `number` | — | Maximum rendered Kitty image width in CSS pixels; images scale down proportionally |
 | `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels; images scale down proportionally |
-| `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
+| `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the underlying `WTerm` instance for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |

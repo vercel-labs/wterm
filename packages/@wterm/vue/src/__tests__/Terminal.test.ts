@@ -168,6 +168,7 @@ describe("Terminal component", () => {
   it("toggles cursor-blink class on prop change", async () => {
     const wrapper = await mountTerminal({ cursorBlink: false });
     await flushPromises();
+    lastWTermInstance.element.classList.add("focused", "has-scrollback");
     await wrapper.setProps({ cursorBlink: true });
     await nextTick();
     expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
@@ -178,6 +179,19 @@ describe("Terminal component", () => {
     expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
       false,
     );
+    expect(lastWTermInstance.element.classList.contains("cursor-steady")).toBe(
+      true,
+    );
+    await wrapper.setProps({ cursorBlink: undefined });
+    await nextTick();
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      false,
+    );
+    expect(lastWTermInstance.element.classList.contains("cursor-steady")).toBe(
+      false,
+    );
+    expect(wrapper.classes()).toContain("focused");
+    expect(wrapper.classes()).toContain("has-scrollback");
   });
 
   it("emits data when WTerm onData fires", async () => {

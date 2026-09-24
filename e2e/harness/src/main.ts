@@ -242,6 +242,9 @@ async function init() {
     cols: 80,
     rows: 24,
     autoResize: false,
+    cursorBlink: params.has("cursorBlink")
+      ? params.get("cursorBlink") === "true"
+      : undefined,
     onData: sendInput,
     onResize: (cols, rows) => {
       if (socket?.readyState === WebSocket.OPEN)

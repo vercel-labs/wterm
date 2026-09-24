@@ -86,10 +86,9 @@ const Terminal = defineComponent({
     /** Maximum rendered Kitty image height in CSS pixels. */
     maxImageHeight: Number,
     /**
-     * Toggles the `cursor-blink` class on the root element.
-     * @defaultValue false
+     * Force blinking on/off; omit to follow the terminal application's request.
      */
-    cursorBlink: Boolean,
+    cursorBlink: { type: Boolean, default: undefined },
     /**
      * Enable debug mode (init-only — changing after mount has no effect).
      * Exposes a `DebugAdapter` on the underlying `WTerm` instance.
@@ -186,10 +185,11 @@ const Terminal = defineComponent({
     watch(
       () => props.cursorBlink,
       (blink) => {
-        const wt = wterm.value;
-        if (!wt) return;
-        wt.element.classList.toggle("cursor-blink", blink);
+        const el = wterm.value?.element;
+        el?.classList.toggle("cursor-blink", blink === true);
+        el?.classList.toggle("cursor-steady", blink === false);
       },
+      { flush: "post" },
     );
 
     // Returning bindings from setup is the typed equivalent of defineExpose:

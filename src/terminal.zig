@@ -64,6 +64,8 @@ comptime {
         @compileError("DebugLogEntry size changed — update wasm-bridge.ts entrySize");
 }
 
+pub const CursorShape = enum(u8) { block, underline, bar };
+
 pub const Terminal = struct {
     grid: Grid,
     parser: Parser = .{},
@@ -76,6 +78,8 @@ pub const Terminal = struct {
     cursor_row: u16 = 0,
     cursor_col: u16 = 0,
     cursor_visible: bool = true,
+    cursor_shape: CursorShape = .block,
+    cursor_blinking: bool = false,
     wrap_pending: bool = false,
 
     saved_cursor_row: u16 = 0,
@@ -107,6 +111,7 @@ pub const Terminal = struct {
     alt_grid: ?*Grid = null,
     alt_saved_cursor_row: u16 = 0,
     alt_saved_cursor_col: u16 = 0,
+    alt_saved_cursor_shape: CursorShape = .block,
     alt_saved_fg: u16 = cell_mod.DEFAULT_COLOR,
     alt_saved_bg: u16 = cell_mod.DEFAULT_COLOR,
     alt_saved_flags: u8 = 0,
@@ -289,6 +294,8 @@ pub const Terminal = struct {
         self.cursor_row = 0;
         self.cursor_col = 0;
         self.cursor_visible = true;
+        self.cursor_shape = .block;
+        self.cursor_blinking = false;
         self.wrap_pending = false;
         self.saved_cursor_row = 0;
         self.saved_cursor_col = 0;
@@ -312,6 +319,7 @@ pub const Terminal = struct {
         self.linefeed_mode = false;
         self.alt_saved_cursor_row = 0;
         self.alt_saved_cursor_col = 0;
+        self.alt_saved_cursor_shape = .block;
         self.alt_saved_fg = cell_mod.DEFAULT_COLOR;
         self.alt_saved_bg = cell_mod.DEFAULT_COLOR;
         self.alt_saved_flags = 0;
@@ -677,6 +685,25 @@ pub const Terminal = struct {
     fn handleCsi(self: *Terminal) void {
         const final = self.parser.execute_byte;
 
+        // DECSCUSR is CSI Ps SP q; bare CSI q controls keyboard LEDs.
+        if (final == 'q' and self.parser.csi_private == 0 and
+            self.parser.intermediate_count == 1 and self.parser.intermediates[0] == ' ')
+        {
+            if (self.parser.param_count <= 1) {
+                const style = self.parser.getParam(0, 0);
+                if (style <= 6) {
+                    self.cursor_shape = switch (style) {
+                        3, 4 => .underline,
+                        5, 6 => .bar,
+                        else => .block,
+                    };
+                    // Zero restores wterm's default steady block cursor.
+                    self.cursor_blinking = style == 1 or style == 3 or style == 5;
+                }
+            }
+            return;
+        }
+
         if (final == 'u' and switch (self.parser.csi_private) {
             '?', '>', '<', '=' => true,
             else => false,
@@ -801,7 +828,7 @@ pub const Terminal = struct {
                 1 => self.cursor_keys_app = enabled,
                 6 => self.origin_mode = enabled,
                 7 => self.auto_wrap = enabled,
-                12 => {}, // cursor blink - handled by renderer
+                12 => self.cursor_blinking = enabled,
                 20 => self.linefeed_mode = enabled,
                 25 => self.cursor_visible = enabled,
                 47 => self.switchScreen(enabled, false),
@@ -839,6 +866,7 @@ pub const Terminal = struct {
         const ag = self.alt_grid orelse return;
 
         if (alt) {
+            self.alt_saved_cursor_shape = self.cursor_shape;
             self.alt_saved_link = self.current_link;
             self.current_link = 0;
             if (save_cursor) self.saveCursorToAlt();
@@ -849,7 +877,10 @@ pub const Terminal = struct {
             self.grid = ag.*;
             self.using_alt_screen = false;
             self.current_link = self.alt_saved_link;
-            if (save_cursor) self.restoreCursorFromAlt();
+            if (save_cursor) {
+                self.restoreCursorFromAlt();
+                self.cursor_shape = self.alt_saved_cursor_shape;
+            }
             var r: u16 = 0;
             while (r < self.rows) : (r += 1) {
                 self.grid.dirty[r] = 1;

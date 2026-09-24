@@ -50,7 +50,7 @@ bridge.init(80, 24);
 bridge.writeString("Hello, world!\r\n");
 
 const cell = bridge.getCell(0, 0); // { char, chars?, fg, bg, flags, width, linkUri?, linkId?, linkKey? }
-const cursor = bridge.getCursor();  // { row, col, visible }
+const cursor = bridge.getCursor();  // { row, col, visible, shape, blinking }
 ```
 
 | Method | Description |
@@ -61,7 +61,7 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 | `writeRaw(data, afterChunk?)` | Write raw bytes, optionally running a callback after each internal chunk |
 | `resize(cols, rows)` | Resize the terminal grid |
 | `getCell(row, col)` | Get cell data, including optional resolved OSC 8 metadata (`linkUri`, explicit `linkId`, and opaque `linkKey`) |
-| `getCursor()` | Get cursor state (`{ row, col, visible }`) |
+| `getCursor()` | Get cursor state (`{ row, col, visible, shape?, blinking? }`) |
 | `getCols()` / `getRows()` | Get current grid dimensions |
 | `isDirtyRow(row)` | Check if a row needs re-rendering |
 | `clearDirty()` | Reset all dirty-row flags |
@@ -83,6 +83,13 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 | `kittyKeyboardFlags()` | Active Kitty keyboard protocol flags |
 
 OSC 8 hyperlink metadata is optional so third-party `TerminalCore` implementations remain source-compatible. Cores should expose the resolved URI and an opaque semantic key rather than a private numeric index.
+
+`CursorState.shape` (`"block"`, `"bar"`, or `"underline"`) and `blinking` are
+optional for custom cores. The built-in and Ghostty cores expose both fields
+from DECSCUSR (`CSI Ps SP q`) and cursor blink mode (`CSI ? 12 h/l`). Missing
+fields render as a steady block unless the host sets `cursorBlink`. Style 0
+or an omitted parameter restores the default steady block; styles 1/2, 3/4,
+and 5/6 select blinking/steady block, underline, and bar respectively.
 
 `TerminalCore.kittyKeyboardFlags()` is also optional. The DOM input handler uses it to encode negotiated Kitty keyboard events; cores that omit it retain the existing legacy keyboard behavior.
 

@@ -11,6 +11,11 @@ wterm ships with a lightweight built-in core (~12 KB WASM) that covers basic VT1
 
 Ghostty's native OSC 8 metadata is preserved through the active viewport, scrollback, and reflow. The DOM renderer resolves it into safe HTTP and HTTPS anchors without exposing Ghostty's page-local numeric IDs.
 
+Ghostty's cursor shape and blink state also reach the DOM renderer. Applications
+can switch between block, bar, and underline cursors; the wrapper's optional
+`cursorBlink` setting can force blinking on or off. See
+[cursor appearance](/configuration#cursor-appearance) for the shared behavior.
+
 Ghostty-backed terminals also render direct Kitty Graphics Protocol PNG, RGB,
 and RGBA data through the optional graphics contract. The DOM layer draws
 bounded, transient canvas overlays for pinned placements and follows scrollback,

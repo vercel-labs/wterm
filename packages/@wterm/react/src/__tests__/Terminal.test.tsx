@@ -69,6 +69,25 @@ describe("Terminal component", () => {
     expect(el.className).toContain("theme-dark");
   });
 
+  it("lets cursor blink props switch between forced and application-controlled behavior", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const { rerender, container } = render(<Terminal />);
+    await act(async () => {});
+    const element = container.querySelector('[role="textbox"]')!;
+    expect(element).not.toHaveClass("cursor-blink", "cursor-steady");
+    element.classList.add("focused", "has-scrollback");
+    rerender(<Terminal cursorBlink />);
+    expect(element).toHaveClass("cursor-blink");
+    expect(element).toHaveClass("focused", "has-scrollback");
+    rerender(<Terminal cursorBlink={false} />);
+    expect(element).toHaveClass("cursor-steady", "focused", "has-scrollback");
+    expect(element).not.toHaveClass("cursor-blink");
+    rerender(<Terminal />);
+    expect(element).not.toHaveClass("cursor-blink", "cursor-steady");
+    expect(element).toHaveClass("focused", "has-scrollback");
+    expect(lastWTermInstance.destroy).not.toHaveBeenCalled();
+  });
+
   it("creates WTerm instance on mount", async () => {
     const { WTerm } = await import("@wterm/dom");
     await renderTerminal();

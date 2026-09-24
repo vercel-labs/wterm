@@ -6,6 +6,10 @@ Drop-in replacement for wterm's built-in Zig core. Implements the same `Terminal
 
 The core exposes SGR mouse tracking (modes 1000, 1002, and 1006), focus reporting (mode 1004), synchronized-output state (mode 2026), Kitty keyboard negotiation, and terminal responses including foreground/background color queries (OSC 10 and OSC 11) to `@wterm/dom`.
 Combining marks and ZWJ emoji are exposed through `CellData.chars` as complete strings, including after their rows move into scrollback.
+`getCursor()` exposes Ghostty's block, bar, or underline `shape` and `blinking`
+state. The DOM renderer follows application requests (DECSCUSR and mode 12);
+an explicit `cursorBlink: true` or `false` on the terminal wrapper overrides
+blinking. Omitting the option follows the application, initially steady.
 Native OSC 8 hyperlinks are resolved from Ghostty's page-owned metadata and exposed through `CellData.linkUri`, `CellData.linkId`, and `CellData.linkKey` in both the viewport and scrollback.
 
 The Ghostty core also provides the optional terminal graphics API. The DOM

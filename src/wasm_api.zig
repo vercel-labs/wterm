@@ -70,6 +70,14 @@ export fn getCursorVisible() u32 {
     return if (terminal.cursor_visible) 1 else 0;
 }
 
+export fn getCursorShape() u32 {
+    return @intFromEnum(terminal.cursor_shape);
+}
+
+export fn getCursorBlinking() u32 {
+    return if (terminal.cursor_blinking) 1 else 0;
+}
+
 export fn getCols() u32 {
     return terminal.cols;
 }

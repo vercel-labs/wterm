@@ -51,6 +51,8 @@ export interface GhosttyExports {
   get_cursor_row(ptr: number): number;
   get_cursor_col(ptr: number): number;
   get_cursor_visible(ptr: number): number;
+  get_cursor_shape?(ptr: number): number;
+  get_cursor_blinking?(ptr: number): number;
 
   // Modes
   cursor_keys_app(ptr: number): number;

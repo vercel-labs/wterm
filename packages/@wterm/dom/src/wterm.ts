@@ -23,6 +23,7 @@ export interface WTermOptions {
   maxImageWidth?: number;
   /** Maximum rendered Kitty image height in CSS pixels. */
   maxImageHeight?: number;
+  /** Force blinking on/off; omit to follow the terminal application's request. */
   cursorBlink?: boolean;
   debug?: boolean;
   onData?: (data: string) => void;
@@ -89,7 +90,11 @@ export class WTerm {
     this._container.className = "term-grid";
     this.element.appendChild(this._container);
     this.element.classList.add("wterm");
-    if (options.cursorBlink) this.element.classList.add("cursor-blink");
+    this.element.classList.toggle("cursor-blink", options.cursorBlink === true);
+    this.element.classList.toggle(
+      "cursor-steady",
+      options.cursorBlink === false,
+    );
 
     this._onClickFocus = (event) => {
       const target = event.target;

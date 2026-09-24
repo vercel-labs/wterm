@@ -138,8 +138,8 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
     <tr>
       <td><code>cursorBlink</code></td>
       <td><code>boolean</code></td>
-      <td><code>false</code></td>
-      <td>Enable cursor blinking animation</td>
+      <td>Application-controlled</td>
+      <td>Force blinking on (<code>true</code>) or off (<code>false</code>); omit to follow the terminal (initially steady).</td>
     </tr>
     <tr>
       <td><code>debug</code></td>
@@ -752,5 +752,7 @@ interface CursorState {
   row: number;
   col: number;
   visible: boolean;
+  shape?: "block" | "bar" | "underline";
+  blinking?: boolean;
 }
 ```

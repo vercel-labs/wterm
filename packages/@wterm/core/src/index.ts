@@ -1,5 +1,6 @@
 export type {
   CellData,
+  CursorShape,
   CursorState,
   GraphicsResourceState,
   HyperlinkResourceState,
