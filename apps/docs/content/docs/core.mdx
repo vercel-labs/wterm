@@ -62,6 +62,18 @@ Character insertion (`ICH`) and deletion (`DCH`) shift exactly the requested num
 
 Cores that preserve multi-codepoint graphemes expose the complete string as `chars`. Render `chars` when present and fall back to `String.fromCodePoint(char)` otherwise.
 
+### DEC line drawing
+
+The built-in core translates DEC Special Graphics sequences used by tmux and other TUIs into Unicode cells. For example:
+
+```ts
+bridge.writeString("\x1b(0lqqk\x1b(B"); // ┌──┐
+```
+
+`ESC (` through `ESC +` designate G0 through G3. The supported sets are ASCII (`B`), British (`A`, mapping `#` to `£`), and DEC Special Graphics (`0`). SI/SO select G0/G1; `ESC n` and `ESC o` select G2/G3. `ESC N` and `ESC O` use G2/G3 for the next printed character only. Unsupported designations are ignored.
+
+Character-set state is preserved by cursor save/restore and restored when returning from the alternate screen with `CSI ? 1049 l`. Soft and full resets restore the built-in core's default ASCII sets. Mapping changes printable ASCII only; UTF-8 text keeps its original codepoints. Custom renderers receive the translated Unicode characters through `getCell()` and `getScrollbackCell()`.
+
 ### Optional terminal graphics
 
 The `TerminalCore` contract has optional `getGraphicsState()` and
