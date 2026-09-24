@@ -200,6 +200,18 @@ pnpm --filter @wterm/ghostty rebuild-wasm:docker
 
 Zig 0.15.x cannot link a native build runner on macOS 26, and Zig 0.16 fails inside ghostty's vendored build files, so neither drives `rebuild-wasm` there. The wasm target itself is unaffected. Container output is byte-identical to a host build.
 
+### Public API experiment
+
+The repository also contains an isolated
+[public libghostty WASM probe](../../../experiments/libghostty/README.md), using
+an unpatched upstream revision and Zig 0.16.0. Run `pnpm test:libghostty` from
+the repository root to build it and exercise rendering, terminal effects,
+history, and snapshots in Node and browser engines. It does not replace this
+package's v1.3.1 binary: the probed freestanding build disables Kitty graphics,
+and the public API still has gaps against the adapter's history, hyperlink
+identity, and resource-reporting contracts. The experiment documents the
+verified behavior and remaining compatibility gaps.
+
 ### Upgrading ghostty
 
 1. Edit the URL tag in `zig/build.zig.zon` to the new ghostty version

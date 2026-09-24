@@ -216,6 +216,21 @@ The harness includes core switching and a round-trip probe. Timing callbacks
 measure frame opportunities, not physical display latency. See the
 [harness README](e2e/harness/README.md) for setup and measurement details.
 
+### Probe the public libghostty API
+
+With Zig 0.16.0 and the Playwright browsers installed, build a pinned, unpatched
+upstream WASM artifact and exercise its public C API in Node and all three
+browser engines:
+
+```bash
+pnpm test:libghostty
+```
+
+The isolated [libghostty experiment](experiments/libghostty/README.md) covers
+render state, terminal effects, retained history, snapshots, and application
+recordings. It documents the compatibility gaps that keep the shipped adapter
+on v1.3.1. Generated binaries and reports stay in its ignored `dist/` directory.
+
 ## License
 
 Apache-2.0
