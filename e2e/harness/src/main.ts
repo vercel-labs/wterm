@@ -6,7 +6,9 @@ import { Samples } from "./metrics";
 import "@wterm/dom/css";
 import "./style.css";
 
-const coreName = new URLSearchParams(location.search).get("core") ?? "builtin";
+const params = new URLSearchParams(location.search);
+const coreName = params.get("core") ?? "builtin";
+const replay = params.get("mode") === "replay";
 if (coreName !== "builtin" && coreName !== "ghostty") {
   throw new Error(`Unknown core: ${coreName}`);
 }
@@ -17,7 +19,8 @@ const probeButton = document.querySelector<HTMLButtonElement>("#probe")!;
 const selector = document.querySelector<HTMLSelectElement>("#core")!;
 selector.value = coreName;
 selector.addEventListener("change", () => {
-  location.search = new URLSearchParams({ core: selector.value }).toString();
+  params.set("core", selector.value);
+  location.search = params.toString();
 });
 document
   .querySelector("#restart")!
@@ -35,6 +38,7 @@ let core: TerminalCore;
 let terminal: WTerm;
 let socket: WebSocket;
 let outputTail = "";
+const responses: string[] = [];
 let pendingProbe: {
   marker: string;
   matched: boolean;
@@ -56,6 +60,7 @@ function report() {
   return {
     schemaVersion: 1,
     core: coreName,
+    source: replay ? "replay" : "pty",
     startedAt,
     state,
     environment: {
@@ -76,10 +81,13 @@ function report() {
 }
 
 function snapshot() {
+  const cells = Array.from({ length: core.getRows() }, (_, row) =>
+    Array.from({ length: core.getCols() }, (_, col) => core.getCell(row, col)),
+  );
   const rows = Array.from({ length: core.getRows() }, (_, row) => {
     let text = "";
     for (let col = 0; col < core.getCols(); col++) {
-      const cell = core.getCell(row, col);
+      const cell = cells[row][col];
       if (cell.width !== 0)
         text += cell.chars ?? String.fromCodePoint(cell.char || 32);
     }
@@ -90,10 +98,38 @@ function snapshot() {
     cursor: core.getCursor(),
     cols: core.getCols(),
     height: core.getRows(),
+    cells,
+    modes: {
+      alternateScreen: core.usingAltScreen(),
+      bracketedPaste: core.bracketedPaste(),
+      cursorKeysApp: core.cursorKeysApp(),
+      synchronizedOutput: core.synchronizedOutput?.() ?? false,
+    },
+    scrollbackCount: core.getScrollbackCount(),
+    history: Array.from(
+      { length: Math.min(core.getScrollbackCount(), 100) },
+      (_, index) => {
+        const offset = Math.min(core.getScrollbackCount(), 100) - 1 - index;
+        let text = "";
+        for (let col = 0; col < core.getScrollbackLineLen(offset); col++) {
+          const cell = core.getScrollbackCell(offset, col);
+          if (cell.width !== 0)
+            text += cell.chars ?? String.fromCodePoint(cell.char || 32);
+        }
+        return text.trimEnd();
+      },
+    ),
+    responses: [...responses],
   };
 }
 
 function sendInput(data: string): void {
+  if (replay) {
+    if (responses.length >= 1024)
+      throw new Error("Replay response limit exceeded");
+    responses.push(data);
+    return;
+  }
   if (socket?.readyState !== WebSocket.OPEN || state !== "connected") return;
   socket.send(JSON.stringify({ type: "input", data }));
 }
@@ -139,12 +175,56 @@ function dispose(): void {
   if (core instanceof GhosttyCore) core.dispose();
 }
 
+function writeOutput(data: string | Uint8Array): void {
+  const received = performance.now();
+  outputBytes +=
+    typeof data === "string"
+      ? encoder.encode(data).byteLength
+      : data.byteLength;
+  const writeStart = performance.now();
+  terminal.write(data);
+  writeMs.add(performance.now() - writeStart);
+  if (typeof data === "string") outputTail = (outputTail + data).slice(-1024);
+  if (pendingProbe && outputTail.includes(pendingProbe.marker))
+    pendingProbe.matched = true;
+  if (pendingFrame !== null) return;
+  // WTerm schedules its render first. This measures a frame opportunity,
+  // not physical display latency.
+  pendingFrame = requestAnimationFrame(() => {
+    pendingFrame = null;
+    const now = performance.now();
+    receiveToFrameMs.add(now - received);
+    if (pendingProbe?.matched) {
+      const probe = pendingProbe;
+      pendingProbe = null;
+      clearTimeout(probe.timer);
+      const duration = now - probe.start;
+      roundTripMs.add(duration);
+      probe.resolve(duration);
+      probeButton.disabled = state !== "connected";
+    }
+    metricsElement.textContent = JSON.stringify(report().timings, null, 2);
+  });
+}
+
+function replayWrite(base64: string, chunkBytes: number): void {
+  if (!replay || disposed) throw new Error("Replay session is not active");
+  if (!Number.isSafeInteger(chunkBytes) || chunkBytes < 1)
+    throw new Error("Invalid chunk size");
+  const data = Uint8Array.from(atob(base64), (byte) => byte.charCodeAt(0));
+  for (let offset = 0; offset < data.length; offset += chunkBytes) {
+    writeOutput(data.subarray(offset, offset + chunkBytes));
+  }
+}
+
 export type HarnessAPI = {
   report: typeof report;
   snapshot: typeof snapshot;
   runProbe: typeof runProbe;
   resize: (cols: number, rows: number) => void;
   close: () => void;
+  replayWrite: typeof replayWrite;
+  frame: () => Promise<void>;
 };
 declare global {
   interface Window {
@@ -178,7 +258,29 @@ async function init() {
       dispose();
       setState("closed", "Session closed");
     },
+    replayWrite,
+    frame: () =>
+      new Promise((resolve) => requestAnimationFrame(() => resolve())),
   };
+  document.querySelector("#download")!.addEventListener("click", () => {
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(report(), null, 2)], {
+        type: "application/json",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `wterm-${replay ? "replay" : "pty"}-${coreName}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+  window.addEventListener("pagehide", dispose, { once: true });
+  if (replay) {
+    document.querySelector("header p")!.textContent =
+      "Recorded terminal output; no shell is running.";
+    setState("replay", "Replay ready");
+    return;
+  }
   setState("connecting", "Connecting…");
   const url = new URL("/pty", location.href);
   url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -193,33 +295,7 @@ async function init() {
       serverMetadata = message;
       setState("connected", "Connected · /bin/sh");
     } else if (message.type === "output") {
-      const received = performance.now();
-      outputBytes += encoder.encode(message.data).byteLength;
-      const writeStart = performance.now();
-      terminal.write(message.data);
-      writeMs.add(performance.now() - writeStart);
-      outputTail = (outputTail + message.data).slice(-1024);
-      if (pendingProbe && outputTail.includes(pendingProbe.marker)) {
-        pendingProbe.matched = true;
-      }
-      if (pendingFrame !== null) return;
-      // WTerm schedules its render before this callback. This measures the
-      // next frame opportunity after the write, not physical display latency.
-      pendingFrame = requestAnimationFrame(() => {
-        pendingFrame = null;
-        const now = performance.now();
-        receiveToFrameMs.add(now - received);
-        if (pendingProbe?.matched) {
-          const probe = pendingProbe;
-          pendingProbe = null;
-          clearTimeout(probe.timer);
-          const duration = now - probe.start;
-          roundTripMs.add(duration);
-          probe.resolve(duration);
-          probeButton.disabled = state !== "connected";
-        }
-        metricsElement.textContent = JSON.stringify(report().timings, null, 2);
-      });
+      writeOutput(message.data);
     } else if (message.type === "exit") {
       failProbe("Shell exited");
       setState("exited", `Shell exited (${message.exitCode})`);
@@ -243,19 +319,6 @@ async function init() {
         status.textContent = error.message;
       }),
   );
-  document.querySelector("#download")!.addEventListener("click", () => {
-    const url = URL.createObjectURL(
-      new Blob([JSON.stringify(report(), null, 2)], {
-        type: "application/json",
-      }),
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `wterm-pty-${coreName}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-  });
-  window.addEventListener("pagehide", dispose, { once: true });
 }
 
 void init().catch((error) => {

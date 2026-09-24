@@ -10,6 +10,7 @@
     "test": "node --test tests/server.test.mjs",
     "pretest:e2e": "node prepare-pty.mjs",
     "test:e2e": "node run-e2e.mjs",
+    "record": "node record-apps.mjs",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {

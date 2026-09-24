@@ -64,12 +64,12 @@ jobs:
         run: pnpm type-check
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
 
       - name: E2E tests
         run: pnpm test:e2e
 
-      - name: Real PTY smoke tests
+      - name: PTY and terminal replay tests
         run: pnpm test:pty
 
       - name: Upload PTY baseline reports and failure traces
