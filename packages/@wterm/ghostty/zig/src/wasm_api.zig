@@ -79,6 +79,22 @@ const CELL_BYTES = 16;
 
 const RESPONSE_QUEUE_MAX = 256;
 const RESPONSE_MAX_BYTES = 64;
+const TITLE_BUFFER_BYTES = 256;
+
+// Match Ghostty's desktop title limit. The title is external host state, so
+// the readonly terminal handler has no place to retain it for the browser.
+const TitleState = struct {
+    bytes: [TITLE_BUFFER_BYTES]u8 = undefined,
+    len: u16 = 0,
+    changed: bool = false,
+
+    fn set(self: *TitleState, title: []const u8) void {
+        if (title.len >= self.bytes.len) return;
+        @memcpy(self.bytes[0..title.len], title);
+        self.len = @intCast(title.len);
+        self.changed = true;
+    }
+};
 
 const ResponseQueue = struct {
     slots: [RESPONSE_QUEUE_MAX][RESPONSE_MAX_BYTES]u8 = undefined,
@@ -115,6 +131,7 @@ const ResponseHandler = struct {
     alloc: Allocator,
     inner: ReadonlyHandler,
     queue: *ResponseQueue,
+    title: *TitleState,
     synchronized_output_generation: *u32,
     rejected_images: *u32,
     apc: KittyHandler = .{},
@@ -125,6 +142,7 @@ const ResponseHandler = struct {
         alloc: Allocator,
         terminal: *Terminal,
         queue: *ResponseQueue,
+        title: *TitleState,
         generation: *u32,
         rejected_images: *u32,
     ) ResponseHandler {
@@ -132,6 +150,7 @@ const ResponseHandler = struct {
             .alloc = alloc,
             .inner = .init(terminal),
             .queue = queue,
+            .title = title,
             .synchronized_output_generation = generation,
             .rejected_images = rejected_images,
         };
@@ -261,6 +280,7 @@ const ResponseHandler = struct {
                 ) catch return;
                 self.queue.push(out);
             },
+            .window_title => self.title.set(value.title),
             .color_operation => {
                 try self.inner.vt(action, value);
                 var it = value.requests.constIterator(0);
@@ -337,6 +357,7 @@ const State = struct {
     stream: ResponseStream,
     render: RenderState,
     responses: ResponseQueue,
+    title: TitleState,
     synchronized_output_generation: u32,
     graphics_generation: u32,
     graphics_fingerprint: u64,
@@ -559,6 +580,7 @@ export fn init(
         return 0;
     };
     state.responses = .{};
+    state.title = .{};
     state.synchronized_output_generation = 0;
     state.graphics_generation = 0;
     state.rejected_images = 0;
@@ -567,6 +589,7 @@ export fn init(
         allocator,
         &state.terminal,
         &state.responses,
+        &state.title,
         &state.synchronized_output_generation,
         &state.rejected_images,
     ));
@@ -597,6 +620,19 @@ export fn write(ptr: usize, data_ptr: [*]const u8, data_len: u32) void {
     const state = stateFromPtr(ptr);
     state.stream.nextSlice(data_ptr[0..data_len]) catch {};
     refreshGraphicsGeneration(state);
+}
+
+// A negative length means no pending title. Zero is a valid empty title.
+// Reading the length consumes the change, matching TerminalCore.getTitle().
+export fn get_title_len(ptr: usize) i32 {
+    const title = &stateFromPtr(ptr).title;
+    if (!title.changed) return -1;
+    title.changed = false;
+    return title.len;
+}
+
+export fn get_title_ptr(ptr: usize) [*]const u8 {
+    return &stateFromPtr(ptr).title.bytes;
 }
 
 // -- Render state -----------------------------------------------

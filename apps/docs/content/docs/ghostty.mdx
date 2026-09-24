@@ -16,6 +16,12 @@ can switch between block, bar, and underline cursors; the wrapper's optional
 `cursorBlink` setting can force blinking on or off. See
 [cursor appearance](/configuration#cursor-appearance) for the shared behavior.
 
+Shells and applications can set the window title with OSC 0 or OSC 2. The
+Ghostty core forwards the latest complete title to `WTerm`'s `onTitle`
+callback, including an empty title that clears it. As with the built-in core,
+multiple changes before a render deliver the latest title. Ghostty ignores
+titles longer than 255 bytes.
+
 Ghostty-backed terminals also render direct Kitty Graphics Protocol PNG, RGB,
 and RGBA data through the optional graphics contract. The DOM layer draws
 bounded, transient canvas overlays for pinned placements and follows scrollback,
@@ -43,7 +49,12 @@ import { GhosttyCore } from "@wterm/ghostty";
 import "@wterm/dom/css";
 
 const core = await GhosttyCore.load();
-const term = new WTerm(document.getElementById("terminal"), { core });
+const term = new WTerm(document.getElementById("terminal"), {
+  core,
+  onTitle(title) {
+    document.title = title || "Terminal";
+  },
+});
 await term.init();
 ```
 

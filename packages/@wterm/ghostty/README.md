@@ -10,6 +10,12 @@ Combining marks and ZWJ emoji are exposed through `CellData.chars` as complete s
 state. The DOM renderer follows application requests (DECSCUSR and mode 12);
 an explicit `cursorBlink: true` or `false` on the terminal wrapper overrides
 blinking. Omitting the option follows the application, initially steady.
+
+OSC 0 and OSC 2 window-title changes reach `getTitle()` and the terminal
+wrapper's `onTitle` callback, including an empty title that clears the current
+name. When several changes arrive before a render, the latest complete title
+is delivered. Titles longer than Ghostty's 255-byte limit are ignored.
+
 Native OSC 8 hyperlinks are resolved from Ghostty's page-owned metadata and exposed through `CellData.linkUri`, `CellData.linkId`, and `CellData.linkKey` in both the viewport and scrollback.
 
 The Ghostty core also provides the optional terminal graphics API. The DOM
