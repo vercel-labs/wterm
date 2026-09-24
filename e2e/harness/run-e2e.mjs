@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 import { createHarnessServer } from "./server.mjs";
 
 const require = createRequire(import.meta.url);
-const harness = await createHarnessServer();
+const args = process.argv.slice(2);
+const load = args[0] === "--load";
+if (load) args.shift();
+const harness = await createHarnessServer({ load });
 let child;
 let interrupted;
 let killTimer;
@@ -25,8 +28,13 @@ try {
       require.resolve("@playwright/test/cli"),
       "test",
       "--config",
-      fileURLToPath(new URL("playwright.config.ts", import.meta.url)),
-      ...process.argv.slice(2),
+      fileURLToPath(
+        new URL(
+          load ? "load.config.ts" : "playwright.config.ts",
+          import.meta.url,
+        ),
+      ),
+      ...args,
     ],
     {
       stdio: "inherit",

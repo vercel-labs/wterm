@@ -101,3 +101,26 @@ test("rejects cross-origin WebSocket upgrades", unixOnly, async (t) => {
   assert.match(error.message, /403/);
   assert.equal(server.activePtys, 0);
 });
+
+test(
+  "serves load measurements from a production bundle only",
+  unixOnly,
+  async (t) => {
+    const server = await createHarnessServer({ load: true });
+    t.after(() => server.close());
+    const html = await (await fetch(`${server.url}/load.html`)).text();
+    assert.doesNotMatch(html, /@vite\/client|\/src\/load-main/);
+    const script = html.match(/src="([^"]+\.js)"/)[1];
+    const response = await fetch(`${server.url}${script}`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "text/javascript");
+    const code = await response.text();
+    assert.doesNotMatch(code, /vite-hmr/);
+    assert.equal((await fetch(`${server.url}/src/load-main.ts`)).status, 404);
+    assert.equal((await fetch(`${server.url}/@vite/client`)).status, 404);
+    assert.equal((await fetch(`${server.url}/assets/missing.js`)).status, 404);
+    const health = await (await fetch(`${server.url}/health`)).json();
+    assert.equal(health.serving, "production");
+    assert.equal(health.activePtys, 0);
+  },
+);

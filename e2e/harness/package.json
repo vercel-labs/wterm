@@ -10,6 +10,8 @@
     "test": "node --test tests/server.test.mjs",
     "pretest:e2e": "node prepare-pty.mjs",
     "test:e2e": "node run-e2e.mjs",
+    "prebench": "node prepare-pty.mjs",
+    "bench": "node run-e2e.mjs --load",
     "record": "node record-apps.mjs",
     "type-check": "tsc --noEmit"
   },

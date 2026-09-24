@@ -72,6 +72,17 @@ jobs:
       - name: PTY and terminal replay tests
         run: pnpm test:pty
 
+      - name: Terminal output-load smoke tests
+        run: pnpm bench:terminal
+
+      - name: Upload terminal output-load reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-output-load
+          path: e2e/test-results/load/
+          if-no-files-found: ignore
+
       - name: Upload PTY baseline reports and failure traces
         if: always()
         uses: actions/upload-artifact@v4

@@ -6,8 +6,10 @@ export class Samples {
   private total = 0;
   private max = 0;
 
+  constructor(private limit = SAMPLE_LIMIT) {}
+
   add(value: number): void {
-    this.values[this.count % SAMPLE_LIMIT] = value;
+    this.values[this.count % this.limit] = value;
     this.count++;
     this.total += value;
     this.max = Math.max(this.max, value);

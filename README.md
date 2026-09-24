@@ -214,6 +214,27 @@ and uploads those artifacts. Playback uses checked-in bytes; Neovim and tmux
 are only needed to regenerate the recordings.
 Linux requires a C++/Python toolchain for the permitted `node-pty` native build.
 
+### Measure terminal output load
+
+Run repeatable plain-text, ANSI-colored, and full-screen redraw workloads for
+both cores in Chromium, Firefox, and WebKit:
+
+```bash
+pnpm bench:terminal
+WTERM_LOAD_PROFILE=stress pnpm bench:terminal --project chromium --repeat-each 3
+```
+
+The default smoke profile writes 1 MiB per case; `stress` writes 100 MiB,
+rounded up to a complete record. Reports under `e2e/test-results/load/` include
+write/render timings, frame intervals, event-loop delays, sampled memory and DOM
+size, workload hashes, and environment metadata. CI runs the smoke profile and
+uploads the reports. These are instrumented browser measurements with a fixed
+chunk schedule, not native-terminal throughput or physical display latency.
+See the [harness documentation](e2e/harness/README.md#output-load-measurements)
+for measurement boundaries and comparison guidance.
+
+### Use the interactive harness
+
 For interactive checks, run `pnpm --filter @internal/pty-harness dev` after the
 package build above. Portless prints the URL for `pty-harness.wterm.localhost`.
 The harness includes core switching and a round-trip probe. Timing callbacks
