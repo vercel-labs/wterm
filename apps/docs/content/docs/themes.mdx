@@ -185,6 +185,18 @@ Then apply it the same way as a built-in theme:
 
 Colors beyond the 16-color palette (indices 16–255 and true-color RGB) are computed by the renderer and do not use custom properties.
 
+## Font and cell alignment
+
+Choose a monospace font with `--term-font-family` and set its size with
+`--term-font-size`. wterm measures the font's cell width and uses it for text,
+backgrounds, and cursors. Braille, box drawing, and other fallback glyphs stay
+within their assigned columns even when the fallback font has wider glyphs.
+Wide characters occupy two cells; oversized glyphs are clipped to their cells.
+
+Cell widths update when fonts load or the font size changes, including when
+`autoResize` is disabled. Native selection and OSC 8 link text are preserved.
+This behavior is shared by both cores and all framework components.
+
 ## Cell backgrounds
 
 Colored and reversed cells keep their backgrounds within their columns,

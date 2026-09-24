@@ -241,7 +241,7 @@ async function init() {
     core,
     cols: 80,
     rows: 24,
-    autoResize: false,
+    autoResize: params.get("autoResize") === "true",
     cursorBlink: params.has("cursorBlink")
       ? params.get("cursorBlink") === "true"
       : undefined,

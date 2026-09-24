@@ -201,9 +201,8 @@ export class WTerm {
             : null,
       );
 
-      if (this.autoResize) {
-        this._setupResizeObserver();
-      } else {
+      this._setupResizeObserver();
+      if (!this.autoResize) {
         this._lockHeight();
       }
 
@@ -605,6 +604,8 @@ export class WTerm {
     row.style.position = "absolute";
 
     const probe = document.createElement("span");
+    // Measure the font itself, not the cell width from an earlier measurement.
+    probe.style.width = "auto";
     probe.textContent = "W";
     row.appendChild(probe);
 
@@ -616,32 +617,37 @@ export class WTerm {
     if (charWidth === 0 || rowHeight === 0) return null;
     this._charWidth = charWidth;
     this._rowHeight = rowHeight;
+    this.element.style.setProperty("--term-cell-width", `${charWidth}px`);
     return { charWidth, rowHeight };
   }
 
   private _setupResizeObserver(): void {
-    const initial = this._measureCharSize();
-    if (!initial) return;
-
-    let { charWidth, rowHeight } = initial;
+    // This probe survives grid rebuilds and changes size when a web font loads
+    // or the host changes typography, even if the container stays the same size.
+    const probe = document.createElement("span");
+    probe.className = "term-size-probe";
+    probe.setAttribute("aria-hidden", "true");
+    probe.textContent = "W";
+    this.element.appendChild(probe);
+    let containerRect: DOMRectReadOnly | undefined;
 
     this.resizeObserver = new ResizeObserver((entries) => {
-      const measured = this._measureCharSize();
-      if (measured) {
-        charWidth = measured.charWidth;
-        rowHeight = measured.rowHeight;
-      }
-
+      if (this._destroyed) return;
       for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        const newCols = Math.max(1, Math.floor(width / charWidth));
-        const newRows = Math.max(1, Math.floor(height / rowHeight));
-        if (newCols !== this.cols || newRows !== this.rows) {
-          this.resize(newCols, newRows);
-        }
+        if (entry.target === this.element) containerRect = entry.contentRect;
+      }
+      const measured = this._measureCharSize();
+      if (!measured || !this.autoResize || !containerRect) return;
+
+      const { charWidth, rowHeight } = measured;
+      const newCols = Math.max(1, Math.floor(containerRect.width / charWidth));
+      const newRows = Math.max(1, Math.floor(containerRect.height / rowHeight));
+      if (newCols !== this.cols || newRows !== this.rows) {
+        this.resize(newCols, newRows);
       }
     });
-    this.resizeObserver.observe(this.element);
+    this.resizeObserver.observe(probe);
+    if (this.autoResize) this.resizeObserver.observe(this.element);
   }
 
   destroy(): void {

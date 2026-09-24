@@ -30,6 +30,8 @@
   color: var(--term-fg);
   font-family: var(--term-font-family);
   font-size: var(--term-font-size);
+  font-kerning: none;
+  font-variant-ligatures: none;
   line-height: var(--term-line-height);
   padding: 12px;
   border-radius: 8px;
@@ -85,12 +87,29 @@
   pointer-events: none;
 }
 
+.term-size-probe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: pre;
+  width: auto;
+  height: var(--term-row-height);
+}
+
 .term-row > span,
 .term-row > .term-link,
 .term-link > span {
   display: inline-block;
   height: var(--term-row-height);
   vertical-align: top;
+}
+
+.term-row > span,
+.term-link > span {
+  width: calc(var(--term-span-cols, 1) * var(--term-cell-width, 1ch));
+  overflow: hidden;
 }
 
 .term-link {
@@ -110,12 +129,12 @@
 }
 
 .term-block {
-  width: 1ch;
+  width: var(--term-cell-width, 1ch);
   overflow: hidden;
 }
 
 .term-wide {
-  width: 2ch;
+  --term-span-cols: 2;
   overflow: hidden;
 }
 

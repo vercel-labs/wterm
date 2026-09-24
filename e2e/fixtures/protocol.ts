@@ -39,7 +39,7 @@ export const protocolFixtures: ReplayFixture[] = [
           { row: 1, col: 0, value: { char: 9474, width: 1 } },
         ],
         styles: [
-          { row: 0, text: "┌──┐", color: "rgb(255, 0, 0)", fontWeight: "700" },
+          { row: 0, text: "┌", color: "rgb(255, 0, 0)", fontWeight: "700" },
         ],
       }),
       output("\r\n\x1b)0q\x0eqx\x0fq\x1b(A#\x1b(B#"),

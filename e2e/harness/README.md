@@ -24,7 +24,7 @@ pnpm --filter @internal/pty-harness test
 pnpm --filter @internal/pty-harness type-check
 ```
 
-The last two commands run server lifecycle tests and TypeScript checks. The normal repository test and type-check tasks also include this workspace; server lifecycle tests are skipped on Windows. The browser suite remains a separate `test:pty` task, which CI runs after the existing E2E suite. It has 78 cases: three live-PTY cases, five replay workloads, three cursor appearance cases, and two background rendering cases for each of two cores in three browsers. Playwright WebKit coverage does not replace testing the Safari desktop application.
+The last two commands run server lifecycle tests and TypeScript checks. The normal repository test and type-check tasks also include this workspace; server lifecycle tests are skipped on Windows. The browser suite remains a separate `test:pty` task, which CI runs after the existing E2E suite. It covers live PTYs, recorded and protocol workloads, cursor appearance, background rendering, and cell alignment for both cores in all three browsers. Playwright WebKit coverage does not replace testing the Safari desktop application.
 
 ## Recorded workloads
 
@@ -38,6 +38,12 @@ or `cursorBlink=false` to the harness URL to exercise that override manually.
 
 `background.spec.ts` samples rendered pixels to check edge-cell and scrollback
 backgrounds, full-width status bars, partial redraws, screen changes, and resize.
+
+`cell-width.spec.ts` checks column positions across ASCII, braille, box drawing,
+wide characters, links, cursors, and scrollback. It also exercises font changes
+and enlarged fallback glyphs without relying on a particular installed font.
+Add `autoResize=true` to the harness URL to fit the grid to its container and
+exercise column updates when font metrics change.
 
 To regenerate the application recordings, install `nvim`, `tmux`, and `infocmp` on macOS or Linux, then run:
 
