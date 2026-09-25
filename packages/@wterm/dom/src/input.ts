@@ -24,6 +24,34 @@ const APP_KEYS: Record<string, string> = {
   End: "\x1bOF",
 };
 
+const MODIFIED_CSI_KEYS: Record<string, string> = {
+  ArrowUp: "A",
+  ArrowDown: "B",
+  ArrowRight: "C",
+  ArrowLeft: "D",
+  Home: "H",
+  End: "F",
+  F1: "P",
+  F2: "Q",
+  F3: "R",
+  F4: "S",
+};
+
+const MODIFIED_TILDE_KEYS: Record<string, number> = {
+  Insert: 2,
+  Delete: 3,
+  PageUp: 5,
+  PageDown: 6,
+  F5: 15,
+  F6: 17,
+  F7: 18,
+  F8: 19,
+  F9: 20,
+  F10: 21,
+  F11: 23,
+  F12: 24,
+};
+
 const FIXED_KEYS: Record<string, string> = {
   Enter: "\r",
   Backspace: "\x7f",
@@ -763,6 +791,15 @@ export class InputHandler {
 
     if (e.key === "Enter" && e.shiftKey) return "\x1b[13;2u";
     if (e.key === "Tab" && e.shiftKey) return "\x1b[Z";
+
+    if (!e.metaKey && (e.shiftKey || e.altKey || e.ctrlKey)) {
+      const modifier =
+        1 + Number(e.shiftKey) + 2 * Number(e.altKey) + 4 * Number(e.ctrlKey);
+      const final = MODIFIED_CSI_KEYS[e.key];
+      if (final) return `\x1b[1;${modifier}${final}`;
+      const tilde = MODIFIED_TILDE_KEYS[e.key];
+      if (tilde) return `\x1b[${tilde};${modifier}~`;
+    }
 
     const fixed = FIXED_KEYS[e.key];
     if (fixed) return e.altKey ? "\x1b" + fixed : fixed;

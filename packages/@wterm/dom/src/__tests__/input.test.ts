@@ -247,6 +247,37 @@ describe("InputHandler", () => {
     });
   });
 
+  describe("key mapping - modified functional keys", () => {
+    it.each([
+      ["ArrowLeft", { ctrlKey: true }, "\x1b[1;5D"],
+      ["ArrowRight", { altKey: true }, "\x1b[1;3C"],
+      ["ArrowUp", { shiftKey: true, ctrlKey: true }, "\x1b[1;6A"],
+      ["Home", { shiftKey: true }, "\x1b[1;2H"],
+      ["End", { altKey: true, ctrlKey: true }, "\x1b[1;7F"],
+      ["F1", { shiftKey: true }, "\x1b[1;2P"],
+      ["F4", { ctrlKey: true }, "\x1b[1;5S"],
+      ["Insert", { shiftKey: true }, "\x1b[2;2~"],
+      ["Delete", { ctrlKey: true }, "\x1b[3;5~"],
+      ["PageUp", { shiftKey: true }, "\x1b[5;2~"],
+      ["PageDown", { altKey: true }, "\x1b[6;3~"],
+      ["F5", { shiftKey: true }, "\x1b[15;2~"],
+      ["F12", { altKey: true, ctrlKey: true }, "\x1b[24;7~"],
+    ] as const)("reports modifiers for %s", (key, modifiers, expected) => {
+      const event = createKeyboardEvent(key, modifiers);
+      getTextarea().dispatchEvent(event);
+      expect(received).toEqual([expected]);
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("reports modified arrows in application cursor mode", () => {
+      bridgeMock = { cursorKeysApp: () => true } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(createKeyboardEvent("ArrowUp"));
+      ta.dispatchEvent(createKeyboardEvent("ArrowUp", { ctrlKey: true }));
+      expect(received).toEqual(["\x1bOA", "\x1b[1;5A"]);
+    });
+  });
+
   describe("key mapping - ctrl sequences", () => {
     it("maps Ctrl+A to SOH", () => {
       const ta = getTextarea();
