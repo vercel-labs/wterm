@@ -94,6 +94,206 @@ describe("BashShell", () => {
     });
   });
 
+  describe("handleInput - tab completion", () => {
+    const mockCandidates = (names: string, directory = false) => {
+      mockExec.mockImplementation(async (script: string) => ({
+        stdout: script.startsWith("ls -1a")
+          ? names
+          : directory && script.startsWith("test -d")
+            ? "DIR\n"
+            : "",
+        stderr: "",
+        exitCode: 0,
+      }));
+    };
+
+    beforeEach(async () => {
+      shell = new BashShell();
+      await shell.attach(write);
+      output.length = 0;
+    });
+
+    it("completes the word at the cursor without moving trailing arguments", async () => {
+      mockCandidates("file.txt\n");
+
+      await shell.handleInput("cat fi --flag");
+      await shell.handleInput("\x1b[1;3D");
+      await shell.handleInput("\x1b[D");
+      output.length = 0;
+      await shell.handleInput("\t");
+      expect(output).toEqual(["le.txt --flag\x1b[K", "\x1b[7D"]);
+      await shell.handleInput("X");
+      await shell.handleInput("\r");
+
+      expect(mockExec.mock.calls.map(([script]) => script)).toContain(
+        'cd "/home/user" && cat file.txtX --flag',
+      );
+    });
+
+    it("reuses a matching suffix and leaves the cursor after the completed word", async () => {
+      mockCandidates("file.txt\n");
+
+      await shell.handleInput("cat fi.txt");
+      for (let i = 0; i < 4; i++) await shell.handleInput("\x1b[D");
+      output.length = 0;
+      await shell.handleInput("\t");
+      expect(output).toEqual(["le.txt\x1b[K", "\x1b[4D", "\x1b[4C"]);
+      await shell.handleInput("X");
+      await shell.handleInput("\r");
+
+      expect(mockExec.mock.calls.map(([script]) => script)).toContain(
+        'cd "/home/user" && cat file.txtX',
+      );
+    });
+
+    it("keeps the cursor in place after listing ambiguous matches", async () => {
+      mockCandidates("file\nfind\n");
+
+      await shell.handleInput("cat fi 界");
+      await shell.handleInput("\x1b[1;3D");
+      await shell.handleInput("\x1b[D");
+      output.length = 0;
+      await shell.handleInput("\t");
+      expect(output.at(-1)).toBe("\x1b[3D");
+
+      await shell.handleInput("X");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls.map(([script]) => script)).toContain(
+        'cd "/home/user" && cat fiX 界',
+      );
+    });
+
+    it("inserts a shared prefix before the text after the cursor", async () => {
+      mockCandidates("fileA\nfileB\n");
+
+      await shell.handleInput("cat fi end");
+      await shell.handleInput("\x1b[1;3D");
+      await shell.handleInput("\x1b[D");
+      await shell.handleInput("\t");
+      await shell.handleInput("X");
+      await shell.handleInput("\r");
+
+      expect(mockExec.mock.calls.map(([script]) => script)).toContain(
+        'cd "/home/user" && cat fileX end',
+      );
+    });
+
+    it("does not duplicate a directory separator to the right of the cursor", async () => {
+      mockCandidates("mydir\n", true);
+
+      await shell.handleInput("cd my/sub");
+      for (let i = 0; i < 4; i++) await shell.handleInput("\x1b[D");
+      await shell.handleInput("\t");
+      await shell.handleInput("\r");
+
+      expect(mockExec.mock.calls.map(([script]) => script)).toContain(
+        'cd "/home/user" && cd mydir/sub',
+      );
+    });
+
+    it("checks the completed directory at its expanded path", async () => {
+      mockCandidates("Documents\n", true);
+
+      await shell.handleInput("cd ~/Do");
+      await shell.handleInput("\t");
+      await shell.handleInput("\r");
+
+      expect(mockExec.mock.calls.map(([script]) => script)).toContain(
+        'test -d "/home/user/Documents" && echo DIR',
+      );
+      expect(mockExec.mock.calls.map(([script]) => script)).toContain(
+        'cd "/home/user" && cd ~/Documents/',
+      );
+    });
+
+    it("does not apply a completion after the line changes during lookup", async () => {
+      let finishLookup!: (result: {
+        stdout: string;
+        stderr: string;
+        exitCode: number;
+      }) => void;
+      mockExec.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishLookup = resolve;
+          }),
+      );
+
+      await shell.handleInput("cat fi");
+      const completion = shell.handleInput("\t");
+      await shell.handleInput("x");
+      finishLookup({ stdout: "file.txt\n", stderr: "", exitCode: 0 });
+      await completion;
+      await shell.handleInput("\r");
+
+      expect(mockExec.mock.calls.map(([script]) => script)).toContain(
+        'cd "/home/user" && cat fix',
+      );
+    });
+
+    it("does not apply an old completion after Enter clears an empty line", async () => {
+      let finishLookup!: (result: {
+        stdout: string;
+        stderr: string;
+        exitCode: number;
+      }) => void;
+      mockExec.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishLookup = resolve;
+          }),
+      );
+
+      const completion = shell.handleInput("\t");
+      await shell.handleInput("\r");
+      output.length = 0;
+      finishLookup({ stdout: "file.txt\n", stderr: "", exitCode: 0 });
+      await completion;
+
+      expect(output).toEqual([]);
+    });
+
+    it("does not append a directory separator after the line changes during lookup", async () => {
+      let finishLookup!: (result: {
+        stdout: string;
+        stderr: string;
+        exitCode: number;
+      }) => void;
+      let lookupStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        lookupStarted = resolve;
+      });
+      mockExec.mockImplementation((script: string) => {
+        if (script.startsWith("ls -1a")) {
+          return Promise.resolve({
+            stdout: "mydir\n",
+            stderr: "",
+            exitCode: 0,
+          });
+        }
+        if (script.startsWith("test -d")) {
+          return new Promise((resolve) => {
+            finishLookup = resolve;
+            lookupStarted();
+          });
+        }
+        return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });
+      });
+
+      await shell.handleInput("cd my");
+      const completion = shell.handleInput("\t");
+      await started;
+      await shell.handleInput("X");
+      finishLookup({ stdout: "DIR\n", stderr: "", exitCode: 0 });
+      await completion;
+      await shell.handleInput("\r");
+
+      expect(mockExec.mock.calls.map(([script]) => script)).toContain(
+        'cd "/home/user" && cd mydirX',
+      );
+    });
+  });
+
   describe("handleInput - Enter", () => {
     beforeEach(async () => {
       shell = new BashShell();
