@@ -413,7 +413,24 @@ Host `tabindex` (React `tabIndex`) controls the input's tab stop: `0` for normal
 
 The input's accessible description includes the exit instructions after any host-provided description. Host `aria-describedby` references take precedence over `aria-description`.
 
-This exposes input semantics and mounted output; it does not enable output announcements or make unmounted history available to screen readers. Ancestor `aria-hidden` and `inert` remain authoritative for hidden terminals.
+The live terminal exposes input semantics and mounted output. Use `readText()` to present retained history in an accessible reader; live output announcements are not enabled. Ancestor `aria-hidden` and `inert` remain authoritative for hidden terminals.
+
+## Reading Terminal Output
+
+`readText()` returns a `Promise<string>` containing a plain-text snapshot of all retained history and the active screen, including unmounted rows. It preserves complete Unicode cells, joins confirmed soft wraps, keeps hard line breaks and blank rows, and trims hard-line padding. Cores without wrap metadata keep physical row breaks.
+
+```ts
+const controller = new AbortController();
+const text = await term.readText({ signal: controller.signal });
+// Display text in a labelled, read-only textarea or another accessible reader.
+// controller.abort() cancels a pending capture.
+```
+
+Capture runs in small batches after the current frame paints. It does not focus the terminal, change selection, write to the clipboard, or mount extra history. A completed string stays unchanged when output arrives, history is pruned, or the terminal is resized or destroyed.
+
+A write, resize, destruction, or newer `readText()` request rejects a pending capture with `AbortError`; an aborted signal rejects with its reason. Retry when output settles. Uninitialized terminals reject with an error. Capture is capped at 16,777,216 UTF-16 code units; larger output rejects with `RangeError` and never returns a partial result. Keep any previous snapshot until a replacement succeeds. Route core writes and resizes through WTerm so pending captures are invalidated correctly.
+
+Framework users call `readText()` on their WTerm instance. The local workspace's **Read output** button opens a native read-only text area for keyboard navigation and copying, with **Refresh** and **Close** controls. Closing releases the snapshot and cancels pending work. This is an explicitly requested snapshot; it does not announce live output automatically.
 
 ## WTerm Methods
 
@@ -471,6 +488,10 @@ Outside synchronized output, writes request the next animation frame directly. W
     <tr>
       <td><code>getSelectionText(): string | null</code></td>
       <td>Read selected text with terminal line and cell semantics, or null when unavailable</td>
+    </tr>
+    <tr>
+      <td><code>{"readText(options?): Promise<string>"}</code></td>
+      <td>Capture retained history and the active screen without changing selection. Accepts an optional <code>signal</code>; see <a href="#reading-terminal-output">Reading Terminal Output</a> for cancellation and limits.</td>
     </tr>
     <tr>
       <td><code>{"selectAll(): Promise<boolean>"}</code></td>

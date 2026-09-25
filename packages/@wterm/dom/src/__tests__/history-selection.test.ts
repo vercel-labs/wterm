@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TerminalCore } from "@wterm/core";
 import { GhosttyCore } from "../../../ghostty/src/ghostty-core.js";
-import { HistorySelection, scanSelection } from "../history-selection.js";
+import { HistorySelection } from "../history-selection.js";
+import { scanText } from "../text-capture.js";
 import { WTerm } from "../wterm.js";
 
 const wasm = readFileSync(
@@ -45,7 +46,7 @@ async function selectAll() {
   return term.getSelectionText();
 }
 function scan(core: TerminalCore, limit?: number) {
-  const generator = scanSelection(core, limit);
+  const generator = scanText(core, limit);
   let result = generator.next();
   while (!result.done) result = generator.next();
   return result.value;
@@ -78,7 +79,7 @@ describe("full-history selection", () => {
       getRows: () => 0,
       getScrollbackLineLen: () => 0,
     } as unknown as TerminalCore;
-    const generator = scanSelection(blank);
+    const generator = scanText(blank);
     expect(generator.next()).toEqual({ value: undefined, done: false });
     expect(() => scan(blank, 100)).toThrow(RangeError);
     core.writeString("abcde界");

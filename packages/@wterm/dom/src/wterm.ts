@@ -6,6 +6,7 @@ import {
 import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
 import { HistorySelection } from "./history-selection.js";
+import { TextCapture } from "./text-capture.js";
 import { DebugAdapter } from "./debug.js";
 import { isLinkActivationModifier } from "./hyperlink.js";
 import {
@@ -77,6 +78,7 @@ export class WTerm {
   private _windowSizeQueryBuffer = "";
   private _search: SearchController;
   private _historySelection: HistorySelection;
+  private _textCapture = new TextCapture();
   private _searchReveal = false;
   private _onClickFocus: (event: MouseEvent) => void;
   private _onScroll: () => void;
@@ -358,6 +360,7 @@ export class WTerm {
 
   write(data: string | Uint8Array): void {
     if (!this.bridge || this._destroyed) return;
+    this._textCapture.cancel();
     this._historySelection.invalidate();
     this.renderer?.beforeMutation(this.bridge);
     if (this.debug) this.debug.traceWrite(data);
@@ -408,6 +411,7 @@ export class WTerm {
 
   resize(cols: number, rows: number): void {
     if (!this.bridge || this._destroyed) return;
+    this._textCapture.cancel();
     this._historySelection.invalidate();
     this.renderer?.beforeMutation(this.bridge);
     this._shouldScrollToBottom =
@@ -445,6 +449,15 @@ export class WTerm {
   }
   getSearchState(): SearchState {
     return this._search.snapshot();
+  }
+
+  /** Capture retained history and the active screen without changing selection. */
+  readText(options: { signal?: AbortSignal } = {}): Promise<string> {
+    if (this._destroyed || !this.renderer || !this.bridge)
+      return Promise.reject(new Error("Terminal is not initialized"));
+    const captured = this._textCapture.read(options.signal);
+    this._scheduleRender();
+    return captured;
   }
 
   /** Read the terminal selection with terminal line and cell semantics. */
@@ -777,6 +790,7 @@ export class WTerm {
     this._paintSearch();
     this._search.resume(this.bridge);
     this._historySelection.resume(this.bridge);
+    this._textCapture.resume(this.bridge);
 
     const title = this.bridge.getTitle();
     if (title !== null && this.onTitle) {
@@ -975,6 +989,7 @@ export class WTerm {
 
   destroy(): void {
     this._destroyed = true;
+    this._textCapture.cancel();
     this._historySelection.destroy();
     this._search.cancel();
     this.onSearchChange = null;

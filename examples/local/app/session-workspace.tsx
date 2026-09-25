@@ -11,6 +11,7 @@ import {
 import { ArrowDown, ArrowUp, Plus, Search, X } from "lucide-react";
 import { Terminal as WTermTerminal, useTerminal } from "@wterm/react";
 import type { SearchState, TerminalCore, WTerm } from "@wterm/dom";
+import { OutputReader } from "./output-reader";
 import "@wterm/react/css";
 
 type SessionStatus = "loading" | "connecting" | "connected" | "closed";
@@ -187,6 +188,11 @@ function SessionTerminal({
     if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (
+        event.target instanceof Element &&
+        event.target.closest("dialog[open]")
+      )
+        return;
+      if (
         event.key.toLowerCase() === "f" &&
         !event.altKey &&
         ((event.metaKey && !event.ctrlKey) ||
@@ -255,9 +261,12 @@ function SessionTerminal({
 
   const handleReady = useCallback(
     (wt: WTerm) => {
-      if (disposedRef.current || wsRef.current) return;
+      if (disposedRef.current) return;
       terminalRef.current = wt;
       wt.onSearchChange = setSearchState;
+      // A remounted terminal replaces the reader/search target even while the
+      // session's existing socket remains connected.
+      if (wsRef.current) return;
 
       // Let the first ResizeObserver pass settle before spawning the shell.
       // Otherwise zsh starts at 80x24, then redraws its prompt when the
@@ -325,6 +334,11 @@ function SessionTerminal({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-[#1f1f1f] pb-2 text-xs">
+        <OutputReader
+          terminal={terminalRef}
+          name={session.name}
+          active={active}
+        />
         {findOpen ? (
           <div
             className="flex min-w-0 flex-1 items-center gap-2"

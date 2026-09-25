@@ -1,73 +1,8 @@
 import type { TerminalCore } from "@wterm/core";
 
-const MAX_SELECTION_TEXT = 16 * 1024 * 1024;
-const owners = new WeakMap<Document, HistorySelection>();
+import { scanText } from "./text-capture.js";
 
-/** Copy cell text in small batches without mounting retained history. */
-export function* scanSelection(
-  core: TerminalCore,
-  limit = MAX_SELECTION_TEXT,
-): Generator<void, string> {
-  const history = core.getScrollbackCount();
-  const parts: string[] = [];
-  let chunk = "";
-  let length = 0;
-  let work = 0;
-  let previousWrap = false;
-  const append = (text: string) => {
-    length += text.length;
-    if (length > limit) throw new RangeError("Terminal selection is too large");
-    chunk += text;
-    if (chunk.length >= 8192) {
-      parts.push(chunk);
-      chunk = "";
-    }
-  };
-  for (let row = 0; row < history + core.getRows(); row++) {
-    const offset = history - row - 1;
-    const metadata =
-      row < history
-        ? core.getScrollbackRowMetadata?.(offset)
-        : core.getRowMetadata?.(row - history);
-    if (row > 0 && !(previousWrap && metadata?.continuesPrevious)) append("\n");
-    previousWrap = metadata?.wrapsToNext ?? false;
-    const cols =
-      row < history ? core.getScrollbackLineLen(offset) : core.getCols();
-    // Hold ASCII spaces until the row ends, so hard-line padding is omitted.
-    let spaces = 0;
-    for (let col = 0; col < cols; col++) {
-      if (++work >= 256) {
-        work = 0;
-        yield;
-      }
-      const cell =
-        row < history
-          ? core.getScrollbackCell(offset, col)
-          : core.getCell(row - history, col);
-      if (cell.width === 0 || cell.spacerHead) continue;
-      const text = cell.chars ?? String.fromCodePoint(cell.char || 32);
-      if (/^ +$/.test(text)) {
-        spaces += text.length;
-      } else {
-        if (length + spaces + text.length > limit)
-          throw new RangeError("Terminal selection is too large");
-        append(" ".repeat(spaces) + text);
-        spaces = 0;
-      }
-    }
-    if (previousWrap) {
-      if (length + spaces > limit)
-        throw new RangeError("Terminal selection is too large");
-      append(" ".repeat(spaces));
-    }
-    if (++work >= 256) {
-      work = 0;
-      yield;
-    }
-  }
-  parts.push(chunk);
-  return parts.join("");
-}
+const owners = new WeakMap<Document, HistorySelection>();
 
 /** A complete, immutable selection; no partial text is exposed while scanning. */
 export class HistorySelection {
@@ -119,7 +54,7 @@ export class HistorySelection {
   /** WTerm calls this only once its current frame has painted. */
   resume(core: TerminalCore): void {
     if (!this.pending || this.scan) return;
-    const scan = (this.scan = scanSelection(core));
+    const scan = (this.scan = scanText(core));
     const tick = () => {
       this.timer = null;
       const deadline = performance.now() + 4;
