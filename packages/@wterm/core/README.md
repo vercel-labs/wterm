@@ -62,7 +62,7 @@ const cursor = bridge.getCursor();  // { row, col, visible, shape, blinking }
 | `resize(cols, rows)` | Resize the terminal grid |
 | `getCell(row, col)` | Get cell data, including optional resolved OSC 8 metadata (`linkUri`, explicit `linkId`, and opaque `linkKey`) |
 | `getCursor()` | Get cursor state (`{ row, col, visible, shape?, blinking? }`) |
-| `getCols()` / `getRows()` | Get current grid dimensions |
+| `getCols()` / `getRows()` | Get applied grid dimensions after initialization or resize. The built-in core clamps requests to 1–256 columns and rows. |
 | `isDirtyRow(row)` | Check if a row needs re-rendering |
 | `clearDirty()` | Reset all dirty-row flags |
 | `getTitle()` | Get pending title change (or `null`) |

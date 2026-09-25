@@ -2,13 +2,21 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { WasmBridge } from "@wterm/core";
 
 function createMockBridge(): WasmBridge {
+  let cols = 80;
+  let rows = 24;
   return {
-    init: vi.fn(),
+    init: vi.fn((nextCols: number, nextRows: number) => {
+      cols = nextCols;
+      rows = nextRows;
+    }),
     writeString: vi.fn(),
     writeRaw: vi.fn(),
-    resize: vi.fn(),
-    getRows: vi.fn(() => 24),
-    getCols: vi.fn(() => 80),
+    resize: vi.fn((nextCols: number, nextRows: number) => {
+      cols = nextCols;
+      rows = nextRows;
+    }),
+    getRows: vi.fn(() => rows),
+    getCols: vi.fn(() => cols),
     getCell: vi.fn(() => ({ char: 0, fg: 256, bg: 256, flags: 0 })),
     isDirtyRow: vi.fn(() => true),
     clearDirty: vi.fn(),
@@ -404,6 +412,42 @@ describe("WTerm", () => {
   });
 
   describe("resize", () => {
+    it("uses the core's applied dimensions after initialization", async () => {
+      vi.mocked(mockBridge.init).mockImplementation(() => {
+        vi.mocked(mockBridge.getCols).mockReturnValue(256);
+        vi.mocked(mockBridge.getRows).mockReturnValue(120);
+      });
+      const term = new WTerm(element, {
+        cols: 320,
+        rows: 120,
+        autoResize: false,
+      });
+      await term.init();
+
+      expect(mockBridge.init).toHaveBeenCalledWith(320, 120);
+      expect(term.cols).toBe(256);
+      expect(term.rows).toBe(120);
+      expect(element.querySelectorAll(".term-row")).toHaveLength(120);
+    });
+
+    it("renders and reports the dimensions applied by the core", async () => {
+      const onResize = vi.fn();
+      const term = new WTerm(element, { autoResize: false, onResize });
+      await term.init();
+      vi.mocked(mockBridge.resize).mockImplementation(() => {
+        vi.mocked(mockBridge.getCols).mockReturnValue(256);
+        vi.mocked(mockBridge.getRows).mockReturnValue(40);
+      });
+
+      term.resize(320, 40);
+
+      expect(mockBridge.resize).toHaveBeenCalledWith(320, 40);
+      expect(term.cols).toBe(256);
+      expect(term.rows).toBe(40);
+      expect(onResize).toHaveBeenCalledWith(256, 40);
+      expect(element.querySelectorAll(".term-row")).toHaveLength(40);
+    });
+
     it("updates cols and rows", async () => {
       const term = new WTerm(element, { autoResize: false });
       await term.init();

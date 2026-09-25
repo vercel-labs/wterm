@@ -121,6 +121,7 @@ export interface TerminalCore {
   getCell(row: number, col: number): CellData;
   isDirtyRow(row: number): boolean;
   clearDirty(): void;
+  /** Applied grid dimensions after init() or resize(), which may differ from the request. */
   getCols(): number;
   getRows(): number;
 

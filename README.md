@@ -46,7 +46,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Grapheme strings** — the Ghostty core preserves combining marks and ZWJ emoji through the DOM renderer and scrollback
 - **Kitty terminal images** — Ghostty-backed terminals render direct PNG/RGB/RGBA graphics in a scroll-aware canvas overlay with configurable display bounds; implicit image placements keep following prompts visually below the image
 - **24-bit color** — full RGB SGR support
-- **Auto-resize** — `ResizeObserver`-based terminal resizing
+- **Auto-resize** — `ResizeObserver`-based terminal resizing; reported dimensions reflect the grid size applied by the core so connected PTYs stay aligned
 - **Framework bindings** — React, Vue 3, and Svelte components
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
 - **Mouse and focus reporting** — DOM input for SGR clicks, drags, wheel events, and cell-level pointer motion in mode 1003

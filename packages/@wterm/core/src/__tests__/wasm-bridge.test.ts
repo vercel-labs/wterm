@@ -27,6 +27,12 @@ describe("WasmBridge", () => {
       expect(bridge.getCols()).toBe(80);
       expect(bridge.getRows()).toBe(24);
     });
+
+    it("exposes the dimensions actually applied by the built-in core", () => {
+      bridge.init(320, 300);
+      expect(bridge.getCols()).toBe(256);
+      expect(bridge.getRows()).toBe(256);
+    });
   });
 
   it("exposes any-motion mouse tracking from the committed WASM", () => {
@@ -249,6 +255,12 @@ describe("WasmBridge", () => {
       bridge.resize(40, 12);
       expect(bridge.getCols()).toBe(40);
       expect(bridge.getRows()).toBe(12);
+    });
+
+    it("exposes applied dimensions when the request exceeds the grid capacity", () => {
+      bridge.resize(320, 300);
+      expect(bridge.getCols()).toBe(256);
+      expect(bridge.getRows()).toBe(256);
     });
 
     it("preserves content after resize", () => {

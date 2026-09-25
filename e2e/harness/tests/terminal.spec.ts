@@ -68,6 +68,16 @@ for (const core of ["builtin", "ghostty"]) {
       const snapshot = await page.evaluate(() => window.ptyHarness.snapshot());
       expect(snapshot.cols).toBe(100);
       expect(snapshot.height).toBe(30);
+
+      if (core === "builtin") {
+        await page.evaluate(() => window.ptyHarness.resize(320, 30));
+        await page.keyboard.type("printf 'CAPPED_'; stty size");
+        await page.keyboard.press("Enter");
+        await expect(page.locator("#terminal")).toContainText("CAPPED_30 256");
+        const capped = await page.evaluate(() => window.ptyHarness.snapshot());
+        expect(capped.cols).toBe(256);
+        expect(capped.height).toBe(30);
+      }
     });
 
     test("reports shell exit and releases the PTY", async ({

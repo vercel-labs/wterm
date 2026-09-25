@@ -51,7 +51,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
 | `onBell` | `(count: number) => void` | — | Called with the number of BEL controls since the last delivery |
-| `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
+| `onResize` | `(cols: number, rows: number) => void` | — | Called with the grid dimensions applied by the core after resize |
 
 **Methods:**
 
@@ -62,6 +62,11 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `resize(cols, rows)` | Resize the terminal grid |
 | `focus()` | Focus the terminal element |
 | `destroy()` | Clean up event listeners and DOM |
+
+After `init()` or `resize()`, `term.cols` and `term.rows` reflect the grid size
+the core actually uses. Use these values, or the values passed to `onResize`,
+when sizing a connected PTY. The built-in core currently supports up to
+256 columns and 256 rows; larger requests are clamped to that size.
 
 When a terminal application enables modes 1000, 1002, or 1003 with SGR encoding (1006), pointer input is sent through `onData`. Mode 1003 also reports unpressed pointer movement once per cell in the visible grid. Shift retains native text selection. Focus reports are sent when mode 1004 is active.
 

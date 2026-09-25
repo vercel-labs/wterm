@@ -169,7 +169,7 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
       <td><code>onResize</code></td>
       <td><code>(cols: number, rows: number) =&gt; void</code></td>
       <td>—</td>
-      <td>Called after the terminal is resized</td>
+      <td>Called after resize with the grid dimensions applied by the core. Use these values when resizing a connected PTY.</td>
     </tr>
   </tbody>
 </table>
@@ -327,6 +327,11 @@ attributes such as `class`, `style`, `id`, and ARIA attributes to its root
 
 Instance methods on the vanilla `WTerm` class:
 
+After `init()` or `resize()`, `wt.cols` and `wt.rows` report the applied grid
+dimensions. A core may cap the requested size; the built-in core currently
+supports up to 256 columns and 256 rows. Use the applied dimensions for a
+connected PTY so its output wraps at the same columns as the browser terminal.
+
 WTerm renders synchronized output blocks (CSI `?2026`) atomically when the mode closes. Each block can hold rendering for at most one second from its opening sequence. Ordinary payload does not extend that deadline. If the deadline expires, WTerm resumes painting until a fresh block begins.
 
 Outside synchronized output, writes request the next animation frame directly. Writes received before that frame share one render.
@@ -349,7 +354,7 @@ Outside synchronized output, writes request the next animation frame directly. W
     </tr>
     <tr>
       <td><code>resize(cols, rows)</code></td>
-      <td>Resize the terminal grid</td>
+      <td>Request a grid size; read <code>wt.cols</code> and <code>wt.rows</code> afterward for the applied size</td>
     </tr>
     <tr>
       <td><code>focus()</code></td>
