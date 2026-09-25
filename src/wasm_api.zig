@@ -108,7 +108,11 @@ export fn getMouseTracking() u32 {
 }
 
 export fn getMouseSgr() u32 {
-    return if (terminal.mouse_sgr) 1 else 0;
+    return if (terminal.mouse_encoding == .sgr) 1 else 0;
+}
+
+export fn getMouseEncoding() u32 {
+    return @intFromEnum(terminal.mouse_encoding);
 }
 
 export fn getFocusEvents() u32 {

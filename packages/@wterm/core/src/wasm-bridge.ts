@@ -1,6 +1,7 @@
 import type {
   CellData,
   CursorState,
+  MouseEncoding,
   TerminalResourceState,
   UnhandledSequence,
   TerminalCore,
@@ -27,6 +28,7 @@ interface WasmExports {
   getUsingAltScreen(): number;
   getMouseTracking(): number;
   getMouseSgr(): number;
+  getMouseEncoding?(): number;
   getFocusEvents(): number;
   getSynchronizedOutput(): number;
   getSynchronizedOutputGeneration(): number;
@@ -205,8 +207,24 @@ export class WasmBridge implements TerminalCore {
   mouseSgr(): boolean {
     return this.exports.getMouseSgr() !== 0;
   }
-  mouseEncoding(): "x10" | "sgr" {
-    return this.mouseSgr() ? "sgr" : "x10";
+  mouseEncoding(): MouseEncoding | null {
+    const mode = this.exports.getMouseEncoding?.();
+    switch (mode) {
+      case 0:
+        return "x10";
+      case 1:
+        return "utf8";
+      case 2:
+        return "sgr";
+      case 3:
+        return "urxvt";
+      case 4:
+        return "sgr-pixels";
+      case undefined:
+        return this.mouseSgr() ? "sgr" : "x10";
+      default:
+        return null;
+    }
   }
   focusEvents(): boolean {
     return this.exports.getFocusEvents() !== 0;

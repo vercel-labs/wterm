@@ -540,7 +540,10 @@ export class InputHandler {
     if (
       !bridge ||
       tracking === 0 ||
-      (encoding !== "sgr" && encoding !== "x10")
+      (encoding !== "sgr" &&
+        encoding !== "x10" &&
+        encoding !== "utf8" &&
+        encoding !== "urxvt")
     ) {
       this.lastMouseMotion = null;
       return;
@@ -653,7 +656,7 @@ export class InputHandler {
       }
     } else {
       const button =
-        kind === "release" && encoding === "x10"
+        kind === "release" && encoding !== "sgr"
           ? 3
           : kind === "move"
             ? supportedButtons === 0
@@ -681,6 +684,10 @@ export class InputHandler {
         row > 223 ||
         (!this.onBinary && (legacy[4] > 127 || legacy[5] > 127)))
     ) {
+      this.lastMouseMotion = null;
+      return;
+    }
+    if (encoding === "utf8" && (col > 2015 || row > 2015)) {
       this.lastMouseMotion = null;
       return;
     }
@@ -712,6 +719,12 @@ export class InputHandler {
     if (legacy) {
       if (this.onBinary) this.onBinary(legacy);
       else this.onData(String.fromCharCode(...legacy));
+    } else if (encoding === "utf8") {
+      this.onData(
+        `\x1b[M${String.fromCodePoint(code + 32, col + 32, row + 32)}`,
+      );
+    } else if (encoding === "urxvt") {
+      this.onData(`\x1b[${code + 32};${col};${row}M`);
     } else {
       this.onData(`\x1b[<${code};${col};${row}${final}`);
     }

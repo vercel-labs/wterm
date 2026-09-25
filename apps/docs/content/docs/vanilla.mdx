@@ -50,7 +50,7 @@ The `WTerm` constructor accepts all [shared terminal options](/api-reference#ter
 
 See [WTerm Methods](/api-reference#wterm-methods) for the full list of instance methods (`init`, `write`, `resize`, `focus`, `destroy`).
 
-When a terminal application enables mouse tracking, SGR (1006) reports and focus reports reach `onData` with keyboard input and host responses. Without SGR, X10 mouse reports go to `onBinary` as raw bytes when that callback is supplied. Without `onBinary`, ASCII-safe X10 reports reach `onData`; higher coordinates are skipped. Mode 1003 sends unpressed pointer motion once per cell in the visible grid; hold Shift for native text selection.
+When a terminal application enables mouse tracking, UTF-8 (1005), SGR (1006), and urxvt (1015) reports reach `onData` with keyboard input and focus reports. Forward `onData` strings through a UTF-8 transport. X10 mouse reports go to `onBinary` as raw bytes when that callback is supplied. Without `onBinary`, ASCII-safe X10 reports reach `onData`; coordinates requiring non-ASCII bytes are skipped. Mode 1003 sends unpressed pointer motion once per cell in the visible grid; hold Shift for native text selection. Pixel mouse reports (1016) are not sent.
 
 When an application rings BEL, `onBell(count)` receives the number of bells as
 output is written. WTerm does not play sound automatically; your application

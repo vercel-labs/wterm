@@ -51,6 +51,20 @@ describe("WasmBridge", () => {
     expect(bridge.mouseTracking()).toBe(0);
   });
 
+  it("exposes active extended mouse encoding from the committed WASM", () => {
+    bridge.writeString("\x1b[?1002h\x1b[?1005h");
+    expect(bridge.mouseTracking()).toBe(1002);
+    expect(bridge.mouseEncoding()).toBe("utf8");
+    expect(bridge.mouseSgr()).toBe(false);
+
+    bridge.writeString("\x1b[?1015h");
+    expect(bridge.mouseEncoding()).toBe("urxvt");
+    bridge.writeString("\x1b[?1016h");
+    expect(bridge.mouseEncoding()).toBe("sgr-pixels");
+    bridge.writeString("\x1b[?1016l");
+    expect(bridge.mouseEncoding()).toBe("x10");
+  });
+
   describe("writeString / getCell", () => {
     it("exposes OSC 8 metadata only on covered cells", () => {
       bridge.writeString(

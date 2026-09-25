@@ -161,19 +161,83 @@ describe("InputHandler mouse and focus modes", () => {
     expect(received).toEqual([]);
   });
 
-  it("does not mistake other Ghostty mouse encodings for X10", () => {
+  it("encodes UTF-8 mouse reports across the ASCII coordinate limit", () => {
     core.mouseSgr = () => false;
-    for (const encoding of ["utf8", "urxvt", "sgr-pixels"] as const) {
-      core.mouseEncoding = () => encoding;
-      container.dispatchEvent(
-        new MouseEvent("mousedown", {
-          button: 0,
-          buttons: 1,
-          clientX: 85,
-          clientY: 65,
-        }),
-      );
-    }
+    core.mouseEncoding = () => "utf8";
+    core.getCols = () => 160;
+    Object.defineProperty(container, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ left: 10, top: 20, width: 1600, height: 400 }),
+    });
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 1005,
+        clientY: 35,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mousemove", { buttons: 1, clientX: 1015, clientY: 35 }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", { button: 0, clientX: 1015, clientY: 35 }),
+    );
+    container.dispatchEvent(
+      new WheelEvent("wheel", { deltaY: 100, clientX: 1015, clientY: 35 }),
+    );
+
+    expect(received).toEqual([
+      `\x1b[M${String.fromCodePoint(32, 132, 33)}`,
+      `\x1b[M${String.fromCodePoint(64, 133, 33)}`,
+      `\x1b[M${String.fromCodePoint(35, 133, 33)}`,
+      `\x1b[M${String.fromCodePoint(97, 133, 33)}`,
+    ]);
+    expect(Array.from(new TextEncoder().encode(received[0]))).toEqual([
+      27, 91, 77, 32, 194, 132, 33,
+    ]);
+  });
+
+  it("encodes urxvt press, drag, release, and wheel as decimal CSI", () => {
+    core.mouseSgr = () => false;
+    core.mouseEncoding = () => "urxvt";
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 85,
+        clientY: 65,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mousemove", { buttons: 1, clientX: 105, clientY: 75 }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", { button: 0, clientX: 105, clientY: 75 }),
+    );
+    container.dispatchEvent(
+      new WheelEvent("wheel", { deltaY: 100, clientX: 105, clientY: 75 }),
+    );
+
+    expect(received).toEqual([
+      "\x1b[32;8;4M",
+      "\x1b[64;10;5M",
+      "\x1b[35;10;5M",
+      "\x1b[97;10;5M",
+    ]);
+  });
+
+  it("does not mistake pixel mouse encoding for cell coordinates", () => {
+    core.mouseSgr = () => false;
+    core.mouseEncoding = () => "sgr-pixels";
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 85,
+        clientY: 65,
+      }),
+    );
     expect(received).toEqual([]);
   });
 
