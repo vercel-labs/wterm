@@ -22,8 +22,24 @@ const WORD_RIGHT_SEQUENCES = new Set(["\x1b[1;3C", "\x1b[1;5C", "\x1bf"]);
 const WORD_ERASE_SEQUENCES = new Set(["\x1b\x7f", "\x1b\b", "\x17"]);
 const HOME_SEQUENCES = new Set(["\x1b[H", "\x1bOH"]);
 const END_SEQUENCES = new Set(["\x1b[F", "\x1bOF"]);
+const SEARCH_EDIT_SEQUENCES = new Set([
+  "\x1b[D",
+  "\x1b[C",
+  "\x01",
+  "\x05",
+  ...HOME_SEQUENCES,
+  ...END_SEQUENCES,
+  ...WORD_LEFT_SEQUENCES,
+  ...WORD_RIGHT_SEQUENCES,
+]);
 const PRINTABLE_TEXT = /^[^\p{Cc}]+$/u;
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+interface HistorySearch {
+  query: string;
+  index: number;
+  draft: { line: string; cursor: number };
+}
 
 function previousGraphemeStart(line: string, cursor: number): number {
   return graphemes.segment(line).containing(cursor - 1)?.index ?? 0;
@@ -45,6 +61,7 @@ export class BashShell {
   private _history: string[] = [];
   private _historyPos = -1;
   private _historyDraft: { line: string; cursor: number } | null = null;
+  private _historySearch: HistorySearch | null = null;
   private _killBuffer = "";
   private _lastActionWasKill = false;
   private _inputRevision = 0;
@@ -109,6 +126,13 @@ export class BashShell {
     const write = this._write;
     if (!WORD_ERASE_SEQUENCES.has(data) && data !== "\x15" && data !== "\x0b") {
       this._lastActionWasKill = false;
+    }
+
+    if (this._historySearch && (await this._handleHistorySearchInput(data)))
+      return;
+    if (data === "\x12") {
+      this._startHistorySearch();
+      return;
     }
 
     if (data === "\t") {
@@ -333,6 +357,121 @@ export class BashShell {
     this._cursor = cursor;
     this._write?.(`\r${this._prompt(this._cwd)}\x1b[K${line}`);
     this._moveCells(stringWidth(line.slice(cursor)), "D");
+  }
+
+  private _findHistoryMatch(query: string, from: number): number {
+    for (let index = from; index >= 0; index--) {
+      if (this._history[index].includes(query)) return index;
+    }
+    return -1;
+  }
+
+  private _startHistorySearch(): void {
+    if (!this._history.length || this._buffer) return;
+    this._historySearch = {
+      query: "",
+      index: this._history.length - 1,
+      draft: { line: this._line, cursor: this._cursor },
+    };
+    this._renderHistorySearch();
+  }
+
+  private _renderHistorySearch(): void {
+    const search = this._historySearch;
+    if (!search) return;
+    const status =
+      search.index < 0 ? "failed reverse-i-search" : "reverse-i-search";
+    const command =
+      search.index < 0 ? "" : this._history[search.index].replace(/\n/g, "\\n");
+    this._write?.("\r\x1b[K(" + status + ")`" + search.query + "': " + command);
+  }
+
+  private _acceptHistorySearch(): boolean {
+    const search = this._historySearch;
+    if (!search || search.index < 0) return false;
+    this._historySearch = null;
+    this._historyPos = -1;
+    this._historyDraft = null;
+    this._showLine(this._history[search.index]);
+    return true;
+  }
+
+  private _cancelHistorySearch(): void {
+    const search = this._historySearch;
+    if (!search) return;
+    this._historySearch = null;
+    this._showLine(search.draft.line, search.draft.cursor);
+  }
+
+  private async _handleHistorySearchInput(data: string): Promise<boolean> {
+    const search = this._historySearch;
+    if (!search) return false;
+
+    if (data === "\x03") {
+      this._historySearch = null;
+      return false;
+    }
+    if (data === "\x12") {
+      const older = this._findHistoryMatch(search.query, search.index - 1);
+      if (older >= 0) {
+        search.index = older;
+        this._renderHistorySearch();
+      }
+      return true;
+    }
+    if (data === "\x07") {
+      this._cancelHistorySearch();
+      return true;
+    }
+    if (data === "\x1b") {
+      if (!this._acceptHistorySearch()) this._cancelHistorySearch();
+      return true;
+    }
+    if (SEARCH_EDIT_SEQUENCES.has(data)) {
+      if (!this._acceptHistorySearch()) this._cancelHistorySearch();
+      await this.handleInput(data);
+      return true;
+    }
+    if (data === "\r") {
+      if (this._acceptHistorySearch()) await this.handleInput("\r");
+      return true;
+    }
+    if (data === "\x7f" || data === "\b") {
+      if (search.query) {
+        search.query = search.query.slice(
+          0,
+          previousGraphemeStart(search.query, search.query.length),
+        );
+        search.index = this._findHistoryMatch(
+          search.query,
+          this._history.length - 1,
+        );
+        this._renderHistorySearch();
+      }
+      return true;
+    }
+    if (data === "\x15") {
+      search.query = "";
+      search.index = this._history.length - 1;
+      this._renderHistorySearch();
+      return true;
+    }
+    if (data === "\x0c") {
+      this._write?.("\x1b[2J\x1b[H");
+      this._renderHistorySearch();
+      return true;
+    }
+    if (PRINTABLE_TEXT.test(data)) {
+      search.query += data;
+      const from = search.index >= 0 ? search.index : this._history.length - 1;
+      search.index = this._findHistoryMatch(search.query, from);
+      this._renderHistorySearch();
+      return true;
+    }
+    if (!data.startsWith("\x1b") && data.length > 1) {
+      for (const ch of data) await this.handleInput(ch);
+    }
+    return true;
   }
 
   private _moveWord(direction: -1 | 1): void {

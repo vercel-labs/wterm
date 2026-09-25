@@ -686,6 +686,150 @@ describe("BashShell", () => {
     });
   });
 
+  describe("handleInput - reverse history search", () => {
+    beforeEach(async () => {
+      shell = new BashShell({ prompt: () => "$ " });
+      await shell.attach(write);
+      for (const command of ["echo alpha", "echo beta", "echo alphabet"]) {
+        await shell.handleInput(command);
+        await shell.handleInput("\r");
+      }
+      output.length = 0;
+      mockExec.mockClear();
+    });
+
+    it("searches newest first and repeats Ctrl+R to find older matches", async () => {
+      await shell.handleInput("\x12");
+      expect(output.at(-1)).toBe("\r\x1b[K(reverse-i-search)`': echo alphabet");
+
+      await shell.handleInput("alpha");
+      expect(output.at(-1)).toBe(
+        "\r\x1b[K(reverse-i-search)`alpha': echo alphabet",
+      );
+      await shell.handleInput("\x12");
+      expect(output.at(-1)).toBe(
+        "\r\x1b[K(reverse-i-search)`alpha': echo alpha",
+      );
+
+      const count = output.length;
+      await shell.handleInput("\x12");
+      expect(output).toHaveLength(count);
+    });
+
+    it("executes the selected command on Enter", async () => {
+      await shell.handleInput("draft");
+      await shell.handleInput("\x12");
+      await shell.handleInput("beta");
+      await shell.handleInput("\r");
+
+      expect(mockExec).toHaveBeenCalledTimes(1);
+      expect(mockExec).toHaveBeenCalledWith("echo beta", {
+        cwd: "/home/user",
+        env: { PWD: "/home/user" },
+      });
+      expect(output.join("")).toContain("\r$ \x1b[Kecho beta\r\n");
+    });
+
+    it("accepts a match for editing with Escape", async () => {
+      await shell.handleInput("\x12");
+      await shell.handleInput("beta");
+      await shell.handleInput("\x1b");
+      expect(mockExec).not.toHaveBeenCalled();
+      expect(output.at(-1)).toBe("\r$ \x1b[Kecho beta");
+
+      await shell.handleInput("\x7f");
+      await shell.handleInput("X");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toBe("echo betX");
+    });
+
+    it("accepts a match for editing with a navigation key", async () => {
+      await shell.handleInput("\x12");
+      await shell.handleInput("beta");
+      await shell.handleInput("\x1b[D");
+      await shell.handleInput("X");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toBe("echo betXa");
+    });
+
+    it("restores the unfinished line and cell position with Ctrl+G", async () => {
+      await shell.handleInput("echo 界x");
+      await shell.handleInput("\x1b[D");
+      await shell.handleInput("\x1b[D");
+      await shell.handleInput("\x12");
+      await shell.handleInput("beta");
+      output.length = 0;
+
+      await shell.handleInput("\x07");
+      expect(output).toEqual(["\r$ \x1b[Kecho 界x", "\x1b[3D"]);
+
+      await shell.handleInput("Y");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toBe("echo Y界x");
+    });
+
+    it("shows a failed query without executing the draft and recovers on Backspace", async () => {
+      await shell.handleInput("draft");
+      await shell.handleInput("\x12");
+      await shell.handleInput("alphaZ");
+      expect(output.at(-1)).toBe("\r\x1b[K(failed reverse-i-search)`alphaZ': ");
+
+      await shell.handleInput("\r");
+      expect(mockExec).not.toHaveBeenCalled();
+      await shell.handleInput("\x7f");
+      expect(output.at(-1)).toBe(
+        "\r\x1b[K(reverse-i-search)`alpha': echo alphabet",
+      );
+
+      await shell.handleInput("\x15");
+      expect(output.at(-1)).toBe("\r\x1b[K(reverse-i-search)`': echo alphabet");
+      await shell.handleInput("\x07");
+      expect(output.at(-1)).toBe("\r$ \x1b[Kdraft");
+    });
+
+    it("backspaces a whole grapheme from the query", async () => {
+      await shell.handleInput("\x12");
+      await shell.handleInput("👩‍💻");
+      expect(output.at(-1)).toBe("\r\x1b[K(failed reverse-i-search)`👩‍💻': ");
+      await shell.handleInput("\x7f");
+      expect(output.at(-1)).toBe("\r\x1b[K(reverse-i-search)`': echo alphabet");
+    });
+
+    it("preserves arrow-key history browsing when a search is canceled", async () => {
+      await shell.handleInput("draft");
+      await shell.handleInput("\x1b[A");
+      await shell.handleInput("\x12");
+      await shell.handleInput("beta");
+      await shell.handleInput("\x07");
+      output.length = 0;
+
+      await shell.handleInput("\x1b[B");
+      expect(output).toEqual(["\r$ \x1b[Kdraft"]);
+    });
+
+    it("keeps the search visible when clearing the screen", async () => {
+      await shell.handleInput("\x12");
+      await shell.handleInput("beta");
+      output.length = 0;
+
+      await shell.handleInput("\x0c");
+      expect(output).toEqual([
+        "\x1b[2J\x1b[H",
+        "\r\x1b[K(reverse-i-search)`beta': echo beta",
+      ]);
+    });
+
+    it("Ctrl+C cancels search and the unfinished command", async () => {
+      await shell.handleInput("draft");
+      await shell.handleInput("\x12");
+      await shell.handleInput("\x03");
+      await shell.handleInput("fresh");
+      await shell.handleInput("\r");
+
+      expect(mockExec.mock.calls[0]?.[0]).toBe("fresh");
+    });
+  });
+
   describe("handleInput - control sequences", () => {
     beforeEach(async () => {
       shell = new BashShell();
