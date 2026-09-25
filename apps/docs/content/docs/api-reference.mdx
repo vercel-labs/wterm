@@ -756,11 +756,11 @@ When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string 
     </tr>
     <tr>
       <td><code>mouseSgr(): boolean</code></td>
-      <td>Whether SGR mouse encoding (mode 1006) is active</td>
+      <td>Whether cell-coordinate SGR mouse encoding (mode 1006) is active</td>
     </tr>
     <tr>
       <td><code>mouseEncoding(): MouseEncoding | null</code></td>
-      <td>Active mouse wire format: <code>x10</code>, <code>utf8</code>, <code>sgr</code>, <code>urxvt</code>, or <code>sgr-pixels</code>. Optional for custom cores. The DOM layer sends the first four formats; pixel reports are not sent.</td>
+      <td>Active mouse wire format: <code>x10</code>, <code>utf8</code>, <code>sgr</code>, <code>urxvt</code>, or <code>sgr-pixels</code>. Optional for custom cores. The DOM layer sends all five formats; <code>sgr-pixels</code> uses 1-based CSS-pixel coordinates.</td>
     </tr>
     <tr>
       <td><code>focusEvents(): boolean</code></td>

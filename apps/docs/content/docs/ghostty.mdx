@@ -25,11 +25,12 @@ titles longer than 255 bytes.
 BEL controls reach the shared `onBell(count)` callback as output is written.
 The BEL that terminates an OSC title does not count as a bell.
 
-With mouse tracking enabled, mode 1003 sends unpressed pointer motion once per
-cell. `mouseEncoding()` exposes Ghostty's active wire format. The DOM layer
-sends UTF-8 (1005), SGR (1006), and urxvt (1015) reports through `onData`;
-X10 reports use `onBinary` when provided. Pixel mouse reports (1016) are not
-sent.
+With mouse tracking enabled, `mouseEncoding()` exposes Ghostty's active wire
+format. The DOM layer sends UTF-8 (1005), SGR (1006), urxvt (1015), and SGR
+pixel (1016) reports through `onData`; X10 reports use `onBinary` when provided.
+Mode 1003 sends unpressed pointer motion once per cell for cell formats and
+once per CSS pixel for 1016. Pixel coordinates are 1-based and relative to the
+visible grid.
 
 Ghostty-backed terminals also render direct Kitty Graphics Protocol PNG, RGB,
 and RGBA data through the optional graphics contract. The DOM layer draws

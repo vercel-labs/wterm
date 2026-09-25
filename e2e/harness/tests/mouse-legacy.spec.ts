@@ -170,31 +170,4 @@ for (const core of ["builtin", "ghostty"]) {
       "\x1b[97;4;1M",
     ]);
   });
-
-  test(`${core} does not send cell coordinates for pixel mouse mode`, async ({
-    page,
-  }) => {
-    await page.goto(`/?core=${core}&mode=replay&binary=true`);
-    await expect(page.locator("#status")).toHaveText("Replay ready");
-    await page.evaluate(
-      (data) => window.ptyHarness.replayWrite(data, 1),
-      Buffer.from("\x1b[?1002h\x1b[?1016h").toString("base64"),
-    );
-    await page.evaluate(() => window.ptyHarness.frame());
-
-    const point = await page.evaluate(() => {
-      const row = document.querySelector<HTMLElement>(
-        "#terminal .term-row:not(.term-scrollback-row)",
-      )!;
-      const rect = row.getBoundingClientRect();
-      return { x: rect.left + 25, y: rect.top + rect.height / 2 };
-    });
-    await page.mouse.move(point.x, point.y);
-    await page.mouse.down();
-    await page.mouse.up();
-
-    const snapshot = await page.evaluate(() => window.ptyHarness.snapshot());
-    expect(snapshot.responses).toEqual([]);
-    expect(snapshot.binaryResponses).toEqual([]);
-  });
 }

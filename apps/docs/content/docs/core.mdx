@@ -5,7 +5,7 @@ navTitle: "Core / Advanced"
 
 `@wterm/core` provides the headless terminal engine and WebSocket transport. Use it when you need direct access to the WASM bridge for a custom renderer, headless testing, or a server-connected terminal without the DOM layer.
 
-With `@wterm/dom`, terminal applications can enable mouse tracking (modes 1000, 1002, and 1003) in X10, UTF-8 (1005), SGR (1006), or urxvt (1015) encoding, plus focus reporting (mode 1004). Mode 1003 reports pointer motion without a pressed button once per cell in the visible grid. UTF-8, SGR, urxvt, and focus reports reach `onData`; raw X10 reports reach `onBinary` when provided. Pixel mouse reports (1016) are not sent.
+With `@wterm/dom`, terminal applications can enable mouse tracking (modes 1000, 1002, and 1003) in X10, UTF-8 (1005), SGR (1006), urxvt (1015), or SGR pixel (1016) encoding, plus focus reporting (mode 1004). UTF-8, SGR, urxvt, SGR pixel, and focus reports reach `onData`; raw X10 reports reach `onBinary` when provided. SGR pixel reports use 1-based CSS pixels relative to the visible grid. Mode 1003 reports unpressed pointer motion once per cell in cell formats and once per CSS pixel in 1016.
 
 ## Install
 

@@ -69,7 +69,9 @@ the core actually uses. Use these values, or the values passed to `onResize`,
 when sizing a connected PTY. The built-in core currently supports up to
 1024 columns and 512 rows; larger requests are clamped to those limits.
 
-When a terminal application enables mouse tracking (1000, 1002, or 1003), WTerm sends reports in the active encoding. SGR (1006), UTF-8 (1005), and urxvt (1015) reports reach `onData`; forward those strings through a UTF-8 transport. X10 reports use `onBinary` when supplied, so raw bytes reach a binary-capable transport unchanged. Without `onBinary`, ASCII-only X10 reports reach `onData`; coordinates requiring non-ASCII bytes are skipped rather than changed by UTF-8 encoding. X10 coordinates above 223 and UTF-8 coordinates above 2015 cannot be represented and are skipped. Mode 1003 reports unpressed pointer movement once per cell in the visible grid. Shift retains native text selection. Focus reports reach `onData` when mode 1004 is active. Pixel mouse reports (1016) are not sent.
+When a terminal application enables mouse tracking (1000, 1002, or 1003), WTerm sends reports in the active encoding. UTF-8 (1005), SGR (1006), urxvt (1015), and SGR pixel (1016) reports reach `onData`; forward those strings through a UTF-8 transport. Mode 1016 reports 1-based CSS-pixel coordinates relative to the visible grid, independent of device pixel ratio. Mode 1003 reports unpressed pointer movement once per cell for cell formats and once per CSS pixel for 1016.
+
+X10 reports use `onBinary` when supplied, so raw bytes reach a binary-capable transport unchanged. Without `onBinary`, ASCII-only X10 reports reach `onData`; coordinates requiring non-ASCII bytes are skipped rather than changed by UTF-8 encoding. X10 coordinates above 223 and UTF-8 coordinates above 2015 cannot be represented and are skipped. Shift retains native text selection. Focus reports reach `onData` when mode 1004 is active.
 
 `onBell` runs as BEL output is written, including during synchronized output.
 Several bells in one write chunk are delivered as one count. BEL used to end
