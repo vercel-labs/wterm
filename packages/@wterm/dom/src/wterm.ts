@@ -172,6 +172,8 @@ export class WTerm {
       }
       if (this._destroyed) return this;
       this.bridge.init(this.cols, this.rows);
+      this.cols = this.bridge.getCols();
+      this.rows = this.bridge.getRows();
 
       if (this._debugEnabled) {
         this.debug = new DebugAdapter();
@@ -290,18 +292,18 @@ export class WTerm {
     if (!this.bridge) return;
     this._shouldScrollToBottom =
       this._pendingResizeScrollTop === null && this._isScrolledToBottom();
-    this.cols = cols;
-    this.rows = rows;
     this.bridge.resize(cols, rows);
+    this.cols = this.bridge.getCols();
+    this.rows = this.bridge.getRows();
     const synchronized = this.bridge.synchronizedOutput?.() ?? false;
     const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
     if (this._updateSynchronizedOutput(synchronized, generation)) {
       this._rendererNeedsSetup = true;
     } else {
-      this._setupRenderer(cols, rows);
+      this._setupRenderer(this.cols, this.rows);
       this._scheduleRender();
     }
-    if (this.onResize) this.onResize(cols, rows);
+    if (this.onResize) this.onResize(this.cols, this.rows);
   }
 
   focus(): void {

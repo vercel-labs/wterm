@@ -177,6 +177,23 @@ describe("Terminal component", () => {
     expect(lastWTermInstance.resize).toHaveBeenCalledWith(120, 40);
   });
 
+  it("does not repeat a capped size request on unrelated renders", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const { rerender } = render(<Terminal cols={320} rows={40} />);
+    await act(async () => {});
+    lastWTermInstance.cols = 256;
+
+    rerender(<Terminal cols={320} rows={40} className="updated" />);
+    expect(lastWTermInstance.resize).not.toHaveBeenCalled();
+
+    rerender(<Terminal cols={300} rows={40} className="updated" />);
+    expect(lastWTermInstance.resize).toHaveBeenCalledOnce();
+    expect(lastWTermInstance.resize).toHaveBeenCalledWith(300, 40);
+
+    rerender(<Terminal cols={300} rows={40} className="again" />);
+    expect(lastWTermInstance.resize).toHaveBeenCalledOnce();
+  });
+
   it("delegates focus through imperative handle", async () => {
     const ref = createRef<TerminalHandle>();
     const Terminal = (await import("../Terminal.js")).default;

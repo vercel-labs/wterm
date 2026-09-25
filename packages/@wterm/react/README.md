@@ -57,8 +57,8 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
 | `onBell` | `(count: number) => void` | — | Called with pending BEL count as output is written; the host controls any alert |
-| `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
-| `onReady` | `(wt: WTerm) => void` | — | Called after WASM is loaded and the terminal is initialized |
+| `onResize` | `(cols: number, rows: number) => void` | — | Called after resize with the grid dimensions applied by the core |
+| `onReady` | `(wt: WTerm) => void` | — | Called after WASM is loaded and the terminal is initialized; `wt.cols` and `wt.rows` report its applied grid size |
 
 Standard `div` props (`className`, `style`, `id`, etc.) are forwarded to the container element.
 

@@ -9,6 +9,14 @@ The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constru
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
 
+### PTY size
+
+After `init()` or `resize()`, read `wt.cols` and `wt.rows` to size a connected
+PTY. `onResize(cols, rows)` also receives the applied grid size. A core can
+apply fewer cells than requested; the built-in core currently caps each
+dimension at 256. Keeping the PTY at the applied size prevents its output from
+wrapping at different columns than the browser terminal.
+
 ### Bell notifications
 
 Both cores count BEL controls outside OSC sequences. `onBell(count)` runs as

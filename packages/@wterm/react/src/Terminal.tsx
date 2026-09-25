@@ -81,6 +81,9 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     onError,
   });
   const autoResizeRef = useRef(autoResize);
+  const requestedSizeRef = useRef({ cols, rows });
+  const latestSizeRef = useRef({ cols, rows });
+  const previousAutoResizeRef = useRef(autoResize);
 
   callbacksRef.current = {
     onData,
@@ -91,6 +94,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     onError,
   };
   autoResizeRef.current = autoResize;
+  latestSizeRef.current = { cols, rows };
 
   useImperativeHandle(ref, () => ({
     write(data: string | Uint8Array) {
@@ -133,9 +137,20 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
       });
 
       wtermRef.current = wt;
+      requestedSizeRef.current = { cols, rows };
 
       wt.init()
         .then(() => {
+          if (wtermRef.current !== wt) return;
+          const requested = latestSizeRef.current;
+          if (
+            !autoResizeRef.current &&
+            (requestedSizeRef.current.cols !== requested.cols ||
+              requestedSizeRef.current.rows !== requested.rows)
+          ) {
+            wt.resize(requested.cols, requested.rows);
+            requestedSizeRef.current = requested;
+          }
           callbacksRef.current.onReady?.(wt);
         })
         .catch((err: unknown) => {
@@ -159,8 +174,14 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
   // Sync props to the existing instance (render-time checks)
   const wt = wtermRef.current;
   if (wt?.bridge) {
-    if (!autoResizeRef.current && (wt.cols !== cols || wt.rows !== rows)) {
+    if (
+      !autoResizeRef.current &&
+      (previousAutoResizeRef.current ||
+        requestedSizeRef.current.cols !== cols ||
+        requestedSizeRef.current.rows !== rows)
+    ) {
       wt.resize(cols, rows);
+      requestedSizeRef.current = { cols, rows };
     }
     if (onData && !wt.onData) {
       wt.onData = (data: string) => callbacksRef.current.onData?.(data);
@@ -168,6 +189,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
       wt.onData = null;
     }
   }
+  previousAutoResizeRef.current = autoResize;
 
   // Update individual classes after React commits so blink changes preserve
   // the focus and scrollback classes managed by WTerm.
