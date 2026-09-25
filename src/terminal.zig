@@ -693,6 +693,16 @@ pub const Terminal = struct {
             return;
         }
 
+        if (final == 'c') {
+            if (self.parser.csi_private == 0 and self.parser.intermediate_count == 0) {
+                // VT100 with the advanced video option, matching Ghostty's DA1 reply.
+                self.enqueueResponse("\x1b[?1;2c");
+            } else {
+                self.logUnhandled(final, self.parser.csi_private);
+            }
+            return;
+        }
+
         if (final == 'u' and switch (self.parser.csi_private) {
             '?', '>', '<', '=' => true,
             else => false,
@@ -1744,6 +1754,26 @@ test "queues consecutive CPR responses in order" {
     t.popResponse();
     try testing.expectEqualStrings("\x1b[1;2R", t.responsePtr()[0..t.responseLen()]);
     t.popResponse();
+    try testing.expectEqual(@as(u8, 0), t.responseLen());
+}
+
+test "answers primary device attributes without claiming other variants" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+
+    t.write("\x1b[c\x1b[6n\x1b[0c\x1b[2c\x1b[0;0c");
+    for ([_][]const u8{
+        "\x1b[?1;2c",
+        "\x1b[1;1R",
+        "\x1b[?1;2c",
+        "\x1b[?1;2c",
+        "\x1b[?1;2c",
+    }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
+
+    t.write("\x1b[?c\x1b[>c\x1b[!c\x1b[=c\x1b[ c");
     try testing.expectEqual(@as(u8, 0), t.responseLen());
 }
 

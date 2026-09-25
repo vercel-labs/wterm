@@ -35,6 +35,8 @@ See the full [WasmBridge](/api-reference#wasmbridge) reference for all methods, 
 
 The built-in core answers DEC private-mode status queries through `getResponse()`. For example, `\x1b[?2026$p` receives `\x1b[?2026;2$y` when synchronized output is off and `\x1b[?2026;1$y` when it is on. It also reports supported mouse, focus, cursor, bracketed-paste, and alternate-screen modes; unrecognized modes return status `0`. Drain responses and send them back to a connected application. `WTerm` does this through `onData`.
 
+The built-in core also answers primary device-attributes queries (`CSI c`, including `CSI 0 c`) with `\x1b[?1;2c`, identifying VT100 advanced-video support. It does not claim secondary or private device attributes.
+
 `getBellCount()` reads and clears pending BEL controls. A BEL used to terminate
 an OSC sequence does not count. The DOM wrapper forwards the count through
 `onBell`, leaving the alert behavior to the host.

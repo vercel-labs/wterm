@@ -374,6 +374,14 @@ describe("WasmBridge", () => {
   });
 
   describe("terminal responses", () => {
+    it("returns primary device attributes in order with other replies", () => {
+      bridge.writeString("\x1b[c\x1b[6n\x1b[0c\x1b[?c\x1b[>c");
+      expect(bridge.getResponse()).toBe("\x1b[?1;2c");
+      expect(bridge.getResponse()).toBe("\x1b[1;1R");
+      expect(bridge.getResponse()).toBe("\x1b[?1;2c");
+      expect(bridge.getResponse()).toBeNull();
+    });
+
     it("returns DEC private-mode reports through the committed WASM", () => {
       bridge.writeString("\x1b[?2026$p\x1b[?2026h\x1b[?2026$p");
       expect(bridge.getResponse()).toBe("\x1b[?2026;2$y");
