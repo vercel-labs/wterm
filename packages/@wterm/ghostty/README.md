@@ -8,6 +8,9 @@ The core exposes mouse tracking (modes 1000, 1002, and 1003), its active wire en
 Combining marks and ZWJ emoji are exposed through `CellData.chars` as complete strings, including after their rows move into scrollback.
 
 `CellData.spacerHead` marks the empty right-edge filler before a wrapped wide glyph. WTerm's full-history Find uses this flag, grapheme strings, and native row-wrap metadata to match text across soft wraps without inserting artificial spaces.
+
+WTerm also uses this metadata when copying native text selections: soft wraps join without newlines, spacer heads are omitted, and partial graphemes copy as whole cells. Explicit newlines remain intact. See [selection and copy](../dom/README.md#selecting-and-copying-text).
+
 `getCursor()` exposes Ghostty's block, bar, or underline `shape` and `blinking`
 state. The DOM renderer follows application requests (DECSCUSR and mode 12);
 an explicit `cursorBlink: true` or `false` on the terminal wrapper overrides

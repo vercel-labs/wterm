@@ -66,6 +66,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `search(query, { caseSensitive? })` | Start plain-text search over retained history and the active screen |
 | `findNext()` / `findPrevious()` | Select and reveal a match, wrapping at either end; return false if there are none |
 | `getSearchState()` | Get query, caseSensitive, count, activeIndex, searching, and limited |
+| `getSelectionText(): string \| null` | Read the native selection with terminal line and cell semantics; returns null when unavailable |
 | `clearSearch()` | Cancel search and remove highlights |
 | `destroy()` | Clean up event listeners and DOM |
 
@@ -141,6 +142,24 @@ WTerm answers xterm/Kitty pixel geometry queries (`CSI 14 t` and `CSI 16 t`) fro
 Scrollback normally keeps only the visible rows plus overscan mounted in the DOM. While native text selection is active, the selected range stays mounted so the browser can preserve it. Native browser find and accessibility inspect the mounted window, not every retained history row. Scrolling updates the window, while new output follows the exact bottom only when the terminal was already there.
 
 WTerm owns scrollback anchoring when old history is discarded. The package stylesheet disables browser-native scroll anchoring on the terminal scroller so rollover produces one deterministic adjustment across browsers.
+
+### Selecting and copying text
+
+Use the browser's normal selection and Copy action. WTerm supplies plain text for selections entirely within contiguous mounted terminal rows. With Ghostty, confirmed soft wraps are joined, so a wrapped command copies as one line; explicit newlines remain `\n`. Cores without row-wrap metadata, including the built-in core, keep physical row breaks.
+
+Copy preserves complete cell graphemes, emoji, CJK, block glyphs, and box-drawing characters. Selecting part of a multi-code-point cell copies that whole cell. Wide-cell continuations and flagged right-edge spacer heads add no text. Hyperlinks copy their displayed text without HTML or URLs. Trailing ASCII spaces are removed when selection reaches a hard row's right edge; spaces within text, across soft wraps, or at a partially selected row end are preserved.
+
+```ts
+const text = term.getSelectionText();
+if (text !== null) {
+  // Use in your own selection actions; this method does not write the clipboard.
+  console.log(text);
+}
+```
+
+The method reads the painted text, including while synchronized output holds a newer frame. It returns `null` for a collapsed or unavailable selection, selections extending outside this terminal, multiple ranges, or a gap in mounted history. In those cases, Copy keeps the browser's normal behavior. Input-field selections and previously handled copy events are also left to the host. An all-padding selection can return an empty string.
+
+Selection remains native and applies to mounted text; this does not select all retained history. Unchanged row renders preserve text nodes, but output that replaces selected rows, history pruning, or resizing can still change or clear the selection. The method is available through the underlying WTerm instance in every framework binding.
 
 ### Terminal search
 

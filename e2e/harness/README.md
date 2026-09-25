@@ -44,6 +44,13 @@ selection preservation, Unicode cell highlights, reflow, cancellation, and
 synchronized-output refreshes. Replay exposes `search`, `searchState`,
 `findNext`, `findPrevious`, and `clearSearch` on `window.ptyHarness`.
 
+`copy.spec.ts` checks terminal selection text and clipboard-event handling,
+including soft/hard line breaks, Unicode, block glyphs, whitespace, scrollback,
+and synchronized output. `window.ptyHarness.selectionText()` reads the current
+selection without writing the clipboard. Most tests use an isolated clipboard
+event store; the native shortcut test copies a fixed sample and pastes it into
+a separate input to verify the browser's actual clipboard payload.
+
 `cell-width.spec.ts` checks column positions across ASCII, braille, box drawing,
 wide characters, links, cursors, and scrollback. It also exercises font changes
 and enlarged fallback glyphs without relying on a particular installed font.

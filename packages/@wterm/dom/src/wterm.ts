@@ -76,6 +76,7 @@ export class WTerm {
   private _onScroll: () => void;
   private _onModifierChange: (event: KeyboardEvent) => void;
   private _onWindowBlur: () => void;
+  private _onCopy: (event: ClipboardEvent) => void;
 
   onData: ((data: string) => void) | null;
   onBinary: ((data: Uint8Array) => void) | null;
@@ -191,6 +192,22 @@ export class WTerm {
       this._scheduleRender();
     };
     this.element.addEventListener("scroll", this._onScroll, { passive: true });
+    this._onCopy = (event) => {
+      if (event.defaultPrevented || !event.clipboardData) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        !this.element.contains(target) &&
+        (target.closest("input, textarea") ||
+          (target as HTMLElement).isContentEditable)
+      )
+        return;
+      const text = this.getSelectionText();
+      if (text === null) return;
+      event.clipboardData.setData("text/plain", text);
+      event.preventDefault();
+    };
+    this.element.ownerDocument.addEventListener("copy", this._onCopy);
   }
 
   async init(): Promise<this> {
@@ -367,6 +384,11 @@ export class WTerm {
   }
   getSearchState(): SearchState {
     return this._search.snapshot();
+  }
+
+  /** Read the native terminal selection with terminal line and cell semantics. */
+  getSelectionText(): string | null {
+    return this._destroyed ? null : (this.renderer?.getSelectionText() ?? null);
   }
 
   private _invalidateSearch(): void {
@@ -845,6 +867,7 @@ export class WTerm {
     this.renderer = null;
     this.element.removeEventListener("click", this._onClickFocus);
     this.element.removeEventListener("scroll", this._onScroll);
+    this.element.ownerDocument.removeEventListener("copy", this._onCopy);
     this.element.ownerDocument.removeEventListener(
       "keydown",
       this._onModifierChange,

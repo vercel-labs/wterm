@@ -1,5 +1,6 @@
 import type { CellData, TerminalCore } from "@wterm/core";
 import { GraphicsLayer, type GraphicsLayerOptions } from "./graphics-layer.js";
+import { getSelectionText, type RenderedRowText } from "./selection.js";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -360,6 +361,8 @@ export class Renderer {
   private _scrollbackBottomSpacer: HTMLDivElement | null = null;
   private graphics: GraphicsLayer;
   private searchLayer: HTMLDivElement;
+  private rowText = new WeakMap<HTMLElement, RenderedRowText>();
+  private rowHtml = new WeakMap<HTMLElement, string>();
 
   get hasImageFlow(): boolean {
     return (
@@ -380,6 +383,8 @@ export class Renderer {
     this.cols = cols;
     this.rows = rows;
     this.container.innerHTML = "";
+    this.rowText = new WeakMap();
+    this.rowHtml = new WeakMap();
     this.rowEls = [];
     this.prevRowBg = [];
     this._scrollbackRowEls = [];
@@ -418,6 +423,18 @@ export class Renderer {
     rowIndex: number,
   ): void {
     let html = "";
+    const content: RenderedRowText = {
+      text: "",
+      specialCells: [],
+      metadata: null,
+    };
+    const recordText = (text: string, omit = false) => {
+      const start = content.text.length;
+      content.text += text;
+      if (text.length > 1 || omit) {
+        content.specialCells.push({ start, end: content.text.length, omit });
+      }
+    };
     let runStyle = "";
     let runText = "";
     let runCells: string[] = [];
@@ -540,6 +557,7 @@ export class Renderer {
         // cell with no wide cell before it owns its column, so dropping it
         // would shorten the row.
         if (!continuesWide) {
+          recordText(" ");
           const style = buildCellStyle(
             cell.fg,
             cell.bg,
@@ -573,6 +591,7 @@ export class Renderer {
         // continuation is outside the row. Drawing the pair here would spill
         // a second column past the row.
         if (col + 1 >= this.cols) {
+          recordText(" ");
           const style = buildCellStyle(
             cell.fg,
             cell.bg,
@@ -598,6 +617,7 @@ export class Renderer {
         }
 
         const ch = cell.chars ?? (cp >= 32 ? String.fromCodePoint(cp) : " ");
+        recordText(ch);
         const style = buildCellStyle(
           cell.fg,
           cell.bg,
@@ -626,6 +646,8 @@ export class Renderer {
 
       if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
         flushRun(col);
+        const ch = cell.chars ?? String.fromCodePoint(cp);
+        recordText(ch);
 
         const colors = resolveColors(
           cell.fg,
@@ -642,7 +664,7 @@ export class Renderer {
             ? `--term-cell-bg:${bg};${dim}`
             : `background:${bg};${dim}`;
         appendContent(
-          `<span class="${cls}" style="${blockStyle}"></span>`,
+          `<span class="${cls}" style="${blockStyle}">${escapeHTML(ch)}</span>`,
           cellLinkKey,
           cellLinkUri,
         );
@@ -656,6 +678,7 @@ export class Renderer {
       } else {
         const ch =
           cell.chars ?? (inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ");
+        recordText(ch, cell.spacerHead === true);
         const style = inBounds
           ? buildCellStyle(cell.fg, cell.bg, cell.flags, cell.fgRgb, cell.bgRgb)
           : "";
@@ -702,7 +725,9 @@ export class Renderer {
     flushRun(this.cols);
     if (outputLinkKey) html += "</a>";
 
-    rowEl.innerHTML = html;
+    if (this.rowHtml.get(rowEl) !== html) rowEl.innerHTML = html;
+    this.rowHtml.set(rowEl, html);
+    this.rowText.set(rowEl, content);
 
     const bgCss =
       uniformBackground && rowBackground !== "var(--term-bg)"
@@ -733,6 +758,10 @@ export class Renderer {
       -1,
       -1,
     );
+    const content = this.rowText.get(rowEl)!;
+    const metadata = core.getScrollbackRowMetadata?.(sbOffset);
+    content.metadata =
+      metadata && lineLen <= this.cols ? { ...metadata } : null;
     return rowEl;
   }
 
@@ -821,6 +850,7 @@ export class Renderer {
         existing.style.cssText === candidate.style.cssText
       ) {
         rowEl = existing;
+        this.rowText.set(existing, this.rowText.get(candidate)!);
       } else if (existing) {
         existing.replaceWith(candidate);
         positioned = true;
@@ -890,6 +920,11 @@ export class Renderer {
           r,
         );
       }
+      const content = this.rowText.get(this.rowEls[r]);
+      if (content) {
+        const metadata = core.getRowMetadata?.(r);
+        content.metadata = metadata ? { ...metadata } : null;
+      }
     }
 
     this.prevCursorRow = cursor.row;
@@ -920,6 +955,23 @@ export class Renderer {
         element: this.rowEls[i],
       };
     }
+  }
+
+  /** Plain text for the native selection, or null when this terminal does not own it. */
+  getSelectionText(): string | null {
+    const terminal = this.container.parentElement;
+    if (!terminal) return null;
+    const snapshots = this.rowText;
+    const rows = this.searchRows();
+    return getSelectionText(
+      terminal,
+      (function* () {
+        for (const row of rows) {
+          const content = snapshots.get(row.element);
+          if (content) yield { ...row, content };
+        }
+      })(),
+    );
   }
 
   /** Replaces decorations only, preserving native text selection. */

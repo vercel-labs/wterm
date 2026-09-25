@@ -236,6 +236,7 @@ export type HarnessAPI = {
   findNext: WTerm["findNext"];
   findPrevious: WTerm["findPrevious"];
   clearSearch: WTerm["clearSearch"];
+  selectionText: WTerm["getSelectionText"];
 };
 declare global {
   interface Window {
@@ -284,6 +285,7 @@ async function init() {
     findNext: () => terminal.findNext(),
     findPrevious: () => terminal.findPrevious(),
     clearSearch: () => terminal.clearSearch(),
+    selectionText: () => terminal.getSelectionText(),
     frame: () =>
       new Promise((resolve) => requestAnimationFrame(() => resolve())),
   };

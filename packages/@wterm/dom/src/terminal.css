@@ -150,6 +150,7 @@
 .term-block {
   width: var(--term-cell-width, 1ch);
   overflow: hidden;
+  -webkit-text-fill-color: transparent;
 }
 
 .term-box {
@@ -213,6 +214,11 @@
 }
 
 @media (forced-colors: active), print {
+  .term-block {
+    background: none !important;
+    -webkit-text-fill-color: currentColor;
+  }
+
   .term-box {
     background-image: none !important;
     -webkit-text-fill-color: currentColor;

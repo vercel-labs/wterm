@@ -442,8 +442,29 @@ Outside synchronized output, writes request the next animation frame directly. W
       <td><code>getSearchState()</code> / <code>clearSearch()</code></td>
       <td>Read a state snapshot, or cancel search and remove highlights</td>
     </tr>
+    <tr>
+      <td><code>getSelectionText(): string | null</code></td>
+      <td>Read selected rendered text with terminal line and cell semantics, or null when unavailable</td>
+    </tr>
   </tbody>
 </table>
+
+## Selection and Copy
+
+WTerm handles the browser's normal Copy action for a native selection wholly inside contiguous mounted terminal rows. It writes plain text: Ghostty soft wraps join without a newline, explicit line breaks remain `\n`, and cores with unknown wrap boundaries retain physical row breaks. This includes the built-in core, which does not currently expose wrap metadata.
+
+`getSelectionText()` returns the same text without accessing the clipboard. Framework users call it through the WTerm instance received from `onReady` (React/Svelte), `ready` (Vue), or the instance ref.
+
+```ts
+const text = wt.getSelectionText();
+if (text !== null) console.log(text);
+```
+
+Partial grapheme and surrogate-pair selections expand to whole terminal cells. Wide continuations and flagged right-edge spacer heads add no text. Block and box-drawing glyphs remain text; hyperlinks copy their displayed characters without markup or link destinations. Trailing ASCII spaces are trimmed only when selection reaches the right edge of a hard-ended row. Interior spaces, spaces across soft wraps, and explicitly selected spaces at a partial row end are preserved.
+
+Extraction uses the painted snapshot, so output awaiting a frame or synchronized-output release cannot replace the text being copied. The result is `null` for collapsed, unavailable, or multiple-range selections, selections outside the terminal, and selections spanning unmounted history gaps. Browser copying remains unchanged in those cases. Copy also respects input-field selections and events already handled by the host. An all-padding selection can produce an empty string.
+
+Selection is native and covers mounted text. This method does not select all retained history or track selection through reflow. Unchanged renders preserve text nodes; row replacement, resizing, and history pruning can change or clear a selection.
 
 ## Terminal Search
 
