@@ -261,6 +261,74 @@ test.describe("keyboard input", () => {
     expect.soft(shortcut).toEqual(["\x1b[57444;9u", "\x1b[57444;1:3u"]);
   });
 
+  test("Kitty mode accepts AltGr text without turning it into a shortcut", async ({
+    page,
+  }) => {
+    await page.locator(".wterm").click();
+    const result = await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __wterm: {
+          bridge: { kittyKeyboardFlags: () => number };
+          onData: ((data: string) => void) | null;
+        };
+      };
+      const textarea = document.querySelector(".wterm textarea");
+      if (!(textarea instanceof HTMLTextAreaElement)) {
+        throw new Error("missing terminal textarea");
+      }
+      const received: string[] = [];
+      scope.__wterm.bridge.kittyKeyboardFlags = () => 31;
+      scope.__wterm.onData = (data) => received.push(data);
+
+      const altGrKey = new KeyboardEvent("keydown", {
+        key: "@",
+        code: "KeyQ",
+        ctrlKey: true,
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      Object.defineProperty(altGrKey, "getModifierState", {
+        value: (modifier: string) => modifier === "AltGraph",
+      });
+      textarea.dispatchEvent(altGrKey);
+      textarea.value = "@";
+      textarea.dispatchEvent(
+        new InputEvent("input", { inputType: "insertText", bubbles: true }),
+      );
+      textarea.dispatchEvent(
+        new KeyboardEvent("keyup", {
+          key: "@",
+          code: "KeyQ",
+          ctrlKey: true,
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+      const shortcut = new KeyboardEvent("keydown", {
+        key: "q",
+        code: "KeyQ",
+        ctrlKey: true,
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      textarea.dispatchEvent(shortcut);
+      return {
+        altGrPrevented: altGrKey.defaultPrevented,
+        shortcutPrevented: shortcut.defaultPrevented,
+        received,
+      };
+    });
+    expect(result).toEqual({
+      altGrPrevented: false,
+      shortcutPrevented: true,
+      received: ["@", "\x1b[113;7u"],
+    });
+  });
+
   test("Kitty encoding follows real Chromium shifted-text and modifier-release events", async ({
     page,
   }) => {

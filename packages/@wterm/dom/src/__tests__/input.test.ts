@@ -26,6 +26,13 @@ function createKeyUpEvent(
   });
 }
 
+function markAltGraph(event: KeyboardEvent): KeyboardEvent {
+  Object.defineProperty(event, "getModifierState", {
+    value: (modifier: string) => modifier === "AltGraph",
+  });
+  return event;
+}
+
 describe("InputHandler", () => {
   let container: HTMLElement;
   let received: string[];
@@ -327,6 +334,18 @@ describe("InputHandler", () => {
       ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
       expect(received).toEqual(["@"]);
     });
+
+    it("lets browser-identified AltGr text bypass the legacy Alt prefix", () => {
+      const ta = getTextarea();
+      const keydown = markAltGraph(
+        createKeyboardEvent("€", { code: "KeyE", altKey: true }),
+      );
+      ta.dispatchEvent(keydown);
+      expect(keydown.defaultPrevented).toBe(false);
+      ta.value = "€";
+      ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+      expect(received).toEqual(["€"]);
+    });
   });
 
   describe("key mapping - alt modifier", () => {
@@ -377,6 +396,130 @@ describe("InputHandler", () => {
   });
 
   describe("Kitty keyboard protocol", () => {
+    it.each([1, 1 | 2 | 8 | 16])(
+      "accepts native AltGr text with Kitty flags %i without a stray release",
+      (flags) => {
+        bridgeMock = { kittyKeyboardFlags: () => flags } as any;
+        const ta = getTextarea();
+        const keydown = markAltGraph(
+          createKeyboardEvent("@", {
+            code: "KeyQ",
+            ctrlKey: true,
+            altKey: true,
+          }),
+        );
+        ta.dispatchEvent(keydown);
+        expect(keydown.defaultPrevented).toBe(false);
+        expect(received).toEqual([]);
+
+        ta.value = "@";
+        ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+        ta.dispatchEvent(
+          markAltGraph(
+            createKeyboardEvent("@", {
+              code: "KeyQ",
+              ctrlKey: true,
+              altKey: true,
+              repeat: true,
+            }),
+          ),
+        );
+        ta.dispatchEvent(
+          markAltGraph(
+            createKeyUpEvent("@", {
+              code: "KeyQ",
+              ctrlKey: true,
+              altKey: true,
+            }),
+          ),
+        );
+        expect(received).toEqual(["@"]);
+      },
+    );
+
+    it("does not mistake AltGr text for copy or paste shortcuts", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const ta = getTextarea();
+      const selected = document.createElement("span");
+      selected.textContent = "selected";
+      container.append(selected);
+      const selection = window.getSelection()!;
+      const range = document.createRange();
+      range.selectNodeContents(selected);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      for (const [key, code] of [
+        ["c", "KeyC"],
+        ["v", "KeyV"],
+      ]) {
+        const keydown = markAltGraph(
+          createKeyboardEvent(key, { code, ctrlKey: true, altKey: true }),
+        );
+        ta.dispatchEvent(keydown);
+        expect(keydown.defaultPrevented).toBe(false);
+        ta.value = key;
+        ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+        ta.dispatchEvent(
+          markAltGraph(
+            createKeyUpEvent(key, { code, ctrlKey: true, altKey: true }),
+          ),
+        );
+      }
+      expect(received).toEqual(["c", "v"]);
+      selection.removeAllRanges();
+    });
+
+    it("accepts right Alt text when the browser omits AltGraph state", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("Alt", { code: "AltRight", altKey: true }),
+      );
+      const keydown = createKeyboardEvent("€", {
+        code: "KeyE",
+        ctrlKey: true,
+        altKey: true,
+      });
+      ta.dispatchEvent(keydown);
+      expect(keydown.defaultPrevented).toBe(false);
+      ta.value = "€";
+      ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+      ta.dispatchEvent(
+        createKeyUpEvent("€", {
+          code: "KeyE",
+          ctrlKey: true,
+          altKey: true,
+        }),
+      );
+      expect(received).toEqual(["\x1b[57449;3u", "€"]);
+    });
+
+    it("still encodes functional keys while AltGraph is active", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const keydown = markAltGraph(
+        createKeyboardEvent("ArrowLeft", {
+          code: "ArrowLeft",
+          ctrlKey: true,
+          altKey: true,
+        }),
+      );
+      getTextarea().dispatchEvent(keydown);
+      expect(keydown.defaultPrevented).toBe(true);
+      expect(received).toEqual(["\x1b[1;7D"]);
+    });
+
+    it("still encodes an actual Control+Alt printable shortcut", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 1 | 2 | 8 } as any;
+      const keydown = createKeyboardEvent("q", {
+        code: "KeyQ",
+        ctrlKey: true,
+        altKey: true,
+      });
+      getTextarea().dispatchEvent(keydown);
+      expect(keydown.defaultPrevented).toBe(true);
+      expect(received).toEqual(["\x1b[113;7u"]);
+    });
+
     it("uses the negotiated flags for press, repeat, and release", () => {
       bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
       const ta = getTextarea();
