@@ -103,6 +103,8 @@ The built-in core answers DEC private-mode status queries (`CSI ? Ps $ p`) throu
 
 Primary device-attributes queries (`CSI c` or `CSI 0 c`) receive `\x1b[?1;2c` through `getResponse()`, identifying VT100 advanced-video support. Secondary and private variants receive no reply.
 
+An operating-status query (`CSI 5 n`) receives `\x1b[0n`, indicating the terminal is ready. A cursor-position query (`CSI 6 n`) receives `\x1b[row;colR`. These replies share the same response queue as device attributes and preserve query order. Unsupported or malformed status requests receive no reply.
+
 The built-in core reports its fixed hyperlink identity capacity through `getResourceState()`. When `hyperlinks.saturated` is true, new distinct OSC 8 links render as plain text and `hyperlinks.rejected` counts capacity-rejected opens. Existing identities remain valid.
 
 ### Optional terminal graphics

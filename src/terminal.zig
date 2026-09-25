@@ -969,24 +969,30 @@ pub const Terminal = struct {
     }
 
     fn handleDeviceStatus(self: *Terminal) void {
-        const param = self.parser.getParam(0, 0);
-        if (param == 6) {
-            // CPR – Cursor Position Report: ESC [ row ; col R
-            const row = self.cursor_row + 1;
-            const col = self.cursor_col + 1;
-            var buf: [64]u8 = undefined;
-            var len: u8 = 0;
-            buf[len] = 0x1B;
-            len += 1;
-            buf[len] = '[';
-            len += 1;
-            len = appendU16(buf[0..], len, row);
-            buf[len] = ';';
-            len += 1;
-            len = appendU16(buf[0..], len, col);
-            buf[len] = 'R';
-            len += 1;
-            self.enqueueResponse(buf[0..len]);
+        if (self.parser.csi_private != 0 or self.parser.intermediate_count != 0 or
+            self.parser.param_count != 1 or self.parser.subparam[0]) return;
+
+        switch (self.parser.params[0]) {
+            5 => self.enqueueResponse("\x1b[0n"),
+            6 => {
+                // CPR – Cursor Position Report: ESC [ row ; col R
+                const row = self.cursor_row + 1;
+                const col = self.cursor_col + 1;
+                var buf: [64]u8 = undefined;
+                var len: u8 = 0;
+                buf[len] = 0x1B;
+                len += 1;
+                buf[len] = '[';
+                len += 1;
+                len = appendU16(buf[0..], len, row);
+                buf[len] = ';';
+                len += 1;
+                len = appendU16(buf[0..], len, col);
+                buf[len] = 'R';
+                len += 1;
+                self.enqueueResponse(buf[0..len]);
+            },
+            else => {},
         }
     }
 
@@ -1754,6 +1760,20 @@ test "queues consecutive CPR responses in order" {
     t.popResponse();
     try testing.expectEqualStrings("\x1b[1;2R", t.responsePtr()[0..t.responseLen()]);
     t.popResponse();
+    try testing.expectEqual(@as(u8, 0), t.responseLen());
+}
+
+test "reports operating status in order and ignores malformed status requests" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[5n\x1b[2G\x1b[6n\x1b[5n");
+
+    for ([_][]const u8{ "\x1b[0n", "\x1b[1;2R", "\x1b[0n" }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
+
+    t.write("\x1b[?5n\x1b[!5n\x1b[5;6n\x1b[5$n\x1b[6;1n\x1b[0n");
     try testing.expectEqual(@as(u8, 0), t.responseLen());
 }
 
