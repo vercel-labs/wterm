@@ -227,18 +227,58 @@ describe("InputHandler mouse and focus modes", () => {
     ]);
   });
 
-  it("does not mistake pixel mouse encoding for cell coordinates", () => {
+  it("encodes SGR pixel press, drag, release, and wheel in CSS pixels", () => {
     core.mouseSgr = () => false;
     core.mouseEncoding = () => "sgr-pixels";
     container.dispatchEvent(
       new MouseEvent("mousedown", {
         button: 0,
         buttons: 1,
-        clientX: 85,
-        clientY: 65,
+        clientX: 85.25,
+        clientY: 65.75,
       }),
     );
-    expect(received).toEqual([]);
+    window.dispatchEvent(
+      new MouseEvent("mousemove", {
+        buttons: 1,
+        clientX: 86.25,
+        clientY: 66.75,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", {
+        button: 0,
+        clientX: 86.25,
+        clientY: 66.75,
+      }),
+    );
+    container.dispatchEvent(
+      new WheelEvent("wheel", {
+        deltaY: 100,
+        clientX: 86.25,
+        clientY: 66.75,
+      }),
+    );
+
+    expect(received).toEqual([
+      "\x1b[<0;76;34M",
+      "\x1b[<32;77;35M",
+      "\x1b[<0;77;35m",
+      "\x1b[<65;77;35M",
+    ]);
+  });
+
+  it("reports mode 1003 motion once per pixel, including within a cell", () => {
+    core.mouseTracking = () => 1003;
+    core.mouseEncoding = () => "sgr-pixels";
+    core.mouseSgr = () => false;
+    for (const x of [85.25, 85.75, 86.25]) {
+      container.dispatchEvent(
+        new MouseEvent("mousemove", { clientX: x, clientY: 65.25 }),
+      );
+    }
+
+    expect(received).toEqual(["\x1b[<35;76;34M", "\x1b[<35;77;34M"]);
   });
 
   it("reports unpressed pointer motion once per cell in mode 1003", () => {

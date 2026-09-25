@@ -135,6 +135,7 @@ export interface TerminalCore {
   bracketedPaste(): boolean;
   usingAltScreen(): boolean;
   mouseTracking?(): 0 | 1000 | 1002 | 1003;
+  /** True only for cell-coordinate SGR mode 1006; use mouseEncoding() for pixel mode 1016. */
   mouseSgr?(): boolean;
   /** Active mouse wire format. Optional for cores that only expose SGR state. */
   mouseEncoding?(): MouseEncoding | null;

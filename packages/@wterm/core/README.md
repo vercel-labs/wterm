@@ -77,8 +77,8 @@ const cursor = bridge.getCursor();  // { row, col, visible, shape, blinking }
 | `bracketedPaste()` | Whether bracketed paste mode is active |
 | `usingAltScreen()` | Whether the alternate screen buffer is active |
 | `mouseTracking()` | Active mouse tracking mode (`0`, `1000`, `1002`, or `1003`) |
-| `mouseSgr()` | Whether SGR mouse encoding is active |
-| `mouseEncoding()` | Active mouse wire format (`x10`, `utf8`, `sgr`, `urxvt`, or `sgr-pixels`). The DOM layer handles the first four; pixel reports are not sent. |
+| `mouseSgr()` | Whether cell-coordinate SGR mouse encoding (1006) is active |
+| `mouseEncoding()` | Active mouse wire format (`x10`, `utf8`, `sgr`, `urxvt`, or `sgr-pixels`). The DOM layer handles all five; `sgr-pixels` reports 1-based CSS pixels. |
 | `focusEvents()` | Whether focus reporting is active |
 | `synchronizedOutput()` | Whether synchronized output mode (2026) is active |
 | `synchronizedOutputGeneration()` | Monotonic generation for synchronized output blocks |

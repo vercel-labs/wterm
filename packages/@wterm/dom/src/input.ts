@@ -73,8 +73,8 @@ export class InputHandler {
     mode: number;
     encoding: string;
     code: number;
-    col: number;
-    row: number;
+    x: number;
+    y: number;
   } | null = null;
   private focused = false;
   private suppressedKeyUps = new Set<string>();
@@ -541,6 +541,7 @@ export class InputHandler {
       !bridge ||
       tracking === 0 ||
       (encoding !== "sgr" &&
+        encoding !== "sgr-pixels" &&
         encoding !== "x10" &&
         encoding !== "utf8" &&
         encoding !== "urxvt")
@@ -613,30 +614,42 @@ export class InputHandler {
           paddingBottom) /
         bridge.getRows();
     }
-    if (charWidth <= 0 || rowHeight <= 0) return;
+    const cols = bridge.getCols();
+    const rows = bridge.getRows();
+    const gridWidth = charWidth * cols;
+    const gridHeight = rowHeight * rows;
+    if (
+      !Number.isFinite(gridWidth) ||
+      !Number.isFinite(gridHeight) ||
+      gridWidth <= 0 ||
+      gridHeight <= 0
+    )
+      return;
     if (
       kind === "move" &&
       supportedButtons === 0 &&
       (event.clientX < left ||
-        event.clientX >= left + charWidth * bridge.getCols() ||
+        event.clientX >= left + gridWidth ||
         event.clientY < top ||
-        event.clientY >= top + rowHeight * bridge.getRows())
+        event.clientY >= top + gridHeight)
     ) {
       this.lastMouseMotion = null;
       return;
     }
-    const col = Math.max(
+    const pixels = encoding === "sgr-pixels";
+    // Pointer positions and grid measurements use CSS pixels on every display.
+    const x = Math.max(
       1,
       Math.min(
-        bridge.getCols(),
-        Math.floor((event.clientX - left) / charWidth) + 1,
+        pixels ? Math.ceil(gridWidth) : cols,
+        Math.floor((event.clientX - left) / (pixels ? 1 : charWidth)) + 1,
       ),
     );
-    const row = Math.max(
+    const y = Math.max(
       1,
       Math.min(
-        bridge.getRows(),
-        Math.floor((event.clientY - top) / rowHeight) + 1,
+        pixels ? Math.ceil(gridHeight) : rows,
+        Math.floor((event.clientY - top) / (pixels ? 1 : rowHeight)) + 1,
       ),
     );
     const modifiers =
@@ -656,7 +669,7 @@ export class InputHandler {
       }
     } else {
       const button =
-        kind === "release" && encoding !== "sgr"
+        kind === "release" && encoding !== "sgr" && !pixels
           ? 3
           : kind === "move"
             ? supportedButtons === 0
@@ -676,18 +689,18 @@ export class InputHandler {
     }
     const legacy =
       encoding === "x10"
-        ? Uint8Array.of(0x1b, 0x5b, 0x4d, code + 32, col + 32, row + 32)
+        ? Uint8Array.of(0x1b, 0x5b, 0x4d, code + 32, x + 32, y + 32)
         : null;
     if (
       legacy &&
-      (col > 223 ||
-        row > 223 ||
+      (x > 223 ||
+        y > 223 ||
         (!this.onBinary && (legacy[4] > 127 || legacy[5] > 127)))
     ) {
       this.lastMouseMotion = null;
       return;
     }
-    if (encoding === "utf8" && (col > 2015 || row > 2015)) {
+    if (encoding === "utf8" && (x > 2015 || y > 2015)) {
       this.lastMouseMotion = null;
       return;
     }
@@ -697,12 +710,12 @@ export class InputHandler {
         previous?.mode === tracking &&
         previous.encoding === encoding &&
         previous.code === code &&
-        previous.col === col &&
-        previous.row === row
+        previous.x === x &&
+        previous.y === y
       ) {
         return;
       }
-      this.lastMouseMotion = { mode: tracking, encoding, code, col, row };
+      this.lastMouseMotion = { mode: tracking, encoding, code, x, y };
     } else {
       this.lastMouseMotion = null;
     }
@@ -720,13 +733,11 @@ export class InputHandler {
       if (this.onBinary) this.onBinary(legacy);
       else this.onData(String.fromCharCode(...legacy));
     } else if (encoding === "utf8") {
-      this.onData(
-        `\x1b[M${String.fromCodePoint(code + 32, col + 32, row + 32)}`,
-      );
+      this.onData(`\x1b[M${String.fromCodePoint(code + 32, x + 32, y + 32)}`);
     } else if (encoding === "urxvt") {
-      this.onData(`\x1b[${code + 32};${col};${row}M`);
+      this.onData(`\x1b[${code + 32};${x};${y}M`);
     } else {
-      this.onData(`\x1b[<${code};${col};${row}${final}`);
+      this.onData(`\x1b[<${code};${x};${y}${final}`);
     }
   }
 
