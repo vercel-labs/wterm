@@ -101,6 +101,8 @@ While hovering an anchor, holding Command on macOS or Control on Windows and Lin
 
 Scrollback normally uses a bounded DOM window around the visible rows. An active native text selection keeps its selected range mounted so the browser can preserve it. Native browser find and accessibility inspect the mounted window, not every retained history row. If the terminal is already at the bottom, new output keeps it at the exact bottom; reading older history does not enable auto-follow, and terminal input returns to the bottom.
 
+Copying a terminal selection preserves complete Unicode cells and explicit newlines; Ghostty soft wraps join without artificial line breaks. Block glyphs are included as text. Use `term.getSelectionText()` to read the same plain text without touching the clipboard. See [Selection and Copy](/api-reference#selection-and-copy) for whitespace behavior and native-selection limits.
+
 ### Terminal images
 
 When the supplied core exposes the optional graphics methods, `WTerm` renders

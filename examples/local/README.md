@@ -25,6 +25,7 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 - The `/ghostty` route uses the graphics-capable core and limits rendered Kitty images to 640×480 CSS pixels
 - Auto-sized Kitty images align with the terminal content origin and reserve their rendered height visually so the following shell prompt appears below the image
 - Each session displays its full current working directory in the sidebar, abbreviating the home directory as `~` and updating after `cd`
+- Select terminal text and use the browser's normal Copy action. On `/ghostty`, wrapped commands copy without added newlines; explicit line breaks, whole Unicode cells, and block glyphs are preserved. Trailing padding is trimmed at fully selected hard row ends. Hold Shift to select when a terminal application has enabled mouse tracking.
 - Find searches the session's retained output, including history outside the mounted viewport. Open it with the Find button, Command+F, or Control+Shift+F; Control+F remains available to the shell. Enter and Shift+Enter navigate matches, Aa toggles case sensitivity, and Escape closes Find and returns focus to the terminal. Each session keeps its own query.
 - The `/ghostty` route also matches across soft wraps and maps Unicode matches to whole terminal cells. Counts update as search progresses; a `+` means more than 10,000 matches, so narrow the query to see additional results. New output and resizing refresh results.
 

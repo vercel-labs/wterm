@@ -115,3 +115,7 @@ application.
 ## Terminal Search
 
 The underlying WTerm instance exposes full-history `search`, `findNext`, `findPrevious`, `getSearchState`, and `clearSearch`. Set its `onSearchChange` callback to keep Find controls current. Use `onReady` or `bind:instance`. See [Terminal Search](/api-reference#terminal-search) for Unicode behavior, progress, and limits.
+
+## Selection and Copy
+
+Native Copy preserves terminal line breaks and complete Unicode cells, joining confirmed Ghostty soft wraps. Call `getSelectionText()` on the underlying WTerm instance to read that text without writing the clipboard. See [Selection and Copy](/api-reference#selection-and-copy) for whitespace behavior, return values, and native-selection limits.
