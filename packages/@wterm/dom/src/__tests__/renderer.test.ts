@@ -686,7 +686,7 @@ describe("Renderer", () => {
       expect(reads).toBe(firstReads);
     });
 
-    it("expands the window while a terminal selection is active", () => {
+    it("retains selected rows without mounting the gap to a distant viewport", () => {
       const bridge = createMockBridge(1, 1);
       bridge.getScrollbackCount = () => 100;
       bridge.getScrollbackLineLen = () => 1;
@@ -711,9 +711,7 @@ describe("Renderer", () => {
       renderer.render(bridge as any, { ...viewport, scrollTop: 100 });
 
       expect(container.contains(firstRow)).toBe(true);
-      expect(container.querySelectorAll(".term-scrollback-row").length).toBe(
-        12,
-      );
+      expect(container.querySelectorAll(".term-scrollback-row").length).toBe(3);
       selection.removeAllRanges();
     });
   });

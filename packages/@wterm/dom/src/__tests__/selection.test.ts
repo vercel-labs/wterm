@@ -73,6 +73,139 @@ function copy(target: EventTarget = document) {
 }
 
 describe("terminal selection text", () => {
+  it("releases tracked edges when selections change and when the terminal is destroyed", async () => {
+    await write("abcdef");
+    for (let i = 0; i < 70; i++) {
+      select(0, i % 3, 0, 4 + (i % 3));
+      await write("\x1b[H");
+      expect(term.getSelectionText()).not.toBeNull();
+    }
+    term.destroy();
+    const handles = Array.from({ length: 64 }, () =>
+      core.trackPosition({ row: 0, col: 0 }),
+    );
+    expect(handles.every(Boolean)).toBe(true);
+    handles.forEach((handle) => handle?.dispose());
+  });
+
+  it("leaves a selection in another input alone while a render is pending", async () => {
+    await write("abcdef");
+    select(0, 0, 0, 3);
+    term.resize(12, 4);
+    const input = document.createElement("textarea");
+    input.value = "outside";
+    document.body.appendChild(input);
+    input.focus();
+    input.select();
+    await vi.runAllTimersAsync();
+    expect(document.activeElement).toBe(input);
+    expect(input.value.slice(input.selectionStart, input.selectionEnd)).toBe(
+      "outside",
+    );
+    expect(term.getSelectionText()).toBeNull();
+    input.remove();
+  });
+  it("preserves a full hard row and explicit newlines when padding changes width", async () => {
+    await write("abc\r\n\r\nx");
+    select(0, 0, 0, 6);
+    term.resize(12, 4);
+    await vi.runAllTimersAsync();
+    expect(term.getSelectionText()).toBe("abc");
+    select(0, 0, 2, 0);
+    term.resize(4, 4);
+    await vi.runAllTimersAsync();
+    expect(term.getSelectionText()).toBe("abc\n\n");
+  });
+
+  it("preserves a selection through synchronized output and resize until release", async () => {
+    await write("abcdefghij");
+    select(0, 2, 1, 4);
+    term.write("\x1b[?2026h\r\nnext");
+    term.resize(4, 4);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(term.getSelectionText()).toBe("cdefghij");
+    term.write("\x1b[?2026l");
+    await vi.runAllTimersAsync();
+    expect(term.getSelectionText()).toBe("cdefghij");
+  });
+
+  it("clears a tracked selection when reflow would retain too many rows", async () => {
+    term.resize(100, 24);
+    await vi.runAllTimersAsync();
+    await write("x".repeat(1100));
+    select(0, 0, 10, 100);
+    term.resize(1, 24);
+    await vi.runAllTimersAsync();
+    expect(term.getSelectionText()).toBeNull();
+    expect(element.querySelectorAll(".term-row").length).toBeLessThan(100);
+  });
+  it("preserves forward and backward selections through narrower and wider reflow", async () => {
+    for (const backward of [false, true]) {
+      await write("\x1bcabcdefghijklmno\r\nlast");
+      select(0, 2, 2, 3, backward);
+      term.resize(4, 4);
+      await vi.runAllTimersAsync();
+      expect(term.getSelectionText()).toBe("cdefghijklmno");
+      const selection = document.getSelection()!;
+      const range = selection.getRangeAt(0);
+      expect(
+        selection.anchorNode === range.startContainer &&
+          selection.anchorOffset === range.startOffset,
+      ).toBe(!backward);
+      term.resize(12, 4);
+      await vi.runAllTimersAsync();
+      expect(term.getSelectionText()).toBe("cdefghijklmno");
+      term.resize(6, 4);
+      await vi.runAllTimersAsync();
+    }
+  });
+
+  it("follows selected Unicode cells into scrollback and through reflow", async () => {
+    await write("abcde界e\u0301😀uvwxyz");
+    select(0, 3, 2, 5);
+    const selected = term.getSelectionText();
+    await write("\r\nnext\r\nnext\r\nnext");
+    expect(term.getSelectionText()).toBe(selected);
+    term.resize(10, 4);
+    await vi.runAllTimersAsync();
+    expect(term.getSelectionText()).toBe(selected);
+  });
+
+  it("clears overwritten text, but preserves selection through style and cursor changes", async () => {
+    await write("abcdef");
+    select(0, 0, 0, 3);
+    await write("\x1b[H\x1b[31mabc");
+    expect(term.getSelectionText()).toBe("abc");
+    await write("\x1b[Hnew");
+    expect(term.getSelectionText()).toBeNull();
+    select(0, 0, 0, 3);
+    await write("\x1b[?1049h\x1b[?1049l");
+    expect(term.getSelectionText()).toBeNull();
+  });
+
+  it("does not restore a cleared or replaced selection during a pending frame", async () => {
+    await write("abcdefghij");
+    select(0, 0, 1, 4);
+    term.resize(4, 4);
+    document.getSelection()!.removeAllRanges();
+    await vi.runAllTimersAsync();
+    expect(term.getSelectionText()).toBeNull();
+  });
+
+  it("mounts selected history separately from a distant viewport and clears pruned text", async () => {
+    Object.defineProperty(element, "clientHeight", { value: 68 });
+    Object.defineProperty(element, "scrollHeight", {
+      get: () => (core.getScrollbackCount() + core.getRows()) * 17,
+    });
+    await write("chosen\r\n");
+    select(0, 0, 0, 6);
+    await write("line\r\n".repeat(500));
+    expect(term.getSelectionText()).toBe("chosen");
+    expect(element.querySelectorAll(".term-row").length).toBeLessThan(40);
+    expect(element.querySelectorAll(".term-scrollback-spacer").length).toBe(3);
+    await write("line\r\n".repeat(20000));
+    expect(term.getSelectionText()).toBeNull();
+  });
   it("joins confirmed soft wraps and preserves explicit newlines in either direction", async () => {
     await write("abcdefghij\r\nnext");
     select(0, 2, 2, 4);

@@ -445,6 +445,7 @@ describe("WTerm", () => {
       expect(term.cols).toBe(256);
       expect(term.rows).toBe(40);
       expect(onResize).toHaveBeenCalledWith(256, 40);
+      await new Promise(requestAnimationFrame);
       expect(element.querySelectorAll(".term-row")).toHaveLength(40);
     });
 

@@ -51,6 +51,8 @@ selection without writing the clipboard. Most tests use an isolated clipboard
 event store; the native shortcut test copies a fixed sample and pastes it into
 a separate input to verify the browser's actual clipboard payload.
 
+Ghostty cases also preserve backward Unicode selections through narrower/wider reflow and distant output, check that gaps stay virtualized, and verify clearing on overwrites, resets, screen switches, and history pruning.
+
 `cell-width.spec.ts` checks column positions across ASCII, braille, box drawing,
 wide characters, links, cursors, and scrollback. It also exercises font changes
 and enlarged fallback glyphs without relying on a particular installed font.

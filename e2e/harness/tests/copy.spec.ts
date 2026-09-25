@@ -217,3 +217,76 @@ test("native Copy shortcut reaches terminal selection handling", async ({
   );
   await expect(page.locator("#copy-target")).toHaveValue("abcdefghij");
 });
+
+test("Ghostty: selection follows Unicode through reflow and distant output", async ({
+  page,
+}) => {
+  await page.goto("/?core=ghostty&mode=replay");
+  await expect(page.locator("#status")).toHaveText("Replay ready");
+  await page.evaluate(() => window.ptyHarness.resize(6, 4));
+  await write(page, "abcde界e\u0301😀uvwxyz");
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await select(page, 0, 3, 2, 5, true);
+  const expected = (await copy(page)).selection;
+  expect(expected).toBe("de界e\u0301😀uvwxyz");
+  for (const cols of [4, 12, 6]) {
+    await page.evaluate((cols) => window.ptyHarness.resize(cols, 4), cols);
+    await page.evaluate(() => window.ptyHarness.frame());
+    expect((await copy(page)).selection).toBe(expected);
+    expect(
+      await page.evaluate(() => {
+        const selection = window.getSelection()!;
+        const range = selection.getRangeAt(0);
+        return (
+          selection.focusNode === range.startContainer &&
+          selection.focusOffset === range.startOffset
+        );
+      }),
+    ).toBe(true);
+  }
+  await write(page, "\r\nline\r\n" + "line\r\n".repeat(500));
+  expect((await copy(page)).selection).toBe(expected);
+  expect(await page.locator(".term-row").count()).toBeLessThan(80);
+  await page.locator("#terminal").evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event("scroll"));
+  });
+  await page.evaluate(() => window.ptyHarness.frame());
+  expect((await copy(page)).selection).toBe(expected);
+});
+
+test("Ghostty: selection clears on overwrite, reset, and pruning without stealing external selections", async ({
+  page,
+}) => {
+  await page.goto("/?core=ghostty&mode=replay");
+  await expect(page.locator("#status")).toHaveText("Replay ready");
+  await page.evaluate(() => window.ptyHarness.resize(6, 4));
+  await write(page, "abcdef");
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await select(page, 0, 0, 0, 3);
+  await write(page, "\x1b[Hnew");
+  expect((await copy(page)).selection).toBeNull();
+  await select(page, 0, 0, 0, 3);
+  await write(page, "\x1b[?1049h\x1b[?1049l");
+  expect((await copy(page)).selection).toBeNull();
+  await select(page, 0, 0, 0, 3);
+  await write(page, "\x1bc");
+  expect((await copy(page)).selection).toBeNull();
+  await write(page, "chosen");
+  await select(page, 0, 0, 0, 6);
+  await write(page, "\r\nline\r\n" + "line\r\n".repeat(20000));
+  expect((await copy(page)).selection).toBeNull();
+  await page.evaluate(() => {
+    const outside = document.createElement("p");
+    outside.textContent = "outside";
+    document.body.appendChild(outside);
+    window
+      .getSelection()!
+      .setBaseAndExtent(outside.firstChild!, 0, outside.firstChild!, 7);
+    window.ptyHarness.resize(12, 4);
+  });
+  await page.evaluate(() => window.ptyHarness.frame());
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(
+    "outside",
+  );
+});

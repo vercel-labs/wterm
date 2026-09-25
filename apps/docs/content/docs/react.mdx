@@ -100,3 +100,5 @@ The underlying WTerm instance exposes full-history `search`, `findNext`, `findPr
 ## Selection and Copy
 
 Native Copy preserves terminal line breaks and complete Unicode cells, joining confirmed Ghostty soft wraps. Call `getSelectionText()` on the underlying WTerm instance to read that text without writing the clipboard. See [Selection and Copy](/api-reference#selection-and-copy) for whitespace behavior, return values, and native-selection limits.
+
+With Ghostty's current WASM binary, selections also follow output scrolling and resize/reflow while their text remains intact. Overwritten or discarded text, resets, and screen switches clear them. The same reference covers preservation limits and pending-frame behavior.

@@ -1,6 +1,10 @@
 import type { CellData, TerminalCore } from "@wterm/core";
 import { GraphicsLayer, type GraphicsLayerOptions } from "./graphics-layer.js";
 import { getSelectionText, type RenderedRowText } from "./selection.js";
+import {
+  TrackedSelection,
+  MAX_TRACKED_SELECTION_ROWS,
+} from "./tracked-selection.js";
 
 const DEFAULT_COLOR = 256;
 const FLAG_BOLD = 0x01;
@@ -19,6 +23,7 @@ export interface RenderViewport {
   overscanRows?: number;
   scrollbackDiscardedCount?: number;
   charWidth?: number;
+  selectedRows?: { start: number; end: number };
 }
 
 function rgbToCSS(packed: number): string {
@@ -354,7 +359,8 @@ export class Renderer {
   private prevRowBg: string[] = [];
 
   private _scrollbackRowEls: HTMLDivElement[] = [];
-  private _scrollbackStartKey = 0;
+  private _scrollbackKeys: number[] = [];
+  private _scrollbackGapSpacers: HTMLDivElement[] = [];
   private _renderedScrollbackCount = -1;
   private _renderedDiscardedCount = -1;
   private _scrollbackTopSpacer: HTMLDivElement | null = null;
@@ -363,6 +369,8 @@ export class Renderer {
   private searchLayer: HTMLDivElement;
   private rowText = new WeakMap<HTMLElement, RenderedRowText>();
   private rowHtml = new WeakMap<HTMLElement, string>();
+  private selection: TrackedSelection | null = null;
+  private needsSetup = false;
 
   get hasImageFlow(): boolean {
     return (
@@ -388,7 +396,8 @@ export class Renderer {
     this.rowEls = [];
     this.prevRowBg = [];
     this._scrollbackRowEls = [];
-    this._scrollbackStartKey = 0;
+    this._scrollbackKeys = [];
+    this._scrollbackGapSpacers = [];
     this._renderedScrollbackCount = -1;
     this._renderedDiscardedCount = -1;
 
@@ -428,11 +437,17 @@ export class Renderer {
       specialCells: [],
       metadata: null,
     };
-    const recordText = (text: string, omit = false) => {
+    const recordText = (text: string, col: number, width = 1, omit = false) => {
       const start = content.text.length;
       content.text += text;
-      if (text.length > 1 || omit) {
-        content.specialCells.push({ start, end: content.text.length, omit });
+      if (text.length !== width || width > 1 || omit) {
+        content.specialCells.push({
+          start,
+          end: content.text.length,
+          col,
+          width,
+          omit,
+        });
       }
     };
     let runStyle = "";
@@ -557,7 +572,7 @@ export class Renderer {
         // cell with no wide cell before it owns its column, so dropping it
         // would shorten the row.
         if (!continuesWide) {
-          recordText(" ");
+          recordText(" ", col);
           const style = buildCellStyle(
             cell.fg,
             cell.bg,
@@ -591,7 +606,7 @@ export class Renderer {
         // continuation is outside the row. Drawing the pair here would spill
         // a second column past the row.
         if (col + 1 >= this.cols) {
-          recordText(" ");
+          recordText(" ", col);
           const style = buildCellStyle(
             cell.fg,
             cell.bg,
@@ -617,7 +632,7 @@ export class Renderer {
         }
 
         const ch = cell.chars ?? (cp >= 32 ? String.fromCodePoint(cp) : " ");
-        recordText(ch);
+        recordText(ch, col, 2);
         const style = buildCellStyle(
           cell.fg,
           cell.bg,
@@ -647,7 +662,7 @@ export class Renderer {
       if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
         flushRun(col);
         const ch = cell.chars ?? String.fromCodePoint(cp);
-        recordText(ch);
+        recordText(ch, col);
 
         const colors = resolveColors(
           cell.fg,
@@ -678,7 +693,7 @@ export class Renderer {
       } else {
         const ch =
           cell.chars ?? (inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ");
-        recordText(ch, cell.spacerHead === true);
+        recordText(ch, col, 1, cell.spacerHead === true);
         const style = inBounds
           ? buildCellStyle(cell.fg, cell.bg, cell.flags, cell.fgRgb, cell.bgRgb)
           : "";
@@ -782,10 +797,10 @@ export class Renderer {
     const visibleRows = virtual
       ? Math.ceil(viewportHeight / rowHeight)
       : scrollbackCount;
-    let start = virtual
+    const start = virtual
       ? Math.max(0, Math.min(scrollbackCount, firstVisible - overscan))
       : 0;
-    let end = virtual
+    const end = virtual
       ? Math.max(
           start,
           Math.min(scrollbackCount, firstVisible + visibleRows + overscan),
@@ -797,46 +812,71 @@ export class Renderer {
       !selection.isCollapsed &&
       (this.container.contains(selection.anchorNode) ||
         this.container.contains(selection.focusNode));
-    if (selectionInContainer && this._scrollbackRowEls.length > 0) {
-      start = Math.min(
-        start,
-        Math.max(0, this._scrollbackStartKey - discardedCount),
+    const indices = new Set<number>();
+    for (let index = start; index < end; index++) indices.add(index);
+    if (
+      !viewport?.selectedRows &&
+      selectionInContainer &&
+      selection.rangeCount === 1
+    ) {
+      const range = selection.getRangeAt(0);
+      const selected = this._scrollbackRowEls.flatMap((row, i) =>
+        range.intersectsNode(row)
+          ? [this._scrollbackKeys[i] - discardedCount]
+          : [],
       );
-      end = Math.max(
-        end,
-        Math.min(
-          scrollbackCount,
-          this._scrollbackStartKey -
-            discardedCount +
-            this._scrollbackRowEls.length,
-        ),
-      );
+      if (selected.length <= MAX_TRACKED_SELECTION_ROWS) {
+        for (const index of selected)
+          if (index >= 0 && index < scrollbackCount) indices.add(index);
+      }
     }
-
-    const startKey = discardedCount + start;
+    if (viewport?.selectedRows) {
+      for (
+        let index = Math.max(0, viewport.selectedRows.start);
+        index <= Math.min(scrollbackCount - 1, viewport.selectedRows.end);
+        index++
+      )
+        indices.add(index);
+    }
+    const ordered = Array.from(indices).sort((a, b) => a - b);
+    const keys = ordered.map((index) => discardedCount + index);
     if (
       hasDiscardedCount &&
       scrollbackCount === this._renderedScrollbackCount &&
       discardedCount === this._renderedDiscardedCount &&
-      startKey === this._scrollbackStartKey &&
-      end - start === this._scrollbackRowEls.length
+      keys.length === this._scrollbackKeys.length &&
+      keys.every((key, index) => key === this._scrollbackKeys[index])
     ) {
       return;
     }
 
     const previous = new Map<number, HTMLDivElement>();
     for (let i = 0; i < this._scrollbackRowEls.length; i++) {
-      previous.set(this._scrollbackStartKey + i, this._scrollbackRowEls[i]);
+      previous.set(this._scrollbackKeys[i], this._scrollbackRowEls[i]);
     }
 
-    const endKey = discardedCount + end;
+    const retained = new Set(keys);
     for (const [key, rowEl] of previous) {
-      if (key < startKey || key >= endKey) rowEl.remove();
+      if (!retained.has(key)) rowEl.remove();
     }
+    for (const spacer of this._scrollbackGapSpacers) spacer.remove();
+    this._scrollbackGapSpacers = [];
 
     const nextRows: HTMLDivElement[] = [];
     let nextSibling = this._scrollbackTopSpacer?.nextSibling ?? null;
-    for (let index = start; index < end; index++) {
+    let previousIndex = (ordered[0] ?? scrollbackCount) - 1;
+    for (const index of ordered) {
+      if (index > previousIndex + 1) {
+        const spacer = document.createElement("div");
+        spacer.className = "term-scrollback-spacer";
+        spacer.style.height = `${(index - previousIndex - 1) * rowHeight}px`;
+        this.container.insertBefore(
+          spacer,
+          nextSibling ?? this._scrollbackBottomSpacer,
+        );
+        this._scrollbackGapSpacers.push(spacer);
+      }
+      previousIndex = index;
       const key = discardedCount + index;
       const offset = scrollbackCount - 1 - index;
       const candidate = this._buildScrollbackRowEl(core, offset);
@@ -866,29 +906,42 @@ export class Renderer {
       nextRows.push(rowEl);
     }
     this._scrollbackRowEls = nextRows;
-    this._scrollbackStartKey = startKey;
+    this._scrollbackKeys = keys;
     this._renderedScrollbackCount = scrollbackCount;
     this._renderedDiscardedCount = discardedCount;
 
     if (this._scrollbackTopSpacer) {
-      this._scrollbackTopSpacer.style.height = `${start * rowHeight}px`;
+      this._scrollbackTopSpacer.style.height = `${(ordered[0] ?? scrollbackCount) * rowHeight}px`;
     }
     if (this._scrollbackBottomSpacer) {
-      this._scrollbackBottomSpacer.style.height = `${(scrollbackCount - end) * rowHeight}px`;
+      this._scrollbackBottomSpacer.style.height = `${ordered.length ? (scrollbackCount - ordered[ordered.length - 1] - 1) * rowHeight : 0}px`;
     }
   }
 
   render(core: TerminalCore, viewport?: RenderViewport): void {
+    this.selection ??= new TrackedSelection(
+      this.container.parentElement ?? this.container,
+    );
+    const positions = this.selection.beforeRender(core, this.selectionRows());
     const rows = core.getRows();
     const cols = core.getCols();
 
     let resized = false;
-    if (rows !== this.rows || cols !== this.cols) {
+    if (this.needsSetup || rows !== this.rows || cols !== this.cols) {
       this.setup(cols, rows);
+      this.needsSetup = false;
       resized = true;
     }
 
-    this.syncScrollback(core, viewport);
+    this.syncScrollback(
+      core,
+      viewport && {
+        ...viewport,
+        selectedRows: positions
+          ? { start: positions.start.row, end: positions.end.row }
+          : undefined,
+      },
+    );
 
     const cursor = core.getCursor();
     const cursorVisible = cursor.visible;
@@ -932,6 +985,7 @@ export class Renderer {
     this.prevCursorVisible = cursorVisible;
 
     core.clearDirty();
+    this.selection.afterRender(this.selectionRows(), positions);
     this.graphics.reconcile(core, {
       scrollTop: viewport?.scrollTop ?? 0,
       clientHeight: viewport?.clientHeight ?? 0,
@@ -944,10 +998,12 @@ export class Renderer {
 
   /** Mounted rows in chronological, retained-buffer coordinates. */
   *searchRows(): Generator<{ row: number; element: HTMLDivElement }> {
-    const start =
-      this._scrollbackStartKey - Math.max(0, this._renderedDiscardedCount);
     for (let i = 0; i < this._scrollbackRowEls.length; i++) {
-      yield { row: start + i, element: this._scrollbackRowEls[i] };
+      yield {
+        row:
+          this._scrollbackKeys[i] - Math.max(0, this._renderedDiscardedCount),
+        element: this._scrollbackRowEls[i],
+      };
     }
     for (let i = 0; i < this.rowEls.length; i++) {
       yield {
@@ -961,17 +1017,22 @@ export class Renderer {
   getSelectionText(): string | null {
     const terminal = this.container.parentElement;
     if (!terminal) return null;
-    const snapshots = this.rowText;
-    const rows = this.searchRows();
-    return getSelectionText(
-      terminal,
-      (function* () {
-        for (const row of rows) {
-          const content = snapshots.get(row.element);
-          if (content) yield { ...row, content };
-        }
-      })(),
-    );
+    return getSelectionText(terminal, this.selectionRows());
+  }
+
+  private *selectionRows() {
+    for (const row of this.searchRows()) {
+      const content = this.rowText.get(row.element);
+      if (content) yield { ...row, content };
+    }
+  }
+
+  beforeMutation(core: TerminalCore): void {
+    this.selection?.beforeMutation(core, this.selectionRows());
+  }
+
+  requestSetup(): void {
+    this.needsSetup = true;
   }
 
   /** Replaces decorations only, preserving native text selection. */
@@ -981,6 +1042,7 @@ export class Renderer {
   }
 
   destroy(): void {
+    this.selection?.dispose();
     this.graphics.destroy();
     this.container.innerHTML = "";
     this.rowEls = [];

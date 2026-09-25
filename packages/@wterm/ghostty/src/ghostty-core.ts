@@ -7,6 +7,8 @@ import type {
   TerminalImageData,
   TerminalResourceState,
   TerminalRowMetadata,
+  TerminalPosition,
+  TrackedTerminalPosition,
 } from "@wterm/core";
 import {
   type GhosttyWasm,
@@ -151,6 +153,7 @@ export class GhosttyCore implements TerminalCore {
   private _graphicsBufSize = 0;
   private _graphicsState: TerminalGraphicsState | null = null;
   private _disposed = false;
+  private _positionOwner = {};
 
   private constructor(wasm: GhosttyWasm, options: GhosttyOptions) {
     this.wasm = wasm;
@@ -227,6 +230,44 @@ export class GhosttyCore implements TerminalCore {
   }
 
   // -- Grid --
+
+  trackPosition(position: TerminalPosition): TrackedTerminalPosition | null {
+    const { track_position, resolve_position, release_position } =
+      this.wasm.exports;
+    if (
+      this._disposed ||
+      !this.termPtr ||
+      !track_position ||
+      !resolve_position ||
+      !release_position ||
+      !Number.isInteger(position.row) ||
+      position.row < 0 ||
+      position.row > MAX_WASM_U32 ||
+      !Number.isInteger(position.col) ||
+      position.col < 0 ||
+      position.col >= 65536
+    )
+      return null;
+    const ptr = this.termPtr;
+    const owner = this._positionOwner;
+    const handle = track_position(ptr, position.row, position.col);
+    if (!handle) return null;
+    let disposed = false;
+    const tracked: TrackedTerminalPosition = {
+      resolve: () => {
+        if (disposed || owner !== this._positionOwner) return null;
+        const value = resolve_position(ptr, handle);
+        if (value < 0) return null;
+        return { row: Math.floor(value / 65536), col: value % 65536 };
+      },
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        if (owner === this._positionOwner) release_position(ptr, handle);
+      },
+    };
+    return tracked;
+  }
 
   getRowMetadata(row: number): TerminalRowMetadata | null {
     return this._readRowMetadata(this.wasm.exports.get_row_wraps, row);
@@ -552,6 +593,7 @@ export class GhosttyCore implements TerminalCore {
   }
 
   private _deinitTerminal(): void {
+    this._positionOwner = {};
     if (this.termPtr !== 0) {
       try {
         this.wasm.exports.deinit(this.termPtr);

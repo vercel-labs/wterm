@@ -88,6 +88,12 @@ row indexes and scrollback offsets can change. Missing methods or `null`
 mean unknown, not a hard newline. Reads do not consume dirty flags or require
 a DOM render.
 
+## Tracked Cell Positions
+
+`TerminalCore.trackPosition?({ row, col })` returns a `TrackedTerminalPosition` or `null`. Coordinates are zero-based cells; row zero is the oldest retained row. Its `resolve()` method returns the current `{ row, col }` after scrolling or reflow, or `null` after pruning, reset, screen switching, reinitialization, or disposal. Call `dispose()` when finished; repeated disposal is safe. Invalidated handles never resolve to a new allocation.
+
+Ghostty supports up to 64 simultaneous handles. Invalid coordinates, exhausted capacity, or older WASM binaries return `null`. The built-in core omits this optional method. Pins follow cell locations; callers must separately check for overwritten text.
+
 ## Terminal Graphics
 
 Graphics methods are optional. Cores that support them return a snapshot for
@@ -464,7 +470,9 @@ Partial grapheme and surrogate-pair selections expand to whole terminal cells. W
 
 Extraction uses the painted snapshot, so output awaiting a frame or synchronized-output release cannot replace the text being copied. The result is `null` for collapsed, unavailable, or multiple-range selections, selections outside the terminal, and selections spanning unmounted history gaps. Browser copying remains unchanged in those cases. Copy also respects input-field selections and events already handled by the host. An all-padding selection can produce an empty string.
 
-Selection is native and covers mounted text. This method does not select all retained history or track selection through reflow. Unchanged renders preserve text nodes; row replacement, resizing, and history pruning can change or clear a selection.
+With Ghostty's current WASM binary, WTerm preserves forward and backward selections through output scrolling and resize/reflow. It restores the native highlight after painting and clears the selection when selected text changes, an edge is discarded, or the application resets or switches screens. Selected history rows stay mounted separately from the viewport, leaving intervening gaps virtualized. Resize reports applied dimensions immediately and updates the DOM on the next paint frame.
+
+Preservation is limited to 1,000 physical rows and 1,048,576 UTF-16 units; reflow beyond the row limit clears a tracked selection. Larger selections, cores without `trackPosition`, and new selections made while the painted frame lags the core keep native browser behavior and may change or clear when rendering catches up. Selection still begins in mounted text; this method does not select all retained history.
 
 ## Terminal Search
 

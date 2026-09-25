@@ -11,6 +11,8 @@ export type {
   TerminalImagePlacement,
   TerminalResourceState,
   TerminalRowMetadata,
+  TerminalPosition,
+  TrackedTerminalPosition,
   UnhandledSequence,
   TerminalCore,
 } from "./terminal-core.js";
