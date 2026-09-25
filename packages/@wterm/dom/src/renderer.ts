@@ -254,6 +254,93 @@ function getBlockBackground(cp: number, fg: string, bg: string): string {
   }
 }
 
+// Keep box characters as text for selection and copy while painting their
+// strokes to cell edges. Some fallback fonts leave gaps at those boundaries.
+const LIGHT_BOX_ARMS: Record<number, string> = {
+  0x2500: "lr", // ─
+  0x2502: "ud", // │
+  0x250c: "dr", // ┌
+  0x2510: "dl", // ┐
+  0x2514: "ur", // └
+  0x2518: "ul", // ┘
+  0x251c: "udr", // ├
+  0x2524: "udl", // ┤
+  0x252c: "dlr", // ┬
+  0x2534: "ulr", // ┴
+  0x253c: "udlr", // ┼
+  0x2574: "l", // ╴
+  0x2575: "u", // ╵
+  0x2576: "r", // ╶
+  0x2577: "d", // ╷
+};
+const HEAVY_BOX_ARMS: Record<number, string> = {
+  0x2501: "lr", // ━
+  0x2503: "ud", // ┃
+  0x250f: "dr", // ┏
+  0x2513: "dl", // ┓
+  0x2517: "ur", // ┗
+  0x251b: "ul", // ┛
+  0x2523: "udr", // ┣
+  0x252b: "udl", // ┫
+  0x2533: "dlr", // ┳
+  0x253b: "ulr", // ┻
+  0x254b: "udlr", // ╋
+  0x2578: "l", // ╸
+  0x2579: "u", // ╹
+  0x257a: "r", // ╺
+  0x257b: "d", // ╻
+};
+const ROUNDED_BOX_CORNERS: Record<number, string> = {
+  0x256d: "tl", // ╭
+  0x256e: "tr", // ╮
+  0x256f: "br", // ╯
+  0x2570: "bl", // ╰
+};
+
+type BoxStyle = { className: string; style: string };
+const BOX_STYLES: Record<number, BoxStyle> = {};
+
+function addBoxStyles(
+  characters: Record<number, string>,
+  className: string,
+): void {
+  const stroke = "var(--term-box-stroke)";
+  const verticalLength = `calc(50% + ${stroke})`;
+  const horizontalLength = `calc(50% + ${stroke})`;
+  for (const [codepoint, arms] of Object.entries(characters)) {
+    const selected: [position: string, size: string][] = [];
+    if (arms.includes("u") && arms.includes("d")) {
+      selected.push(["center center", `${stroke} 100%`]);
+    } else {
+      if (arms.includes("u"))
+        selected.push(["center top", `${stroke} ${verticalLength}`]);
+      if (arms.includes("d"))
+        selected.push(["center bottom", `${stroke} ${verticalLength}`]);
+    }
+    if (arms.includes("l") && arms.includes("r")) {
+      selected.push(["center center", `100% ${stroke}`]);
+    } else {
+      if (arms.includes("l"))
+        selected.push(["left center", `${horizontalLength} ${stroke}`]);
+      if (arms.includes("r"))
+        selected.push(["right center", `${horizontalLength} ${stroke}`]);
+    }
+    BOX_STYLES[Number(codepoint)] = {
+      className,
+      style: `background-image:${selected.map(() => "linear-gradient(currentColor,currentColor)").join(",")};background-position:${selected.map(([position]) => position).join(",")};background-size:${selected.map(([, size]) => size).join(",")};background-repeat:no-repeat;`,
+    };
+  }
+}
+
+addBoxStyles(LIGHT_BOX_ARMS, "term-box");
+addBoxStyles(HEAVY_BOX_ARMS, "term-box term-box-heavy");
+for (const [codepoint, corner] of Object.entries(ROUNDED_BOX_CORNERS)) {
+  BOX_STYLES[Number(codepoint)] = {
+    className: `term-box term-box-round term-box-round-${corner}`,
+    style: "",
+  };
+}
+
 export class Renderer {
   private container: HTMLElement;
   private rows = 0;
@@ -573,9 +660,14 @@ export class Renderer {
         if (ch.length !== 1 || ch.charCodeAt(0) > 0x7e) {
           flushRun(col);
           const cursor = col === cursorCol;
+          const box = BOX_STYLES[cp];
+          const boxStyle = box && ch === String.fromCodePoint(cp) ? box : null;
+          let className = boxStyle?.className ?? "";
+          if (boxStyle && cell.flags & FLAG_BOLD) className += " term-box-bold";
+          if (cursor) className += className ? " term-cursor" : "term-cursor";
           appendStyledSpan(
-            cursor ? "term-cursor" : "",
-            cursor ? cursorCellStyle(style) : style,
+            className,
+            (cursor ? cursorCellStyle(style) : style) + (boxStyle?.style ?? ""),
             ch,
             cellLinkKey,
             cellLinkUri,

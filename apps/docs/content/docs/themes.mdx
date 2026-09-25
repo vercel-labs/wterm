@@ -192,6 +192,8 @@ Choose a monospace font with `--term-font-family` and set its size with
 backgrounds, and cursors. Braille, box drawing, and other fallback glyphs stay
 within their assigned columns even when the fallback font has wider glyphs.
 Wide characters occupy two cells; oversized glyphs are clipped to their cells.
+Common light, heavy, and rounded box-drawing characters connect across cell
+edges even when the font's glyphs fall short. They remain selectable as text.
 
 Cell widths update when fonts load or the font size changes, including when
 `autoResize` is disabled. Native selection and OSC 8 link text are preserved.
