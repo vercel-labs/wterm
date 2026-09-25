@@ -782,7 +782,7 @@ let instance: WTerm | null = null;
 
 ## WebSocketTransport
 
-Connect to a PTY backend over WebSocket with automatic reconnection and send buffering.
+Connect to a PTY backend over WebSocket with automatic reconnection and bounded send buffering.
 
 ### Options
 
@@ -813,6 +813,36 @@ Connect to a PTY backend over WebSocket with automatic reconnection and send buf
       <td><code>number</code></td>
       <td><code>30000</code></td>
       <td>Maximum delay between reconnection attempts (ms)</td>
+    </tr>
+    <tr>
+      <td><code>maxBufferedBytes</code></td>
+      <td><code>number</code></td>
+      <td><code>1048576</code></td>
+      <td>Maximum queued bytes, including the current open socket's buffered amount. Positive safe integer.</td>
+    </tr>
+    <tr>
+      <td><code>maxBufferedMessages</code></td>
+      <td><code>number</code></td>
+      <td><code>1024</code></td>
+      <td>Maximum messages waiting in the transport queue, including empty messages. Positive safe integer.</td>
+    </tr>
+    <tr>
+      <td><code>highWaterMark</code></td>
+      <td><code>number</code></td>
+      <td><code>65536</code></td>
+      <td>Byte threshold for pausing socket writes and reporting pressure. Defaults to the smaller of 64 KiB and the byte cap.</td>
+    </tr>
+    <tr>
+      <td><code>lowWaterMark</code></td>
+      <td><code>number</code></td>
+      <td><code>16384</code></td>
+      <td>Resume socket writes at or below this threshold. Defaults to one quarter of the high-water mark.</td>
+    </tr>
+    <tr>
+      <td><code>onBackpressure</code></td>
+      <td><code>(paused: boolean) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called on pressure transitions. Pause producers while true and resume when false.</td>
     </tr>
     <tr>
       <td><code>onData</code></td>
@@ -853,15 +883,15 @@ Connect to a PTY backend over WebSocket with automatic reconnection and send buf
   <tbody>
     <tr>
       <td><code>connect(url?)</code></td>
-      <td>Open the WebSocket connection. Optionally override the URL.</td>
+      <td>Open the WebSocket connection. Same-URL calls while connecting/open do nothing. Changing the URL discards unsent data.</td>
     </tr>
     <tr>
       <td><code>send(data: string | Uint8Array)</code></td>
-      <td>Send data to the server. If the socket is not yet open, data is buffered and flushed on connect.</td>
+      <td>Accept a complete message for ordered delivery. Throws RangeError before accepting it if either buffer limit would be exceeded. Throws after explicit close until connect is called again.</td>
     </tr>
     <tr>
       <td><code>close()</code></td>
-      <td>Close the connection and stop reconnection attempts.</td>
+      <td>Close the connection, discard unsent data, and stop reconnect and drain timers.</td>
     </tr>
   </tbody>
 </table>
@@ -882,8 +912,54 @@ Connect to a PTY backend over WebSocket with automatic reconnection and send buf
       <td><code>boolean</code></td>
       <td>Whether the WebSocket is currently open</td>
     </tr>
+    <tr>
+      <td><code>bufferedAmount</code></td>
+      <td><code>number</code></td>
+      <td>Bytes in the transport queue plus the current open socket's send buffer.</td>
+    </tr>
+    <tr>
+      <td><code>queuedBytes</code> / <code>queuedMessages</code></td>
+      <td><code>number</code></td>
+      <td>Bytes/messages not yet handed to the browser socket.</td>
+    </tr>
+    <tr>
+      <td><code>backpressured</code></td>
+      <td><code>boolean</code></td>
+      <td>Whether producers should pause. Clears when buffered bytes reach the low-water mark and the message queue has room.</td>
+    </tr>
   </tbody>
 </table>
+
+### Buffering and delivery
+
+Strings are counted and sent as UTF-8 bytes. Queued byte-array views are copied,
+so changing the caller's buffer cannot change a pending command. Message order
+and boundaries are preserved. The limits apply before the first connection,
+while disconnected, and while the socket is open. Limits are construction
+options; they require positive safe integer caps and a positive high-water mark,
+with `0 <= lowWaterMark < highWaterMark <= maxBufferedBytes`.
+
+The transport pauses feeding the socket at the high-water mark and resumes at
+the low-water mark. A single message larger than the high-water mark is allowed
+only when the socket buffer is empty and it fits the hard byte cap. Drains
+process at most 64 messages at a time and poll every 16 ms only while an open
+socket has pending data. Background browser throttling can delay these polls.
+`onBackpressure` reports high/low byte threshold transitions and a full message
+queue; hosts should also inspect `connected` for connection status.
+
+Catch a buffer-limit `RangeError` and tell the user that the input was not
+accepted. A rejected message is never partially queued; existing queued messages
+remain unchanged. Do not silently ignore the error or automatically retry shell
+commands. `send()` accepting data and `bufferedAmount` reaching zero are not
+server acknowledgments.
+
+Unexpected disconnection retains only messages still in the transport queue.
+Bytes already handed to `WebSocket.send()` have uncertain delivery and are never
+replayed. Explicit `close()` clears unsent data and rejects sends until a new
+`connect()`; changing the URL also clears unsent data. Delayed callbacks from
+replaced sockets cannot feed output or close their replacement. This transport
+bounds client sends; it does not implement incoming-output flow control, PTY
+session recovery, or delivery acknowledgments.
 
 ## WasmBridge
 

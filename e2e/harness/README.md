@@ -208,3 +208,9 @@ The output-announcement browser cases cover both cores: opt-in behavior,
 Unicode/ANSI text, focus gating, new scrollback, flood limits, repeated results,
 synchronized output, and teardown. `ptyHarness.setOutputAnnouncements(enabled)`
 controls the same WTerm API used by hosts.
+
+`tests/transport.spec.ts` checks the packaged `WebSocketTransport` against the
+same-origin `/transport` binary echo endpoint without spawning a shell. The
+three browser engines verify bounded queued sends, ordered message boundaries,
+UTF-8 and binary fidelity, pressure/drain transitions, and explicit-close cleanup.
+Unit tests simulate slow socket buffers and reconnect races deterministically.

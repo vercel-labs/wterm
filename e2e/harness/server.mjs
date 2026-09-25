@@ -82,7 +82,7 @@ export async function createHarnessServer({
 
   server.on("upgrade", (request, socket, head) => {
     if (
-      request.url !== "/pty" ||
+      (request.url !== "/pty" && request.url !== "/transport") ||
       request.headers.origin !== allowedOrigin ||
       request.headers.host !== new URL(allowedOrigin).host
     ) {
@@ -90,6 +90,18 @@ export async function createHarnessServer({
       return;
     }
     wss.handleUpgrade(request, socket, head, (ws) => {
+      // A binary echo endpoint exercises the browser transport without a PTY.
+      if (request.url === "/transport") {
+        ws.on("error", () => ws.terminate());
+        ws.on("message", (bytes, binary) => {
+          if (ws.bufferedAmount + bytes.length > 1024 * 1024) {
+            ws.close(1013, "Output queue exceeded");
+            return;
+          }
+          if (ws.readyState === WebSocket.OPEN) ws.send(bytes, { binary });
+        });
+        return;
+      }
       let terminal;
       let stop;
       const startDeadline = setTimeout(

@@ -165,6 +165,37 @@ ws.connect();
 ws.send("ls\n");
 ```
 
+Outbound buffering is bounded by default: `maxBufferedBytes` is 1 MiB across
+the transport queue and the current open socket's `bufferedAmount`, and
+`maxBufferedMessages` allows 1,024 messages waiting in the transport. `send()`
+throws `RangeError` before accepting any part of a message that would exceed
+either limit. Catch it and show that input was not accepted; do not silently
+discard the error or automatically retry commands.
+
+`highWaterMark` (64 KiB) pauses socket writes; draining resumes at
+`lowWaterMark` (16 KiB). A message larger than the high-water mark is sent intact
+only when the socket buffer is empty. Message order and boundaries are preserved,
+strings use UTF-8, and queued byte arrays are copied. Each drain processes at
+most 64 messages, with 16 ms polling only while an open socket has pending data.
+Browser background throttling can delay draining.
+
+Read `bufferedAmount`, `queuedBytes`, `queuedMessages`, and `backpressured` for
+queue state. Use `onBackpressure(paused)` to pause/resume producers; it reports
+transitions at the high/low byte thresholds or when the message queue is full.
+All limits are construction options. Byte/message caps and the high-water mark
+must be positive safe integers, with `0 <= lowWaterMark < highWaterMark <=
+maxBufferedBytes`. If only the byte cap is reduced, the default high-water mark
+is clamped to it and the default low-water mark is one quarter of that value.
+
+Before the first connection, sends are queued within these limits. Unexpected
+disconnects retain only messages not yet handed to the socket; already-sent
+bytes have uncertain delivery and are never replayed. `close()` clears the
+transport queue and timers and rejects further sends until `connect()` is
+called. Connecting to a different URL also discards unsent messages. Repeated
+`connect()` calls for the same connecting/open socket do nothing; callbacks from
+replaced sockets are ignored. These are client-side send bounds, not server
+acknowledgments, PTY flow control, or session recovery.
+
 ## License
 
 Apache-2.0
