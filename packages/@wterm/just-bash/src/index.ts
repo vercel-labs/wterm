@@ -30,6 +30,7 @@ export class BashShell {
   private _buffer = "";
   private _history: string[] = [];
   private _historyPos = -1;
+  private _historyDraft: { line: string; cursor: number } | null = null;
   private _busy = false;
 
   private _files: Record<string, string>;
@@ -101,10 +102,11 @@ export class BashShell {
 
       const cmd = this._buffer + cur;
       this._buffer = "";
+      this._historyPos = -1;
+      this._historyDraft = null;
 
       if (cmd.trim() && this._bash) {
         this._history.push(cmd);
-        this._historyPos = -1;
         this._busy = true;
 
         try {
@@ -150,27 +152,24 @@ export class BashShell {
       }
     } else if (data === "\x1b[A") {
       if (!this._history.length) return;
-      if (this._historyPos < 0) this._historyPos = this._history.length;
+      if (this._historyPos < 0) {
+        this._historyDraft = { line: this._line, cursor: this._cursor };
+        this._historyPos = this._history.length;
+      }
       if (this._historyPos > 0) {
         this._historyPos--;
-        const entry = this._history[this._historyPos];
-        write(`\r${this._prompt(this._cwd)}\x1b[K${entry}`);
-        this._line = entry;
-        this._cursor = entry.length;
+        this._showLine(this._history[this._historyPos]);
       }
     } else if (data === "\x1b[B") {
       if (this._historyPos < 0) return;
       this._historyPos++;
       if (this._historyPos >= this._history.length) {
         this._historyPos = -1;
-        write(`\r${this._prompt(this._cwd)}\x1b[K`);
-        this._line = "";
-        this._cursor = 0;
+        const draft = this._historyDraft;
+        this._historyDraft = null;
+        this._showLine(draft?.line ?? "", draft?.cursor ?? 0);
       } else {
-        const entry = this._history[this._historyPos];
-        write(`\r${this._prompt(this._cwd)}\x1b[K${entry}`);
-        this._line = entry;
-        this._cursor = entry.length;
+        this._showLine(this._history[this._historyPos]);
       }
     } else if (data === "\x1b[D") {
       if (this._cursor > 0) {
@@ -207,6 +206,8 @@ export class BashShell {
       this._line = "";
       this._cursor = 0;
       this._buffer = "";
+      this._historyPos = -1;
+      this._historyDraft = null;
       write("^C\r\n");
       write(this._prompt(this._cwd));
     } else if (data === "\x0c") {
@@ -233,6 +234,15 @@ export class BashShell {
       for (const ch of data) {
         await this.handleInput(ch);
       }
+    }
+  }
+
+  private _showLine(line: string, cursor = line.length): void {
+    this._line = line;
+    this._cursor = cursor;
+    this._write?.(`\r${this._prompt(this._cwd)}\x1b[K${line}`);
+    if (cursor < line.length) {
+      this._write?.(`\x1b[${line.length - cursor}D`);
     }
   }
 
