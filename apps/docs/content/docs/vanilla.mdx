@@ -60,6 +60,12 @@ can choose an audible or visual notification.
 
 When the active core negotiates the Kitty keyboard protocol, WTerm encodes key presses, repeats, and available releases from the core's current flags. The built-in and Ghostty cores keep separate primary and alternate-screen flag stacks. Third-party cores without Kitty state retain legacy keyboard behavior.
 
+Outside Kitty keyboard mode, modified arrow, Home/End, Insert/Delete, Page
+Up/Down, and F1–F12 keys use xterm-style CSI modifier sequences. For example,
+Control+Left sends `CSI 1;5D` instead of an unmodified Left arrow. Unmodified
+arrows still honor application cursor mode. Browser-reserved shortcuts may not
+reach the terminal.
+
 Browsers do not expose every native keyboard field. WTerm uses `KeyboardEvent.code` for functional and modifier identity, `KeyboardEvent.key` for text, and reports shifted alternates when available. It does not invent a base-layout alternate, synthesize missing release events, or retain associated text beyond the current press.
 
 IME composition displays tentative text at the terminal cursor and sends only

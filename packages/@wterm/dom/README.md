@@ -87,6 +87,11 @@ overrides blinking when explicitly set; shape always follows the core.
 
 WTerm implements the Kitty keyboard protocol when the active core exposes negotiated flags. The built-in and Ghostty cores support query, push, pop, set, OR, and NOT operations, with independent state for the primary and alternate screens. Cores without `kittyKeyboardFlags()` keep the legacy keyboard path unchanged.
 
+Without Kitty keyboard negotiation, Shift, Alt, and Control modifiers on arrow,
+Home/End, Insert/Delete, Page Up/Down, and F1–F12 keys use xterm-style CSI
+sequences. Unmodified application cursor keys still use SS3 when the core
+requests application mode. Browser-reserved shortcuts may never reach WTerm.
+
 Browser keyboard events do not expose every native field the protocol can carry. WTerm reports physical functional and modifier keys from `KeyboardEvent.code`, text from `KeyboardEvent.key`, and shifted alternates when available. It does not invent the base-layout alternate, cannot synthesize release events the browser never delivers, and limits associated text to the current press event.
 
 During IME composition, tentative text appears at the terminal cursor in the

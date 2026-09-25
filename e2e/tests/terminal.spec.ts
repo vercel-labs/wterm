@@ -155,6 +155,34 @@ test.describe("rendering", () => {
 });
 
 test.describe("keyboard input", () => {
+  test("reports legacy modifiers on navigation and function keys", async ({
+    page,
+  }) => {
+    await page.locator(".wterm").click();
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __legacyKeys: string[];
+        __wterm: { onData: ((data: string) => void) | null };
+      };
+      scope.__legacyKeys = [];
+      scope.__wterm.onData = (data) => scope.__legacyKeys.push(data);
+    });
+
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Control+ArrowLeft");
+    await page.keyboard.press("Shift+ArrowRight");
+    await page.keyboard.press("Control+Delete");
+    await page.keyboard.press("Shift+F1");
+
+    expect(
+      await page.evaluate(
+        () =>
+          (globalThis as typeof globalThis & { __legacyKeys: string[] })
+            .__legacyKeys,
+      ),
+    ).toEqual(["\x1b[A", "\x1b[1;5D", "\x1b[1;2C", "\x1b[3;5~", "\x1b[1;2P"]);
+  });
+
   test("Kitty report-all preserves Meta lifecycle and browser shortcuts", async ({
     page,
   }) => {

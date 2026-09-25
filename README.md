@@ -52,6 +52,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
 - **Mouse and focus reporting** — DOM input for X10, UTF-8 (1005), SGR (1006), urxvt (1015), and SGR pixel (1016) clicks, drags, wheel events, and pointer motion
 - **Kitty keyboard protocol**: negotiated key disambiguation, event types, alternate keys, all-key reporting, and associated text
+- **Modified navigation keys** — xterm-style Shift, Alt, and Control sequences for arrows, navigation, and function keys outside Kitty keyboard mode
 - **IME composition** — tentative text appears at the terminal cursor; only committed text reaches the connected application
 - **Touch input** — a cursor-aligned input target supports soft keyboards, native paste, and held Backspace on touch-first devices
 
