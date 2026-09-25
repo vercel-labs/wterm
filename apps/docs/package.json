@@ -19,7 +19,7 @@
     "@ai-sdk/react": "^3",
     "@upstash/ratelimit": "^2",
     "@upstash/redis": "^1",
-    "@vercel/geistdocs": "^2.4.1",
+    "@vercel/geistdocs": "2.6.0",
     "@wterm/core": "workspace:*",
     "@wterm/dom": "workspace:*",
     "@wterm/ghostty": "workspace:*",
