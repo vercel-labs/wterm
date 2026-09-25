@@ -29,6 +29,15 @@ describe("WasmBridge", () => {
     });
   });
 
+  it("exposes any-motion mouse tracking from the committed WASM", () => {
+    bridge.writeString("\x1b[?1003h\x1b[?1006h");
+    expect(bridge.mouseTracking()).toBe(1003);
+    expect(bridge.mouseSgr()).toBe(true);
+
+    bridge.writeString("\x1b[?1003l");
+    expect(bridge.mouseTracking()).toBe(0);
+  });
+
   describe("writeString / getCell", () => {
     it("exposes OSC 8 metadata only on covered cells", () => {
       bridge.writeString(

@@ -4,7 +4,7 @@ Full-featured terminal emulation core for [wterm](https://github.com/vercel-labs
 
 Drop-in replacement for wterm's built-in Zig core. Implements the same `TerminalCore` interface with comprehensive VT emulation: proper Unicode grapheme handling, all SGR attributes, terminal modes, and more.
 
-The core exposes SGR mouse tracking (modes 1000, 1002, and 1006), focus reporting (mode 1004), synchronized-output state (mode 2026), Kitty keyboard negotiation, and terminal responses including foreground/background color queries (OSC 10 and OSC 11) to `@wterm/dom`.
+The core exposes SGR mouse tracking (modes 1000, 1002, 1003, and 1006), focus reporting (mode 1004), synchronized-output state (mode 2026), Kitty keyboard negotiation, and terminal responses including foreground/background color queries (OSC 10 and OSC 11) to `@wterm/dom`. Mode 1003 reports pointer movement without a pressed button once per cell.
 Combining marks and ZWJ emoji are exposed through `CellData.chars` as complete strings, including after their rows move into scrollback.
 `getCursor()` exposes Ghostty's block, bar, or underline `shape` and `blinking`
 state. The DOM renderer follows application requests (DECSCUSR and mode 12);

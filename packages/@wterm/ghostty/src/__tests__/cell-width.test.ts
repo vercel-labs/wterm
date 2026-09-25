@@ -139,6 +139,11 @@ describe("GhosttyCore input modes", () => {
     expect(core.mouseTracking()).toBe(1002);
     expect(core.mouseSgr()).toBe(true);
     expect(core.focusEvents()).toBe(true);
+
+    core.writeString("\x1b[?1003h");
+    expect(core.mouseTracking()).toBe(1003);
+    core.writeString("\x1b[?1003l");
+    expect(core.mouseTracking()).toBe(0);
   });
 });
 

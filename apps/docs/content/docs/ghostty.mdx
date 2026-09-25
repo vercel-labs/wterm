@@ -25,6 +25,9 @@ titles longer than 255 bytes.
 BEL controls reach the shared `onBell(count)` callback as output is written.
 The BEL that terminates an OSC title does not count as a bell.
 
+When an application enables SGR mouse reporting, mode 1003 also sends
+unpressed pointer motion once per cell through `onData`.
+
 Ghostty-backed terminals also render direct Kitty Graphics Protocol PNG, RGB,
 and RGBA data through the optional graphics contract. The DOM layer draws
 bounded, transient canvas overlays for pinned placements and follows scrollback,

@@ -322,10 +322,10 @@ export class GhosttyCore implements TerminalCore {
     return this.wasm.exports.using_alt_screen(this.termPtr) !== 0;
   }
 
-  mouseTracking(): 0 | 1000 | 1002 {
+  mouseTracking(): 0 | 1000 | 1002 | 1003 {
     if (this._disposed || this.termPtr === 0) return 0;
     const mode = this.wasm.exports.mouse_tracking(this.termPtr);
-    return mode === 1000 || mode === 1002 ? mode : 0;
+    return mode === 1000 || mode === 1002 || mode === 1003 ? mode : 0;
   }
 
   mouseSgr(): boolean {

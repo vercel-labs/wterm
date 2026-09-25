@@ -76,6 +76,87 @@ describe("InputHandler mouse and focus modes", () => {
     expect(wheel.defaultPrevented).toBe(true);
   });
 
+  it("reports unpressed pointer motion once per cell in mode 1003", () => {
+    core.mouseTracking = () => 1003;
+    const move = (x: number, y: number, shiftKey = false) => {
+      const event = new MouseEvent("mousemove", {
+        clientX: x,
+        clientY: y,
+        shiftKey,
+        cancelable: true,
+      });
+      container.dispatchEvent(event);
+      return event;
+    };
+
+    expect(move(25, 35).defaultPrevented).toBe(true);
+    move(26, 36);
+    move(35, 35);
+    move(35, 35, true);
+    move(35, 35);
+    move(9, 35);
+    move(35, 35);
+
+    expect(received).toEqual([
+      "\x1b[<35;2;1M",
+      "\x1b[<35;3;1M",
+      "\x1b[<35;3;1M",
+      "\x1b[<35;3;1M",
+    ]);
+  });
+
+  it("keeps unpressed motion disabled in modes 1000 and 1002", () => {
+    const move = () =>
+      container.dispatchEvent(
+        new MouseEvent("mousemove", { clientX: 25, clientY: 35 }),
+      );
+    core.mouseTracking = () => 1000;
+    move();
+    core.mouseTracking = () => 1002;
+    move();
+    expect(received).toEqual([]);
+
+    core.mouseTracking = () => 1003;
+    move();
+    expect(received).toEqual(["\x1b[<35;2;1M"]);
+
+    core.mouseTracking = () => 0;
+    move();
+    core.mouseTracking = () => 1003;
+    move();
+    expect(received).toEqual(["\x1b[<35;2;1M", "\x1b[<35;2;1M"]);
+  });
+
+  it("reports button motion in mode 1003 without duplicating bubbling moves", () => {
+    core.mouseTracking = () => 1003;
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 25,
+        clientY: 35,
+      }),
+    );
+    container.dispatchEvent(
+      new MouseEvent("mousemove", {
+        bubbles: true,
+        buttons: 1,
+        clientX: 35,
+        clientY: 35,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", {
+        button: 0,
+        buttons: 0,
+        clientX: 35,
+        clientY: 35,
+      }),
+    );
+
+    expect(received).toEqual(["\x1b[<0;2;1M", "\x1b[<32;3;1M", "\x1b[<0;3;1m"]);
+  });
+
   it("preserves drag buttons and both wheel axes", () => {
     container.dispatchEvent(
       new MouseEvent("mousedown", {

@@ -783,6 +783,7 @@ pub const Terminal = struct {
                 47 => self.switchScreen(enabled, false),
                 1000 => self.setMouseTracking(1000, enabled),
                 1002 => self.setMouseTracking(1002, enabled),
+                1003 => self.setMouseTracking(1003, enabled),
                 1004 => self.focus_events = enabled,
                 1006 => self.mouse_sgr = enabled,
                 1047 => self.switchScreen(enabled, false),
@@ -1808,6 +1809,11 @@ test "tracks mouse and focus modes across reset" {
     try testing.expect(t.focus_events);
     t.write("\x1b[?1002h\x1b[?1000l");
     try testing.expectEqual(@as(u16, 1002), t.mouse_tracking);
+    t.write("\x1b[?1003h\x1b[?1002l");
+    try testing.expectEqual(@as(u16, 1003), t.mouse_tracking);
+    t.write("\x1b[?1003l");
+    try testing.expectEqual(@as(u16, 0), t.mouse_tracking);
+    t.write("\x1b[?1003h");
     t.write("\x1b[!p");
     try testing.expectEqual(@as(u16, 0), t.mouse_tracking);
     try testing.expect(!t.mouse_sgr);

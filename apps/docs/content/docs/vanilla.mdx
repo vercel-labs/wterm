@@ -50,7 +50,7 @@ The `WTerm` constructor accepts all [shared terminal options](/api-reference#ter
 
 See [WTerm Methods](/api-reference#wterm-methods) for the full list of instance methods (`init`, `write`, `resize`, `focus`, `destroy`).
 
-When a terminal application enables SGR mouse tracking or focus reporting, WTerm sends those reports through `onData` with keyboard input and host responses.
+When a terminal application enables SGR mouse tracking or focus reporting, WTerm sends those reports through `onData` with keyboard input and host responses. Mode 1003 sends unpressed pointer motion once per cell in the visible grid; hold Shift for native text selection.
 
 When an application rings BEL, `onBell(count)` receives the number of bells as
 output is written. WTerm does not play sound automatically; your application

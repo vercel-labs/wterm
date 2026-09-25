@@ -997,6 +997,7 @@ export fn mouse_tracking(ptr: usize) u32 {
     return switch (state.terminal.flags.mouse_event) {
         .normal => 1000,
         .button => 1002,
+        .any => 1003,
         else => 0,
     };
 }

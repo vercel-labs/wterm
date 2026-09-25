@@ -58,6 +58,12 @@ export class InputHandler {
   } | null;
   private composing = false;
   private mouseButtons = 0;
+  private lastMouseMotion: {
+    mode: number;
+    code: number;
+    col: number;
+    row: number;
+  } | null = null;
   private focused = false;
   private suppressedKeyUps = new Set<string>();
   private pressedModifiers = new Set<string>();
@@ -72,8 +78,10 @@ export class InputHandler {
   private _onFocus: () => void;
   private _onBlur: () => void;
   private _onMouseDown: (e: MouseEvent) => void;
+  private _onHoverMove: (e: MouseEvent) => void;
   private _onMouseMove: (e: MouseEvent) => void;
   private _onMouseUp: (e: MouseEvent) => void;
+  private _onMouseLeave: () => void;
   private _onWheel: (e: WheelEvent) => void;
 
   constructor(
@@ -131,11 +139,20 @@ export class InputHandler {
       this.focused = false;
       this.element.classList.remove("focused");
       this.stopMouseCapture();
+      this.lastMouseMotion = null;
       this.pressedModifiers.clear();
       this.deliveredKeys.clear();
       if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[O");
     };
     this._onMouseDown = (event) => this.handleMouse(event, "press");
+    this._onHoverMove = (event) => {
+      if (this.mouseButtons !== 0) return;
+      if (event.buttons !== 0 || event.shiftKey) {
+        this.lastMouseMotion = null;
+        return;
+      }
+      this.handleMouse(event, "move");
+    };
     this._onMouseMove = (event) => {
       if (this.mouseButtons !== 0) this.handleMouse(event, "move");
     };
@@ -144,6 +161,9 @@ export class InputHandler {
       this.handleMouse(event, "release");
       this.mouseButtons = event.buttons & 7;
       if (this.mouseButtons === 0) this.stopMouseCapture();
+    };
+    this._onMouseLeave = () => {
+      if (this.mouseButtons === 0) this.lastMouseMotion = null;
     };
     this._onWheel = (event) => this.handleMouse(event, "wheel");
 
@@ -162,6 +182,8 @@ export class InputHandler {
     this.textarea.addEventListener("focus", this._onFocus);
     this.textarea.addEventListener("blur", this._onBlur);
     this.element.addEventListener("mousedown", this._onMouseDown);
+    this.element.addEventListener("mousemove", this._onHoverMove);
+    this.element.addEventListener("mouseleave", this._onMouseLeave);
     this.element.addEventListener("wheel", this._onWheel, { passive: false });
   }
 
@@ -185,6 +207,8 @@ export class InputHandler {
     this.textarea.removeEventListener("focus", this._onFocus);
     this.textarea.removeEventListener("blur", this._onBlur);
     this.element.removeEventListener("mousedown", this._onMouseDown);
+    this.element.removeEventListener("mousemove", this._onHoverMove);
+    this.element.removeEventListener("mouseleave", this._onMouseLeave);
     this.stopMouseCapture();
     this.element.removeEventListener("wheel", this._onWheel);
     this.element.classList.remove("focused");
@@ -322,7 +346,10 @@ export class InputHandler {
   ): void {
     const bridge = this.getBridge();
     const tracking = bridge?.mouseTracking?.() ?? 0;
-    if (!bridge || tracking === 0 || !bridge.mouseSgr?.()) return;
+    if (!bridge || tracking === 0 || !bridge.mouseSgr?.()) {
+      this.lastMouseMotion = null;
+      return;
+    }
     if (
       kind === "press" &&
       isLinkActivationModifier(
@@ -337,7 +364,10 @@ export class InputHandler {
     if (kind === "press" && (event.shiftKey || event.button > 2)) return;
     if (kind === "release" && event.button > 2) return;
     const supportedButtons = event.buttons & 7;
-    if (kind === "move" && (tracking !== 1002 || supportedButtons === 0)) {
+    const reportMotion =
+      tracking === 1003 || (tracking === 1002 && supportedButtons !== 0);
+    if (kind === "move" && !reportMotion) {
+      this.lastMouseMotion = null;
       return;
     }
 
@@ -386,6 +416,17 @@ export class InputHandler {
         bridge.getRows();
     }
     if (charWidth <= 0 || rowHeight <= 0) return;
+    if (
+      kind === "move" &&
+      supportedButtons === 0 &&
+      (event.clientX < left ||
+        event.clientX >= left + charWidth * bridge.getCols() ||
+        event.clientY < top ||
+        event.clientY >= top + rowHeight * bridge.getRows())
+    ) {
+      this.lastMouseMotion = null;
+      return;
+    }
     if (kind === "press") {
       this.textarea.focus({ preventScroll: true });
       if (!this.focused) this._onFocus();
@@ -427,11 +468,13 @@ export class InputHandler {
     } else {
       const button =
         kind === "move"
-          ? supportedButtons & 4
-            ? 1
-            : supportedButtons & 2
-              ? 2
-              : 0
+          ? supportedButtons === 0
+            ? 3
+            : supportedButtons & 4
+              ? 1
+              : supportedButtons & 2
+                ? 2
+                : 0
           : event.button === 1
             ? 1
             : event.button === 2
@@ -439,6 +482,20 @@ export class InputHandler {
               : 0;
       code = button | modifiers | (kind === "move" ? 32 : 0);
       if (kind === "release") final = "m";
+    }
+    if (kind === "move") {
+      const previous = this.lastMouseMotion;
+      if (
+        previous?.mode === tracking &&
+        previous.code === code &&
+        previous.col === col &&
+        previous.row === row
+      ) {
+        return;
+      }
+      this.lastMouseMotion = { mode: tracking, code, col, row };
+    } else {
+      this.lastMouseMotion = null;
     }
     event.preventDefault();
     this.onData(`\x1b[<${code};${col};${row}${final}`);
