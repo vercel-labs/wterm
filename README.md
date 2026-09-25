@@ -103,7 +103,7 @@ pnpm build
 
 ### Run the documentation
 
-The docs use Geistdocs with content in `apps/docs/content/docs`. Existing URLs stay at the site root, including `/get-started`, `/react`, and `/api-reference`. The homepage keeps the interactive terminal, and Ask AI keeps the wterm chat interface.
+The docs use Geistdocs with content in `apps/docs/content/docs`. Existing URLs stay at the site root, including `/get-started`, `/react`, and `/api-reference`. The homepage's interactive terminal uses `@wterm/ghostty` with just-bash, and Ask AI keeps the wterm chat interface.
 
 ```bash
 pnpm exec turbo run build --filter='@wterm/docs^...'

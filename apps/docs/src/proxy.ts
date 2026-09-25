@@ -8,6 +8,6 @@ export default createProxy({
 
 export const config = {
   matcher: [
-    "/((?!api(?:/|$)|og(?:/|$)|_next/|favicon.ico|sitemap.xml|robots.txt|wterm.wasm|Geist-Regular.ttf|GeistPixel-Square.ttf).*)",
+    "/((?!api(?:/|$)|og(?:/|$)|_next/|favicon.ico|sitemap.xml|robots.txt|wterm.wasm|ghostty-vt.wasm|Geist-Regular.ttf|GeistPixel-Square.ttf).*)",
   ],
 };
