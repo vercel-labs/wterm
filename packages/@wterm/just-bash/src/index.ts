@@ -1,4 +1,5 @@
 import type { Bash, NetworkConfig } from "just-bash";
+import stringWidth from "string-width";
 
 export type { NetworkConfig } from "just-bash";
 
@@ -20,12 +21,24 @@ const WORD_LEFT_SEQUENCES = new Set(["\x1b[1;3D", "\x1b[1;5D", "\x1bb"]);
 const WORD_RIGHT_SEQUENCES = new Set(["\x1b[1;3C", "\x1b[1;5C", "\x1bf"]);
 const HOME_SEQUENCES = new Set(["\x1b[H", "\x1bOH"]);
 const END_SEQUENCES = new Set(["\x1b[F", "\x1bOF"]);
+const PRINTABLE_TEXT = /^[^\p{Cc}]+$/u;
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+function previousGraphemeStart(line: string, cursor: number): number {
+  return graphemes.segment(line).containing(cursor - 1)?.index ?? 0;
+}
+
+function nextGraphemeEnd(line: string, cursor: number): number {
+  const next = graphemes.segment(line).containing(cursor);
+  return next ? next.index + next.segment.length : line.length;
+}
 
 export class BashShell {
   private _bash: Bash | null = null;
   private _write: ((data: string) => void) | null = null;
   private _cwd: string;
   private _line = "";
+  // UTF-16 offset in _line; terminal cursor motion uses cell widths.
   private _cursor = 0;
   private _buffer = "";
   private _history: string[] = [];
@@ -137,18 +150,28 @@ export class BashShell {
       write(this._prompt(this._cwd));
     } else if (data === "\x7f" || data === "\b") {
       if (this._cursor > 0) {
+        const start = previousGraphemeStart(this._line, this._cursor);
+        const removedWidth = stringWidth(this._line.slice(start, this._cursor));
         const tail = this._line.slice(this._cursor);
-        this._line = this._line.slice(0, this._cursor - 1) + tail;
-        this._cursor--;
-        write("\b" + tail + "\x1b[K");
-        if (tail.length > 0) write(`\x1b[${tail.length}D`);
+        this._line = this._line.slice(0, start) + tail;
+        this._cursor = start;
+        const moveLeft =
+          removedWidth === 1
+            ? "\b"
+            : removedWidth > 0
+              ? `\x1b[${removedWidth}D`
+              : "";
+        write(moveLeft + tail + "\x1b[K");
+        this._moveCells(stringWidth(tail), "D");
       }
     } else if (data === "\x1b[3~") {
       if (this._cursor < this._line.length) {
-        const tail = this._line.slice(this._cursor + 1);
+        const tail = this._line.slice(
+          nextGraphemeEnd(this._line, this._cursor),
+        );
         this._line = this._line.slice(0, this._cursor) + tail;
         write(tail + "\x1b[K");
-        if (tail.length > 0) write(`\x1b[${tail.length}D`);
+        this._moveCells(stringWidth(tail), "D");
       }
     } else if (data === "\x1b[A") {
       if (!this._history.length) return;
@@ -173,13 +196,17 @@ export class BashShell {
       }
     } else if (data === "\x1b[D") {
       if (this._cursor > 0) {
-        this._cursor--;
-        write("\x1b[D");
+        const start = previousGraphemeStart(this._line, this._cursor);
+        const width = stringWidth(this._line.slice(start, this._cursor));
+        this._cursor = start;
+        this._moveCells(width, "D", true);
       }
     } else if (data === "\x1b[C") {
       if (this._cursor < this._line.length) {
-        this._cursor++;
-        write("\x1b[C");
+        const end = nextGraphemeEnd(this._line, this._cursor);
+        const width = stringWidth(this._line.slice(this._cursor, end));
+        this._cursor = end;
+        this._moveCells(width, "C", true);
       }
     } else if (WORD_LEFT_SEQUENCES.has(data)) {
       this._moveWord(-1);
@@ -187,19 +214,19 @@ export class BashShell {
       this._moveWord(1);
     } else if (data === "\x15") {
       if (this._line.length > 0) {
-        if (this._cursor > 0) write(`\x1b[${this._cursor}D`);
+        this._moveCells(stringWidth(this._line.slice(0, this._cursor)), "D");
         write("\x1b[K");
         this._line = "";
         this._cursor = 0;
       }
     } else if (data === "\x01" || HOME_SEQUENCES.has(data)) {
       if (this._cursor > 0) {
-        write(`\x1b[${this._cursor}D`);
+        this._moveCells(stringWidth(this._line.slice(0, this._cursor)), "D");
         this._cursor = 0;
       }
     } else if (data === "\x05" || END_SEQUENCES.has(data)) {
       if (this._cursor < this._line.length) {
-        write(`\x1b[${this._line.length - this._cursor}C`);
+        this._moveCells(stringWidth(this._line.slice(this._cursor)), "C");
         this._cursor = this._line.length;
       }
     } else if (data === "\x03") {
@@ -215,21 +242,13 @@ export class BashShell {
       write(this._prompt(this._cwd));
       write(this._line);
       if (this._cursor < this._line.length) {
-        write(`\x1b[${this._line.length - this._cursor}D`);
-      }
-    } else if (data.length === 1 && data >= " ") {
-      const tail = this._line.slice(this._cursor);
-      this._line = this._line.slice(0, this._cursor) + data + tail;
-      this._cursor++;
-      if (tail.length === 0) {
-        write(data);
-      } else {
-        write(data + tail + "\x1b[K");
-        write(`\x1b[${tail.length}D`);
+        this._moveCells(stringWidth(this._line.slice(this._cursor)), "D");
       }
     } else if (data.startsWith("\x1b[") || data.startsWith("\x1bO")) {
       // Ignore unsupported functional keys instead of inserting their escape suffix.
       return;
+    } else if (PRINTABLE_TEXT.test(data)) {
+      this._insertText(data);
     } else if (data.length > 1) {
       for (const ch of data) {
         await this.handleInput(ch);
@@ -237,48 +256,63 @@ export class BashShell {
     }
   }
 
+  private _moveCells(
+    width: number,
+    direction: "C" | "D",
+    shortSingleStep = false,
+  ): void {
+    if (width > 0) {
+      const count = shortSingleStep && width === 1 ? "" : width;
+      this._write?.(`\x1b[${count}${direction}`);
+    }
+  }
+
+  private _insertText(text: string): void {
+    const write = this._write;
+    if (!write) return;
+    const tail = this._line.slice(this._cursor);
+    this._line = this._line.slice(0, this._cursor) + text + tail;
+    this._cursor += text.length;
+    if (tail.length === 0) {
+      write(text);
+    } else {
+      write(text + tail + "\x1b[K");
+      this._moveCells(stringWidth(tail), "D");
+    }
+  }
+
   private _showLine(line: string, cursor = line.length): void {
     this._line = line;
     this._cursor = cursor;
     this._write?.(`\r${this._prompt(this._cwd)}\x1b[K${line}`);
-    if (cursor < line.length) {
-      this._write?.(`\x1b[${line.length - cursor}D`);
-    }
+    this._moveCells(stringWidth(line.slice(cursor)), "D");
   }
 
   private _moveWord(direction: -1 | 1): void {
     const start = this._cursor;
+    const segments = [...graphemes.segment(this._line)];
+    let index = segments.findIndex((segment) => segment.index >= start);
+    if (index < 0) index = segments.length;
+    const isWhitespace = (segment: string) => /^\s+$/u.test(segment);
+
     if (direction === -1) {
-      while (
-        this._cursor > 0 &&
-        /\s/.test(this._line.charAt(this._cursor - 1))
-      ) {
-        this._cursor--;
-      }
-      while (
-        this._cursor > 0 &&
-        !/\s/.test(this._line.charAt(this._cursor - 1))
-      ) {
-        this._cursor--;
-      }
+      while (index > 0 && isWhitespace(segments[index - 1].segment)) index--;
+      while (index > 0 && !isWhitespace(segments[index - 1].segment)) index--;
     } else {
-      while (
-        this._cursor < this._line.length &&
-        /\s/.test(this._line.charAt(this._cursor))
-      ) {
-        this._cursor++;
-      }
-      while (
-        this._cursor < this._line.length &&
-        !/\s/.test(this._line.charAt(this._cursor))
-      ) {
-        this._cursor++;
-      }
+      while (index < segments.length && isWhitespace(segments[index].segment))
+        index++;
+      while (index < segments.length && !isWhitespace(segments[index].segment))
+        index++;
     }
 
-    const count = Math.abs(this._cursor - start);
-    if (count > 0)
-      this._write?.(`\x1b[${count}${direction === -1 ? "D" : "C"}`);
+    this._cursor = segments[index]?.index ?? this._line.length;
+    const width = stringWidth(
+      this._line.slice(
+        Math.min(start, this._cursor),
+        Math.max(start, this._cursor),
+      ),
+    );
+    this._moveCells(width, direction === -1 ? "D" : "C");
   }
 
   private async _tabComplete(): Promise<void> {
