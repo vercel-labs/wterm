@@ -16,7 +16,7 @@
     "@wterm/dom": "workspace:*",
     "@wterm/just-bash": "workspace:*",
     "@wterm/vue": "workspace:*",
-    "just-bash": "^2.14.2",
+    "just-bash": "^3.4.2",
     "node-pty": "^1.0.0",
     "vue": "^3.5.32",
     "ws": "^8.18.2"

@@ -20,7 +20,7 @@
     "@wterm/react": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "just-bash": "^2.14.2",
+    "just-bash": "^3.4.2",
     "lucide-react": "^1.8.0",
     "next": "16.3.5",
     "postcss": "^8.5.9",

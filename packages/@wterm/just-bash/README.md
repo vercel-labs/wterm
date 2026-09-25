@@ -8,7 +8,7 @@ Shell adapter for [wterm](https://github.com/vercel-labs/wterm), powered by [jus
 npm install @wterm/just-bash just-bash
 ```
 
-`just-bash` is a peer dependency.
+`just-bash` 3 is a peer dependency.
 
 ## Usage
 

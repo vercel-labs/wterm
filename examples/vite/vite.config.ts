@@ -3,4 +3,5 @@ import { nodePolyfills } from "vite-plugin-node-polyfills";
 
 export default defineConfig({
   plugins: [nodePolyfills({ include: ["zlib", "stream"] })],
+  resolve: { dedupe: ["vite-plugin-node-polyfills"] },
 });
