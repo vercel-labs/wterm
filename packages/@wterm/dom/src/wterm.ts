@@ -469,7 +469,7 @@ export class WTerm {
       this._setScrollTop(0);
     }
 
-    this.input?.syncCompositionPosition();
+    this.input?.syncInputPosition();
 
     const title = this.bridge.getTitle();
     if (title !== null && this.onTitle) {

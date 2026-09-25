@@ -301,6 +301,17 @@ describe("InputHandler", () => {
       ta.dispatchEvent(createKeyboardEvent("x"));
       expect(received).toContain("x");
     });
+
+    it("lets unmapped keys reach the native input event", () => {
+      const ta = getTextarea();
+      const keydown = createKeyboardEvent("Unidentified");
+      ta.dispatchEvent(keydown);
+      expect(keydown.defaultPrevented).toBe(false);
+
+      ta.value = "字";
+      ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+      expect(received).toEqual(["字"]);
+    });
   });
 
   describe("Kitty keyboard protocol", () => {
