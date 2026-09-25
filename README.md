@@ -49,7 +49,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Auto-resize** — `ResizeObserver`-based terminal resizing
 - **Framework bindings** — React, Vue 3, and Svelte components
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
-- **Mouse and focus reporting** — DOM input for SGR mouse tracking and terminal focus events
+- **Mouse and focus reporting** — DOM input for SGR clicks, drags, wheel events, and cell-level pointer motion in mode 1003
 - **Kitty keyboard protocol**: negotiated key disambiguation, event types, alternate keys, all-key reporting, and associated text
 
 ## Development

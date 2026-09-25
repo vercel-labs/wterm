@@ -63,7 +63,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `focus()` | Focus the terminal element |
 | `destroy()` | Clean up event listeners and DOM |
 
-When a terminal application enables modes 1000 or 1002 with SGR encoding (1006), pointer input is sent through `onData`. Focus reports are sent when mode 1004 is active.
+When a terminal application enables modes 1000, 1002, or 1003 with SGR encoding (1006), pointer input is sent through `onData`. Mode 1003 also reports unpressed pointer movement once per cell in the visible grid. Shift retains native text selection. Focus reports are sent when mode 1004 is active.
 
 `onBell` runs as BEL output is written, including during synchronized output.
 Several bells in one write chunk are delivered as one count. BEL used to end
