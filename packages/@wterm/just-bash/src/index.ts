@@ -67,6 +67,7 @@ export class BashShell {
   private _lastActionWasKill = false;
   private _inputRevision = 0;
   private _busy = false;
+  private _execAbort: AbortController | null = null;
 
   private _files: Record<string, string>;
   private _env: Record<string, string>;
@@ -122,7 +123,18 @@ export class BashShell {
   }
 
   async handleInput(data: string): Promise<void> {
-    if (!this._write || this._busy) return;
+    if (!this._write) return;
+    if (this._busy) {
+      if (
+        data === "\x03" &&
+        this._execAbort &&
+        !this._execAbort.signal.aborted
+      ) {
+        this._write("^C\r\n");
+        this._execAbort.abort();
+      }
+      return;
+    }
     this._inputRevision++;
     const write = this._write;
     if (!WORD_ERASE_SEQUENCES.has(data) && data !== "\x15" && data !== "\x0b") {
@@ -160,26 +172,34 @@ export class BashShell {
 
       if (cmd.trim() && this._bash) {
         this._history.push(cmd);
+        const abort = new AbortController();
+        this._execAbort = abort;
         this._busy = true;
 
         try {
           const result = await this._bash.exec(cmd, {
             cwd: this._cwd,
             env: { PWD: this._cwd },
+            signal: abort.signal,
           });
-          if (result.stdout) {
-            write(result.stdout.replace(/\n/g, "\r\n"));
-            if (!result.stdout.endsWith("\n")) write("\r\n");
-          }
-          if (result.stderr) {
-            write(`\x1b[31m${result.stderr.replace(/\n/g, "\r\n")}\x1b[0m`);
-            if (!result.stderr.endsWith("\n")) write("\r\n");
+          if (!abort.signal.aborted) {
+            if (result.stdout) {
+              write(result.stdout.replace(/\n/g, "\r\n"));
+              if (!result.stdout.endsWith("\n")) write("\r\n");
+            }
+            if (result.stderr) {
+              write(`\x1b[31m${result.stderr.replace(/\n/g, "\r\n")}\x1b[0m`);
+              if (!result.stderr.endsWith("\n")) write("\r\n");
+            }
           }
           this._updateCwd(result.env);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : "Unknown error";
-          write(`\x1b[31m${msg}\x1b[0m\r\n`);
+          if (!abort.signal.aborted) {
+            const msg = err instanceof Error ? err.message : "Unknown error";
+            write(`\x1b[31m${msg}\x1b[0m\r\n`);
+          }
         } finally {
+          this._execAbort = null;
           this._busy = false;
         }
       }

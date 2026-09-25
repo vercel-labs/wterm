@@ -88,7 +88,7 @@ new BashShell(options?: ShellOptions)
 - Command history (up/down arrows) that restores your unfinished command and cursor position
 - Ctrl+R to search command history from newest to oldest; during a search, Ctrl+S moves toward newer matches, Enter runs a match, Escape opens it for editing, and Ctrl+G restores your unfinished command
 - Tab completion for files and commands at the cursor, including earlier words in a command
-- Ctrl+C to cancel, Ctrl+L to clear the screen
+- Ctrl+C to cancel input or interrupt a running command, Ctrl+L to clear the screen
 - Each submitted command executes once
 - Directory-aware prompt updates after every command, including nonzero exits
 
