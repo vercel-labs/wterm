@@ -11,6 +11,8 @@ Combining marks and ZWJ emoji are exposed through `CellData.chars` as complete s
 
 WTerm also uses this metadata when copying native text selections: soft wraps join without newlines, spacer heads are omitted, and partial graphemes copy as whole cells. Explicit newlines remain intact. See [selection and copy](../dom/README.md#selecting-and-copying-text).
 
+`trackPosition({ row, col })` follows a retained cell through scrolling and reflow. The returned handle has `resolve()` and `dispose()` methods; row zero is the oldest retained row. It resolves to `null` after pruning, reset, screen switching, reinitialization, or disposal. Up to 64 simultaneous handles are supported; invalid coordinates, exhausted capacity, and older binaries return `null`. Release handles when finished. WTerm uses this API to preserve native selections and separately checks for overwritten text. See the [core contract](../core/README.md#tracked-cell-positions).
+
 `getCursor()` exposes Ghostty's block, bar, or underline `shape` and `blinking`
 state. The DOM renderer follows application requests (DECSCUSR and mode 12);
 an explicit `cursorBlink: true` or `false` on the terminal wrapper overrides

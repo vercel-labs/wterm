@@ -31,6 +31,19 @@ export interface TerminalRowMetadata {
   continuesPrevious: boolean;
 }
 
+/** Cell coordinates, with row zero at the oldest retained row. */
+export interface TerminalPosition {
+  row: number;
+  col: number;
+}
+
+/** A cell location that follows scrolling and reflow. Release when no longer needed. */
+export interface TrackedTerminalPosition {
+  /** Null after disposal, pruning, reset, or a screen switch. Does not track cell contents. */
+  resolve(): TerminalPosition | null;
+  dispose(): void;
+}
+
 export type MouseEncoding = "x10" | "utf8" | "sgr" | "urxvt" | "sgr-pixels";
 
 export interface CursorState {
@@ -138,6 +151,8 @@ export interface TerminalCore {
   /** Applied grid dimensions after init() or resize(), which may differ from the request. */
   getCols(): number;
   getRows(): number;
+  /** Optional tracked cell location. Null for invalid positions or exhausted capacity. */
+  trackPosition?(position: TerminalPosition): TrackedTerminalPosition | null;
 
   // -- Cursor --
   getCursor(): CursorState;

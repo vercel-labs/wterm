@@ -139,7 +139,7 @@ While hovering an anchor, holding Command on macOS or Control on Windows and Lin
 
 WTerm answers xterm/Kitty pixel geometry queries (`CSI 14 t` and `CSI 16 t`) from the rendered terminal element and forwards the reports through `onData`, so Kitty graphics clients can size and place images in the browser.
 
-Scrollback normally keeps only the visible rows plus overscan mounted in the DOM. While native text selection is active, the selected range stays mounted so the browser can preserve it. Native browser find and accessibility inspect the mounted window, not every retained history row. Scrolling updates the window, while new output follows the exact bottom only when the terminal was already there.
+Scrollback normally keeps only the visible rows plus overscan mounted in the DOM. Up to 1,000 selected history rows can also stay mounted, separately from a distant viewport. Gaps remain virtualized. Native browser find and accessibility inspect mounted rows, not every retained history row. Scrolling updates the window, while new output follows the exact bottom only when the terminal was already there.
 
 WTerm owns scrollback anchoring when old history is discarded. The package stylesheet disables browser-native scroll anchoring on the terminal scroller so rollover produces one deterministic adjustment across browsers.
 
@@ -159,7 +159,9 @@ if (text !== null) {
 
 The method reads the painted text, including while synchronized output holds a newer frame. It returns `null` for a collapsed or unavailable selection, selections extending outside this terminal, multiple ranges, or a gap in mounted history. In those cases, Copy keeps the browser's normal behavior. Input-field selections and previously handled copy events are also left to the host. An all-padding selection can return an empty string.
 
-Selection remains native and applies to mounted text; this does not select all retained history. Unchanged row renders preserve text nodes, but output that replaces selected rows, history pruning, or resizing can still change or clear the selection. The method is available through the underlying WTerm instance in every framework binding.
+With Ghostty's current WASM binary, WTerm tracks both selection edges through output scrolling and resize/reflow and restores the native highlight, including backward selections. If selected text changes, an edge is discarded, or the application resets or switches screens, the selection clears. The copied text stays tied to what was selected. Resize reports applied dimensions immediately and rebuilds the DOM on the next paint frame.
+
+Preservation covers selections of at most 1,000 physical rows and 1,048,576 UTF-16 units. Reflow beyond the row limit clears a tracked selection. Larger selections, cores without `trackPosition`, and new selections made while an older frame awaits rendering retain native browser behavior and may change or clear on rendering. Select after the current frame has painted for tracked preservation. Selection still begins in mounted text; this does not select all retained history. The method is available through the underlying WTerm instance in every framework binding.
 
 ### Terminal search
 

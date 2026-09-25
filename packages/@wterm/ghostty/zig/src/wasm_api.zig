@@ -81,6 +81,21 @@ const RESPONSE_QUEUE_MAX = 256;
 const RESPONSE_MAX_BYTES = 64;
 const TITLE_BUFFER_BYTES = 256;
 
+// A fixed table bounds host-owned tracking resources. IDs never alias released
+// or invalidated handles, even when their slots are reused.
+const PositionTracker = struct {
+    const Entry = struct { id: u32, pin: *vt.Pin, screen: *Screen };
+    entries: [64]?Entry = [_]?Entry{null} ** 64,
+    next_id: u32 = 1,
+
+    fn clear(self: *PositionTracker) void {
+        for (&self.entries) |*slot| if (slot.*) |entry| {
+            entry.screen.pages.untrackPin(entry.pin);
+            slot.* = null;
+        };
+    }
+};
+
 // Match Ghostty's desktop title limit. The title is external host state, so
 // the readonly terminal handler has no place to retain it for the browser.
 const TitleState = struct {
@@ -134,6 +149,7 @@ const ResponseHandler = struct {
     bell_count: *u32,
     synchronized_output_generation: *u32,
     rejected_images: *u32,
+    positions: *PositionTracker,
     apc: KittyHandler = .{},
     apc_bytes: usize = 0,
     apc_oversized: bool = false,
@@ -146,6 +162,7 @@ const ResponseHandler = struct {
         bell_count: *u32,
         generation: *u32,
         rejected_images: *u32,
+        positions: *PositionTracker,
     ) ResponseHandler {
         return .{
             .alloc = alloc,
@@ -155,6 +172,7 @@ const ResponseHandler = struct {
             .bell_count = bell_count,
             .synchronized_output_generation = generation,
             .rejected_images = rejected_images,
+            .positions = positions,
         };
     }
 
@@ -201,6 +219,10 @@ const ResponseHandler = struct {
         comptime action: StreamAction.Tag,
         value: StreamAction.Value(action),
     ) !void {
+        // Full reset destroys the alternate screen. Release its pins first.
+        if (comptime action == .full_reset) self.positions.clear();
+        const screen = self.inner.terminal.screens.active;
+        defer if (screen != self.inner.terminal.screens.active) self.positions.clear();
         switch (action) {
             .set_mode => {
                 const was_synchronized = self.inner.terminal.modes.get(.synchronized_output);
@@ -368,6 +390,7 @@ const State = struct {
     graphics_screen: u32,
     rejected_images: u32,
     evicted_images: u32,
+    positions: PositionTracker,
 };
 
 fn stateFromPtr(ptr: usize) *State {
@@ -590,6 +613,7 @@ export fn init(
     state.graphics_generation = 0;
     state.rejected_images = 0;
     state.evicted_images = 0;
+    state.positions = .{};
     state.stream = .initAlloc(allocator, .init(
         allocator,
         &state.terminal,
@@ -598,6 +622,7 @@ export fn init(
         &state.bell_count,
         &state.synchronized_output_generation,
         &state.rejected_images,
+        &state.positions,
     ));
     state.render = RenderState.empty;
     state.graphics_fingerprint = graphicsFingerprint(state);
@@ -608,6 +633,7 @@ export fn init(
 
 export fn deinit(ptr: usize) void {
     const state = stateFromPtr(ptr);
+    state.positions.clear();
     state.render.deinit(allocator);
     state.stream.deinit();
     state.terminal.deinit(allocator);
@@ -1136,6 +1162,45 @@ export fn get_rows(ptr: usize) u32 {
 }
 
 // -- Scrollback -------------------------------------------------
+
+export fn track_position(ptr: usize, row: u32, col: u32) u32 {
+    const state = stateFromPtr(ptr);
+    const tracker = &state.positions;
+    if (tracker.next_id == std.math.maxInt(u32) or col >= state.terminal.cols) return 0;
+    const screen = state.terminal.screens.active;
+    const pin = screen.pages.pin(.{ .screen = .{ .y = row, .x = @intCast(col) } }) orelse return 0;
+    for (&tracker.entries) |*slot| {
+        if (slot.* != null) continue;
+        const tracked = screen.pages.trackPin(pin) catch return 0;
+        const id = tracker.next_id;
+        tracker.next_id += 1;
+        slot.* = .{ .id = id, .pin = tracked, .screen = screen };
+        return id;
+    }
+    return 0;
+}
+
+export fn resolve_position(ptr: usize, id: u32) f64 {
+    const state = stateFromPtr(ptr);
+    for (state.positions.entries) |slot| if (slot) |entry| {
+        if (entry.id != id) continue;
+        if (entry.pin.garbage or entry.screen != state.terminal.screens.active) return -1;
+        const pt = entry.screen.pages.pointFromPin(.screen, entry.pin.*) orelse return -1;
+        // Both integers fit exactly in an IEEE double (u32 row and u16 col).
+        return @floatFromInt(@as(u64, pt.screen.y) * 65536 + pt.screen.x);
+    };
+    return -1;
+}
+
+export fn release_position(ptr: usize, id: u32) void {
+    const state = stateFromPtr(ptr);
+    for (&state.positions.entries) |*slot| if (slot.*) |entry| {
+        if (entry.id != id) continue;
+        entry.screen.pages.untrackPin(entry.pin);
+        slot.* = null;
+        return;
+    };
+}
 
 // Read the native page metadata, not RenderState: callers may inspect rows
 // before a paint, and the same relationships must cross the history boundary.

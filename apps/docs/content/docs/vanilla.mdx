@@ -99,9 +99,11 @@ deletions, and pasted text follows the application's bracketed-paste mode.
 Application-provided OSC 8 hyperlinks render as native anchors across both the active viewport and scrollback. Only absolute HTTP and HTTPS URIs become clickable; invalid, relative, and executable schemes remain ordinary terminal text.
 While hovering an anchor, holding Command on macOS or Control on Windows and Linux reveals its underline and pointer cursor. Plain clicks remain terminal interaction. Command-click, Control-click, or native keyboard activation when an anchor receives focus opens the link. Modified link activation remains available while SGR mouse tracking is active and is not forwarded to the terminal application.
 
-Scrollback normally uses a bounded DOM window around the visible rows. An active native text selection keeps its selected range mounted so the browser can preserve it. Native browser find and accessibility inspect the mounted window, not every retained history row. If the terminal is already at the bottom, new output keeps it at the exact bottom; reading older history does not enable auto-follow, and terminal input returns to the bottom.
+Scrollback normally uses a bounded DOM window around the visible rows. Up to 1,000 selected history rows stay mounted separately from a distant viewport, leaving gaps virtualized. Native browser find and accessibility inspect mounted rows, not every retained history row. If the terminal is already at the bottom, new output keeps it at the exact bottom; reading older history does not enable auto-follow, and terminal input returns to the bottom.
 
 Copying a terminal selection preserves complete Unicode cells and explicit newlines; Ghostty soft wraps join without artificial line breaks. Block glyphs are included as text. Use `term.getSelectionText()` to read the same plain text without touching the clipboard. See [Selection and Copy](/api-reference#selection-and-copy) for whitespace behavior and native-selection limits.
+
+With Ghostty's current WASM binary, selections also follow output scrolling and resize/reflow. Overwritten or discarded text, resets, and screen switches clear the selection. See the same reference for preservation limits and behavior while a frame is pending.
 
 ### Terminal images
 

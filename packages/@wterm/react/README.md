@@ -117,6 +117,8 @@ Built-in: `solarized-dark`, `monokai`, `light`. Define custom themes with CSS cu
 
 Native Copy uses terminal line and cell semantics, joining Ghostty soft wraps while preserving explicit newlines and complete Unicode cells. Call `getSelectionText()` on the underlying WTerm instance to read the same text without accessing the clipboard. It returns `null` when no supported terminal selection exists. See [selection behavior and limits](../dom/README.md#selecting-and-copying-text).
 
+With the current Ghostty WASM binary, selections follow output scrolling and resize/reflow while their text remains intact. Overwritten or discarded text, resets, and screen switches clear the selection. The linked reference describes preservation limits and pending-frame behavior.
+
 ## Terminal search
 
 Use the underlying `WTerm` instance to call `search(query, { caseSensitive })`, `findNext()`, `findPrevious()`, `getSearchState()`, and `clearSearch()`. Set its `onSearchChange` callback to update your Find controls. Access the instance through `onReady` or `ref.current.instance`. Search includes unmounted retained history; Ghostty also joins soft wraps. See the [search semantics and limits](../dom/README.md#terminal-search).

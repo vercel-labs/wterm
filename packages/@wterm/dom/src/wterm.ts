@@ -301,6 +301,7 @@ export class WTerm {
 
   write(data: string | Uint8Array): void {
     if (!this.bridge || this._destroyed) return;
+    this.renderer?.beforeMutation(this.bridge);
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._isScrolledToBottom();
     const windowSizeQueries = this._collectWindowSizeQueries(data);
@@ -349,6 +350,7 @@ export class WTerm {
 
   resize(cols: number, rows: number): void {
     if (!this.bridge || this._destroyed) return;
+    this.renderer?.beforeMutation(this.bridge);
     this._shouldScrollToBottom =
       this._pendingResizeScrollTop === null && this._isScrolledToBottom();
     this.bridge.resize(cols, rows);
@@ -359,7 +361,7 @@ export class WTerm {
     if (this._updateSynchronizedOutput(synchronized, generation)) {
       this._rendererNeedsSetup = true;
     } else {
-      this._setupRenderer(this.cols, this.rows);
+      this._setupRenderer();
       this._scheduleRender();
     }
     this._invalidateSearch();
@@ -550,15 +552,15 @@ export class WTerm {
 
   private _setupRendererIfNeeded(): void {
     if (!this._rendererNeedsSetup) return;
-    this._setupRenderer(this.cols, this.rows);
+    this._setupRenderer();
     this._rendererNeedsSetup = false;
   }
 
-  private _setupRenderer(cols: number, rows: number): void {
+  private _setupRenderer(): void {
     if (!this._shouldScrollToBottom && this._pendingResizeScrollTop === null) {
       this._pendingResizeScrollTop = this.element.scrollTop;
     }
-    this.renderer?.setup(cols, rows);
+    this.renderer?.requestSetup();
   }
 
   private _initialRender(): void {

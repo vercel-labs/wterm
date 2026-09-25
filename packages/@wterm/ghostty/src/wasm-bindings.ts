@@ -93,6 +93,10 @@ export interface GhosttyExports {
   get_rows(ptr: number): number;
   /** Bit 0: wraps to next; bit 1: continues previous. -1 for an invalid row. */
   get_row_wraps?(ptr: number, row: number): number;
+  track_position?(ptr: number, row: number, col: number): number;
+  /** Retained row * 65536 + column, or -1 for an invalidated handle. */
+  resolve_position?(ptr: number, handle: number): number;
+  release_position?(ptr: number, handle: number): void;
 
   // Scrollback
   get_scrollback_count(ptr: number): number;

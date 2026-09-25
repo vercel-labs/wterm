@@ -3,7 +3,13 @@ import type { TerminalRowMetadata } from "@wterm/core";
 /** Text offsets are UTF-16 offsets in a rendered row, not terminal columns. */
 export interface RenderedRowText {
   text: string;
-  specialCells: { start: number; end: number; omit: boolean }[];
+  specialCells: {
+    start: number;
+    end: number;
+    col: number;
+    width: number;
+    omit: boolean;
+  }[];
   metadata: TerminalRowMetadata | null;
 }
 
@@ -42,6 +48,13 @@ export function getSelectionText(
   terminal: HTMLElement,
   rows: Iterable<SelectedRow>,
 ): string | null {
+  return readSelection(terminal, rows)?.text ?? null;
+}
+
+export function readSelection(
+  terminal: HTMLElement,
+  rows: Iterable<SelectedRow>,
+) {
   const selection = terminal.ownerDocument.getSelection();
   if (!selection || selection.isCollapsed || selection.rangeCount !== 1)
     return null;
@@ -59,6 +72,8 @@ export function getSelectionText(
   }
 
   const parts: string[] = [];
+  let first: { row: SelectedRow; offset: number } | undefined;
+  let last: { row: SelectedRow; offset: number } | undefined;
   let previous: SelectedRow | undefined;
   for (const current of rows) {
     const { element, content } = current;
@@ -76,6 +91,14 @@ export function getSelectionText(
     const end = start + selected.toString().length;
     // A host modifying terminal-owned text makes the saved offsets invalid.
     if (element.textContent !== content.text) return null;
+    first ??= { row: current, offset: start };
+    last = {
+      row: current,
+      offset:
+        end === content.text.length && !content.metadata?.wrapsToNext
+          ? Math.max(start, content.text.replace(/ +$/, "").length)
+          : end,
+    };
     if (previous) {
       if (current.row !== previous.row + 1) return null;
       const wrapped =
@@ -89,5 +112,65 @@ export function getSelectionText(
     parts.push(text);
     previous = current;
   }
-  return previous ? parts.join("") : null;
+  return first && last
+    ? {
+        text: parts.join(""),
+        first,
+        last,
+        backward:
+          selection.anchorNode !== range.startContainer ||
+          selection.anchorOffset !== range.startOffset,
+      }
+    : null;
+}
+
+/** Anchor an edge to an included cell, so an end at a wrap follows that cell. */
+export function cellAtOffset(
+  content: RenderedRowText,
+  offset: number,
+  end: boolean,
+) {
+  let delta = 0;
+  for (const cell of content.specialCells) {
+    if (
+      (offset >= cell.start && offset < cell.end && !end) ||
+      (offset > cell.start && offset <= cell.end && end)
+    ) {
+      return { col: cell.col, after: end };
+    }
+    if (cell.end <= offset) delta += cell.width - (cell.end - cell.start);
+  }
+  const after = offset > 0 && (end || offset === content.text.length);
+  return { col: offset + delta - (after ? 1 : 0), after };
+}
+
+export function offsetAtCell(
+  content: RenderedRowText,
+  col: number,
+  after: boolean,
+): number {
+  let delta = 0;
+  for (const cell of content.specialCells) {
+    if (col >= cell.col && col < cell.col + cell.width)
+      return after ? cell.end : cell.start;
+    if (cell.col < col) delta += cell.end - cell.start - cell.width;
+  }
+  return col + delta + (after ? 1 : 0);
+}
+
+export function textPoint(
+  element: HTMLElement,
+  offset: number,
+): [Node, number] | null {
+  const walker = element.ownerDocument.createTreeWalker(
+    element,
+    4 /* SHOW_TEXT */,
+  );
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const length = node.textContent?.length ?? 0;
+    if (offset <= length) return [node, offset];
+    offset -= length;
+  }
+  return null;
 }

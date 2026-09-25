@@ -30,6 +30,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~26 KB `.wasm` binary (release build)
 - **DOM rendering** — native text selection, clipboard, browser find, and screen reader support for mounted rows
 - **Terminal-aware copy** — selected text preserves explicit newlines and complete Unicode cells, includes block glyphs, and joins confirmed Ghostty soft wraps
+- **Selection preservation** — Ghostty selections follow scrolling and reflow while their text remains intact; selected history is mounted separately from the viewport
 - **Native hyperlinks** — OSC 8 links remain attached to their exact cells through viewport and scrollback, with safe HTTP(S) anchors
 - **Dirty-row tracking** — only touched rows are re-rendered each frame via `requestAnimationFrame`
 - **Frame-direct scheduling** — writes queue their render on the next animation frame without an extra timer hop

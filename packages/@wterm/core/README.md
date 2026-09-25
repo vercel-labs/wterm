@@ -64,6 +64,12 @@ across those operations. Ghostty implements both methods with its native wrap
 flags. The lightweight core does not expose them, and older Ghostty WASM
 binaries return `null`. Missing metadata means unknown, not a hard newline.
 
+### Tracked cell positions
+
+`TerminalCore.trackPosition?({ row, col })` returns a `TrackedTerminalPosition` or `null`. Coordinates are zero-based cells, with row zero at the oldest retained row. Call `resolve()` for its current `{ row, col }` after scrolling or reflow, and `dispose()` when finished. Resolution returns `null` after pruning, reset, screen switching, core reinitialization, or disposal; invalidated handles never refer to newly allocated positions. Disposal is idempotent.
+
+Tracking follows a cell location, not its immutable contents. A caller preserving selected text must also check whether it was overwritten. Ghostty supports up to 64 simultaneous handles and returns `null` for invalid coordinates, exhausted capacity, or an older WASM binary without tracking exports. The built-in core does not provide this optional method.
+
 ### `WasmBridge`
 
 Low-level interface to the Zig/WASM terminal state machine. Implements the `TerminalCore` interface.
