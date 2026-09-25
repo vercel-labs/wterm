@@ -178,6 +178,10 @@ to their cells. Widths update when fonts load or the font size changes, includin
 with `autoResize: false`. Unicode text remains selectable and OSC 8 links keep
 their text together.
 
+Common light, heavy, and rounded box-drawing characters keep their strokes
+connected across cell edges even when the selected font leaves gaps. The
+characters remain selectable and copy as text.
+
 Colored and reversed cells keep their backgrounds within their columns, including
 the last column and rows in scrollback. A complete row with one shared, opaque
 background extends that color to the container's right edge, so full-width
