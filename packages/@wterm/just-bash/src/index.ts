@@ -47,6 +47,7 @@ export class BashShell {
   private _historyDraft: { line: string; cursor: number } | null = null;
   private _killBuffer = "";
   private _lastActionWasKill = false;
+  private _inputRevision = 0;
   private _busy = false;
 
   private _files: Record<string, string>;
@@ -97,6 +98,7 @@ export class BashShell {
 
   async handleInput(data: string): Promise<void> {
     if (!this._write || this._busy) return;
+    this._inputRevision++;
     const write = this._write;
     if (!WORD_ERASE_SEQUENCES.has(data) && data !== "\x15" && data !== "\x0b") {
       this._lastActionWasKill = false;
@@ -360,13 +362,37 @@ export class BashShell {
     return segments[index]?.index ?? this._line.length;
   }
 
+  private _insertCompletion(completion: string): void {
+    if (!completion) return;
+    const suffix = /^\S*/u.exec(this._line.slice(this._cursor))?.[0] ?? "";
+    let overlap = 0;
+    for (const { index, segment } of graphemes.segment(suffix)) {
+      const length = index + segment.length;
+      if (
+        length <= completion.length &&
+        completion.endsWith(suffix.slice(0, length))
+      ) {
+        overlap = length;
+      }
+    }
+
+    const insertion = completion.slice(0, completion.length - overlap);
+    if (insertion) this._insertText(insertion);
+    if (overlap > 0) {
+      this._cursor += overlap;
+      this._moveCells(stringWidth(suffix.slice(0, overlap)), "C");
+    }
+  }
+
   private async _tabComplete(): Promise<void> {
     const bash = this._bash;
     const write = this._write;
     if (!bash || !write) return;
 
     const line = this._line;
-    const parts = line.split(/\s+/);
+    const cursor = this._cursor;
+    const revision = this._inputRevision;
+    const parts = line.slice(0, cursor).split(/\s+/);
     const word = parts[parts.length - 1] ?? "";
     const isFirst = parts.length <= 1;
 
@@ -401,6 +427,7 @@ export class BashShell {
     } catch {
       return;
     }
+    if (this._inputRevision !== revision) return;
 
     if (isFirst && !word.includes("/")) {
       try {
@@ -419,26 +446,25 @@ export class BashShell {
       }
     }
 
+    if (this._inputRevision !== revision) return;
     if (candidates.length === 0) return;
 
     if (candidates.length === 1) {
       const completion = candidates[0].slice(prefix.length);
-      if (completion) {
-        this._line += completion;
-        this._cursor += completion.length;
-        write(completion);
-      }
+      this._insertCompletion(completion);
       try {
-        const full = word + completion;
-        const testPath = full.startsWith("/") ? full : `${this._cwd}/${full}`;
+        const testPath = `${dir.replace(/\/$/, "")}/${candidates[0]}`;
         const stat = await bash.exec(
           `test -d ${JSON.stringify(testPath)} && echo DIR`,
           { cwd: this._cwd },
         );
-        if (stat.stdout?.trim() === "DIR" && !this._line.endsWith("/")) {
-          this._line += "/";
-          this._cursor++;
-          write("/");
+        if (this._inputRevision !== revision) return;
+        if (
+          stat.stdout?.trim() === "DIR" &&
+          this._line[this._cursor - 1] !== "/" &&
+          this._line[this._cursor] !== "/"
+        ) {
+          this._insertText("/");
         }
       } catch {
         /* ignore */
@@ -452,15 +478,14 @@ export class BashShell {
       }
       const partialCompletion = common.slice(prefix.length);
       if (partialCompletion) {
-        this._line += partialCompletion;
-        this._cursor += partialCompletion.length;
-        write(partialCompletion);
+        this._insertCompletion(partialCompletion);
       } else {
         write("\r\n");
         write(candidates.join("  ").replace(/\n/g, "\r\n"));
         write("\r\n");
         write(this._prompt(this._cwd));
         write(this._line);
+        this._moveCells(stringWidth(this._line.slice(this._cursor)), "D");
       }
     }
   }

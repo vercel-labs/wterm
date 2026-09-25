@@ -86,7 +86,7 @@ new BashShell(options?: ShellOptions)
 - Ctrl+Y restores the text erased by those shortcuts, including consecutive erasures
 - Unicode-aware editing for emoji, combining marks, and wide characters
 - Command history (up/down arrows) that restores your unfinished command and cursor position
-- Tab completion (files + commands)
+- Tab completion for files and commands at the cursor, including earlier words in a command
 - Ctrl+C to cancel, Ctrl+L to clear the screen
 - Directory-aware prompt updates
 
