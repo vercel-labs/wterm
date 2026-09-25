@@ -134,11 +134,22 @@ describe("GhosttyCore grapheme strings", () => {
 describe("GhosttyCore input modes", () => {
   it("reads mouse and focus state from the committed WASM", async () => {
     const core = await newCore();
+    expect(core.mouseEncoding()).toBe("x10");
     core.writeString("\x1b[?1002h\x1b[?1004h\x1b[?1006h");
 
     expect(core.mouseTracking()).toBe(1002);
     expect(core.mouseSgr()).toBe(true);
+    expect(core.mouseEncoding()).toBe("sgr");
     expect(core.focusEvents()).toBe(true);
+
+    core.writeString("\x1b[?1005h");
+    expect(core.mouseEncoding()).toBe("utf8");
+    core.writeString("\x1b[?1015h");
+    expect(core.mouseEncoding()).toBe("urxvt");
+    core.writeString("\x1b[?1016h");
+    expect(core.mouseEncoding()).toBe("sgr-pixels");
+    core.writeString("\x1b[?1016l");
+    expect(core.mouseEncoding()).toBe("x10");
 
     core.writeString("\x1b[?1003h");
     expect(core.mouseTracking()).toBe(1003);

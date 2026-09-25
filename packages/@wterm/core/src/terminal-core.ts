@@ -21,6 +21,8 @@ export interface CellData {
 
 export type CursorShape = "block" | "underline" | "bar";
 
+export type MouseEncoding = "x10" | "utf8" | "sgr" | "urxvt" | "sgr-pixels";
+
 export interface CursorState {
   row: number;
   col: number;
@@ -134,6 +136,8 @@ export interface TerminalCore {
   usingAltScreen(): boolean;
   mouseTracking?(): 0 | 1000 | 1002 | 1003;
   mouseSgr?(): boolean;
+  /** Active mouse wire format. Optional for cores that only expose SGR state. */
+  mouseEncoding?(): MouseEncoding | null;
   focusEvents?(): boolean;
   synchronizedOutput?(): boolean;
   synchronizedOutputGeneration?(): number;

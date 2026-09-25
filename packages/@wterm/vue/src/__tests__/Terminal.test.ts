@@ -15,6 +15,7 @@ vi.mock("@wterm/dom", () => {
     this.cols = options?.cols ?? 80;
     this.rows = options?.rows ?? 24;
     this.onData = options?.onData ?? null;
+    this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
     this.onBell = options?.onBell ?? null;
     this.onResize = options?.onResize ?? null;
@@ -88,6 +89,17 @@ describe("Terminal component", () => {
     await flushPromises();
     expect(wrapper.emitted("ready")).toBeTruthy();
     expect(wrapper.emitted("ready")![0][0]).toBe(lastWTermInstance);
+  });
+
+  it("emits raw X10 bytes through the binary event", async () => {
+    const onBinary = vi.fn();
+    const wrapper = await mountTerminal({}, { onBinary });
+    const bytes = Uint8Array.of(27, 91, 77, 32, 132, 33);
+
+    expect(lastWTermInstance.onBinary).toBeTypeOf("function");
+    lastWTermInstance.onBinary(bytes);
+    expect(onBinary).toHaveBeenCalledWith(bytes);
+    expect(wrapper.emitted("binary")?.[0]).toEqual([bytes]);
   });
 
   it("emits error on init failure", async () => {

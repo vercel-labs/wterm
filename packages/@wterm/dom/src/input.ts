@@ -55,6 +55,7 @@ export class InputHandler {
   private element: HTMLElement;
   private textarea: HTMLTextAreaElement;
   private onData: (data: string) => void;
+  private onBinary: ((data: Uint8Array) => void) | undefined;
   private getBridge: () => TerminalCore | null;
   private getCellSize: () => {
     charWidth: number;
@@ -70,6 +71,7 @@ export class InputHandler {
   private mouseButtons = 0;
   private lastMouseMotion: {
     mode: number;
+    encoding: string;
     code: number;
     col: number;
     row: number;
@@ -101,9 +103,11 @@ export class InputHandler {
     getCellSize: () => { charWidth: number; rowHeight: number } | null = () =>
       null,
     prepareComposition: () => void = () => {},
+    onBinary?: (data: Uint8Array) => void,
   ) {
     this.element = element;
     this.onData = onData;
+    this.onBinary = onBinary;
     this.getBridge = getBridge;
     this.getCellSize = getCellSize;
     this.prepareComposition = prepareComposition;
@@ -531,7 +535,13 @@ export class InputHandler {
   ): void {
     const bridge = this.getBridge();
     const tracking = bridge?.mouseTracking?.() ?? 0;
-    if (!bridge || tracking === 0 || !bridge.mouseSgr?.()) {
+    const encoding =
+      bridge?.mouseEncoding?.() ?? (bridge?.mouseSgr?.() ? "sgr" : null);
+    if (
+      !bridge ||
+      tracking === 0 ||
+      (encoding !== "sgr" && encoding !== "x10")
+    ) {
       this.lastMouseMotion = null;
       return;
     }
@@ -612,15 +622,6 @@ export class InputHandler {
       this.lastMouseMotion = null;
       return;
     }
-    if (kind === "press") {
-      this.textarea.focus({ preventScroll: true });
-      if (!this.focused) this._onFocus();
-      this.mouseButtons =
-        supportedButtons ||
-        (event.button === 1 ? 4 : event.button === 2 ? 2 : 1);
-      view.addEventListener("mousemove", this._onMouseMove);
-      view.addEventListener("mouseup", this._onMouseUp);
-    }
     const col = Math.max(
       1,
       Math.min(
@@ -652,38 +653,68 @@ export class InputHandler {
       }
     } else {
       const button =
-        kind === "move"
-          ? supportedButtons === 0
-            ? 3
-            : supportedButtons & 4
+        kind === "release" && encoding === "x10"
+          ? 3
+          : kind === "move"
+            ? supportedButtons === 0
+              ? 3
+              : supportedButtons & 4
+                ? 1
+                : supportedButtons & 2
+                  ? 2
+                  : 0
+            : event.button === 1
               ? 1
-              : supportedButtons & 2
+              : event.button === 2
                 ? 2
-                : 0
-          : event.button === 1
-            ? 1
-            : event.button === 2
-              ? 2
-              : 0;
+                : 0;
       code = button | modifiers | (kind === "move" ? 32 : 0);
       if (kind === "release") final = "m";
+    }
+    const legacy =
+      encoding === "x10"
+        ? Uint8Array.of(0x1b, 0x5b, 0x4d, code + 32, col + 32, row + 32)
+        : null;
+    if (
+      legacy &&
+      (col > 223 ||
+        row > 223 ||
+        (!this.onBinary && (legacy[4] > 127 || legacy[5] > 127)))
+    ) {
+      this.lastMouseMotion = null;
+      return;
     }
     if (kind === "move") {
       const previous = this.lastMouseMotion;
       if (
         previous?.mode === tracking &&
+        previous.encoding === encoding &&
         previous.code === code &&
         previous.col === col &&
         previous.row === row
       ) {
         return;
       }
-      this.lastMouseMotion = { mode: tracking, code, col, row };
+      this.lastMouseMotion = { mode: tracking, encoding, code, col, row };
     } else {
       this.lastMouseMotion = null;
     }
+    if (kind === "press") {
+      this.textarea.focus({ preventScroll: true });
+      if (!this.focused) this._onFocus();
+      this.mouseButtons =
+        supportedButtons ||
+        (event.button === 1 ? 4 : event.button === 2 ? 2 : 1);
+      view.addEventListener("mousemove", this._onMouseMove);
+      view.addEventListener("mouseup", this._onMouseUp);
+    }
     event.preventDefault();
-    this.onData(`\x1b[<${code};${col};${row}${final}`);
+    if (legacy) {
+      if (this.onBinary) this.onBinary(legacy);
+      else this.onData(String.fromCharCode(...legacy));
+    } else {
+      this.onData(`\x1b[<${code};${col};${row}${final}`);
+    }
   }
 
   private stopMouseCapture(): void {

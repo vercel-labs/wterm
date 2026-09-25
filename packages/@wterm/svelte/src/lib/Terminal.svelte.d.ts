@@ -3,17 +3,19 @@ import type { WTerm, WTermOptions } from "@wterm/dom";
 
 export interface TerminalProps extends Omit<
   WTermOptions,
-  "onData" | "onTitle" | "onBell" | "onResize"
+  "onData" | "onBinary" | "onTitle" | "onBell" | "onResize"
 > {
   theme?: string;
   className?: string;
   onData?: (data: string) => void;
+  onBinary?: (data: Uint8Array) => void;
   onTitle?: (title: string) => void;
   onBell?: (count: number) => void;
   onResize?: (cols: number, rows: number) => void;
   onReady?: (wt: WTerm) => void;
   onError?: (error: unknown) => void;
   ondata?: (data: string) => void;
+  onbinary?: (data: Uint8Array) => void;
   ontitle?: (title: string) => void;
   onbell?: (count: number) => void;
   onresize?: (cols: number, rows: number) => void;

@@ -27,6 +27,8 @@ export interface WTermOptions {
   cursorBlink?: boolean;
   debug?: boolean;
   onData?: (data: string) => void;
+  /** Raw input bytes, used by X10 mouse reports. */
+  onBinary?: (data: Uint8Array) => void;
   onTitle?: (title: string) => void;
   /** Called with the number of BEL controls since the last delivery. */
   onBell?: (count: number) => void;
@@ -68,6 +70,7 @@ export class WTerm {
   private _onWindowBlur: () => void;
 
   onData: ((data: string) => void) | null;
+  onBinary: ((data: Uint8Array) => void) | null;
   onTitle: ((title: string) => void) | null;
   onBell: ((count: number) => void) | null;
   onResize: ((cols: number, rows: number) => void) | null;
@@ -86,6 +89,7 @@ export class WTerm {
     this._debugEnabled = options.debug ?? false;
 
     this.onData = options.onData || null;
+    this.onBinary = options.onBinary || null;
     this.onTitle = options.onTitle || null;
     this.onBell = options.onBell || null;
     this.onResize = options.onResize || null;
@@ -206,6 +210,16 @@ export class WTerm {
             ? { charWidth: this._charWidth, rowHeight: this._rowHeight }
             : null,
         () => this._scrollToBottom(),
+        (data) => {
+          this._scrollToBottom();
+          if (this.onBinary) {
+            this.onBinary(data);
+          } else if (!this.onData) {
+            this.write(data);
+          } else if (data.every((byte) => byte < 128)) {
+            this.onData(String.fromCharCode(...data));
+          }
+        },
       );
 
       this._setupResizeObserver();

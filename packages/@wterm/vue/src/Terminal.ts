@@ -105,6 +105,8 @@ const Terminal = defineComponent({
      * terminal (e.g. keystrokes or paste).
      */
     data: (_data: string) => true,
+    /** Raw X10 mouse reports for transports that accept bytes. */
+    binary: (_data: Uint8Array) => true,
     /**
      * Forwards `WTerm`'s `onTitle` callback.
      */
@@ -136,6 +138,7 @@ const Terminal = defineComponent({
       if (!el) return;
 
       const hasDataListener = !!getCurrentInstance()?.vnode.props?.onData;
+      const hasBinaryListener = !!getCurrentInstance()?.vnode.props?.onBinary;
 
       const wt = new WTerm(el, {
         cols: props.cols,
@@ -149,6 +152,9 @@ const Terminal = defineComponent({
         debug: props.debug,
         onData: hasDataListener
           ? (data: string) => emit("data", data)
+          : undefined,
+        onBinary: hasBinaryListener
+          ? (data: Uint8Array) => emit("binary", data)
           : undefined,
         onTitle: (title: string) => emit("title", title),
         onBell: (count: number) => emit("bell", count),

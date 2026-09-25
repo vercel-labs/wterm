@@ -49,6 +49,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
+| `onBinary` | `(data: Uint8Array) => void` | — | Called with raw X10 mouse bytes when supplied. Send the bytes unchanged to a binary-capable transport. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
 | `onBell` | `(count: number) => void` | — | Called with the number of BEL controls since the last delivery |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called with the grid dimensions applied by the core after resize |
@@ -68,7 +69,7 @@ the core actually uses. Use these values, or the values passed to `onResize`,
 when sizing a connected PTY. The built-in core currently supports up to
 1024 columns and 512 rows; larger requests are clamped to those limits.
 
-When a terminal application enables modes 1000, 1002, or 1003 with SGR encoding (1006), pointer input is sent through `onData`. Mode 1003 also reports unpressed pointer movement once per cell in the visible grid. Shift retains native text selection. Focus reports are sent when mode 1004 is active.
+When a terminal application enables mouse tracking (1000, 1002, or 1003), WTerm sends SGR reports through `onData` if mode 1006 is active. Without 1006, it sends X10 reports: use `onBinary` to forward the raw bytes to a binary-capable transport. Without `onBinary`, ASCII-only X10 reports go through `onData`; reports whose coordinates require non-ASCII bytes are skipped rather than silently changed by UTF-8 encoding. X10 coordinates above 223 cannot be represented and are skipped. Mode 1003 reports unpressed pointer movement once per cell in the visible grid. Shift retains native text selection. Focus reports are sent through `onData` when mode 1004 is active. The DOM handler does not send Ghostty's 1005, 1015, or 1016 encodings.
 
 `onBell` runs as BEL output is written, including during synchronized output.
 Several bells in one write chunk are delivered as one count. BEL used to end

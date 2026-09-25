@@ -70,6 +70,7 @@ preserving their aspect ratio. Image canvases are decorative and
 | Event | Payload | Description |
 |---|---|---|
 | `data` | `(data: string)` | Emitted when the terminal produces data (user input or host response). When no listener is attached, input is echoed back automatically. |
+| `binary` | `(data: Uint8Array)` | Emitted for raw X10 mouse reports. Send the bytes unchanged to a binary-capable transport; without a listener, only ASCII-safe reports reach `data`. |
 | `title` | `(title: string)` | Emitted when the terminal title changes via an escape sequence. |
 | `bell` | `(count: number)` | Emitted with the pending BEL count as output is written; the host controls any alert. |
 | `resize` | `(cols: number, rows: number)` | Emitted after the terminal is resized. |

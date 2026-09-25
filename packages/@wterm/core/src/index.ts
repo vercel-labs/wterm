@@ -4,6 +4,7 @@ export type {
   CursorState,
   GraphicsResourceState,
   HyperlinkResourceState,
+  MouseEncoding,
   TerminalGraphicsState,
   TerminalImageData,
   TerminalImageDescriptor,
