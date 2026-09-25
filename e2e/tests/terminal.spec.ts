@@ -155,9 +155,7 @@ test.describe("rendering", () => {
 });
 
 test.describe("keyboard input", () => {
-  test("reports legacy modifiers on navigation and function keys", async ({
-    page,
-  }) => {
+  test("reports legacy modified and control key input", async ({ page }) => {
     await page.locator(".wterm").click();
     await page.evaluate(() => {
       const scope = globalThis as typeof globalThis & {
@@ -173,6 +171,9 @@ test.describe("keyboard input", () => {
     await page.keyboard.press("Shift+ArrowRight");
     await page.keyboard.press("Control+Delete");
     await page.keyboard.press("Shift+F1");
+    await page.keyboard.press("Control+Space");
+    await page.keyboard.press("Control+Slash");
+    await page.keyboard.press("Control+Backspace");
 
     expect(
       await page.evaluate(
@@ -180,7 +181,16 @@ test.describe("keyboard input", () => {
           (globalThis as typeof globalThis & { __legacyKeys: string[] })
             .__legacyKeys,
       ),
-    ).toEqual(["\x1b[A", "\x1b[1;5D", "\x1b[1;2C", "\x1b[3;5~", "\x1b[1;2P"]);
+    ).toEqual([
+      "\x1b[A",
+      "\x1b[1;5D",
+      "\x1b[1;2C",
+      "\x1b[3;5~",
+      "\x1b[1;2P",
+      "\0",
+      "\x1f",
+      "\x08",
+    ]);
   });
 
   test("Kitty report-all preserves Meta lifecycle and browser shortcuts", async ({

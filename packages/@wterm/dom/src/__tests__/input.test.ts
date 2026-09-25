@@ -296,6 +296,37 @@ describe("InputHandler", () => {
       ta.dispatchEvent(createKeyboardEvent("z", { ctrlKey: true }));
       expect(received).toContain("\x1a");
     });
+
+    it.each([
+      [" ", {}, "\0"],
+      ["2", {}, "\0"],
+      ["/", {}, "\x1f"],
+      ["?", { shiftKey: true }, "\x7f"],
+      ["Backspace", {}, "\x08"],
+    ] as const)(
+      "maps Ctrl+%s to a control byte",
+      (key, modifiers, expected) => {
+        const event = createKeyboardEvent(key, { ctrlKey: true, ...modifiers });
+        getTextarea().dispatchEvent(event);
+        expect(received).toEqual([expected]);
+        expect(event.defaultPrevented).toBe(true);
+      },
+    );
+
+    it("lets Control+Alt printable input reach the native text event", () => {
+      const ta = getTextarea();
+      const keydown = createKeyboardEvent("@", {
+        ctrlKey: true,
+        altKey: true,
+      });
+      ta.dispatchEvent(keydown);
+      expect(keydown.defaultPrevented).toBe(false);
+      expect(received).toEqual([]);
+
+      ta.value = "@";
+      ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+      expect(received).toEqual(["@"]);
+    });
   });
 
   describe("key mapping - alt modifier", () => {

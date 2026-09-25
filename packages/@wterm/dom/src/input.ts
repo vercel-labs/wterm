@@ -4,6 +4,7 @@ import {
   encodeKittyKey,
   KITTY_REPORT_ALL,
   KITTY_REPORT_EVENTS,
+  legacyControlByte,
 } from "./kitty-keys.js";
 
 const NORMAL_KEYS: Record<string, string> = {
@@ -778,15 +779,9 @@ export class InputHandler {
 
   private keyToSequence(e: KeyboardEvent): string | null {
     if (e.ctrlKey && !e.altKey && !e.metaKey) {
-      if (e.key.length === 1) {
-        const code = e.key.toLowerCase().charCodeAt(0);
-        if (code >= 97 && code <= 122) return String.fromCharCode(code - 96);
-      }
-      if (e.key === "[") return "\x1b";
-      if (e.key === "\\") return "\x1c";
-      if (e.key === "]") return "\x1d";
-      if (e.key === "^") return "\x1e";
-      if (e.key === "_") return "\x1f";
+      const control = legacyControlByte(e.key);
+      if (control !== null) return control;
+      if (e.key === "Backspace") return "\x08";
     }
 
     if (e.key === "Enter" && e.shiftKey) return "\x1b[13;2u";

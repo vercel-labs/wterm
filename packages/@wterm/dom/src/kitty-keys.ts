@@ -208,6 +208,42 @@ function associatedText(event: KittyKeyEvent): number[] {
     .filter((point) => point >= 0x20 && point !== 0x7f);
 }
 
+/** ASCII control byte for a browser key, or null when no legacy mapping exists. */
+export function legacyControlByte(key: string): string | null {
+  if (key.length !== 1) return null;
+  const code = key.toLowerCase().charCodeAt(0);
+  if (code >= 97 && code <= 122) return String.fromCharCode(code - 96);
+
+  switch (key) {
+    case " ":
+    case "2":
+    case "@":
+      return "\0";
+    case "3":
+    case "[":
+      return "\x1b";
+    case "4":
+    case "\\":
+      return "\x1c";
+    case "5":
+    case "]":
+      return "\x1d";
+    case "6":
+    case "^":
+    case "~":
+      return "\x1e";
+    case "7":
+    case "/":
+    case "_":
+      return "\x1f";
+    case "8":
+    case "?":
+      return "\x7f";
+    default:
+      return null;
+  }
+}
+
 function legacyModifiedText(event: KittyKeyEvent): string | null {
   if (event.metaKey) return null;
   const chars = Array.from(event.key);
@@ -224,31 +260,7 @@ function legacyModifiedText(event: KittyKeyEvent): string | null {
 
   if (event.ctrlKey) {
     const key = event.key.toLowerCase();
-    const code = key.charCodeAt(0);
-    let control = key;
-    if (code >= 97 && code <= 122) control = String.fromCharCode(code - 96);
-    else {
-      control =
-        {
-          " ": "\0",
-          "/": "\x1f",
-          "2": "\0",
-          "3": "\x1b",
-          "4": "\x1c",
-          "5": "\x1d",
-          "6": "\x1e",
-          "7": "\x1f",
-          "8": "\x7f",
-          "?": "\x7f",
-          "@": "\0",
-          "[": "\x1b",
-          "\\": "\x1c",
-          "]": "\x1d",
-          "^": "\x1e",
-          _: "\x1f",
-          "~": "\x1e",
-        }[key] ?? key;
-    }
+    const control = legacyControlByte(key) ?? key;
     return event.altKey ? `\x1b${control}` : control;
   }
 
