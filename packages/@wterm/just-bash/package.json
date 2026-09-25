@@ -22,11 +22,11 @@
     "type-check": "tsc --noEmit"
   },
   "peerDependencies": {
-    "just-bash": "^2"
+    "just-bash": "^3.4.2"
   },
   "devDependencies": {
     "@internal/ts": "workspace:*",
-    "just-bash": "^2",
+    "just-bash": "^3.4.2",
     "typescript": "^6.0.2"
   },
   "keywords": [

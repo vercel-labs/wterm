@@ -14,7 +14,7 @@
     "@wterm/dom": "workspace:*",
     "@wterm/just-bash": "workspace:*",
     "@wterm/svelte": "workspace:*",
-    "just-bash": "^2.14.2"
+    "just-bash": "^3.4.2"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
