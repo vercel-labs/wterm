@@ -17,10 +17,15 @@ describe("BashShell", () => {
   let write: (data: string) => void;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockExec.mockReset();
     output = [];
     write = (data: string) => output.push(data);
-    mockExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+    mockExec.mockResolvedValue({
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      env: { PWD: "/home/user" },
+    });
   });
 
   describe("constructor", () => {
@@ -126,7 +131,7 @@ describe("BashShell", () => {
       await shell.handleInput("\r");
 
       expect(mockExec.mock.calls.map(([script]) => script)).toContain(
-        'cd "/home/user" && cat file.txtX --flag',
+        "cat file.txtX --flag",
       );
     });
 
@@ -142,7 +147,7 @@ describe("BashShell", () => {
       await shell.handleInput("\r");
 
       expect(mockExec.mock.calls.map(([script]) => script)).toContain(
-        'cd "/home/user" && cat file.txtX',
+        "cat file.txtX",
       );
     });
 
@@ -159,7 +164,7 @@ describe("BashShell", () => {
       await shell.handleInput("X");
       await shell.handleInput("\r");
       expect(mockExec.mock.calls.map(([script]) => script)).toContain(
-        'cd "/home/user" && cat fiX 界',
+        "cat fiX 界",
       );
     });
 
@@ -174,7 +179,7 @@ describe("BashShell", () => {
       await shell.handleInput("\r");
 
       expect(mockExec.mock.calls.map(([script]) => script)).toContain(
-        'cd "/home/user" && cat fileX end',
+        "cat fileX end",
       );
     });
 
@@ -187,7 +192,7 @@ describe("BashShell", () => {
       await shell.handleInput("\r");
 
       expect(mockExec.mock.calls.map(([script]) => script)).toContain(
-        'cd "/home/user" && cd mydir/sub',
+        "cd mydir/sub",
       );
     });
 
@@ -202,7 +207,7 @@ describe("BashShell", () => {
         'test -d "/home/user/Documents" && echo DIR',
       );
       expect(mockExec.mock.calls.map(([script]) => script)).toContain(
-        'cd "/home/user" && cd ~/Documents/',
+        "cd ~/Documents/",
       );
     });
 
@@ -227,7 +232,7 @@ describe("BashShell", () => {
       await shell.handleInput("\r");
 
       expect(mockExec.mock.calls.map(([script]) => script)).toContain(
-        'cd "/home/user" && cat fix',
+        "cat fix",
       );
     });
 
@@ -289,7 +294,7 @@ describe("BashShell", () => {
       await shell.handleInput("\r");
 
       expect(mockExec.mock.calls.map(([script]) => script)).toContain(
-        'cd "/home/user" && cd mydirX',
+        "cd mydirX",
       );
     });
   });
@@ -306,38 +311,34 @@ describe("BashShell", () => {
       expect(output[0]).toBe("\r\n");
       const joined = output.join("");
       expect(joined).toContain("$");
+      expect(mockExec).not.toHaveBeenCalled();
     });
 
-    it("executes command via bash.exec", async () => {
+    it("executes each command once with the current cwd", async () => {
       mockExec.mockResolvedValue({
         stdout: "hello\n",
         stderr: "",
         exitCode: 0,
+        env: { PWD: "/home/user" },
       });
       await shell.handleInput("l");
       await shell.handleInput("s");
       await shell.handleInput("\r");
 
-      expect(mockExec).toHaveBeenCalled();
-      const calls = mockExec.mock.calls;
-      const execCall = calls.find(
-        (c: string[]) => typeof c[0] === "string" && c[0].includes("ls"),
-      );
-      expect(execCall).toBeDefined();
+      expect(mockExec).toHaveBeenCalledTimes(1);
+      expect(mockExec).toHaveBeenCalledWith("ls", {
+        cwd: "/home/user",
+        env: { PWD: "/home/user" },
+      });
     });
 
     it("writes stdout to terminal", async () => {
-      mockExec
-        .mockResolvedValueOnce({
-          stdout: "file.txt\n",
-          stderr: "",
-          exitCode: 0,
-        })
-        .mockResolvedValueOnce({
-          stdout: "/home/user\n",
-          stderr: "",
-          exitCode: 0,
-        });
+      mockExec.mockResolvedValueOnce({
+        stdout: "file.txt\n",
+        stderr: "",
+        exitCode: 0,
+        env: { PWD: "/home/user" },
+      });
 
       await shell.handleInput("l");
       await shell.handleInput("s");
@@ -348,17 +349,12 @@ describe("BashShell", () => {
     });
 
     it("writes stderr in red", async () => {
-      mockExec
-        .mockResolvedValueOnce({
-          stdout: "",
-          stderr: "not found",
-          exitCode: 1,
-        })
-        .mockResolvedValueOnce({
-          stdout: "/home/user\n",
-          stderr: "",
-          exitCode: 0,
-        });
+      mockExec.mockResolvedValueOnce({
+        stdout: "",
+        stderr: "not found",
+        exitCode: 1,
+        env: { PWD: "/home/user" },
+      });
 
       await shell.handleInput("x");
       await shell.handleInput("\r");
@@ -368,8 +364,89 @@ describe("BashShell", () => {
       expect(joined).toContain("\x1b[31m");
     });
 
+    it("updates cwd and the prompt from result metadata", async () => {
+      mockExec.mockResolvedValueOnce({
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+        env: { PWD: "/tmp/project space $pecial" },
+      });
+
+      await shell.handleInput("cd /tmp");
+      await shell.handleInput("\r");
+
+      expect(shell.cwd).toBe("/tmp/project space $pecial");
+      expect(output.join("")).toContain("/tmp/project space $pecial");
+
+      await shell.handleInput("pwd");
+      await shell.handleInput("\r");
+
+      expect(mockExec).toHaveBeenLastCalledWith("pwd", {
+        cwd: "/tmp/project space $pecial",
+        env: { PWD: "/tmp/project space $pecial" },
+      });
+    });
+
+    it("updates cwd metadata from a nonzero execution", async () => {
+      mockExec.mockResolvedValueOnce({
+        stdout: "",
+        stderr: "",
+        exitCode: 1,
+        env: { PWD: "/tmp" },
+      });
+
+      await shell.handleInput("set -e; cd /tmp; false");
+      await shell.handleInput("\r");
+
+      expect(shell.cwd).toBe("/tmp");
+      expect(output.join("")).toContain("/tmp");
+    });
+
+    it("preserves cwd when result metadata is absent or invalid", async () => {
+      mockExec
+        .mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 })
+        .mockResolvedValueOnce({
+          stdout: "",
+          stderr: "",
+          exitCode: 0,
+          env: { PWD: "relative" },
+        });
+
+      await shell.handleInput("first");
+      await shell.handleInput("\r");
+      await shell.handleInput("second");
+      await shell.handleInput("\r");
+
+      expect(shell.cwd).toBe("/home/user");
+    });
+
+    it("recovers from a rejected execution", async () => {
+      mockExec
+        .mockRejectedValueOnce(new Error("execution failed"))
+        .mockResolvedValueOnce({
+          stdout: "recovered\n",
+          stderr: "",
+          exitCode: 0,
+          env: { PWD: "/home/user" },
+        });
+
+      await shell.handleInput("broken");
+      await shell.handleInput("\r");
+      await shell.handleInput("working");
+      await shell.handleInput("\r");
+
+      expect(mockExec).toHaveBeenCalledTimes(2);
+      expect(output.join("")).toContain("execution failed");
+      expect(output.join("")).toContain("recovered");
+    });
+
     it("adds command to history", async () => {
-      mockExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+      mockExec.mockResolvedValue({
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+        env: { PWD: "/home/user" },
+      });
       await shell.handleInput("e");
       await shell.handleInput("c");
       await shell.handleInput("h");
@@ -533,7 +610,12 @@ describe("BashShell", () => {
     beforeEach(async () => {
       shell = new BashShell();
       await shell.attach(write);
-      mockExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+      mockExec.mockResolvedValue({
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+        env: { PWD: "/home/user" },
+      });
       await shell.handleInput("first");
       await shell.handleInput("\r");
       await shell.handleInput("second");
@@ -860,6 +942,19 @@ describe("BashShell", () => {
       expect(joined).toContain("> ");
       expect(mockExec).not.toHaveBeenCalled();
     });
+
+    it("executes an assembled continued command once", async () => {
+      await shell.handleInput("echo \\");
+      await shell.handleInput("\r");
+      await shell.handleInput("hello");
+      await shell.handleInput("\r");
+
+      expect(mockExec).toHaveBeenCalledTimes(1);
+      expect(mockExec).toHaveBeenCalledWith(`echo ${"\\"}\nhello`, {
+        cwd: "/home/user",
+        env: { PWD: "/home/user" },
+      });
+    });
   });
 
   describe("handleInput - multi-char paste", () => {
@@ -1016,7 +1111,7 @@ describe("BashShell", () => {
 
       await shell.handleInput("Y");
       await shell.handleInput("\r");
-      expect(mockExec.mock.calls[2]?.[0]).toContain("echo Y👩‍💻x");
+      expect(mockExec.mock.calls[1]?.[0]).toContain("echo Y👩‍💻x");
     });
   });
 

@@ -88,7 +88,8 @@ new BashShell(options?: ShellOptions)
 - Command history (up/down arrows) that restores your unfinished command and cursor position
 - Tab completion for files and commands at the cursor, including earlier words in a command
 - Ctrl+C to cancel, Ctrl+L to clear the screen
-- Directory-aware prompt updates
+- Each submitted command executes once
+- Directory-aware prompt updates after every command, including nonzero exits
 
 ## License
 
