@@ -41,6 +41,7 @@ vi.mock("../wasm-bindings.js", async () => {
     },
     mouse_tracking: () => 1002,
     mouse_sgr: () => 1,
+    mouse_encoding: () => 2,
     focus_events: () => 1,
     kitty_keyboard_flags: () => 31,
   };
@@ -133,6 +134,7 @@ describe("GhosttyCore input modes", () => {
 
     expect(core.mouseTracking()).toBe(1002);
     expect(core.mouseSgr()).toBe(true);
+    expect(core.mouseEncoding()).toBe("sgr");
     expect(core.focusEvents()).toBe(true);
     expect(core.kittyKeyboardFlags()).toBe(31);
   });
@@ -148,5 +150,22 @@ describe("GhosttyCore input modes", () => {
     delete internals.wasm.exports.kitty_keyboard_flags;
 
     expect(core.kittyKeyboardFlags()).toBe(0);
+  });
+
+  it("does not infer X10 from an older WASM without mouse encoding state", async () => {
+    const core = await GhosttyCore.load();
+    core.init(80, 24);
+    const internals = core as unknown as {
+      wasm: { exports: Record<string, WebAssembly.ExportValue> };
+    };
+    const originalEncoding = internals.wasm.exports.mouse_encoding!;
+    const originalSgr = internals.wasm.exports.mouse_sgr!;
+    delete internals.wasm.exports.mouse_encoding;
+
+    expect(core.mouseEncoding()).toBe("sgr");
+    internals.wasm.exports.mouse_sgr = () => 0;
+    expect(core.mouseEncoding()).toBeNull();
+    internals.wasm.exports.mouse_encoding = originalEncoding;
+    internals.wasm.exports.mouse_sgr = originalSgr;
   });
 });

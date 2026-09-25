@@ -333,6 +333,26 @@ export class GhosttyCore implements TerminalCore {
     return this.wasm.exports.mouse_sgr(this.termPtr) !== 0;
   }
 
+  mouseEncoding(): "x10" | "utf8" | "sgr" | "urxvt" | "sgr-pixels" | null {
+    if (this._disposed || this.termPtr === 0) return null;
+    const mode = this.wasm.exports.mouse_encoding?.(this.termPtr);
+    if (mode === undefined) return this.mouseSgr() ? "sgr" : null;
+    switch (mode) {
+      case 0:
+        return "x10";
+      case 1:
+        return "utf8";
+      case 2:
+        return "sgr";
+      case 3:
+        return "urxvt";
+      case 4:
+        return "sgr-pixels";
+      default:
+        return null;
+    }
+  }
+
   focusEvents(): boolean {
     if (this._disposed || this.termPtr === 0) return false;
     return this.wasm.exports.focus_events(this.termPtr) !== 0;

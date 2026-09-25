@@ -205,6 +205,9 @@ export class WasmBridge implements TerminalCore {
   mouseSgr(): boolean {
     return this.exports.getMouseSgr() !== 0;
   }
+  mouseEncoding(): "x10" | "sgr" {
+    return this.mouseSgr() ? "sgr" : "x10";
+  }
   focusEvents(): boolean {
     return this.exports.getFocusEvents() !== 0;
   }

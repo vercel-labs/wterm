@@ -38,9 +38,14 @@ describe("WasmBridge", () => {
   });
 
   it("exposes any-motion mouse tracking from the committed WASM", () => {
+    expect(bridge.mouseEncoding()).toBe("x10");
     bridge.writeString("\x1b[?1003h\x1b[?1006h");
     expect(bridge.mouseTracking()).toBe(1003);
     expect(bridge.mouseSgr()).toBe(true);
+    expect(bridge.mouseEncoding()).toBe("sgr");
+
+    bridge.writeString("\x1b[?1006l");
+    expect(bridge.mouseEncoding()).toBe("x10");
 
     bridge.writeString("\x1b[?1003l");
     expect(bridge.mouseTracking()).toBe(0);

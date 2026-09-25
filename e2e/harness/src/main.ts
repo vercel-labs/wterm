@@ -39,6 +39,7 @@ let terminal: WTerm;
 let socket: WebSocket;
 let outputTail = "";
 const responses: string[] = [];
+const binaryResponses: number[][] = [];
 const titles: string[] = [];
 const bells: number[] = [];
 let pendingProbe: {
@@ -122,6 +123,7 @@ function snapshot() {
       },
     ),
     responses: [...responses],
+    binaryResponses: [...binaryResponses],
     titles: [...titles],
     bells: [...bells],
   };
@@ -250,6 +252,10 @@ async function init() {
       ? params.get("cursorBlink") === "true"
       : undefined,
     onData: sendInput,
+    onBinary:
+      replay && params.get("binary") === "true"
+        ? (data) => binaryResponses.push(Array.from(data))
+        : undefined,
     onTitle: (title) => titles.push(title),
     onBell: (count) => bells.push(count),
     onResize: (cols, rows) => {

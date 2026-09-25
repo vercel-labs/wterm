@@ -50,7 +50,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Wide grids** — the built-in core grows its cell storage as needed, up to 1024 columns and 512 rows
 - **Framework bindings** — React, Vue 3, and Svelte components
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
-- **Mouse and focus reporting** — DOM input for SGR clicks, drags, wheel events, and cell-level pointer motion in mode 1003
+- **Mouse and focus reporting** — DOM input for SGR and X10 clicks, drags, wheel events, and cell-level pointer motion in mode 1003
 - **Kitty keyboard protocol**: negotiated key disambiguation, event types, alternate keys, all-key reporting, and associated text
 - **IME composition** — tentative text appears at the terminal cursor; only committed text reaches the connected application
 - **Touch input** — a cursor-aligned input target supports soft keyboards, native paste, and held Backspace on touch-first devices

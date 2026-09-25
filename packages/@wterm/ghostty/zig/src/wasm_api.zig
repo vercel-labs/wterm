@@ -1007,6 +1007,11 @@ export fn mouse_sgr(ptr: usize) u32 {
     return if (state.terminal.flags.mouse_format == .sgr) 1 else 0;
 }
 
+export fn mouse_encoding(ptr: usize) u32 {
+    const state = stateFromPtr(ptr);
+    return @intFromEnum(state.terminal.flags.mouse_format);
+}
+
 export fn focus_events(ptr: usize) u32 {
     const state = stateFromPtr(ptr);
     return if (state.terminal.modes.get(.focus_event)) 1 else 0;

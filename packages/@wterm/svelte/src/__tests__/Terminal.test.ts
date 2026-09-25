@@ -16,6 +16,7 @@ vi.mock("@wterm/dom", () => {
     this.cols = options?.cols ?? 80;
     this.rows = options?.rows ?? 24;
     this.onData = options?.onData ?? null;
+    this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
     this.onBell = options?.onBell ?? null;
     this.onResize = options?.onResize ?? null;
@@ -130,6 +131,25 @@ describe("Terminal component", () => {
     lastWTermInstance.onData("hello");
 
     expect(onData).toHaveBeenCalledWith("hello");
+  });
+
+  it("forwards raw mouse bytes and follows onBinary prop changes", async () => {
+    const first = vi.fn();
+    const next = vi.fn();
+    const bytes = Uint8Array.of(27, 91, 77, 32, 132, 33);
+    const result = render(Terminal, { props: { onBinary: first } });
+    await Promise.resolve();
+
+    lastWTermInstance.onBinary(bytes);
+    expect(first).toHaveBeenCalledWith(bytes);
+
+    await result.rerender({ onBinary: next });
+    lastWTermInstance.onBinary(bytes);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(bytes);
+
+    await result.rerender({ onBinary: undefined });
+    expect(lastWTermInstance.onBinary).toBeNull();
   });
 
   it("updates the WTerm input handler when onData changes", async () => {

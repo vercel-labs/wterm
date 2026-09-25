@@ -33,6 +33,7 @@ export interface TerminalProps extends Omit<
   /** Enable debug mode (init-only — changing after mount has no effect). */
   debug?: boolean;
   onData?: (data: string) => void;
+  onBinary?: (data: Uint8Array) => void;
   onTitle?: (title: string) => void;
   onBell?: (count: number) => void;
   onResize?: (cols: number, rows: number) => void;
@@ -60,6 +61,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     cursorBlink,
     debug = false,
     onData,
+    onBinary,
     onTitle,
     onBell,
     onResize,
@@ -74,6 +76,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
   const wtermRef = useRef<WTerm | null>(null);
   const callbacksRef = useRef({
     onData,
+    onBinary,
     onTitle,
     onBell,
     onResize,
@@ -87,6 +90,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
 
   callbacksRef.current = {
     onData,
+    onBinary,
     onTitle,
     onBell,
     onResize,
@@ -129,6 +133,9 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         debug,
         onData: callbacksRef.current.onData
           ? (data: string) => callbacksRef.current.onData?.(data)
+          : undefined,
+        onBinary: callbacksRef.current.onBinary
+          ? (data: Uint8Array) => callbacksRef.current.onBinary?.(data)
           : undefined,
         onTitle: (title: string) => callbacksRef.current.onTitle?.(title),
         onBell: (count: number) => callbacksRef.current.onBell?.(count),
@@ -187,6 +194,11 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
       wt.onData = (data: string) => callbacksRef.current.onData?.(data);
     } else if (!onData && wt.onData) {
       wt.onData = null;
+    }
+    if (onBinary && !wt.onBinary) {
+      wt.onBinary = (data: Uint8Array) => callbacksRef.current.onBinary?.(data);
+    } else if (!onBinary && wt.onBinary) {
+      wt.onBinary = null;
     }
   }
   previousAutoResizeRef.current = autoResize;

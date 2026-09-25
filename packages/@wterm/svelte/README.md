@@ -48,6 +48,7 @@ The terminal accepts the shared `WTerm` options `cols`, `rows`, `core`,
 | ---------- | -------------------------------------- | ------- | ----------------------------------------------------------------------------------------- |
 | `theme`    | `string`                               | —       | Theme name, such as `"solarized-dark"`, `"monokai"`, or `"light"`                         |
 | `onData`   | `(data: string) => void`               | —       | Called for terminal input and host responses; when omitted, input is echoed automatically |
+| `onBinary` | `(data: Uint8Array) => void`           | —       | Called with raw X10 mouse reports for a binary-capable transport; without it, only ASCII-safe reports reach `onData` |
 | `onTitle`  | `(title: string) => void`              | —       | Called when the terminal title changes                                                    |
 | `onBell`   | `(count: number) => void`              | —       | Called with the pending BEL count; the host controls any alert                            |
 | `onResize` | `(cols: number, rows: number) => void` | —       | Called after the terminal is resized                                                      |

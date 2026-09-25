@@ -17,6 +17,7 @@ vi.mock("@wterm/dom", () => {
     this.cols = options?.cols ?? 80;
     this.rows = options?.rows ?? 24;
     this.onData = options?.onData ?? null;
+    this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
     this.onBell = options?.onBell ?? null;
     this.onResize = options?.onResize ?? null;
@@ -107,6 +108,26 @@ describe("Terminal component", () => {
     await renderTerminal({ onReady });
     await act(async () => {});
     expect(onReady).toHaveBeenCalled();
+  });
+
+  it("forwards raw mouse bytes and follows onBinary prop changes", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const first = vi.fn();
+    const next = vi.fn();
+    const bytes = Uint8Array.of(27, 91, 77, 32, 132, 33);
+    const { rerender } = render(<Terminal onBinary={first} />);
+    await act(async () => {});
+
+    lastWTermInstance.onBinary(bytes);
+    expect(first).toHaveBeenCalledWith(bytes);
+
+    rerender(<Terminal onBinary={next} />);
+    lastWTermInstance.onBinary(bytes);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(bytes);
+
+    rerender(<Terminal />);
+    expect(lastWTermInstance.onBinary).toBeNull();
   });
 
   it("calls onError on init failure", async () => {

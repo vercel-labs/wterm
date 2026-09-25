@@ -60,6 +60,7 @@ export interface GhosttyExports {
   using_alt_screen(ptr: number): number;
   mouse_tracking(ptr: number): number;
   mouse_sgr(ptr: number): number;
+  mouse_encoding?(ptr: number): number;
   focus_events(ptr: number): number;
   synchronized_output(ptr: number): number;
   synchronized_output_generation(ptr: number): number;

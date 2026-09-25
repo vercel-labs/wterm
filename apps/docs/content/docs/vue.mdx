@@ -79,6 +79,9 @@ Input callbacks are exposed as Vue events rather than `onXxx` props:
 
 See the full [Vue Events](/api-reference#vue-events) reference for payload types.
 
+The `binary` event carries raw X10 mouse bytes as a `Uint8Array`. Forward it
+unchanged when the terminal input transport accepts binary data.
+
 ## Template Ref
 
 Access imperative methods via a template ref:

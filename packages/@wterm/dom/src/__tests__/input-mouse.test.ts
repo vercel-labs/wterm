@@ -76,6 +76,107 @@ describe("InputHandler mouse and focus modes", () => {
     expect(wheel.defaultPrevented).toBe(true);
   });
 
+  it("encodes X10 press, drag, release, and wheel without SGR mode", () => {
+    core.mouseSgr = () => false;
+    core.mouseEncoding = () => "x10";
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 85,
+        clientY: 65,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mousemove", { buttons: 1, clientX: 105, clientY: 75 }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", { button: 0, clientX: 105, clientY: 75 }),
+    );
+    container.dispatchEvent(
+      new WheelEvent("wheel", { deltaY: 100, clientX: 105, clientY: 75 }),
+    );
+
+    expect(received).toEqual([
+      String.fromCharCode(27, 91, 77, 32, 40, 36),
+      String.fromCharCode(27, 91, 77, 64, 42, 37),
+      String.fromCharCode(27, 91, 77, 35, 42, 37),
+      String.fromCharCode(27, 91, 77, 97, 42, 37),
+    ]);
+  });
+
+  it("routes X10 reports with non-ASCII coordinates as raw bytes", () => {
+    handler.destroy();
+    const binary: Uint8Array[] = [];
+    core.mouseEncoding = () => "x10";
+    core.mouseSgr = () => false;
+    core.getCols = () => 160;
+    core.getRows = () => 100;
+    Object.defineProperty(container, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ left: 10, top: 20, width: 1600, height: 1000 }),
+    });
+    handler = new InputHandler(
+      container,
+      (data) => received.push(data),
+      () => core,
+      undefined,
+      undefined,
+      (data) => binary.push(data),
+    );
+    container.querySelector("textarea")!.focus({ preventScroll: true });
+    received = [];
+    const event = new MouseEvent("mousedown", {
+      button: 0,
+      buttons: 1,
+      clientX: 1005,
+      clientY: 995,
+      cancelable: true,
+    });
+    container.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(received).toEqual([]);
+    expect(binary.map((data) => Array.from(data))).toEqual([
+      [27, 91, 77, 32, 132, 131],
+    ]);
+  });
+
+  it("does not turn X10 coordinates into UTF-8 when no binary consumer is set", () => {
+    core.mouseEncoding = () => "x10";
+    core.mouseSgr = () => false;
+    core.getCols = () => 160;
+    Object.defineProperty(container, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ left: 10, top: 20, width: 1600, height: 400 }),
+    });
+    container.dispatchEvent(
+      new MouseEvent("mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 1005,
+        clientY: 35,
+      }),
+    );
+    expect(received).toEqual([]);
+  });
+
+  it("does not mistake other Ghostty mouse encodings for X10", () => {
+    core.mouseSgr = () => false;
+    for (const encoding of ["utf8", "urxvt", "sgr-pixels"] as const) {
+      core.mouseEncoding = () => encoding;
+      container.dispatchEvent(
+        new MouseEvent("mousedown", {
+          button: 0,
+          buttons: 1,
+          clientX: 85,
+          clientY: 65,
+        }),
+      );
+    }
+    expect(received).toEqual([]);
+  });
+
   it("reports unpressed pointer motion once per cell in mode 1003", () => {
     core.mouseTracking = () => 1003;
     const move = (x: number, y: number, shiftKey = false) => {
