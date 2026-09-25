@@ -147,7 +147,10 @@ for (const [saved, system, dark] of [
       ).toBeEnabled();
       await page.evaluate(async () => {
         const heading = getComputedStyle(document.querySelector("h1")!);
-        await document.fonts.load(`${heading.fontSize} ${heading.fontFamily}`);
+        // next/font's optional Arial fallback may not exist on Linux. Wait
+        // for the actual webfont, without trying to load every fallback face.
+        const primaryFont = heading.fontFamily.split(",")[0];
+        await document.fonts.load(`${heading.fontSize} ${primaryFont}`);
         await new Promise((resolve) =>
           requestAnimationFrame(() => requestAnimationFrame(resolve)),
         );
