@@ -55,6 +55,7 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 | `maxImageWidth` | `number` | — | Maximum rendered Kitty image width in CSS pixels; images scale down proportionally |
 | `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels; images scale down proportionally |
 | `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
+| `announceOutput` | `boolean` | `false` | Politely announce bounded terminal text changes while input has focus; updates without restarting |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the underlying `WTerm` instance for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 
 Standard DOM attributes (`class`, `style`, `id`, ARIA props, etc.) are forwarded to the root `<div>` via `inheritAttrs`.
@@ -145,6 +146,14 @@ Double-click words or paths and triple-click logical lines. Use `instance.select
 ## Terminal search
 
 Use the underlying `WTerm` instance to call `search(query, { caseSensitive })`, `findNext()`, `findPrevious()`, `getSearchState()`, and `clearSearch()`. Set its `onSearchChange` callback to update your Find controls. Access the instance through `ready` or the template ref’s `instance`. Search includes unmounted retained history; Ghostty also joins soft wraps. See the [search semantics and limits](../dom/README.md#terminal-search).
+
+## Output announcements
+
+Set the reactive `announceOutput` prop to `true` to opt into polite announcements
+while terminal input has focus. It defaults to `false` and can be toggled without
+replacing the terminal. Announcements summarize changed text, are batched and
+bounded, and stop when focus leaves input. See the [DOM announcement contract](../dom/README.md#output-announcements)
+for pause/resume behavior, capture bounds, and redraw semantics.
 
 ## License
 

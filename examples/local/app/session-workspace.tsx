@@ -167,6 +167,7 @@ function SessionTerminal({
   const connectFrameRef = useRef<number | null>(null);
   const disposedRef = useRef(false);
   const [findOpen, setFindOpen] = useState(false);
+  const [announceOutput, setAnnounceOutput] = useState(false);
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [searchState, setSearchState] = useState<SearchState | null>(null);
@@ -339,6 +340,14 @@ function SessionTerminal({
           name={session.name}
           active={active}
         />
+        <label className="flex items-center gap-2 px-2 py-1 text-[#aaa]">
+          <input
+            type="checkbox"
+            checked={announceOutput}
+            onChange={(event) => setAnnounceOutput(event.target.checked)}
+          />
+          Announce output
+        </label>
         {findOpen ? (
           <div
             className="flex min-w-0 flex-1 items-center gap-2"
@@ -435,6 +444,7 @@ function SessionTerminal({
       <div className="min-h-0 flex-1 pt-2">
         <WTermTerminal
           ref={ref}
+          announceOutput={active && announceOutput}
           cols={80}
           rows={24}
           autoResize

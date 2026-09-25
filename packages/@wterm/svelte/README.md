@@ -41,7 +41,7 @@ when input needs to be sent to a PTY or another backend:
 ## Props
 
 The terminal accepts the shared `WTerm` options `cols`, `rows`, `core`,
-`wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, and
+`wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, and
 `debug`, plus these Svelte callbacks:
 
 | Prop       | Type                                   | Default | Description                                                                               |
@@ -135,6 +135,14 @@ Double-click words or paths and triple-click logical lines. Use `instance.select
 ## Terminal search
 
 Use the underlying `WTerm` instance to call `search(query, { caseSensitive })`, `findNext()`, `findPrevious()`, `getSearchState()`, and `clearSearch()`. Set its `onSearchChange` callback to update your Find controls. Access the instance through `onReady` or `bind:instance`. Search includes unmounted retained history; Ghostty also joins soft wraps. See the [search semantics and limits](../dom/README.md#terminal-search).
+
+## Output announcements
+
+Set the reactive `announceOutput` prop to `true` to opt into polite announcements
+while terminal input has focus. It defaults to `false` and can be toggled without
+replacing the terminal. Announcements summarize changed text, are batched and
+bounded, and stop when focus leaves input. See the [DOM announcement contract](../dom/README.md#output-announcements)
+for pause/resume behavior, capture bounds, and redraw semantics.
 
 ## License
 

@@ -7,6 +7,7 @@ import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
 import { HistorySelection } from "./history-selection.js";
 import { TextCapture } from "./text-capture.js";
+import { OutputAnnouncements } from "./output-announcements.js";
 import { DebugAdapter } from "./debug.js";
 import { isLinkActivationModifier } from "./hyperlink.js";
 import {
@@ -36,6 +37,8 @@ export interface WTermOptions {
   maxImageHeight?: number;
   /** Force blinking on/off; omit to follow the terminal application's request. */
   cursorBlink?: boolean;
+  /** Announce changed terminal text politely while input has focus. Off by default. */
+  announceOutput?: boolean;
   debug?: boolean;
   onData?: (data: string) => void;
   /** Raw input bytes, used by X10 mouse reports. */
@@ -79,6 +82,7 @@ export class WTerm {
   private _search: SearchController;
   private _historySelection: HistorySelection;
   private _textCapture = new TextCapture();
+  private _outputAnnouncements: OutputAnnouncements;
   private _searchReveal = false;
   private _onClickFocus: (event: MouseEvent) => void;
   private _onScroll: () => void;
@@ -135,6 +139,12 @@ export class WTerm {
     this.element.appendChild(this._container);
     this.element.classList.add("wterm");
     this._historySelection = new HistorySelection(this.element);
+    this._outputAnnouncements = new OutputAnnouncements(
+      this.element,
+      () => this.bridge,
+      () => this.rafId === null && this._synchronizedOutputState !== "held",
+    );
+    this._outputAnnouncements.setEnabled(options.announceOutput ?? false);
     this.element.classList.toggle("cursor-blink", options.cursorBlink === true);
     this.element.classList.toggle(
       "cursor-steady",
@@ -288,6 +298,7 @@ export class WTerm {
       this.input = new InputHandler(
         this.element,
         (data) => {
+          this._outputAnnouncements.input();
           this._scrollToBottom();
           if (this.onData) {
             this.onData(data);
@@ -305,6 +316,7 @@ export class WTerm {
           this._scrollToBottom();
         },
         (data) => {
+          this._outputAnnouncements.input();
           this._historySelection.clear();
           this._scrollToBottom();
           if (this.onBinary) {
@@ -417,6 +429,7 @@ export class WTerm {
     this._shouldScrollToBottom =
       this._pendingResizeScrollTop === null && this._isScrolledToBottom();
     this.bridge.resize(cols, rows);
+    this._outputAnnouncements.invalidate();
     this.cols = this.bridge.getCols();
     this.rows = this.bridge.getRows();
     const synchronized = this.bridge.synchronizedOutput?.() ?? false;
@@ -449,6 +462,11 @@ export class WTerm {
   }
   getSearchState(): SearchState {
     return this._search.snapshot();
+  }
+
+  /** Enable or stop polite announcements without changing terminal focus. */
+  setOutputAnnouncements(enabled: boolean): void {
+    if (!this._destroyed) this._outputAnnouncements.setEnabled(enabled);
   }
 
   /** Capture retained history and the active screen without changing selection. */
@@ -791,6 +809,7 @@ export class WTerm {
     this._search.resume(this.bridge);
     this._historySelection.resume(this.bridge);
     this._textCapture.resume(this.bridge);
+    this._outputAnnouncements.rendered();
 
     const title = this.bridge.getTitle();
     if (title !== null && this.onTitle) {
@@ -991,6 +1010,7 @@ export class WTerm {
     this._destroyed = true;
     this._textCapture.cancel();
     this._historySelection.destroy();
+    this._outputAnnouncements.destroy();
     this._search.cancel();
     this.onSearchChange = null;
     this._windowSizeQueryBuffer = "";

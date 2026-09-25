@@ -27,6 +27,7 @@ vi.mock("@wterm/dom", () => {
       this.rows = rows;
     });
     this.focus = vi.fn();
+    this.setOutputAnnouncements = vi.fn();
     this.destroy = vi.fn();
     this.init = vi.fn().mockImplementation(async () => {
       this.bridge = {};
@@ -59,6 +60,19 @@ describe("Terminal component", () => {
     expect(element.getAttribute("aria-label")).toBe("Terminal");
     expect(element.hasAttribute("aria-multiline")).toBe(false);
     expect(element.getAttribute("aria-roledescription")).toBe("terminal");
+  });
+
+  it("toggles output announcements without replacing the terminal", async () => {
+    const result = render(Terminal, { props: { announceOutput: true } });
+    await tick();
+    const instance = lastWTermInstance;
+    const { WTerm } = await import("@wterm/dom");
+    expect(vi.mocked(WTerm).mock.calls[0][1]?.announceOutput).toBe(true);
+    await result.rerender({ announceOutput: false });
+    expect(instance.setOutputAnnouncements).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
+    expect(instance.element.hasAttribute("announceOutput")).toBe(false);
   });
 
   it("forwards classes and styles", () => {
@@ -215,6 +229,7 @@ describe("Terminal component", () => {
       this.write = vi.fn();
       this.resize = vi.fn();
       this.focus = vi.fn();
+      this.setOutputAnnouncements = vi.fn();
       this.destroy = vi.fn();
       this.init = vi.fn(() =>
         pendingInit.then(() => {
@@ -353,6 +368,7 @@ describe("Terminal component", () => {
       this.write = vi.fn();
       this.resize = vi.fn();
       this.focus = vi.fn();
+      this.setOutputAnnouncements = vi.fn();
       this.destroy = vi.fn();
       this.init = vi.fn(() =>
         pendingInit.then(() => {
@@ -406,6 +422,7 @@ describe("Terminal component", () => {
       this.write = vi.fn();
       this.resize = vi.fn();
       this.focus = vi.fn();
+      this.setOutputAnnouncements = vi.fn();
       this.destroy = vi.fn();
       this.init = vi.fn().mockRejectedValue(new Error("WASM failed"));
       lastWTermInstance = this;

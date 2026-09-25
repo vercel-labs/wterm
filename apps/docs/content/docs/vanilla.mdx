@@ -50,7 +50,7 @@ await term.init();
 
 ## Options and Methods
 
-The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `onData`, `onBinary`, `onTitle`, `onBell`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
+The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `onData`, `onBinary`, `onTitle`, `onBell`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
 
 See [WTerm Methods](/api-reference#wterm-methods) for all instance methods, including [full-history Find](/api-reference#terminal-search): `search`, `findNext`, `findPrevious`, `getSearchState`, and `clearSearch`. Use the `onSearchChange` WTerm option or instance callback for progress and match counts.
 
@@ -175,3 +175,13 @@ term.onData = (data) => ws.send(data);
 ```
 
 See the full [WebSocketTransport](/api-reference#websockettransport) reference for all options, methods, and properties.
+
+## Output announcements
+
+Opt in with `announceOutput` to announce terminal text changes politely while
+input has focus. The option defaults to `false`; component prop changes apply
+without restarting the terminal, and vanilla callers use
+`term.setOutputAnnouncements(enabled)`. Announcements are batched and stop
+when focus leaves input. Bursts are bounded to avoid overwhelming the speech
+queue. See [Output announcements](/api-reference#output-announcements) for
+capture limits, pause/resume behavior, and redraw semantics.
