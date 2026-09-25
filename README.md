@@ -51,6 +51,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Framework bindings** — React, Vue 3, and Svelte components
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
 - **Mouse and focus reporting** — DOM input for X10, UTF-8 (1005), SGR (1006), urxvt (1015), and SGR pixel (1016) clicks, drags, wheel events, and pointer motion
+- **Mouse-aware scrollback** — clicks and wheel gestures on history remain available for selection and scrolling while an application tracks the mouse
 - **Kitty keyboard protocol**: negotiated key disambiguation, event types, alternate keys, all-key reporting, and associated text
 - **Modified navigation keys** — xterm-style Shift, Alt, and Control sequences for arrows, navigation, and function keys outside Kitty keyboard mode
 - **Legacy control keys** — Ctrl+Space, Ctrl+/, Ctrl+?, and Ctrl+Backspace send their terminal control bytes when the browser delivers those shortcuts

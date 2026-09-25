@@ -571,6 +571,110 @@ test.describe("cursor", () => {
 });
 
 test.describe("scrollback", () => {
+  test("keeps history interaction local while mouse tracking is enabled", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __historyMouseReports: string[];
+        __wterm: {
+          onData: ((data: string) => void) | null;
+          write: (data: string) => void;
+        };
+      };
+      scope.__historyMouseReports = [];
+      scope.__wterm.onData = (data) => scope.__historyMouseReports.push(data);
+      scope.__wterm.write(
+        Array.from({ length: 160 }, (_, index) => `history ${index}\r\n`).join(
+          "",
+        ) + "\x1b[?1002h\x1b[?1006h",
+      );
+    });
+    await expect(terminal).toHaveClass(/has-scrollback/);
+
+    const point = await terminal.evaluate(async (element) => {
+      element.scrollTop = 0;
+      element.dispatchEvent(new Event("scroll"));
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const host = element.getBoundingClientRect();
+      const row = Array.from(
+        element.querySelectorAll<HTMLElement>(".term-scrollback-row"),
+      ).find((candidate) => {
+        const rect = candidate.getBoundingClientRect();
+        return rect.top >= host.top && rect.bottom <= host.bottom;
+      });
+      if (!row) throw new Error("missing visible scrollback row");
+      const rect = row.getBoundingClientRect();
+      const x = rect.left + 10;
+      const y = rect.top + rect.height / 2;
+      const press = new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        buttons: 1,
+        clientX: x,
+        clientY: y,
+      });
+      row.dispatchEvent(press);
+      if (press.defaultPrevented) throw new Error("history click was captured");
+      return { x, y };
+    });
+
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.wheel(0, 120);
+    await expect
+      .poll(() => terminal.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            globalThis as typeof globalThis & {
+              __historyMouseReports: string[];
+            }
+          ).__historyMouseReports,
+      ),
+    ).toEqual([]);
+
+    await terminal.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect
+      .poll(() =>
+        terminal.evaluate(
+          (element) =>
+            element.scrollHeight - element.scrollTop - element.clientHeight,
+        ),
+      )
+      .toBeLessThanOrEqual(1);
+    const bottom = await terminal.evaluate((element) => element.scrollTop);
+    const liveRow = terminal
+      .locator(".term-row:not(.term-scrollback-row)")
+      .first();
+    const liveBox = await liveRow.boundingBox();
+    if (!liveBox) throw new Error("missing live terminal row");
+    await page.mouse.move(liveBox.x + 10, liveBox.y + liveBox.height / 2);
+    await page.keyboard.down("Shift");
+    await page.mouse.wheel(0, -120);
+    await page.keyboard.up("Shift");
+    await expect
+      .poll(() => terminal.evaluate((element) => element.scrollTop))
+      .toBeLessThan(bottom);
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            globalThis as typeof globalThis & {
+              __historyMouseReports: string[];
+            }
+          ).__historyMouseReports,
+      ),
+    ).toEqual([]);
+  });
+
   test("applies one scroll adjustment when old rows are discarded across frames", async ({
     page,
   }) => {
