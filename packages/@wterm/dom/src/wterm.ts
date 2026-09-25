@@ -1,4 +1,8 @@
-import { WasmBridge, type TerminalCore } from "@wterm/core";
+import {
+  WasmBridge,
+  type TerminalCore,
+  type TerminalPosition,
+} from "@wterm/core";
 import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
 import { HistorySelection } from "./history-selection.js";
@@ -79,6 +83,7 @@ export class WTerm {
   private _onModifierChange: (event: KeyboardEvent) => void;
   private _onWindowBlur: () => void;
   private _onCopy: (event: ClipboardEvent) => void;
+  private _onMouseSelect: (event: MouseEvent) => void;
 
   onData: ((data: string) => void) | null;
   onBinary: ((data: Uint8Array) => void) | null;
@@ -151,6 +156,39 @@ export class WTerm {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) this.input?.focus();
     };
+    this._onMouseSelect = (event) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        (event.detail !== 2 && event.detail !== 3) ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        !(event.target instanceof Element)
+      )
+        return;
+      const position = this.renderer?.positionAt(
+        event.target,
+        event.clientX,
+        this._charWidth,
+      );
+      if (!position || !this.bridge) return;
+      if (
+        !event.shiftKey &&
+        this.bridge.mouseTracking?.() &&
+        position.row >= this.bridge.getScrollbackCount()
+      )
+        return;
+      const selected =
+        event.detail === 2
+          ? this.selectWord(position)
+          : this.selectLine(position.row);
+      if (selected) event.preventDefault();
+    };
+    // Expand after native mouse selection finishes. Cancelling mousedown
+    // leaves Chromium/WebKit's previous selection gesture active, which can
+    // collapse a replacement range on mouseup. Run before click-to-focus.
+    this.element.addEventListener("click", this._onMouseSelect);
     this.element.addEventListener("click", this._onClickFocus);
     this._onModifierChange = (event) => {
       this.element.classList.toggle(
@@ -426,6 +464,33 @@ export class WTerm {
     const selected = this._historySelection.select();
     this._scheduleRender();
     return selected;
+  }
+
+  /** Select a word at a cell, with row zero at the oldest retained row. */
+  selectWord(position: TerminalPosition): boolean {
+    return this._selectUnit(position, "word");
+  }
+
+  /** Select the logical line containing a retained-buffer row. */
+  selectLine(row: number): boolean {
+    return this._selectUnit({ row, col: 0 }, "line");
+  }
+
+  private _selectUnit(
+    position: TerminalPosition,
+    unit: "word" | "line",
+  ): boolean {
+    if (this._destroyed || !this.bridge || !this.renderer) return false;
+    return this.renderer.select(this.bridge, position, unit, () => {
+      this._historySelection.clear();
+      const active = this.element.ownerDocument.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        this.element.contains(active) &&
+        active.tagName === "TEXTAREA"
+      )
+        active.blur();
+    });
   }
 
   /** Cancel Select All and clear a native selection wholly owned by this terminal. */
@@ -921,6 +986,7 @@ export class WTerm {
     this.renderer?.destroy();
     this.renderer = null;
     this.element.removeEventListener("click", this._onClickFocus);
+    this.element.removeEventListener("click", this._onMouseSelect);
     this.element.removeEventListener("scroll", this._onScroll);
     this.element.ownerDocument.removeEventListener("copy", this._onCopy);
     this.element.ownerDocument.removeEventListener(

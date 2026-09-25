@@ -55,6 +55,8 @@ Ghostty cases also preserve backward Unicode selections through narrower/wider r
 
 `select-all.spec.ts` checks full retained-history selection in both cores, bounded mounted rows while scrolling, real keyboard Copy/Paste, Unicode wraps, active-screen isolation, and cancellation. `window.ptyHarness.selectAll()` resolves when capture completes; `clearSelection()` cancels it.
 
+`word-line-selection.spec.ts` exercises double/triple clicks, wrapped paths, Unicode cells, unmounted logical lines, reflow, native Copy/Paste, mouse-reporting ownership, and pending frames. The harness exposes `selectWord(position)` and `selectLine(row)` in retained-buffer coordinates.
+
 `cell-width.spec.ts` checks column positions across ASCII, braille, box drawing,
 wide characters, links, cursors, and scrollback. It also exercises font changes
 and enlarged fallback glyphs without relying on a particular installed font.

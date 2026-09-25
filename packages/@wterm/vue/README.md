@@ -132,6 +132,8 @@ With the current Ghostty WASM binary, selections follow output scrolling and res
 
 Use `await instance.selectAll()` to select all retained history and the active screen, then read `instance.getSelectionText()`. Cmd+A or Ctrl+Shift+A invokes the same action while terminal input is focused. Capture is cancellable and bounded; output or resize clears it. Call `instance.clearSelection()` to cancel. See the linked selection reference for limits and copy shortcuts.
 
+Double-click words or paths and triple-click logical lines. Use `instance.selectWord({ row, col })` or `instance.selectLine(row)` for the same selection from host controls; coordinates start at the oldest retained row. Ghostty joins confirmed soft wraps, including unmounted history. See the linked selection reference for boundaries, limits, and mouse-reporting behavior.
+
 ## Terminal search
 
 Use the underlying `WTerm` instance to call `search(query, { caseSensitive })`, `findNext()`, `findPrevious()`, `getSearchState()`, and `clearSearch()`. Set its `onSearchChange` callback to update your Find controls. Access the instance through `ready` or the template ref’s `instance`. Search includes unmounted retained history; Ghostty also joins soft wraps. See the [search semantics and limits](../dom/README.md#terminal-search).
