@@ -89,6 +89,8 @@ const Terminal = defineComponent({
      * Force blinking on/off; omit to follow the terminal application's request.
      */
     cursorBlink: { type: Boolean, default: undefined },
+    /** Politely announce terminal text changes while input has focus. */
+    announceOutput: Boolean,
     /**
      * Enable debug mode (init-only — changing after mount has no effect).
      * Exposes a `DebugAdapter` on the underlying `WTerm` instance.
@@ -149,6 +151,7 @@ const Terminal = defineComponent({
         maxImageWidth: props.maxImageWidth,
         maxImageHeight: props.maxImageHeight,
         cursorBlink: props.cursorBlink,
+        announceOutput: props.announceOutput,
         debug: props.debug,
         onData: hasDataListener
           ? (data: string) => emit("data", data)
@@ -198,6 +201,12 @@ const Terminal = defineComponent({
         el?.classList.toggle("cursor-blink", blink === true);
         el?.classList.toggle("cursor-steady", blink === false);
       },
+      { flush: "post" },
+    );
+
+    watch(
+      () => props.announceOutput,
+      (enabled) => wterm.value?.setOutputAnnouncements(enabled),
       { flush: "post" },
     );
 

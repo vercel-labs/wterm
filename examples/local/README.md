@@ -48,3 +48,13 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 ## Output reader checks
 
 Run `pnpm --filter local build`, then `pnpm --filter local test:e2e` from the repository root. The browser suite starts an isolated production server and uses deterministic WebSocket output without spawning a shell. Chromium, Firefox, and WebKit cover unmounted history, native read-only navigation and Copy, explicit refresh, cancellation, and focus return. `app/output-reader.tsx` owns the dialog; `tests/output-reader.spec.ts` contains the browser cases.
+
+## Output announcements
+
+Each session has an **Announce output** checkbox, off by default. Enable it and
+focus terminal input to receive polite screen-reader updates. Opening **Read
+output**, switching sessions, or leaving input stops pending announcements;
+returning does not replay background output. Updates summarize changed rows in
+500 ms batches, with at most 20 rows or 4,000 characters between input actions.
+A pause notice replaces oversized bursts; new input or toggling the checkbox
+resumes announcements. Use **Read output** for a stable view of retained history.

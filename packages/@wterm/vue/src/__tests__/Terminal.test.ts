@@ -23,6 +23,7 @@ vi.mock("@wterm/dom", () => {
     this.write = vi.fn();
     this.resize = vi.fn();
     this.focus = vi.fn();
+    this.setOutputAnnouncements = vi.fn();
     this.destroy = vi.fn();
     this.init = vi.fn().mockImplementation(async () => {
       this.bridge = {};
@@ -64,6 +65,18 @@ describe("Terminal component", () => {
     const wrapper = await mountTerminal({}, { class: "custom" });
     expect(wrapper.classes()).toContain("custom");
     expect(wrapper.classes()).toContain("wterm");
+  });
+
+  it("toggles output announcements without replacing the terminal", async () => {
+    const wrapper = await mountTerminal({ announceOutput: true });
+    const instance = lastWTermInstance;
+    const { WTerm } = await import("@wterm/dom");
+    expect(vi.mocked(WTerm).mock.calls[0][1]?.announceOutput).toBe(true);
+    await wrapper.setProps({ announceOutput: false });
+    expect(instance.setOutputAnnouncements).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(wrapper.attributes("announceoutput")).toBeUndefined();
+    wrapper.unmount();
   });
 
   it("updates host input labels and tab order without restarting the terminal", async () => {

@@ -46,7 +46,7 @@ function App() {
 
 ## Props
 
-The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `onData`, `onBinary`, `onTitle`, `onBell`, `onResize`) plus [React-only props](/api-reference#react-only-props) (`theme`, `onReady`, `onError`). Pass a [`TerminalCore`](/ghostty) instance to the `core` prop to use an alternative emulation backend.
+The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `onData`, `onBinary`, `onTitle`, `onBell`, `onResize`) plus [React-only props](/api-reference#react-only-props) (`theme`, `onReady`, `onError`). Pass a [`TerminalCore`](/ghostty) instance to the `core` prop to use an alternative emulation backend.
 
 Standard `div` props (`className`, `style`, `id`, etc.) are forwarded to the container element.
 
@@ -108,3 +108,13 @@ With Ghostty's current WASM binary, selections also follow output scrolling and 
 Use `await wt.selectAll()` on the WTerm instance to select all retained history and the active screen without mounting extra rows, then read `wt.getSelectionText()`. Cmd+A or Ctrl+Shift+A invokes the same action from terminal input. `wt.clearSelection()` cancels it. See [Select All](/api-reference#select-all) for capture limits, shortcuts, and when selection clears.
 
 Double-click words or paths, or triple-click logical lines. The WTerm methods `selectWord({ row, col })` and `selectLine(row)` create the same native selection, including confirmed Ghostty soft wraps and unmounted history. See [Words and Logical Lines](/api-reference#words-and-logical-lines) for coordinates, boundaries, and limits.
+
+## Output announcements
+
+Opt in with `announceOutput` to announce terminal text changes politely while
+input has focus. The option defaults to `false`; component prop changes apply
+without restarting the terminal, and vanilla callers use
+`term.setOutputAnnouncements(enabled)`. Announcements are batched and stop
+when focus leaves input. Bursts are bounded to avoid overwhelming the speech
+queue. See [Output announcements](/api-reference#output-announcements) for
+capture limits, pause/resume behavior, and redraw semantics.

@@ -55,6 +55,21 @@
   will-change: contents;
 }
 
+.term-announcements {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: pre;
+  pointer-events: none;
+  user-select: none;
+}
+
 .term-images {
   position: absolute;
   inset: 0;

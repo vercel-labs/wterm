@@ -56,7 +56,7 @@ The other callback props are `onTitle`, `onBell`, `onResize`, `onReady`, and `on
 ## Props
 
 The component accepts the shared terminal options `cols`, `rows`, `core`,
-`wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, and
+`wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, and
 `debug`, plus the `theme` prop. Standard `<div>` attributes such as `class`,
 `style`, `id`, and ARIA attributes are forwarded to the root element.
 
@@ -127,3 +127,13 @@ With Ghostty's current WASM binary, selections also follow output scrolling and 
 Use `await wt.selectAll()` on the WTerm instance to select all retained history and the active screen without mounting extra rows, then read `wt.getSelectionText()`. Cmd+A or Ctrl+Shift+A invokes the same action from terminal input. `wt.clearSelection()` cancels it. See [Select All](/api-reference#select-all) for capture limits, shortcuts, and when selection clears.
 
 Double-click words or paths, or triple-click logical lines. The WTerm methods `selectWord({ row, col })` and `selectLine(row)` create the same native selection, including confirmed Ghostty soft wraps and unmounted history. See [Words and Logical Lines](/api-reference#words-and-logical-lines) for coordinates, boundaries, and limits.
+
+## Output announcements
+
+Opt in with `announceOutput` to announce terminal text changes politely while
+input has focus. The option defaults to `false`; component prop changes apply
+without restarting the terminal, and vanilla callers use
+`term.setOutputAnnouncements(enabled)`. Announcements are batched and stop
+when focus leaves input. Bursts are bounded to avoid overwhelming the speech
+queue. See [Output announcements](/api-reference#output-announcements) for
+capture limits, pause/resume behavior, and redraw semantics.

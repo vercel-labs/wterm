@@ -46,6 +46,7 @@
   export let maxImageWidth: number | undefined = undefined;
   export let maxImageHeight: number | undefined = undefined;
   export let cursorBlink: boolean | undefined = undefined;
+  export let announceOutput = false;
   export let debug = false;
   export let className = "";
   export let onData: ((data: string) => void) | undefined = undefined;
@@ -139,6 +140,7 @@
       maxImageWidth,
       maxImageHeight,
       cursorBlink,
+      announceOutput,
       debug,
       onData: hasDataHandler() ? handleData : undefined,
       onBinary: hasBinaryHandler() ? handleBinary : undefined,
@@ -173,6 +175,7 @@
   // Keep the small set of mutable options that WTerm supports in sync with
   // the component. Core, WASM source, and image sizing are init-time options.
   $: if (initialized && instance?.bridge) {
+    instance.setOutputAnnouncements(announceOutput);
     const dataHandler = Boolean(onData || ondata);
     if (!autoResize && (instance.cols !== cols || instance.rows !== rows)) {
       instance.resize(cols, rows);

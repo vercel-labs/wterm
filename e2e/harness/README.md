@@ -203,3 +203,8 @@ If a native binding is missing, install the platform build prerequisites and run
 | `record-apps.mjs` | Isolated Neovim and tmux capture with explicit checkpoints |
 | `tests/server.test.mjs` | Real-process lifecycle and protocol boundary checks |
 | `playwright.config.ts` | Chromium, Firefox, and WebKit projects and artifact settings |
+
+The output-announcement browser cases cover both cores: opt-in behavior,
+Unicode/ANSI text, focus gating, new scrollback, flood limits, repeated results,
+synchronized output, and teardown. `ptyHarness.setOutputAnnouncements(enabled)`
+controls the same WTerm API used by hosts.

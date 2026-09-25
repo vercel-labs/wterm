@@ -5,7 +5,7 @@ navTitle: "Configuration"
 
 ## Options
 
-The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, and `onResize` (exposed as `@data`, `@title`, `@bell`, and `@resize` events in Vue).
+The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, and `onResize` (exposed as `@data`, `@title`, `@bell`, and `@resize` events in Vue).
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
 
@@ -171,3 +171,13 @@ ws.connect();
 See the full [WebSocketTransport](/api-reference#websockettransport) reference for all options, methods, and properties.
 
 The transport buffers any `send()` calls made before the connection is open and flushes them automatically on connect.
+
+## Output announcements
+
+Opt in with `announceOutput` to announce terminal text changes politely while
+input has focus. The option defaults to `false`; component prop changes apply
+without restarting the terminal, and vanilla callers use
+`term.setOutputAnnouncements(enabled)`. Announcements are batched and stop
+when focus leaves input. Bursts are bounded to avoid overwhelming the speech
+queue. See [Output announcements](/api-reference#output-announcements) for
+capture limits, pause/resume behavior, and redraw semantics.

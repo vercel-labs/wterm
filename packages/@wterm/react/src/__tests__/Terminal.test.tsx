@@ -25,6 +25,7 @@ vi.mock("@wterm/dom", () => {
     this.write = vi.fn();
     this.resize = vi.fn();
     this.focus = vi.fn();
+    this.setOutputAnnouncements = vi.fn();
     this.destroy = vi.fn();
     this.init = vi.fn().mockImplementation(async () => {
       this.bridge = {};
@@ -63,6 +64,18 @@ describe("Terminal component", () => {
     const { container } = await renderTerminal({ className: "custom" });
     const el = container.querySelector("[role='group']")!;
     expect(el.className).toContain("custom");
+  });
+
+  it("toggles output announcements without replacing the terminal", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const { rerender } = render(<Terminal announceOutput />);
+    const instance = lastWTermInstance;
+    expect(instance.setOutputAnnouncements).toHaveBeenLastCalledWith(true);
+    rerender(<Terminal announceOutput={false} />);
+    expect(instance.setOutputAnnouncements).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
+    expect(instance.element.hasAttribute("announceOutput")).toBe(false);
   });
 
   it("updates host input labels and tab order without restarting the terminal", async () => {
@@ -175,6 +188,7 @@ describe("Terminal component", () => {
       this.resize = vi.fn();
       this.focus = vi.fn();
       this.destroy = vi.fn();
+      this.setOutputAnnouncements = vi.fn();
       this.init = vi.fn().mockRejectedValue(new Error("WASM failed"));
       lastWTermInstance = this;
     });

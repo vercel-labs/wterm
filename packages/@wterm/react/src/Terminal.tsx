@@ -30,6 +30,8 @@ export interface TerminalProps extends Omit<
   maxImageHeight?: number;
   /** Force blinking on/off; omit to follow the terminal application's request. */
   cursorBlink?: boolean;
+  /** Politely announce terminal text changes while input has focus. */
+  announceOutput?: boolean;
   /** Enable debug mode (init-only — changing after mount has no effect). */
   debug?: boolean;
   onData?: (data: string) => void;
@@ -59,6 +61,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     maxImageWidth,
     maxImageHeight,
     cursorBlink,
+    announceOutput = false,
     debug = false,
     onData,
     onBinary,
@@ -130,6 +133,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         maxImageWidth,
         maxImageHeight,
         cursorBlink,
+        announceOutput,
         debug,
         onData: callbacksRef.current.onData
           ? (data: string) => callbacksRef.current.onData?.(data)
@@ -207,6 +211,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
   // the focus and scrollback classes managed by WTerm.
   useLayoutEffect(() => {
     const el = wtermRef.current?.element;
+    wtermRef.current?.setOutputAnnouncements(announceOutput);
     el?.classList.toggle("cursor-blink", cursorBlink === true);
     el?.classList.toggle("cursor-steady", cursorBlink === false);
   });

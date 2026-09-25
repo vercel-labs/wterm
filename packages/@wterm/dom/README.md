@@ -44,7 +44,39 @@ Host `tabindex` applies to the input: `0` enables normal page tab entry and `-1`
 
 The input's accessible description includes the exit instructions after any host-provided description. Host `aria-describedby` references take precedence over `aria-description`.
 
-Mounted output remains readable separately from input. Use `readText()` to present retained history in an accessible reader; live output announcements are not enabled. Ancestor `aria-hidden` and `inert` still control whether a terminal is available.
+Mounted output remains readable separately from input. Use `readText()` to present retained history in an accessible reader; live output announcements are off by default. Ancestor `aria-hidden` and `inert` still control whether a terminal is available.
+
+## Output announcements
+
+Set `announceOutput: true` in vanilla JavaScript, or pass the `announceOutput`
+prop in React, Vue, or Svelte, to opt into polite screen-reader announcements.
+It defaults to `false`. Change it without restarting the terminal using
+`term.setOutputAnnouncements(enabled)` or the reactive component prop. The
+local workspace provides an **Announce output** checkbox for each session.
+
+Only the focused terminal in the active browser document announces output.
+Leaving terminal input, opening the output reader, hiding the document, or
+turning the option off clears pending announcements. Returning starts from
+current text without replaying output received in the background.
+
+Changes are sampled after painting at most once every 500 ms. Announcements
+contain whole changed physical rows, with Unicode cells intact and trailing
+padding removed; they can include shell echo or redrawn text. Recently scrolled
+rows are included within the capture bounds. Unchanged text, styling changes,
+and erased blank rows stay silent. Resizing and switching screens establish a
+new baseline. Intermediate redraws can be coalesced, so this is a summary of
+screen changes, not a lossless transcript. Use `readText()` to inspect retained
+output explicitly.
+
+Each burst allows at most 20 changed rows or 4,000 UTF-16 code units. When the
+limit is exceeded, one notice replaces the text and announcements pause until
+new terminal input, focus reentry, or toggling the option off and on. The DOM
+retains only the latest batch. Captures are also bounded to 32,768 cells and
+65,536 UTF-16 code units; oversized captures or output pruned before it can be
+read produce the same pause notice without announcing partial text. Custom
+cores should expose `getScrollbackDiscardedCount()` to avoid rereading shifted
+rows when their history limit is reached. Route writes and resizes through
+WTerm so announcements follow completed paints.
 
 ## Reading terminal output
 
@@ -84,6 +116,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `maxImageWidth` | `number` | — | Maximum rendered Kitty image width in CSS pixels. Images larger than the limit are scaled down proportionally. |
 | `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels. Images larger than the limit are scaled down proportionally. |
 | `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
+| `announceOutput` | `boolean` | `false` | Politely announce bounded text changes while terminal input has focus; mutable via `setOutputAnnouncements()` |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onBinary` | `(data: Uint8Array) => void` | — | Called with raw X10 mouse bytes when supplied. Send the bytes unchanged to a binary-capable transport. |
@@ -100,6 +133,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `write(data: string \| Uint8Array)` | Write data to the terminal |
 | `resize(cols, rows)` | Resize the terminal grid |
 | `focus()` | Focus the terminal element |
+| `setOutputAnnouncements(enabled)` | Enable or stop polite output announcements without moving focus |
 | `search(query, { caseSensitive? })` | Start plain-text search over retained history and the active screen |
 | `findNext()` / `findPrevious()` | Select and reveal a match, wrapping at either end; return false if there are none |
 | `getSearchState()` | Get query, caseSensitive, count, activeIndex, searching, and limited |
