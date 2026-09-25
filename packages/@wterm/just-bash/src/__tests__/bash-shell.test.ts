@@ -411,12 +411,86 @@ describe("BashShell", () => {
       output.length = 0;
     });
 
-    it("Ctrl+U clears the line", async () => {
+    it("Ctrl+U erases the line before the cursor", async () => {
       await shell.handleInput("hello");
       output.length = 0;
       await shell.handleInput("\x15");
-      const joined = output.join("");
-      expect(joined).toContain("\x1b[K");
+      expect(output).toEqual(["\x1b[5D\x1b[K"]);
+
+      await shell.handleInput("again");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("again");
+    });
+
+    it.each([
+      ["Option+Backspace", "\x1b\x7f"],
+      ["Alt+Backspace using BS", "\x1b\b"],
+      ["Ctrl+W", "\x17"],
+    ])(
+      "%s erases the preceding word and leaves the suffix",
+      async (_key, sequence) => {
+        await shell.handleInput("echo alpha beta");
+        await shell.handleInput("\x1b[1;3D");
+        output.length = 0;
+
+        await shell.handleInput(sequence);
+        expect(output).toEqual(["\x1b[6Dbeta\x1b[K", "\x1b[4D"]);
+
+        await shell.handleInput("X");
+        await shell.handleInput("\r");
+        expect(mockExec.mock.calls[0]?.[0]).toContain("echo Xbeta");
+      },
+    );
+
+    it("word erase skips trailing whitespace and stops at the line start", async () => {
+      await shell.handleInput("echo alpha  ");
+      output.length = 0;
+
+      await shell.handleInput("\x17");
+      expect(output).toEqual(["\x1b[7D\x1b[K"]);
+      output.length = 0;
+      await shell.handleInput("\x15");
+      await shell.handleInput("\x17");
+      expect(output).toEqual(["\x1b[5D\x1b[K"]);
+    });
+
+    it("Ctrl+U preserves the text after the cursor", async () => {
+      await shell.handleInput("echo alpha beta");
+      await shell.handleInput("\x1b[1;3D");
+      output.length = 0;
+
+      await shell.handleInput("\x15");
+      expect(output).toEqual(["\x1b[11Dbeta\x1b[K", "\x1b[4D"]);
+
+      await shell.handleInput("X");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("Xbeta");
+    });
+
+    it("Ctrl+K erases the text after the cursor", async () => {
+      await shell.handleInput("echo alpha beta");
+      await shell.handleInput("\x1b[1;3D");
+      output.length = 0;
+
+      await shell.handleInput("\x0b");
+      expect(output).toEqual(["\x1b[K"]);
+
+      await shell.handleInput("X");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("echo alpha X");
+    });
+
+    it("Ctrl+K at the end and Ctrl+U at the start leave the line alone", async () => {
+      await shell.handleInput("echo hi");
+      output.length = 0;
+      await shell.handleInput("\x0b");
+      await shell.handleInput("\x01");
+      output.length = 0;
+      await shell.handleInput("\x15");
+      expect(output).toEqual([]);
+
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("echo hi");
     });
 
     it("Ctrl+C aborts and reprints prompt", async () => {
@@ -555,6 +629,32 @@ describe("BashShell", () => {
       expect(output.at(-1)).toBe("\x1b[5D");
       await shell.handleInput("\r");
       expect(mockExec.mock.calls[0]?.[0]).toContain("echo X界 👩‍💻");
+    });
+
+    it("erases a wide word without splitting it or moving into the suffix", async () => {
+      await shell.handleInput("界 👩‍💻 xyz");
+      await shell.handleInput("\x1b[1;3D");
+      output.length = 0;
+
+      await shell.handleInput("\x1b\x7f");
+      expect(output).toEqual(["\x1b[3Dxyz\x1b[K", "\x1b[3D"]);
+
+      await shell.handleInput("X");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("界 Xxyz");
+    });
+
+    it("Ctrl+U uses cell width when retaining a wide suffix", async () => {
+      await shell.handleInput("echo 👩‍💻 界");
+      await shell.handleInput("\x1b[1;3D");
+      output.length = 0;
+
+      await shell.handleInput("\x15");
+      expect(output).toEqual(["\x1b[8D界\x1b[K", "\x1b[2D"]);
+
+      await shell.handleInput("X");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("X界");
     });
 
     it("moves Home and End by displayed columns", async () => {

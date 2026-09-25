@@ -19,6 +19,7 @@ function defaultPrompt(cwd: string): string {
 
 const WORD_LEFT_SEQUENCES = new Set(["\x1b[1;3D", "\x1b[1;5D", "\x1bb"]);
 const WORD_RIGHT_SEQUENCES = new Set(["\x1b[1;3C", "\x1b[1;5C", "\x1bf"]);
+const WORD_ERASE_SEQUENCES = new Set(["\x1b\x7f", "\x1b\b", "\x17"]);
 const HOME_SEQUENCES = new Set(["\x1b[H", "\x1bOH"]);
 const END_SEQUENCES = new Set(["\x1b[F", "\x1bOF"]);
 const PRINTABLE_TEXT = /^[^\p{Cc}]+$/u;
@@ -150,20 +151,12 @@ export class BashShell {
       write(this._prompt(this._cwd));
     } else if (data === "\x7f" || data === "\b") {
       if (this._cursor > 0) {
-        const start = previousGraphemeStart(this._line, this._cursor);
-        const removedWidth = stringWidth(this._line.slice(start, this._cursor));
-        const tail = this._line.slice(this._cursor);
-        this._line = this._line.slice(0, start) + tail;
-        this._cursor = start;
-        const moveLeft =
-          removedWidth === 1
-            ? "\b"
-            : removedWidth > 0
-              ? `\x1b[${removedWidth}D`
-              : "";
-        write(moveLeft + tail + "\x1b[K");
-        this._moveCells(stringWidth(tail), "D");
+        this._eraseBeforeCursor(
+          previousGraphemeStart(this._line, this._cursor),
+        );
       }
+    } else if (WORD_ERASE_SEQUENCES.has(data)) {
+      this._eraseBeforeCursor(this._wordBoundary(-1));
     } else if (data === "\x1b[3~") {
       if (this._cursor < this._line.length) {
         const tail = this._line.slice(
@@ -213,11 +206,11 @@ export class BashShell {
     } else if (WORD_RIGHT_SEQUENCES.has(data)) {
       this._moveWord(1);
     } else if (data === "\x15") {
-      if (this._line.length > 0) {
-        this._moveCells(stringWidth(this._line.slice(0, this._cursor)), "D");
+      this._eraseBeforeCursor(0);
+    } else if (data === "\x0b") {
+      if (this._cursor < this._line.length) {
+        this._line = this._line.slice(0, this._cursor);
         write("\x1b[K");
-        this._line = "";
-        this._cursor = 0;
       }
     } else if (data === "\x01" || HOME_SEQUENCES.has(data)) {
       if (this._cursor > 0) {
@@ -281,6 +274,24 @@ export class BashShell {
     }
   }
 
+  private _eraseBeforeCursor(start: number): void {
+    if (start === this._cursor) return;
+    const write = this._write;
+    if (!write) return;
+    const removedWidth = stringWidth(this._line.slice(start, this._cursor));
+    const tail = this._line.slice(this._cursor);
+    this._line = this._line.slice(0, start) + tail;
+    this._cursor = start;
+    const moveLeft =
+      removedWidth === 1
+        ? "\b"
+        : removedWidth > 0
+          ? `\x1b[${removedWidth}D`
+          : "";
+    write(moveLeft + tail + "\x1b[K");
+    this._moveCells(stringWidth(tail), "D");
+  }
+
   private _showLine(line: string, cursor = line.length): void {
     this._line = line;
     this._cursor = cursor;
@@ -290,8 +301,19 @@ export class BashShell {
 
   private _moveWord(direction: -1 | 1): void {
     const start = this._cursor;
+    this._cursor = this._wordBoundary(direction);
+    const width = stringWidth(
+      this._line.slice(
+        Math.min(start, this._cursor),
+        Math.max(start, this._cursor),
+      ),
+    );
+    this._moveCells(width, direction === -1 ? "D" : "C");
+  }
+
+  private _wordBoundary(direction: -1 | 1): number {
     const segments = [...graphemes.segment(this._line)];
-    let index = segments.findIndex((segment) => segment.index >= start);
+    let index = segments.findIndex((segment) => segment.index >= this._cursor);
     if (index < 0) index = segments.length;
     const isWhitespace = (segment: string) => /^\s+$/u.test(segment);
 
@@ -305,14 +327,7 @@ export class BashShell {
         index++;
     }
 
-    this._cursor = segments[index]?.index ?? this._line.length;
-    const width = stringWidth(
-      this._line.slice(
-        Math.min(start, this._cursor),
-        Math.max(start, this._cursor),
-      ),
-    );
-    this._moveCells(width, direction === -1 ? "D" : "C");
+    return segments[index]?.index ?? this._line.length;
   }
 
   private async _tabComplete(): Promise<void> {

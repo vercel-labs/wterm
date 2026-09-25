@@ -76,6 +76,10 @@ Control+Left sends `CSI 1;5D` instead of an unmodified Left arrow. Unmodified
 arrows still honor application cursor mode. Browser-reserved shortcuts may not
 reach the terminal.
 
+While the terminal is focused, handled key presses do not bubble to page-level
+shortcut listeners. Control+K can reach the terminal instead of opening docs
+search.
+
 When Kitty keyboard mode is not negotiated, Control+Space sends NUL, Control+/
 sends US, and Control+Backspace sends BS. Browsers may reserve some shortcuts.
 Control+Alt printable input remains on the native text path in this mode for

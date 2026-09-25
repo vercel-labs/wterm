@@ -386,6 +386,7 @@ export class InputHandler {
       if (seq) {
         if (nativeTouchDelete) this.suppressNextTouchDeleteInput = true;
         else e.preventDefault();
+        e.stopPropagation();
         this.deliveredKeys.add(keyId);
         this.onData(seq);
       }
@@ -395,6 +396,7 @@ export class InputHandler {
     if (seq) {
       if (nativeTouchDelete) this.suppressNextTouchDeleteInput = true;
       else e.preventDefault();
+      e.stopPropagation();
       this.onData(seq);
     }
   }
