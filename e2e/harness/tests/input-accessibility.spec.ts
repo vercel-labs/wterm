@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 
+const exitHint =
+  "Press Escape, then Tab to move focus out of the terminal, or Shift+Tab to move focus backward.";
+
 for (const core of ["builtin", "ghostty"]) {
   test(`${core}: input is one named editable control and output stays readable`, async ({
     page,
@@ -9,6 +12,7 @@ for (const core of ["builtin", "ghostty"]) {
     const input = page.getByRole("textbox", { name: "Terminal", exact: true });
     await expect(input).toHaveCount(1);
     await expect(input).toBeFocused();
+    await expect(input).toHaveAccessibleDescription(exitHint);
     expect(await input.evaluate((el) => el.tagName)).toBe("TEXTAREA");
     await page.keyboard.type("echo hello");
     expect(
@@ -48,7 +52,7 @@ test("host labels and descriptions update the actual input without changing focu
   const input = page.locator("#terminal textarea");
   await expect(input).toHaveAccessibleName("Build shell");
   await expect(input).toHaveAccessibleDescription(
-    "Commands run in the selected session",
+    `Commands run in the selected session ${exitHint}`,
   );
   await expect(input).toBeFocused();
   await page.locator("#download").focus();
@@ -57,14 +61,20 @@ test("host labels and descriptions update the actual input without changing focu
     document.querySelector("#terminal-help")!.textContent = "Local commands";
   });
   await expect(input).toHaveAccessibleName("Test shell");
-  await expect(input).toHaveAccessibleDescription("Local commands");
+  await expect(input).toHaveAccessibleDescription(`Local commands ${exitHint}`);
   await page.evaluate(() => {
     const host = document.querySelector("#terminal")!;
     host.removeAttribute("aria-labelledby");
     host.removeAttribute("aria-describedby");
   });
   await expect(input).toHaveAccessibleName("Fallback name");
-  await expect(input).toHaveAccessibleDescription("");
+  await expect(input).toHaveAccessibleDescription(exitHint);
+  await page.evaluate(() =>
+    document
+      .querySelector("#terminal")!
+      .setAttribute("aria-description", "A local shell."),
+  );
+  await expect(input).toHaveAccessibleDescription(`A local shell. ${exitHint}`);
   await page.evaluate(() =>
     document.querySelector("#terminal")!.removeAttribute("aria-label"),
   );

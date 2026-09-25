@@ -7,7 +7,7 @@ The `@wterm/svelte` package provides a `<Terminal>` component for Svelte 5
 applications. It re-exports the DOM and core APIs from `@wterm/dom` so the
 component and terminal types can come from one import.
 
-Use `<Terminal aria-label="Build shell" aria-describedby="shell-help" />` to name and describe the actual input. Label attributes stay synchronized when they change. The wrapper is a group; input is the single editable control. `tabindex={-1}` removes input from page tab entry. See [Input Accessibility](/api-reference#input-accessibility).
+Use `<Terminal aria-label="Build shell" aria-describedby="shell-help" />` to name and describe the actual input. Label attributes stay synchronized when they change. The wrapper is a group; input is the single editable control. `tabindex={-1}` removes input from page tab entry. Press Escape, then Tab to move focus out of the terminal, or Escape, then Shift+Tab to move backward. See [Input Accessibility](/api-reference#input-accessibility).
 
 ## Install
 

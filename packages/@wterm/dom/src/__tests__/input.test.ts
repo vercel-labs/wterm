@@ -848,7 +848,9 @@ describe("InputHandler", () => {
           ctrlKey: false,
         }),
       );
-      expect(received.at(-1)).toBe("\x1b[57442;1:3u");
+      expect(received).toEqual(["\x1b[57448;5u"]);
+      ta.dispatchEvent(createKeyboardEvent("a", { code: "KeyA" }));
+      expect(received.at(-1)).toBe("\x1b[97u");
     });
 
     it("keeps the legacy path for a core without Kitty support", () => {

@@ -40,6 +40,10 @@ After initialization, the host defaults to `role="group"`; the textarea is the e
 
 Host `tabindex` applies to the input: `0` enables normal page tab entry and `-1` removes that tab stop. When supplied, WTerm sets the host itself to `-1` to avoid a duplicate stop and restores the latest requested value on destruction. Without `tabindex`, the input uses `0`. Use `term.focus()` for programmatic focus. Tab and Shift+Tab inside input still go to the terminal application for completion/navigation. Label and tab-order changes do not move focus.
 
+**Keyboard exit:** Press **Escape**, then **Tab** to move focus to the next page control, or **Escape**, then **Shift+Tab** to move backward. There is no timeout between the keys. Any other key except Shift, a pointer press, paste, text input, composition, or loss of focus cancels the sequence. Escape still reaches the application unless it clears Select All. Ordinary Tab and Shift+Tab keep their terminal behavior. The browser determines the next focus target; WTerm does not send the exit Tab or a release from a key pressed outside the terminal to the application.
+
+The input's accessible description includes the exit instructions after any host-provided description. Host `aria-describedby` references take precedence over `aria-description`.
+
 Mounted output remains readable separately from input. This does not enable output announcements or expose unmounted history to screen readers. Ancestor `aria-hidden` and `inert` still control whether a terminal is available.
 
 ## API
