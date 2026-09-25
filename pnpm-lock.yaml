@@ -44,6 +44,9 @@ importers:
       '@wterm/dom':
         specifier: workspace:*
         version: link:../../packages/@wterm/dom
+      '@wterm/ghostty':
+        specifier: workspace:*
+        version: link:../../packages/@wterm/ghostty
       '@wterm/just-bash':
         specifier: workspace:*
         version: link:../../packages/@wterm/just-bash
