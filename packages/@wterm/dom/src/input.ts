@@ -47,6 +47,8 @@ const FIXED_KEYS: Record<string, string> = {
   F12: "\x1b[24~",
 };
 
+const COMPOSITION_INPUT_DEDUP_MS = 250;
+
 export class InputHandler {
   private element: HTMLElement;
   private textarea: HTMLTextAreaElement;
@@ -56,7 +58,10 @@ export class InputHandler {
     charWidth: number;
     rowHeight: number;
   } | null;
+  private prepareComposition: () => void;
   private composing = false;
+  private compositionWidth = 0;
+  private recentCompositionCommit: { text: string; at: number } | null = null;
   private mouseButtons = 0;
   private lastMouseMotion: {
     mode: number;
@@ -90,11 +95,13 @@ export class InputHandler {
     getBridge: () => TerminalCore | null,
     getCellSize: () => { charWidth: number; rowHeight: number } | null = () =>
       null,
+    prepareComposition: () => void = () => {},
   ) {
     this.element = element;
     this.onData = onData;
     this.getBridge = getBridge;
     this.getCellSize = getCellSize;
+    this.prepareComposition = prepareComposition;
 
     this.textarea = document.createElement("textarea");
     this.textarea.setAttribute("autocapitalize", "off");
@@ -104,12 +111,20 @@ export class InputHandler {
     this.textarea.setAttribute("enterkeyhint", "send");
     this.textarea.setAttribute("tabindex", "0");
     this.textarea.setAttribute("aria-hidden", "true");
+    this.textarea.wrap = "off";
     const s = this.textarea.style;
     s.position = "absolute";
     s.left = "-9999px";
     s.top = "0";
     s.width = "1px";
     s.height = "1px";
+    s.boxSizing = "border-box";
+    s.font = "inherit";
+    s.lineHeight = "var(--term-row-height)";
+    s.fontKerning = "none";
+    s.fontVariantLigatures = "none";
+    s.whiteSpace = "pre";
+    s.zIndex = "2";
     s.opacity = "0";
     s.overflow = "hidden";
     s.border = "0";
@@ -132,11 +147,16 @@ export class InputHandler {
     this._onFocus = () => {
       if (this.focused) return;
       this.focused = true;
+      this.positionTextarea();
       this.element.classList.add("focused");
       if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[I");
     };
     this._onBlur = () => {
       this.focused = false;
+      this.composing = false;
+      this.recentCompositionCommit = null;
+      this.hideComposition();
+      this.textarea.value = "";
       this.element.classList.remove("focused");
       this.stopMouseCapture();
       this.lastMouseMotion = null;
@@ -188,7 +208,12 @@ export class InputHandler {
   }
 
   focus(): void {
+    this.positionTextarea();
     this.textarea.focus({ preventScroll: true });
+  }
+
+  syncCompositionPosition(): void {
+    if (this.composing) this.positionTextarea();
   }
 
   destroy(): void {
@@ -224,9 +249,11 @@ export class InputHandler {
       this.pressedModifiers.add(e.code);
     }
     if (this.composing || e.isComposing || e.keyCode === 229) {
+      this.positionTextarea();
       this.suppressedKeyUps.add(keyId);
       return;
     }
+    this.recentCompositionCommit = null;
 
     const bridge = this.getBridge();
     const kittyFlags = bridge?.kittyKeyboardFlags?.() ?? 0;
@@ -307,6 +334,7 @@ export class InputHandler {
 
   private handlePaste(e: ClipboardEvent): void {
     e.preventDefault();
+    this.recentCompositionCommit = null;
     const text = e.clipboardData?.getData("text");
     if (!text) return;
 
@@ -322,22 +350,104 @@ export class InputHandler {
   }
 
   private handleCompositionStart(): void {
+    this.prepareComposition();
     this.composing = true;
+    this.recentCompositionCommit = null;
+    this.positionTextarea();
+    const s = this.textarea.style;
+    s.opacity = "1";
+    s.color = "var(--term-fg, currentColor)";
+    s.background = "var(--term-bg, transparent)";
+    s.caretColor = "var(--term-fg, currentColor)";
   }
 
   private handleCompositionEnd(e: CompositionEvent): void {
     this.composing = false;
-    if (e.data) this.onData(e.data);
+    this.hideComposition();
     this.textarea.value = "";
+    if (e.data) {
+      this.recentCompositionCommit = { text: e.data, at: performance.now() };
+      this.onData(e.data);
+    }
+  }
+
+  private hideComposition(): void {
+    this.compositionWidth = 0;
+    const s = this.textarea.style;
+    s.opacity = "0";
+    s.width = "1px";
+    s.height = "1px";
+    s.color = "transparent";
+    s.background = "transparent";
+    s.caretColor = "transparent";
+  }
+
+  private positionTextarea(): void {
+    const bridge = this.getBridge();
+    const cellSize = this.getCellSize();
+    const firstRow = this.element.querySelector<HTMLElement>(
+      ".term-row:not(.term-scrollback-row)",
+    );
+    if (!bridge || !cellSize || !firstRow || !bridge.getCursor) {
+      this.textarea.style.left = "0px";
+      this.textarea.style.top = "0px";
+      if (this.composing) {
+        this.textarea.style.width = `${Math.max(1, this.compositionWidth)}px`;
+        this.textarea.style.height = `${cellSize?.rowHeight ?? 17}px`;
+      }
+      return;
+    }
+
+    const { charWidth, rowHeight } = cellSize;
+    if (charWidth <= 0 || rowHeight <= 0) return;
+    const cursor = bridge.getCursor();
+    const col = Math.max(0, Math.min(cursor.col, bridge.getCols() - 1));
+    const row = Math.max(0, Math.min(cursor.row, bridge.getRows() - 1));
+    const hostRect = this.element.getBoundingClientRect();
+    const rowRect = firstRow.getBoundingClientRect();
+    const s = this.textarea.style;
+    s.left = `${rowRect.left - hostRect.left - this.element.clientLeft + this.element.scrollLeft + col * charWidth}px`;
+    s.top = `${rowRect.top - hostRect.top - this.element.clientTop + this.element.scrollTop + row * rowHeight}px`;
+    if (this.composing) {
+      s.width = `${Math.min(
+        (bridge.getCols() - col) * charWidth,
+        Math.max(charWidth, this.compositionWidth),
+      )}px`;
+      s.height = `${rowHeight}px`;
+    }
+  }
+
+  private sizeComposition(): void {
+    const charWidth = this.getCellSize()?.charWidth;
+    if (!charWidth || charWidth <= 0) return;
+    // With wrapping disabled, scrollWidth measures the full preedit even when
+    // it is longer than the field. Leave a cell for the IME caret.
+    this.textarea.style.width = "1px";
+    this.compositionWidth = this.textarea.value
+      ? Math.max(charWidth, this.textarea.scrollWidth + charWidth)
+      : charWidth;
+    this.positionTextarea();
   }
 
   private handleInput(): void {
-    if (this.composing) return;
-    const value = this.textarea.value;
-    if (value) {
-      this.onData(value);
-      this.textarea.value = "";
+    if (this.composing) {
+      this.sizeComposition();
+      return;
     }
+    const value = this.textarea.value;
+    this.textarea.value = "";
+    const recent = this.recentCompositionCommit;
+    this.recentCompositionCommit = null;
+    if (!value) return;
+    // Some browsers emit the committed text again as an ordinary input
+    // event immediately after compositionend, with varying inputType values.
+    if (
+      recent &&
+      value === recent.text &&
+      performance.now() - recent.at < COMPOSITION_INPUT_DEDUP_MS
+    )
+      return;
+    this.onData(value);
   }
 
   private handleMouse(
