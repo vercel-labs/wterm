@@ -50,7 +50,7 @@ interface WasmExports {
   getResponseLen(): number;
   clearResponse(): void;
   getCellSize(): number;
-  getMaxCols(): number;
+  getGridStride(): number;
   getDebugLogPtr(): number;
   getDebugLogCount(): number;
   getDebugLogEntrySize(): number;
@@ -73,7 +73,7 @@ export class WasmBridge implements TerminalCore {
   private dirtyPtr = 0;
   private writeBufferPtr = 0;
   private cellSize = 12;
-  private maxCols = 256;
+  private gridStride = 0;
   private encoder = new TextEncoder();
   private decoder = new TextDecoder();
   private _dv!: DataView;
@@ -124,7 +124,7 @@ export class WasmBridge implements TerminalCore {
     this.dirtyPtr = this.exports.getDirtyPtr();
     this.writeBufferPtr = this.exports.getWriteBuffer();
     this.cellSize = this.exports.getCellSize();
-    this.maxCols = this.exports.getMaxCols();
+    this.gridStride = this.exports.getGridStride();
   }
 
   writeString(str: string, afterChunk?: () => void): void {
@@ -139,13 +139,15 @@ export class WasmBridge implements TerminalCore {
       const buf = new Uint8Array(this.memory.buffer, this.writeBufferPtr, 8192);
       buf.set(data.subarray(offset, offset + chunk));
       this.exports.writeBytes(chunk);
+      // Escape sequences can swap the active screen and its backing storage.
+      this._updatePointers();
       offset += chunk;
       afterChunk?.();
     }
   }
 
   getCell(row: number, col: number): CellData {
-    const offset = this.gridPtr + (row * this.maxCols + col) * this.cellSize;
+    const offset = this.gridPtr + (row * this.gridStride + col) * this.cellSize;
     const dv = this.dv;
     const result: CellData = {
       char: dv.getUint32(offset, true),
@@ -159,7 +161,10 @@ export class WasmBridge implements TerminalCore {
   }
 
   isDirtyRow(row: number): boolean {
-    return new Uint8Array(this.memory.buffer, this.dirtyPtr, 256)[row] !== 0;
+    return (
+      new Uint8Array(this.memory.buffer, this.dirtyPtr, this.getRows())[row] !==
+      0
+    );
   }
 
   clearDirty(): void {

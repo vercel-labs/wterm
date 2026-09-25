@@ -66,7 +66,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 After `init()` or `resize()`, `term.cols` and `term.rows` reflect the grid size
 the core actually uses. Use these values, or the values passed to `onResize`,
 when sizing a connected PTY. The built-in core currently supports up to
-256 columns and 256 rows; larger requests are clamped to that size.
+1024 columns and 512 rows; larger requests are clamped to those limits.
 
 When a terminal application enables modes 1000, 1002, or 1003 with SGR encoding (1006), pointer input is sent through `onData`. Mode 1003 also reports unpressed pointer movement once per cell in the visible grid. Shift retains native text selection. Focus reports are sent when mode 1004 is active.
 

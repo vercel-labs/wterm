@@ -13,8 +13,8 @@ See the full [API Reference](/api-reference#terminal-options) for types, default
 
 After `init()` or `resize()`, read `wt.cols` and `wt.rows` to size a connected
 PTY. `onResize(cols, rows)` also receives the applied grid size. A core can
-apply fewer cells than requested; the built-in core currently caps each
-dimension at 256. Keeping the PTY at the applied size prevents its output from
+apply fewer cells than requested; the built-in core currently supports up to
+1024 columns and 512 rows. Keeping the PTY at the applied size prevents its output from
 wrapping at different columns than the browser terminal.
 
 ### Bell notifications
@@ -41,7 +41,7 @@ Cursor shape always follows the core. Custom cores can omit the optional
 
 ### Pluggable cores
 
-By default, wterm uses its built-in lightweight Zig WASM core (~12 KB). To use a different terminal emulation backend, pass a `TerminalCore` instance via the `core` option. See the [Ghostty Core](/ghostty) page for an example using libghostty.
+By default, wterm uses its built-in lightweight Zig WASM core (~26 KB). To use a different terminal emulation backend, pass a `TerminalCore` instance via the `core` option. See the [Ghostty Core](/ghostty) page for an example using libghostty.
 
 Graphics support is optional on `TerminalCore`. The built-in core safely
 consumes unsupported Kitty APC payloads without rendering image bytes;

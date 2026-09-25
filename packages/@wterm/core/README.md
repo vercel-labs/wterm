@@ -22,7 +22,7 @@ npm install @wterm/core
 
 ## Pluggable Cores
 
-`@wterm/core` defines a `TerminalCore` interface that any terminal emulation backend can implement. The built-in `WasmBridge` implements it using wterm's lightweight Zig WASM binary (~12 KB). For additional protocols and proper grapheme handling, use [`@wterm/ghostty`](https://www.npmjs.com/package/@wterm/ghostty), which implements the same interface using libghostty (~400 KB).
+`@wterm/core` defines a `TerminalCore` interface that any terminal emulation backend can implement. The built-in `WasmBridge` implements it using wterm's lightweight Zig WASM binary (~26 KB). For additional protocols and proper grapheme handling, use [`@wterm/ghostty`](https://www.npmjs.com/package/@wterm/ghostty), which implements the same interface using libghostty.
 
 ```ts
 import { WTerm } from "@wterm/dom";
@@ -62,7 +62,7 @@ const cursor = bridge.getCursor();  // { row, col, visible, shape, blinking }
 | `resize(cols, rows)` | Resize the terminal grid |
 | `getCell(row, col)` | Get cell data, including optional resolved OSC 8 metadata (`linkUri`, explicit `linkId`, and opaque `linkKey`) |
 | `getCursor()` | Get cursor state (`{ row, col, visible, shape?, blinking? }`) |
-| `getCols()` / `getRows()` | Get applied grid dimensions after initialization or resize. The built-in core clamps requests to 1–256 columns and rows. |
+| `getCols()` / `getRows()` | Get applied grid dimensions after initialization or resize. The built-in core clamps requests to 1–1024 columns and 1–512 rows. |
 | `isDirtyRow(row)` | Check if a row needs re-rendering |
 | `clearDirty()` | Reset all dirty-row flags |
 | `getTitle()` | Get pending title change (or `null`) |

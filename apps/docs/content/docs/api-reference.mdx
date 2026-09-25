@@ -115,7 +115,7 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
       <td><code>wasmUrl</code></td>
       <td><code>string</code></td>
       <td>—</td>
-      <td>URL to serve the WASM binary separately. When omitted, the ~12 KB binary is decoded from an inlined base64 string. Ignored when <code>core</code> is provided.</td>
+      <td>URL to serve the WASM binary separately. When omitted, the ~26 KB binary is decoded from an inlined base64 string. Ignored when <code>core</code> is provided.</td>
     </tr>
     <tr>
       <td><code>autoResize</code></td>
@@ -329,7 +329,7 @@ Instance methods on the vanilla `WTerm` class:
 
 After `init()` or `resize()`, `wt.cols` and `wt.rows` report the applied grid
 dimensions. A core may cap the requested size; the built-in core currently
-supports up to 256 columns and 256 rows. Use the applied dimensions for a
+supports up to 1024 columns and 512 rows. Use the applied dimensions for a
 connected PTY so its output wraps at the same columns as the browser terminal.
 
 WTerm renders synchronized output blocks (CSI `?2026`) atomically when the mode closes. Each block can hold rendering for at most one second from its opening sequence. Ordinary payload does not extend that deadline. If the deadline expires, WTerm resumes painting until a fresh block begins.
@@ -638,7 +638,7 @@ const bridge = await WasmBridge.load();
 const bridge = await WasmBridge.load("/wterm.wasm");
 ```
 
-When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string inlined in the package. Pass a URL when you want to serve the binary separately for caching or CDN use.
+When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string inlined in the package. Pass a URL when you want to serve the binary separately for caching or CDN use.
 
 ### Methods
 

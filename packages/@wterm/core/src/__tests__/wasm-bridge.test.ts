@@ -28,10 +28,12 @@ describe("WasmBridge", () => {
       expect(bridge.getRows()).toBe(24);
     });
 
-    it("exposes the dimensions actually applied by the built-in core", () => {
+    it("initializes a grid wider and taller than 256 cells", () => {
       bridge.init(320, 300);
-      expect(bridge.getCols()).toBe(256);
-      expect(bridge.getRows()).toBe(256);
+      expect(bridge.getCols()).toBe(320);
+      expect(bridge.getRows()).toBe(300);
+      bridge.writeString("\x1b[300;320HZ");
+      expect(bridge.getCell(299, 319).char).toBe(90);
     });
   });
 
@@ -257,10 +259,20 @@ describe("WasmBridge", () => {
       expect(bridge.getRows()).toBe(12);
     });
 
-    it("exposes applied dimensions when the request exceeds the grid capacity", () => {
+    it("resizes beyond the former grid capacity", () => {
       bridge.resize(320, 300);
-      expect(bridge.getCols()).toBe(256);
-      expect(bridge.getRows()).toBe(256);
+      expect(bridge.getCols()).toBe(320);
+      expect(bridge.getRows()).toBe(300);
+      bridge.clearDirty();
+      bridge.writeString("\x1b[300;320HZ");
+      expect(bridge.getCell(299, 319).char).toBe(90);
+      expect(bridge.isDirtyRow(299)).toBe(true);
+    });
+
+    it("reports the applied size when a request exceeds the new limit", () => {
+      bridge.resize(1200, 600);
+      expect(bridge.getCols()).toBe(1024);
+      expect(bridge.getRows()).toBe(512);
     });
 
     it("preserves content after resize", () => {
@@ -317,6 +329,20 @@ describe("WasmBridge", () => {
       bridge.writeString("\x1b[?1049h");
       bridge.writeString("\x1b[?1049l");
       expect(bridge.usingAltScreen()).toBe(false);
+    });
+
+    it("reads the active grid across alternate-screen switches", () => {
+      bridge.init(320, 3);
+      bridge.writeString("\x1b[1;300HP\x1b[?1049h\x1b[1;300HA");
+      expect(bridge.getCell(0, 299).char).toBe(65);
+
+      bridge.resize(400, 4);
+      bridge.writeString("\x1b[4;399HZ");
+      expect(bridge.getCell(3, 398).char).toBe(90);
+
+      bridge.writeString("\x1b[?1049l");
+      expect(bridge.getCell(0, 299).char).toBe(80);
+      expect(bridge.getCell(3, 398).char).toBe(32);
     });
 
     it("tracks synchronized output mode", () => {
@@ -442,6 +468,14 @@ describe("WasmBridge", () => {
         const cell = bridge.getScrollbackCell(0, 0);
         expect(cell.char).toBe(65); // 'A'
       }
+    });
+
+    it("retains history cells beyond column 256", () => {
+      bridge.init(320, 2);
+      bridge.writeString("\x1b[1;300HQ\x1b[2;1H\n");
+      expect(bridge.getScrollbackCount()).toBe(1);
+      expect(bridge.getScrollbackLineLen(0)).toBe(320);
+      expect(bridge.getScrollbackCell(0, 299).char).toBe(81);
     });
 
     it("keeps OSC 8 metadata after a row enters scrollback", () => {

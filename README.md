@@ -26,8 +26,8 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 
 ## Features
 
-- **Pluggable cores** — built-in lightweight Zig core (~12 KB) or opt-in [libghostty](packages/@wterm/ghostty) backend (~400 KB) for full VT compliance
-- **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~12 KB `.wasm` binary (release build)
+- **Pluggable cores** — built-in lightweight Zig core or opt-in [libghostty](packages/@wterm/ghostty) backend for full VT compliance
+- **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~26 KB `.wasm` binary (release build)
 - **DOM rendering** — native text selection, clipboard, browser find, and screen reader support for mounted rows
 - **Native hyperlinks** — OSC 8 links remain attached to their exact cells through viewport and scrollback, with safe HTTP(S) anchors
 - **Dirty-row tracking** — only touched rows are re-rendered each frame via `requestAnimationFrame`
@@ -47,6 +47,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Kitty terminal images** — Ghostty-backed terminals render direct PNG/RGB/RGBA graphics in a scroll-aware canvas overlay with configurable display bounds; implicit image placements keep following prompts visually below the image
 - **24-bit color** — full RGB SGR support
 - **Auto-resize** — `ResizeObserver`-based terminal resizing; reported dimensions reflect the grid size applied by the core so connected PTYs stay aligned
+- **Wide grids** — the built-in core grows its cell storage as needed, up to 1024 columns and 512 rows
 - **Framework bindings** — React, Vue 3, and Svelte components
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
 - **Mouse and focus reporting** — DOM input for SGR clicks, drags, wheel events, and cell-level pointer motion in mode 1003
