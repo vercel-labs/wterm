@@ -1,8 +1,36 @@
 # Changelog
 
-## 0.5.0
+## 0.5.1
 
 <!-- release:start -->
+
+### New Features
+
+- **Terminal history search and selection:** search retained output, navigate matches, select all history or by word and logical line, preserve selections across scrolling and reflow, and copy selected terminal text faithfully.
+- **Accessible output and navigation:** add opt-in terminal output announcements, a stable text view of retained output, accessible naming for terminal input, and Escape then Tab navigation out of terminal input.
+- **Expanded terminal interaction:** report X10, UTF-8/urxvt, SGR pixel-coordinate, and any-motion mouse events; expose terminal bell events and IME preedit; and support application cursor shapes and blinking.
+- **Just-Bash editing and history:** add Ctrl-R/Ctrl-S history search, Ctrl-C interruption, Ctrl-Y restoration of erased input, completion at the cursor, and common navigation, deletion, word movement, and Unicode grapheme editing.
+
+### Improvements
+
+- **Terminal compatibility:** answer more device, status, and DEC private-mode queries; grow built-in grids on demand; expose Ghostty row-wrap metadata and OSC window titles; and render DEC line-drawing characters with connected box-drawing strokes.
+- **Documentation and validation:** move the docs site to Geistdocs 2 Labs and add real-PTY, cross-browser workload, and public Ghostty WebAssembly API coverage.
+
+### Bug Fixes
+
+- **Keyboard, pointer, and touch input:** preserve AltGr text in Kitty mode, encode legacy control and navigation modifiers, keep scrollback usable with mouse tracking, prevent raw key leakage during IME composition, and keep touch input usable on iOS.
+- **Rendering and sizing:** fix wide-character editing and right-edge printing, align fallback glyphs to terminal columns, prevent edge-cell backgrounds from repainting rows, and report applied grid dimensions.
+- **Shell behavior:** prevent duplicate command execution and restore the current draft after history navigation.
+- **Homepage terminal startup:** keep startup and theme synchronization working together.
+
+### Contributors
+
+- @ctate
+- @Railly
+
+<!-- release:end -->
+
+## 0.5.0
 
 ### New Features
 
@@ -16,8 +44,6 @@
 
 - @ctate
 - @jaredevans
-
-<!-- release:end -->
 
 ## 0.4.1
 
