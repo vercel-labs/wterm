@@ -38,6 +38,7 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 interface HistorySearch {
   query: string;
   index: number;
+  direction: -1 | 1;
   draft: { line: string; cursor: number };
 }
 
@@ -359,11 +360,37 @@ export class BashShell {
     this._moveCells(stringWidth(line.slice(cursor)), "D");
   }
 
-  private _findHistoryMatch(query: string, from: number): number {
-    for (let index = from; index >= 0; index--) {
+  private _findHistoryMatch(
+    query: string,
+    from: number,
+    direction: -1 | 1,
+  ): number {
+    for (
+      let index = from;
+      index >= 0 && index < this._history.length;
+      index += direction
+    ) {
       if (this._history[index].includes(query)) return index;
     }
     return -1;
+  }
+
+  private _historySearchBoundary(direction: -1 | 1): number {
+    return direction === -1 ? this._history.length - 1 : 0;
+  }
+
+  private _moveHistorySearch(direction: -1 | 1): void {
+    const search = this._historySearch;
+    if (!search) return;
+    const changedDirection = search.direction !== direction;
+    search.direction = direction;
+    const from =
+      search.index < 0
+        ? this._historySearchBoundary(direction)
+        : search.index + direction;
+    const match = this._findHistoryMatch(search.query, from, direction);
+    if (match >= 0) search.index = match;
+    if (match >= 0 || changedDirection) this._renderHistorySearch();
   }
 
   private _startHistorySearch(): void {
@@ -371,6 +398,7 @@ export class BashShell {
     this._historySearch = {
       query: "",
       index: this._history.length - 1,
+      direction: -1,
       draft: { line: this._line, cursor: this._cursor },
     };
     this._renderHistorySearch();
@@ -379,8 +407,9 @@ export class BashShell {
   private _renderHistorySearch(): void {
     const search = this._historySearch;
     if (!search) return;
-    const status =
-      search.index < 0 ? "failed reverse-i-search" : "reverse-i-search";
+    const direction =
+      search.direction === -1 ? "reverse-i-search" : "forward-i-search";
+    const status = search.index < 0 ? `failed ${direction}` : direction;
     const command =
       search.index < 0 ? "" : this._history[search.index].replace(/\n/g, "\\n");
     this._write?.("\r\x1b[K(" + status + ")`" + search.query + "': " + command);
@@ -411,12 +440,8 @@ export class BashShell {
       this._historySearch = null;
       return false;
     }
-    if (data === "\x12") {
-      const older = this._findHistoryMatch(search.query, search.index - 1);
-      if (older >= 0) {
-        search.index = older;
-        this._renderHistorySearch();
-      }
+    if (data === "\x12" || data === "\x13") {
+      this._moveHistorySearch(data === "\x12" ? -1 : 1);
       return true;
     }
     if (data === "\x07") {
@@ -442,9 +467,14 @@ export class BashShell {
           0,
           previousGraphemeStart(search.query, search.query.length),
         );
+        const from =
+          search.index < 0
+            ? this._historySearchBoundary(search.direction)
+            : search.index;
         search.index = this._findHistoryMatch(
           search.query,
-          this._history.length - 1,
+          from,
+          search.direction,
         );
         this._renderHistorySearch();
       }
@@ -452,7 +482,7 @@ export class BashShell {
     }
     if (data === "\x15") {
       search.query = "";
-      search.index = this._history.length - 1;
+      search.index = this._historySearchBoundary(search.direction);
       this._renderHistorySearch();
       return true;
     }
@@ -463,8 +493,15 @@ export class BashShell {
     }
     if (PRINTABLE_TEXT.test(data)) {
       search.query += data;
-      const from = search.index >= 0 ? search.index : this._history.length - 1;
-      search.index = this._findHistoryMatch(search.query, from);
+      const from =
+        search.index < 0
+          ? this._historySearchBoundary(search.direction)
+          : search.index;
+      search.index = this._findHistoryMatch(
+        search.query,
+        from,
+        search.direction,
+      );
       this._renderHistorySearch();
       return true;
     }

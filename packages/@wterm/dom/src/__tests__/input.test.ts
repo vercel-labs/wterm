@@ -310,6 +310,7 @@ describe("InputHandler", () => {
       ["u", { ctrlKey: true }, "\x15"],
       ["y", { ctrlKey: true }, "\x19"],
       ["r", { ctrlKey: true }, "\x12"],
+      ["s", { ctrlKey: true }, "\x13"],
       ["g", { ctrlKey: true }, "\x07"],
     ] as const)(
       "sends the shell editing shortcut for %s",
