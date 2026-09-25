@@ -154,6 +154,35 @@ test.describe("rendering", () => {
   });
 });
 
+test.describe("terminal responses", () => {
+  test("forwards private-mode reports while synchronized output is active", async ({
+    page,
+  }) => {
+    const responses = await page.evaluate(() => {
+      const term = (
+        globalThis as typeof globalThis & {
+          __wterm: {
+            write: (data: string) => void;
+            onData: ((data: string) => void) | null;
+          };
+        }
+      ).__wterm;
+      const received: string[] = [];
+      term.onData = (data) => received.push(data);
+      term.write("\x1b[?2026$p");
+      term.write("\x1b[?2026h\x1b[?2026$p");
+      term.write("\x1b[?2026l\x1b[?2026$p");
+      return received;
+    });
+
+    expect(responses).toEqual([
+      "\x1b[?2026;2$y",
+      "\x1b[?2026;1$y",
+      "\x1b[?2026;2$y",
+    ]);
+  });
+});
+
 test.describe("keyboard input", () => {
   test("reports legacy modified and control key input", async ({ page }) => {
     await page.locator(".wterm").click();

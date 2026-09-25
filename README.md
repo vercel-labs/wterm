@@ -32,7 +32,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Native hyperlinks** — OSC 8 links remain attached to their exact cells through viewport and scrollback, with safe HTTP(S) anchors
 - **Dirty-row tracking** — only touched rows are re-rendered each frame via `requestAnimationFrame`
 - **Frame-direct scheduling** — writes queue their render on the next animation frame without an extra timer hop
-- **Synchronized output** — mode 2026 blocks paint atomically with a bounded recovery deadline
+- **Synchronized output** — mode 2026 blocks paint atomically with a bounded recovery deadline; the built-in core answers private-mode status queries so applications can detect support
 - **Themes** — CSS custom properties with built-in Default, Solarized Dark, Monokai, and Light themes
 - **Cell backgrounds** — colored and reversed cells stay within their columns; uniformly colored rows fill the available width
 - **Aligned terminal borders** — fallback glyphs stay in their cells and common box-drawing strokes connect across rows and columns
