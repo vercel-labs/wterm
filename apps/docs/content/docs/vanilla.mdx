@@ -66,6 +66,8 @@ can choose an audible or visual notification.
 
 When the active core negotiates the Kitty keyboard protocol, WTerm encodes key presses, repeats, and available releases from the core's current flags. The built-in and Ghostty cores keep separate primary and alternate-screen flag stacks. Third-party cores without Kitty state retain legacy keyboard behavior.
 
+The built-in core answers DEC private-mode status queries such as `CSI ?2026$p` for synchronized output. A response of `CSI ?2026;1$y` means the mode is set; `CSI ?2026;2$y` means it is reset. WTerm forwards the response through `onData` to your connected application.
+
 Printable AltGr input uses the browser's committed text path even in Kitty mode, so layouts that use AltGr can enter characters. This includes Control+Alt text with the right Alt key when the browser does not report AltGraph state. Control+Alt chords without either AltGr signal keep their Kitty encoding.
 
 Outside Kitty keyboard mode, modified arrow, Home/End, Insert/Delete, Page

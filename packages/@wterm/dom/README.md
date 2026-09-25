@@ -119,6 +119,8 @@ still follows the application's bracketed-paste mode when enabled.
 
 WTerm honors synchronized output mode (CSI `?2026`) by painting the block atomically when the mode closes. Each synchronized block can hold rendering for at most one second from its opening sequence. Ordinary payload does not extend that deadline. If the deadline expires, WTerm resumes painting until a fresh synchronized block begins.
 
+The built-in and Ghostty cores answer `CSI ?2026$p` with the mode's current set/reset status. WTerm forwards this and other core responses through `onData`, so a connected application can detect synchronized output support.
+
 Ordinary writes schedule `requestAnimationFrame` directly. Multiple writes before the frame are coalesced into one render.
 
 When a terminal core supplies `CellData.chars`, the renderer paints that complete grapheme string instead of only the cell's base code point.

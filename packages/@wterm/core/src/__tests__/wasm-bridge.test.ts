@@ -374,6 +374,20 @@ describe("WasmBridge", () => {
   });
 
   describe("terminal responses", () => {
+    it("returns DEC private-mode reports through the committed WASM", () => {
+      bridge.writeString("\x1b[?2026$p\x1b[?2026h\x1b[?2026$p");
+      expect(bridge.getResponse()).toBe("\x1b[?2026;2$y");
+      expect(bridge.getResponse()).toBe("\x1b[?2026;1$y");
+
+      bridge.writeString("\x1b[?1000h\x1b[?1002h\x1b[?1000$p\x1b[?1002$p");
+      expect(bridge.getResponse()).toBe("\x1b[?1000;1$y");
+      expect(bridge.getResponse()).toBe("\x1b[?1002;1$y");
+
+      bridge.writeString("\x1b[?7777$p");
+      expect(bridge.getResponse()).toBe("\x1b[?7777;0$y");
+      expect(bridge.getResponse()).toBeNull();
+    });
+
     it("tracks Kitty keyboard flags per screen with Ghostty-compatible resets", () => {
       expect(bridge.kittyKeyboardFlags()).toBe(0);
       bridge.writeString("\x1b[>6u\x1b[?u");

@@ -99,6 +99,8 @@ and 5/6 select blinking/steady block, underline, and bar respectively.
 
 `TerminalCore.kittyKeyboardFlags()` is also optional. The DOM input handler uses it to encode negotiated Kitty keyboard events; cores that omit it retain the existing legacy keyboard behavior.
 
+The built-in core answers DEC private-mode status queries (`CSI ? Ps $ p`) through `getResponse()`. It reports `1` for set, `2` for reset, and `0` for unrecognized modes, including the current state of synchronized output (`?2026`), bracketed paste (`?2004`), mouse tracking and encoding, focus reporting, cursor modes, and alternate-screen modes. For example, `\x1b[?2026$p` receives `\x1b[?2026;2$y` until mode 2026 is enabled.
+
 The built-in core reports its fixed hyperlink identity capacity through `getResourceState()`. When `hyperlinks.saturated` is true, new distinct OSC 8 links render as plain text and `hyperlinks.rejected` counts capacity-rejected opens. Existing identities remain valid.
 
 ### Optional terminal graphics

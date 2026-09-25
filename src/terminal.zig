@@ -75,6 +75,28 @@ pub const MouseEncoding = enum(u8) {
     sgr_pixels = 4,
 };
 
+// DECSET reports keep independent states even when mouse modes share one
+// effective tracking mode or wire encoding.
+fn privateModeBit(mode: u16) ?u4 {
+    return switch (mode) {
+        47 => 0,
+        1000 => 1,
+        1002 => 2,
+        1003 => 3,
+        1005 => 4,
+        1006 => 5,
+        1015 => 6,
+        1016 => 7,
+        1047 => 8,
+        1048 => 9,
+        1049 => 10,
+        else => null,
+    };
+}
+
+// Mouse modes occupy bits 1–7; soft reset leaves alternate-screen state alone.
+const mouse_private_mode_bits: u16 = 0x00fe;
+
 pub const Terminal = struct {
     grid: Grid,
     parser: Parser = .{},
@@ -116,6 +138,7 @@ pub const Terminal = struct {
     bracketed_paste: bool = false,
     mouse_tracking: u16 = 0,
     mouse_encoding: MouseEncoding = .x10,
+    private_mode_bits: u16 = 0,
     focus_events: bool = false,
     synchronized_output: bool = false,
     synchronized_output_generation: u32 = 0,
@@ -250,6 +273,7 @@ pub const Terminal = struct {
         self.bracketed_paste = false;
         self.mouse_tracking = 0;
         self.mouse_encoding = .x10;
+        self.private_mode_bits = 0;
         self.focus_events = false;
         self.synchronized_output = false;
         self.linefeed_mode = false;
@@ -777,6 +801,18 @@ pub const Terminal = struct {
     }
 
     fn handlePrivateMode(self: *Terminal, final: u8) void {
+        if (final == 'p' and self.parser.intermediate_count == 1 and
+            self.parser.intermediates[0] == '$')
+        {
+            if (self.parser.param_count == 1 and !self.parser.subparam[0]) {
+                self.reportPrivateMode(self.parser.params[0]);
+            }
+            return;
+        }
+        if (self.parser.intermediate_count != 0) {
+            self.logUnhandled(final, '?');
+            return;
+        }
         switch (final) {
             'h' => self.setPrivateMode(true),
             'l' => self.setPrivateMode(false),
@@ -789,6 +825,10 @@ pub const Terminal = struct {
         const count = if (self.parser.param_count == 0) @as(u8, 1) else self.parser.param_count;
         while (i < count) : (i += 1) {
             const mode = self.parser.params[i];
+            if (privateModeBit(mode)) |bit| {
+                const mask = @as(u16, 1) << bit;
+                if (enabled) self.private_mode_bits |= mask else self.private_mode_bits &= ~mask;
+            }
             switch (mode) {
                 1 => self.cursor_keys_app = enabled,
                 6 => self.origin_mode = enabled,
@@ -820,6 +860,27 @@ pub const Terminal = struct {
                 else => {},
             }
         }
+    }
+
+    fn reportPrivateMode(self: *Terminal, mode: u16) void {
+        const active: ?bool = switch (mode) {
+            1 => self.cursor_keys_app,
+            6 => self.origin_mode,
+            7 => self.auto_wrap,
+            12 => self.cursor_blinking,
+            25 => self.cursor_visible,
+            1004 => self.focus_events,
+            2004 => self.bracketed_paste,
+            2026 => self.synchronized_output,
+            else => if (privateModeBit(mode)) |bit|
+                self.private_mode_bits & (@as(u16, 1) << bit) != 0
+            else
+                null,
+        };
+        const status: u8 = if (active) |enabled| (if (enabled) @as(u8, 1) else 2) else 0;
+        var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
+        const response = std.fmt.bufPrint(&buf, "\x1b[?{d};{d}$y", .{ mode, status }) catch return;
+        self.enqueueResponse(response);
     }
 
     fn setMouseTracking(self: *Terminal, mode: u16, enabled: bool) void {
@@ -889,6 +950,7 @@ pub const Terminal = struct {
         self.bracketed_paste = false;
         self.mouse_tracking = 0;
         self.mouse_encoding = .x10;
+        self.private_mode_bits &= ~mouse_private_mode_bits;
         self.focus_events = false;
         self.synchronized_output = false;
         self.scroll_top = 0;
@@ -1683,6 +1745,98 @@ test "queues consecutive CPR responses in order" {
     try testing.expectEqualStrings("\x1b[1;2R", t.responsePtr()[0..t.responseLen()]);
     t.popResponse();
     try testing.expectEqual(@as(u8, 0), t.responseLen());
+}
+
+test "reports DEC private modes and ignores malformed queries" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    var ag = Grid.init(80, 24);
+    t.alt_grid = &ag;
+
+    t.write("\x1b[?7$p\x1b[?25$p\x1b[?2026$p\x1b[?7777$p");
+    for ([_][]const u8{
+        "\x1b[?7;1$y",
+        "\x1b[?25;1$y",
+        "\x1b[?2026;2$y",
+        "\x1b[?7777;0$y",
+    }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
+
+    t.write("\x1b[?2026h\x1b[?2026$");
+    t.write("p\x1b[?2004h\x1b[?2004$p");
+    try testing.expectEqualStrings("\x1b[?2026;1$y", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try testing.expectEqualStrings("\x1b[?2004;1$y", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try testing.expect(t.synchronized_output);
+    try testing.expectEqual(@as(u32, 1), t.synchronized_output_generation);
+
+    t.write("\x1b[?2026l\x1b[?2026$p\x1b[?2004l\x1b[?2004$p");
+    try testing.expectEqualStrings("\x1b[?2026;2$y", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try testing.expectEqualStrings("\x1b[?2004;2$y", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+
+    t.write("\x1b[?2026p\x1b[2026$p\x1b[?25;2026$p");
+    try testing.expectEqual(@as(u8, 0), t.responseLen());
+}
+
+test "reports independently enabled mouse and alternate-screen modes" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    var ag = Grid.init(80, 24);
+    t.alt_grid = &ag;
+
+    t.write("\x1b[?1000h\x1b[?1002h\x1b[?1005h\x1b[?1006h");
+    t.write("\x1b[?1000$p\x1b[?1002$p\x1b[?1005$p\x1b[?1006$p");
+    for ([_][]const u8{
+        "\x1b[?1000;1$y",
+        "\x1b[?1002;1$y",
+        "\x1b[?1005;1$y",
+        "\x1b[?1006;1$y",
+    }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
+
+    t.write("\x1b[?1002l\x1b[?1006l\x1b[?1000$p\x1b[?1002$p\x1b[?1005$p\x1b[?1006$p");
+    for ([_][]const u8{
+        "\x1b[?1000;1$y",
+        "\x1b[?1002;2$y",
+        "\x1b[?1005;1$y",
+        "\x1b[?1006;2$y",
+    }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
+
+    t.write("\x1b[?1016h\x1b[?1016l\x1b[?1005$p\x1b[?1016$p");
+    try testing.expectEqualStrings("\x1b[?1005;1$y", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try testing.expectEqualStrings("\x1b[?1016;2$y", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+
+    t.write("\x1b[?1049h\x1b[?1048h\x1b[?47$p\x1b[?1048$p\x1b[?1049$p");
+    for ([_][]const u8{
+        "\x1b[?47;2$y",
+        "\x1b[?1048;1$y",
+        "\x1b[?1049;1$y",
+    }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
+
+    t.write("\x1b[?1049l\x1b[!p\x1b[?1000$p\x1b[?1005$p\x1b[?1049$p");
+    for ([_][]const u8{
+        "\x1b[?1000;2$y",
+        "\x1b[?1005;2$y",
+        "\x1b[?1049;2$y",
+    }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
 }
 
 test "response FIFO wraps and drops newest when full" {
