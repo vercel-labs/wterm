@@ -53,7 +53,7 @@ describe("Terminal component", () => {
 
   it("renders a div with terminal role", async () => {
     await renderTerminal();
-    const el = screen.getByRole("textbox");
+    const el = screen.getByRole("group");
     expect(el).toBeInTheDocument();
     expect(el).toHaveAttribute("aria-label", "Terminal");
     expect(el).toHaveAttribute("aria-roledescription", "terminal");
@@ -61,13 +61,40 @@ describe("Terminal component", () => {
 
   it("applies className prop", async () => {
     const { container } = await renderTerminal({ className: "custom" });
-    const el = container.querySelector("[role='textbox']")!;
+    const el = container.querySelector("[role='group']")!;
     expect(el.className).toContain("custom");
+  });
+
+  it("updates host input labels and tab order without restarting the terminal", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const { rerender } = render(
+      <Terminal
+        aria-label="Build shell"
+        aria-describedby="help"
+        tabIndex={0}
+      />,
+    );
+    const host = screen.getByRole("group", { name: "Build shell" });
+    const instance = lastWTermInstance;
+    expect(host).not.toHaveAttribute("aria-multiline");
+    rerender(
+      <Terminal
+        aria-label="Test shell"
+        aria-labelledby="heading"
+        tabIndex={-1}
+      />,
+    );
+    expect(host).toHaveAttribute("aria-label", "Test shell");
+    expect(host).toHaveAttribute("aria-labelledby", "heading");
+    expect(host).not.toHaveAttribute("aria-describedby");
+    expect(host).toHaveAttribute("tabindex", "-1");
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
   });
 
   it("applies theme class", async () => {
     const { container } = await renderTerminal({ theme: "dark" });
-    const el = container.querySelector("[role='textbox']")!;
+    const el = container.querySelector("[role='group']")!;
     expect(el.className).toContain("theme-dark");
   });
 
@@ -75,7 +102,7 @@ describe("Terminal component", () => {
     const Terminal = (await import("../Terminal.js")).default;
     const { rerender, container } = render(<Terminal />);
     await act(async () => {});
-    const element = container.querySelector('[role="textbox"]')!;
+    const element = container.querySelector('[role="group"]')!;
     expect(element).not.toHaveClass("cursor-blink", "cursor-steady");
     element.classList.add("focused", "has-scrollback");
     rerender(<Terminal cursorBlink />);

@@ -26,6 +26,22 @@ npm install @wterm/dom
 
 The WASM binary is embedded in the package — no extra setup required. To serve it separately instead, pass `wasmUrl`.
 
+## Input accessibility
+
+The terminal's input is a native multiline textbox named **Terminal** by default. Set `aria-label`, `aria-labelledby`, `aria-describedby`, or `aria-description` on the host element to name or describe that input. Changes stay synchronized; referenced labels and descriptions use the browser's normal ARIA precedence. For example:
+
+```html
+<h2 id="shell-heading">Build shell</h2>
+<p id="shell-help">Commands run in the selected session.</p>
+<div id="terminal" aria-labelledby="shell-heading" aria-describedby="shell-help"></div>
+```
+
+After initialization, the host defaults to `role="group"`; the textarea is the editable control. If you previously assigned `role="textbox"` and `aria-multiline` to the host yourself, remove those attributes or use `role="group"`. Explicit host roles are otherwise preserved. Do not hide the input from assistive technology.
+
+Host `tabindex` applies to the input: `0` enables normal page tab entry and `-1` removes that tab stop. When supplied, WTerm sets the host itself to `-1` to avoid a duplicate stop and restores the latest requested value on destruction. Without `tabindex`, the input uses `0`. Use `term.focus()` for programmatic focus. Tab and Shift+Tab inside input still go to the terminal application for completion/navigation. Label and tab-order changes do not move focus.
+
+Mounted output remains readable separately from input. This does not enable output announcements or expose unmounted history to screen readers. Ancestor `aria-hidden` and `inert` still control whether a terminal is available.
+
 ## API
 
 ### `WTerm`

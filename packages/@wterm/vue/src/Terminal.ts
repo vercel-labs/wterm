@@ -246,9 +246,8 @@ const Terminal = defineComponent({
       style: this.autoResize
         ? undefined
         : { height: `${this.rows * 17 + 24}px` },
-      role: "textbox",
+      role: "group",
       "aria-label": "Terminal",
-      "aria-multiline": "true",
       "aria-roledescription": "terminal",
     });
   },

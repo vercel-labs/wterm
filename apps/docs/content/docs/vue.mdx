@@ -5,6 +5,8 @@ navTitle: "Vue"
 
 The `@wterm/vue` package provides a `<Terminal>` component for integrating wterm into Vue 3 applications. It re-exports everything from `@wterm/dom`, so a single import covers both the component and its types.
 
+Use `<Terminal aria-label="Build shell" aria-describedby="shell-help" />` to name and describe the actual input. Label attributes stay synchronized when they change. The wrapper is a group; input is the single editable control. `:tabindex="-1"` removes input from page tab entry. See [Input Accessibility](/api-reference#input-accessibility).
+
 ## Install
 
 ```bash

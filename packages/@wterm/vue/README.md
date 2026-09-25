@@ -124,6 +124,10 @@ Switch themes via the `theme` prop:
 
 Built-in: `solarized-dark`, `monokai`, `light`. Define custom themes with CSS custom properties.
 
+## Input accessibility
+
+Use `<Terminal aria-label="Build shell" aria-describedby="shell-help" />` to name and describe the actual input. `aria-labelledby` and `aria-description` are also supported, and attribute changes stay synchronized. The host defaults to a group; the native textarea is the editable control. `:tabindex="-1"` excludes input from page tab entry; the template ref's `focus()` method still focuses it. See the [DOM input accessibility contract](../dom/README.md#input-accessibility) for host tab-order ownership and output limits.
+
 ## Selection and copy
 
 Native Copy uses terminal line and cell semantics, joining Ghostty soft wraps while preserving explicit newlines and complete Unicode cells. Call `getSelectionText()` on the underlying WTerm instance to read the same text without accessing the clipboard. It returns `null` when no supported terminal selection exists. See [selection behavior and limits](../dom/README.md#selecting-and-copying-text).

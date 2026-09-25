@@ -168,10 +168,11 @@ describe("InputHandler", () => {
   });
 
   describe("setup", () => {
-    it("creates a hidden textarea in the container", () => {
+    it("creates a named textarea exposed to assistive technology", () => {
       const ta = getTextarea();
       expect(ta).not.toBeNull();
-      expect(ta.getAttribute("aria-hidden")).toBe("true");
+      expect(ta.hasAttribute("aria-hidden")).toBe(false);
+      expect(ta.getAttribute("aria-label")).toBe("Terminal");
     });
 
     it("sets autocomplete off attributes", () => {

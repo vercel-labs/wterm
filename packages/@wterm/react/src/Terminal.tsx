@@ -224,9 +224,8 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
       ref={containerRef}
       className={classes || undefined}
       style={mergedStyle}
-      role="textbox"
+      role="group"
       aria-label="Terminal"
-      aria-multiline="true"
       aria-roledescription="terminal"
       {...htmlProps}
     />
