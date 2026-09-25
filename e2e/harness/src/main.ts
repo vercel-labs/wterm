@@ -239,6 +239,8 @@ export type HarnessAPI = {
   selectionText: WTerm["getSelectionText"];
   selectAll: WTerm["selectAll"];
   clearSelection: WTerm["clearSelection"];
+  selectWord: WTerm["selectWord"];
+  selectLine: WTerm["selectLine"];
 };
 declare global {
   interface Window {
@@ -290,6 +292,8 @@ async function init() {
     selectionText: () => terminal.getSelectionText(),
     selectAll: () => terminal.selectAll(),
     clearSelection: () => terminal.clearSelection(),
+    selectWord: (position) => terminal.selectWord(position),
+    selectLine: (row) => terminal.selectLine(row),
     frame: () =>
       new Promise((resolve) => requestAnimationFrame(() => resolve())),
   };

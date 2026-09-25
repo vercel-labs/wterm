@@ -107,6 +107,8 @@ With Ghostty's current WASM binary, selections also follow output scrolling and 
 
 Use `await wt.selectAll()` on the WTerm instance to select all retained history and the active screen without mounting extra rows, then read `wt.getSelectionText()`. Cmd+A or Ctrl+Shift+A invokes the same action from terminal input. `wt.clearSelection()` cancels it. See [Select All](/api-reference#select-all) for capture limits, shortcuts, and when selection clears.
 
+Double-click words or paths, or triple-click logical lines. The WTerm methods `selectWord({ row, col })` and `selectLine(row)` create the same native selection, including confirmed Ghostty soft wraps and unmounted history. See [Words and Logical Lines](/api-reference#words-and-logical-lines) for coordinates, boundaries, and limits.
+
 ### Terminal images
 
 When the supplied core exposes the optional graphics methods, `WTerm` renders

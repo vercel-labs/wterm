@@ -10,11 +10,11 @@ import {
   textPoint,
   type SelectedRow,
 } from "./selection.js";
+import { MAX_SELECTION_ROWS, MAX_SELECTION_TEXT } from "./selection-range.js";
 
 // Retain only the selected rows, separately from the viewport. Reflow must not
 // turn a small native selection into an unbounded mounted history window.
-export const MAX_TRACKED_SELECTION_ROWS = 1000;
-const MAX_TRACKED_SELECTION_TEXT = 1024 * 1024;
+export const MAX_TRACKED_SELECTION_ROWS = MAX_SELECTION_ROWS;
 type Edge = { pin: TrackedTerminalPosition; after: boolean };
 type NativeSelection = {
   anchorNode: Node | null;
@@ -70,7 +70,7 @@ export class TrackedSelection {
       !value ||
       !value.text.length ||
       value.last.row.row - value.first.row.row >= MAX_TRACKED_SELECTION_ROWS ||
-      value.text.length > MAX_TRACKED_SELECTION_TEXT
+      value.text.length > MAX_SELECTION_TEXT
     )
       return;
     const start = cellAtOffset(

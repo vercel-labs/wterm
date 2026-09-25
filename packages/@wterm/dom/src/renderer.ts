@@ -1,6 +1,12 @@
-import type { CellData, TerminalCore } from "@wterm/core";
+import type { CellData, TerminalCore, TerminalPosition } from "@wterm/core";
 import { GraphicsLayer, type GraphicsLayerOptions } from "./graphics-layer.js";
-import { getSelectionText, type RenderedRowText } from "./selection.js";
+import {
+  getSelectionText,
+  offsetAtCell,
+  textPoint,
+  type RenderedRowText,
+} from "./selection.js";
+import { selectionRange, type SelectionUnit } from "./selection-range.js";
 import {
   TrackedSelection,
   MAX_TRACKED_SELECTION_ROWS,
@@ -371,6 +377,8 @@ export class Renderer {
   private rowHtml = new WeakMap<HTMLElement, string>();
   private selection: TrackedSelection | null = null;
   private needsSetup = false;
+  private painted = false;
+  private viewport: RenderViewport | undefined;
 
   get hasImageFlow(): boolean {
     return (
@@ -919,6 +927,7 @@ export class Renderer {
   }
 
   render(core: TerminalCore, viewport?: RenderViewport): void {
+    this.viewport = viewport;
     this.selection ??= new TrackedSelection(
       this.container.parentElement ?? this.container,
     );
@@ -986,6 +995,7 @@ export class Renderer {
 
     core.clearDirty();
     this.selection.afterRender(this.selectionRows(), positions);
+    this.painted = true;
     this.graphics.reconcile(core, {
       scrollTop: viewport?.scrollTop ?? 0,
       clientHeight: viewport?.clientHeight ?? 0,
@@ -1029,6 +1039,59 @@ export class Renderer {
 
   beforeMutation(core: TerminalCore): void {
     this.selection?.beforeMutation(core, this.selectionRows());
+    this.painted = false;
+  }
+
+  /** Resolve a mounted row hit using cell geometry, including wide glyphs. */
+  positionAt(
+    target: Element,
+    clientX: number,
+    charWidth: number,
+  ): TerminalPosition | null {
+    if (!this.painted || this.needsSetup || charWidth <= 0) return null;
+    const element = target.closest(".term-row");
+    const mounted = Array.from(this.searchRows()).find(
+      (row) => row.element === element,
+    );
+    if (!mounted) return null;
+    const col = Math.floor(
+      (clientX - mounted.element.getBoundingClientRect().left) / charWidth,
+    );
+    return col >= 0 && col < this.cols ? { row: mounted.row, col } : null;
+  }
+
+  select(
+    core: TerminalCore,
+    position: TerminalPosition,
+    unit: SelectionUnit,
+    beforeSelect: () => void,
+  ): boolean {
+    if (!this.painted || this.needsSetup) return false;
+    const range = selectionRange(core, position, unit);
+    if (!range) return false;
+    beforeSelect();
+    // Blurring the terminal input may synchronously deliver a focus report.
+    // A host can write, resize or destroy in that callback.
+    if (!this.painted || this.needsSetup) return false;
+    this.syncScrollback(core, {
+      ...(this.viewport ?? { scrollTop: 0, clientHeight: 0, rowHeight: 0 }),
+      selectedRows: { start: range.start.row, end: range.end.row },
+    });
+    const mounted = Array.from(this.selectionRows());
+    const edge = (position: TerminalPosition, after: boolean) => {
+      const row = mounted.find((row) => row.row === position.row);
+      return (
+        row &&
+        textPoint(row.element, offsetAtCell(row.content, position.col, after))
+      );
+    };
+    const start = edge(range.start, false),
+      end = edge(range.end, true);
+    const native = this.container.ownerDocument.getSelection();
+    if (!start || !end || !native) return false;
+    native.setBaseAndExtent(...start, ...end);
+    this.selection?.capture(core, this.selectionRows());
+    return true;
   }
 
   requestSetup(): void {
@@ -1042,6 +1105,7 @@ export class Renderer {
   }
 
   destroy(): void {
+    this.painted = false;
     this.selection?.dispose();
     this.graphics.destroy();
     this.container.innerHTML = "";

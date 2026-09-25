@@ -67,6 +67,10 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `findNext()` / `findPrevious()` | Select and reveal a match, wrapping at either end; return false if there are none |
 | `getSearchState()` | Get query, caseSensitive, count, activeIndex, searching, and limited |
 | `getSelectionText(): string \| null` | Read the native selection with terminal line and cell semantics; returns null when unavailable |
+| `selectWord({ row, col }): boolean` | Select a word at a retained-buffer cell, including confirmed soft wraps |
+| `selectLine(row): boolean` | Select the complete logical line containing a retained-buffer row |
+| `selectAll(): Promise<boolean>` | Select all retained history and the active screen |
+| `clearSelection()` | Cancel Select All and clear this terminal's native selection |
 | `clearSearch()` | Cancel search and remove highlights |
 | `destroy()` | Clean up event listeners and DOM |
 
@@ -162,6 +166,21 @@ The method reads the painted text, including while synchronized output holds a n
 With Ghostty's current WASM binary, WTerm tracks both selection edges through output scrolling and resize/reflow and restores the native highlight, including backward selections. If selected text changes, an edge is discarded, or the application resets or switches screens, the selection clears. The copied text stays tied to what was selected. Resize reports applied dimensions immediately and rebuilds the DOM on the next paint frame.
 
 Preservation covers native selections of at most 1,000 physical rows and 1,048,576 UTF-16 units. Reflow beyond the row limit clears a tracked selection. Larger selections, cores without `trackPosition`, and new selections made while an older frame awaits rendering retain native browser behavior and may change or clear on rendering. Select after the current frame has painted for tracked preservation. Native selection begins in mounted text. The method is available through the underlying WTerm instance in every framework binding.
+
+#### Words and logical lines
+
+Double-click a word or path to select it. Triple-click a row to select its complete logical line, including confirmed soft wraps and unmounted history. Single-click dragging keeps native browser selection. Hold Shift to select live text when an application reports mouse input; history stays selectable without Shift. Modified link clicks retain their normal behavior.
+
+```ts
+// Coordinates start at the oldest retained row; columns are terminal cells.
+term.selectWord({ row: 10, col: 4 });
+term.selectLine(10);
+console.log(term.getSelectionText());
+```
+
+Both methods return `true` when a native selection is created. They return `false` for invalid coordinates, an unavailable or pending frame, or a range beyond 1,000 physical rows or 1,048,576 UTF-16 units. Mouse gestures fall back to browser selection in those cases. Route writes and resizes through WTerm and select after painting. Successful selection replaces Select All and releases terminal input focus so normal Copy works across browsers. Framework users access these methods through their WTerm instance.
+
+Words use Ghostty's default boundary characters: spaces, tabs, quotes, backticks, vertical bars (including `│`), colons, semicolons, commas, parentheses, square/curly/angle brackets, and dollar signs. Adjacent boundary characters form their own run. Slashes, dots, hyphens, underscores, and Unicode text remain together. Either half of a wide glyph selects its complete grapheme. Line selection preserves indentation, trims trailing hard-line padding on copy, and excludes the next explicit newline. Unknown wrap boundaries, including the built-in core's, stop expansion at the physical row. These native selections use the preservation behavior described above.
 
 #### Select All
 
