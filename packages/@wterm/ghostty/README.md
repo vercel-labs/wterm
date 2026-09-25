@@ -6,6 +6,8 @@ Drop-in replacement for wterm's built-in Zig core. Implements the same `Terminal
 
 The core exposes mouse tracking (modes 1000, 1002, and 1003), its active wire encoding through `mouseEncoding()`, focus reporting (mode 1004), synchronized-output state (mode 2026), Kitty keyboard negotiation, and terminal responses including foreground/background color queries (OSC 10 and OSC 11) to `@wterm/dom`. With the DOM layer, X10, UTF-8 (1005), SGR (1006), urxvt (1015), and SGR pixel (1016) reports are supported. Mode 1003 reports unpressed pointer movement once per cell for cell formats and once per CSS pixel for 1016.
 Combining marks and ZWJ emoji are exposed through `CellData.chars` as complete strings, including after their rows move into scrollback.
+
+`CellData.spacerHead` marks the empty right-edge filler before a wrapped wide glyph. WTerm's full-history Find uses this flag, grapheme strings, and native row-wrap metadata to match text across soft wraps without inserting artificial spaces.
 `getCursor()` exposes Ghostty's block, bar, or underline `shape` and `blinking`
 state. The DOM renderer follows application requests (DECSCUSR and mode 12);
 an explicit `cursorBlink: true` or `false` on the terminal wrapper overrides

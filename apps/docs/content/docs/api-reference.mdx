@@ -430,8 +430,45 @@ Outside synchronized output, writes request the next animation frame directly. W
       <td><code>destroy()</code></td>
       <td>Clean up event listeners, observers, and DOM</td>
     </tr>
+    <tr>
+      <td><code>search(query, options?)</code></td>
+      <td>Start cancellable plain-text search across retained history and the active screen</td>
+    </tr>
+    <tr>
+      <td><code>findNext()</code> / <code>findPrevious()</code></td>
+      <td>Reveal a match with wraparound; return false if there are no matches</td>
+    </tr>
+    <tr>
+      <td><code>getSearchState()</code> / <code>clearSearch()</code></td>
+      <td>Read a state snapshot, or cancel search and remove highlights</td>
+    </tr>
   </tbody>
 </table>
+
+## Terminal Search
+
+```ts
+import type { SearchOptions, SearchState } from "@wterm/dom";
+
+wt.onSearchChange = (state: SearchState) => {
+  // Update your Find controls from this snapshot.
+  console.log(state.count, state.activeIndex, state.searching, state.limited);
+};
+const options: SearchOptions = { caseSensitive: false };
+wt.search("connection refused", options);
+```
+
+`onSearchChange` can also be passed in the WTerm constructor options. Framework users access it and the search methods through their underlying WTerm instance (`onReady` in React/Svelte, `ready` in Vue, or the instance ref).
+
+`SearchState` contains `query`, `caseSensitive`, `count`, `activeIndex`, `searching`, and `limited`. Results arrive incrementally in chronological order. The first match is selected and revealed; `activeIndex` is zero-based or -1 when empty. Next/previous navigation wraps among matches found so far. Empty queries cancel work and remove highlights. Native text selection is preserved; the host owns Find controls and shortcuts.
+
+Search includes unmounted retained history. Ghostty joins confirmed soft wraps, including the history/screen boundary, while explicit newlines and unknown boundaries separate matches. The built-in core currently searches each physical row independently. Grapheme strings preserve Unicode content; matches highlight whole cells even when only part of a grapheme matches. Width-zero continuations and flagged `spacerHead` cells are omitted. Real spaces and blank-cell padding remain literal. Queries do not cross hard newlines and regular expressions are not interpreted.
+
+Matching ignores case by default using locale-independent JavaScript `toLowerCase()` on each code point. There is no Unicode normalization or full case folding: composed and decomposed accents differ, `ß` does not match `ss`, and final sigma differs from sigma. Lowercase expansions keep the original cell coordinates.
+
+Queries longer than 1,024 UTF-16 code units throw `RangeError` without changing the current search. At most 10,000 matches are retained; `limited` indicates additional matches exist. Narrow the query to reach them. Output, pruning, resize, and screen switches immediately discard stale results and restart after painting. Refresh selects the first new result without moving the scroll position. Continuous output can delay completion. Synchronized output waits for paint release; destruction cancels pending work. Use WTerm's `write` and `resize` methods for buffer mutations so results stay current.
+
+Highlight colors use `--term-search-match`, `--term-search-active`, and `--term-search-border` on the terminal element.
 
 ## Imperative Handle (React)
 
@@ -841,6 +878,7 @@ interface CellData {
   bg: number;     // Background color index (256 = default)
   flags: number;  // Style flags (bold, italic, underline, etc.)
   width?: number; // 1 = narrow, 2 = wide leading cell, 0 = continuation
+  spacerHead?: boolean; // Empty right-edge filler before a wrapped wide glyph
 }
 
 interface CursorState {

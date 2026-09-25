@@ -39,6 +39,11 @@ or `cursorBlink=false` to the harness URL to exercise that override manually.
 `background.spec.ts` samples rendered pixels to check edge-cell and scrollback
 backgrounds, full-width status bars, partial redraws, screen changes, and resize.
 
+`search.spec.ts` checks full-history Find, next/previous navigation, native
+selection preservation, Unicode cell highlights, reflow, cancellation, and
+synchronized-output refreshes. Replay exposes `search`, `searchState`,
+`findNext`, `findPrevious`, and `clearSearch` on `window.ptyHarness`.
+
 `cell-width.spec.ts` checks column positions across ASCII, braille, box drawing,
 wide characters, links, cursors, and scrollback. It also exercises font changes
 and enlarged fallback glyphs without relying on a particular installed font.

@@ -237,6 +237,7 @@ export interface WasmCellData {
   colorFlags: number;
   hasGrapheme: boolean;
   hasHyperlink: boolean;
+  spacerHead: boolean;
 }
 
 /**
@@ -257,6 +258,7 @@ export function parseCell(view: DataView, byteOffset: number): WasmCellData {
     colorFlags: view.getUint8(byteOffset + 12),
     hasGrapheme: (view.getUint8(byteOffset + 13) & 1) !== 0,
     hasHyperlink: (view.getUint8(byteOffset + 13) & 2) !== 0,
+    spacerHead: (view.getUint8(byteOffset + 13) & 4) !== 0,
   };
 }
 

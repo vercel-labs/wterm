@@ -732,7 +732,8 @@ fn encodeCell(
     out[11] = cellWidth(raw.*);
     out[12] = (if (has_fg) @as(u8, 1) else 0) | (if (has_bg) @as(u8, 2) else 0);
     out[13] = (if (raw.content_tag == .codepoint_grapheme) @as(u8, 1) else 0) |
-        (if (raw.hyperlink) @as(u8, 2) else 0);
+        (if (raw.hyperlink) @as(u8, 2) else 0) |
+        (if (raw.wide == .spacer_head) @as(u8, 4) else 0);
     out[14] = 0;
     out[15] = 0;
 }
@@ -809,7 +810,8 @@ export fn get_viewport(ptr: usize, buf_ptr: [*]u8) u32 {
             buf_ptr[offset + 12] = color_flags;
             buf_ptr[offset + 13] =
                 (if (raw.content_tag == .codepoint_grapheme) @as(u8, 1) else 0) |
-                (if (raw.hyperlink) @as(u8, 2) else 0);
+                (if (raw.hyperlink) @as(u8, 2) else 0) |
+                (if (raw.wide == .spacer_head) @as(u8, 4) else 0);
             buf_ptr[offset + 14] = 0;
             buf_ptr[offset + 15] = 0;
             offset += CELL_BYTES;

@@ -48,7 +48,7 @@ await term.init();
 
 The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `onData`, `onBinary`, `onTitle`, `onBell`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
 
-See [WTerm Methods](/api-reference#wterm-methods) for the full list of instance methods (`init`, `write`, `resize`, `focus`, `destroy`).
+See [WTerm Methods](/api-reference#wterm-methods) for all instance methods, including [full-history Find](/api-reference#terminal-search): `search`, `findNext`, `findPrevious`, `getSearchState`, and `clearSearch`. Use the `onSearchChange` WTerm option or instance callback for progress and match counts.
 
 When a terminal application enables mouse tracking, UTF-8 (1005), SGR (1006), urxvt (1015), and SGR pixel (1016) reports reach `onData` with keyboard input and focus reports. Forward `onData` strings through a UTF-8 transport. Mode 1016 uses 1-based CSS-pixel coordinates relative to the visible grid, independent of device pixel ratio. Mode 1003 sends unpressed pointer motion once per cell in cell formats and once per CSS pixel in 1016.
 

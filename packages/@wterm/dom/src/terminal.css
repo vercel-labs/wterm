@@ -63,6 +63,24 @@
   z-index: 1;
 }
 
+.term-search-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  z-index: 2;
+}
+
+.term-search-match {
+  position: absolute;
+  background: var(--term-search-match, rgb(255 200 0 / 25%));
+}
+
+.term-search-active {
+  background: var(--term-search-active, rgb(255 150 0 / 40%));
+  box-shadow: inset 0 0 0 1px var(--term-search-border, #ffb000);
+}
+
 .term-image-flow-spacer {
   display: block;
   height: 0;

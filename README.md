@@ -42,6 +42,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Window titles** — OSC 0/2 title changes reach `onTitle` with either the built-in or Ghostty core
 - **Bell events** — BEL reaches `onBell(count)` through either core, leaving sound or visual alerts to the host app
 - **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window
+- **Full-history Find** — incremental plain-text search, match counts, highlights, and next/previous navigation across retained output; Ghostty searches across soft wraps
 - **Row-wrap metadata** — the Ghostty core exposes soft-wrap relationships in the live screen and retained history, including after reflow
 - **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws and column insertions/deletions aligned
 - **DEC line drawing** — character-set switches used by tmux and other TUIs produce borders and symbols instead of literal letters

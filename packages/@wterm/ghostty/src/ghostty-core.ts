@@ -251,6 +251,7 @@ export class GhosttyCore implements TerminalCore {
       cell.flags === 0 &&
       cell.colorFlags === 0 &&
       !cell.hasHyperlink &&
+      !cell.spacerHead &&
       cell.width !== 0
     )
       return BLANK_CELL;
@@ -263,6 +264,7 @@ export class GhosttyCore implements TerminalCore {
       width: cell.width,
     };
     if (cell.hasGrapheme) result.chars = this._readGrapheme(row, col);
+    if (cell.spacerHead) result.spacerHead = true;
     if (cell.hasHyperlink)
       Object.assign(result, this._readHyperlink(row, col, false));
     if (cell.colorFlags & 1)
@@ -643,6 +645,7 @@ export class GhosttyCore implements TerminalCore {
     };
     if (cell.hasGrapheme)
       result.chars = this._readScrollbackGrapheme(offset, col);
+    if (cell.spacerHead) result.spacerHead = true;
     if (cell.hasHyperlink)
       Object.assign(result, this._readHyperlink(offset, col, true));
     if (cell.colorFlags & 1)
