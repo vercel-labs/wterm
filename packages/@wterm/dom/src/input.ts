@@ -48,6 +48,8 @@ const FIXED_KEYS: Record<string, string> = {
 };
 
 const COMPOSITION_INPUT_DEDUP_MS = 250;
+// iOS needs a deletable value to keep emitting input events for held Backspace.
+const TOUCH_INPUT_PLACEHOLDER = "\u200b";
 
 export class InputHandler {
   private element: HTMLElement;
@@ -59,9 +61,12 @@ export class InputHandler {
     rowHeight: number;
   } | null;
   private prepareComposition: () => void;
+  private readonly touchPrimary: boolean;
   private composing = false;
   private compositionWidth = 0;
   private recentCompositionCommit: { text: string; at: number } | null = null;
+  // The first native deletion mirrors the Backspace already sent on keydown.
+  private suppressNextTouchDeleteInput = false;
   private mouseButtons = 0;
   private lastMouseMotion: {
     mode: number;
@@ -79,7 +84,7 @@ export class InputHandler {
   private _onPaste: (e: ClipboardEvent) => void;
   private _onCompositionStart: () => void;
   private _onCompositionEnd: (e: CompositionEvent) => void;
-  private _onInput: () => void;
+  private _onInput: (e: Event) => void;
   private _onFocus: () => void;
   private _onBlur: () => void;
   private _onMouseDown: (e: MouseEvent) => void;
@@ -102,6 +107,9 @@ export class InputHandler {
     this.getBridge = getBridge;
     this.getCellSize = getCellSize;
     this.prepareComposition = prepareComposition;
+    this.touchPrimary =
+      element.ownerDocument.defaultView?.matchMedia?.("(pointer: coarse)")
+        .matches ?? false;
 
     this.textarea = document.createElement("textarea");
     this.textarea.setAttribute("autocapitalize", "off");
@@ -116,8 +124,8 @@ export class InputHandler {
     s.position = "absolute";
     s.left = "-9999px";
     s.top = "0";
-    s.width = "1px";
-    s.height = "1px";
+    s.width = this.touchPrimary ? "var(--term-cell-width, 1ch)" : "1px";
+    s.height = this.touchPrimary ? "var(--term-row-height)" : "1px";
     s.boxSizing = "border-box";
     s.font = "inherit";
     s.lineHeight = "var(--term-row-height)";
@@ -125,14 +133,15 @@ export class InputHandler {
     s.fontVariantLigatures = "none";
     s.whiteSpace = "pre";
     s.zIndex = "2";
-    s.opacity = "0";
+    // A fully transparent element is ignored by iOS keyboard and paste UI.
+    s.opacity = this.touchPrimary ? "1" : "0";
     s.overflow = "hidden";
     s.border = "0";
     s.padding = "0";
     s.margin = "0";
     s.outline = "none";
     s.resize = "none";
-    s.pointerEvents = "none";
+    s.pointerEvents = this.touchPrimary ? "auto" : "none";
     s.caretColor = "transparent";
     s.color = "transparent";
     s.background = "transparent";
@@ -147,6 +156,7 @@ export class InputHandler {
     this._onFocus = () => {
       if (this.focused) return;
       this.focused = true;
+      if (this.touchPrimary && !this.textarea.value) this.resetInputValue();
       this.positionTextarea();
       this.element.classList.add("focused");
       if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[I");
@@ -155,6 +165,7 @@ export class InputHandler {
       this.focused = false;
       this.composing = false;
       this.recentCompositionCommit = null;
+      this.suppressNextTouchDeleteInput = false;
       this.hideComposition();
       this.textarea.value = "";
       this.element.classList.remove("focused");
@@ -208,12 +219,16 @@ export class InputHandler {
   }
 
   focus(): void {
+    if (this.touchPrimary) this.prepareComposition();
+    if (this.touchPrimary && !this.composing && !this.textarea.value) {
+      this.resetInputValue();
+    }
     this.positionTextarea();
     this.textarea.focus({ preventScroll: true });
   }
 
-  syncCompositionPosition(): void {
-    if (this.composing) this.positionTextarea();
+  syncInputPosition(): void {
+    if (this.composing || this.touchPrimary) this.positionTextarea();
   }
 
   destroy(): void {
@@ -242,6 +257,7 @@ export class InputHandler {
 
   private handleKeyDown(e: KeyboardEvent): void {
     const keyId = e.code || e.key;
+    if (e.key !== "Backspace") this.suppressNextTouchDeleteInput = false;
     const physicalModifier = /^(Shift|Control|Alt|Meta)(Left|Right)$/.test(
       e.code,
     );
@@ -292,7 +308,12 @@ export class InputHandler {
     }
 
     this.suppressedKeyUps.delete(keyId);
-    e.preventDefault();
+    const nativeTouchDelete =
+      this.touchPrimary &&
+      e.key === "Backspace" &&
+      !e.altKey &&
+      !e.ctrlKey &&
+      !e.metaKey;
     if (kittyFlags !== 0) {
       const seq = encodeKittyKey(
         e,
@@ -302,13 +323,19 @@ export class InputHandler {
         bridge?.cursorKeysApp?.() ?? false,
       );
       if (seq) {
+        if (nativeTouchDelete) this.suppressNextTouchDeleteInput = true;
+        else e.preventDefault();
         this.deliveredKeys.add(keyId);
         this.onData(seq);
       }
       return;
     }
     const seq = this.keyToSequence(e);
-    if (seq) this.onData(seq);
+    if (seq) {
+      if (nativeTouchDelete) this.suppressNextTouchDeleteInput = true;
+      else e.preventDefault();
+      this.onData(seq);
+    }
   }
 
   private handleKeyUp(e: KeyboardEvent): void {
@@ -333,11 +360,17 @@ export class InputHandler {
   }
 
   private handlePaste(e: ClipboardEvent): void {
-    e.preventDefault();
     this.recentCompositionCommit = null;
+    this.suppressNextTouchDeleteInput = false;
     const text = e.clipboardData?.getData("text");
+    // Some mobile browsers leave clipboardData empty but insert the paste
+    // into the textarea. Let that input event carry the text instead.
     if (!text) return;
+    e.preventDefault();
+    this.sendPaste(text);
+  }
 
+  private sendPaste(text: string): void {
     const bridge = this.getBridge();
     if (bridge && bridge.bracketedPaste()) {
       // Strip ESC bytes so clipboard payloads cannot inject \x1b[201~ to
@@ -353,6 +386,10 @@ export class InputHandler {
     this.prepareComposition();
     this.composing = true;
     this.recentCompositionCommit = null;
+    this.suppressNextTouchDeleteInput = false;
+    if (this.touchPrimary && this.textarea.value === TOUCH_INPUT_PLACEHOLDER) {
+      this.textarea.value = "";
+    }
     this.positionTextarea();
     const s = this.textarea.style;
     s.opacity = "1";
@@ -364,7 +401,7 @@ export class InputHandler {
   private handleCompositionEnd(e: CompositionEvent): void {
     this.composing = false;
     this.hideComposition();
-    this.textarea.value = "";
+    this.resetInputValue();
     if (e.data) {
       this.recentCompositionCommit = { text: e.data, at: performance.now() };
       this.onData(e.data);
@@ -374,9 +411,9 @@ export class InputHandler {
   private hideComposition(): void {
     this.compositionWidth = 0;
     const s = this.textarea.style;
-    s.opacity = "0";
-    s.width = "1px";
-    s.height = "1px";
+    s.opacity = this.touchPrimary ? "1" : "0";
+    s.width = this.touchPrimary ? "var(--term-cell-width, 1ch)" : "1px";
+    s.height = this.touchPrimary ? "var(--term-row-height)" : "1px";
     s.color = "transparent";
     s.background = "transparent";
     s.caretColor = "transparent";
@@ -429,15 +466,52 @@ export class InputHandler {
     this.positionTextarea();
   }
 
-  private handleInput(): void {
+  private resetInputValue(): void {
+    this.textarea.value = this.touchPrimary ? TOUCH_INPUT_PLACEHOLDER : "";
+    if (this.touchPrimary) this.textarea.setSelectionRange(1, 1);
+  }
+
+  private sendTouchDelete(): void {
+    const bridge = this.getBridge();
+    const flags = bridge?.kittyKeyboardFlags?.() ?? 0;
+    const seq = flags
+      ? encodeKittyKey(
+          new KeyboardEvent("keydown", {
+            key: "Backspace",
+            code: "Backspace",
+          }),
+          flags,
+          "press",
+          undefined,
+          bridge?.cursorKeysApp?.() ?? false,
+        )
+      : "\x7f";
+    if (seq) this.onData(seq);
+  }
+
+  private handleInput(event: Event): void {
     if (this.composing) {
       this.sizeComposition();
       return;
     }
-    const value = this.textarea.value;
-    this.textarea.value = "";
+    const inputType = (event as InputEvent).inputType;
+    const rawValue = this.textarea.value;
+    const value =
+      this.touchPrimary && rawValue.startsWith(TOUCH_INPUT_PLACEHOLDER)
+        ? rawValue.slice(TOUCH_INPUT_PLACEHOLDER.length)
+        : rawValue;
+    this.resetInputValue();
     const recent = this.recentCompositionCommit;
     this.recentCompositionCommit = null;
+    if (this.touchPrimary && inputType === "deleteContentBackward") {
+      if (this.suppressNextTouchDeleteInput) {
+        this.suppressNextTouchDeleteInput = false;
+      } else {
+        this.sendTouchDelete();
+      }
+      return;
+    }
+    this.suppressNextTouchDeleteInput = false;
     if (!value) return;
     // Some browsers emit the committed text again as an ordinary input
     // event immediately after compositionend, with varying inputType values.
@@ -447,7 +521,8 @@ export class InputHandler {
       performance.now() - recent.at < COMPOSITION_INPUT_DEDUP_MS
     )
       return;
-    this.onData(value);
+    if (inputType === "insertFromPaste") this.sendPaste(value);
+    else this.onData(value);
   }
 
   private handleMouse(

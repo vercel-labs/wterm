@@ -65,6 +65,10 @@ the committed text to `onData`. If you are viewing scrollback when composition
 starts, WTerm returns to the live viewport so the browser's candidate window
 appears by the current input.
 
+On touch-first devices, the transparent input target stays at the cursor for
+soft-keyboard focus and the native paste menu. Holding Backspace sends repeated
+deletions, and pasted text follows the application's bracketed-paste mode.
+
 Application-provided OSC 8 hyperlinks render as native anchors across both the active viewport and scrollback. Only absolute HTTP and HTTPS URIs become clickable; invalid, relative, and executable schemes remain ordinary terminal text.
 While hovering an anchor, holding Command on macOS or Control on Windows and Linux reveals its underline and pointer cursor. Plain clicks remain terminal interaction. Command-click, Control-click, or native keyboard activation when an anchor receives focus opens the link. Modified link activation remains available while SGR mouse tracking is active and is not forwarded to the terminal application.
 

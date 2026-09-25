@@ -91,6 +91,11 @@ browser's input field. The connected application receives only the committed
 text. When composition starts while reading scrollback, WTerm returns to the
 live viewport so the text and candidate window stay near the cursor.
 
+On touch-first devices, the transparent input target stays at the terminal
+cursor so tapping can open the soft keyboard and native paste menu. Holding
+Backspace continues deleting through repeated browser input events. Paste
+still follows the application's bracketed-paste mode when enabled.
+
 WTerm honors synchronized output mode (CSI `?2026`) by painting the block atomically when the mode closes. Each synchronized block can hold rendering for at most one second from its opening sequence. Ordinary payload does not extend that deadline. If the deadline expires, WTerm resumes painting until a fresh synchronized block begins.
 
 Ordinary writes schedule `requestAnimationFrame` directly. Multiple writes before the frame are coalesced into one render.
