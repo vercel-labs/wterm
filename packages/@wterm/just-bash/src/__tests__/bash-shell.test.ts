@@ -493,6 +493,123 @@ describe("BashShell", () => {
       expect(mockExec.mock.calls[0]?.[0]).toContain("echo hi");
     });
 
+    it("Ctrl+Y restores a word erased before the cursor", async () => {
+      await shell.handleInput("echo alpha beta");
+      await shell.handleInput("\x1b[1;3D");
+      await shell.handleInput("\x17");
+      output.length = 0;
+
+      await shell.handleInput("\x19");
+      expect(output).toEqual(["alpha beta\x1b[K", "\x1b[4D"]);
+
+      await shell.handleInput("X");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("echo alpha Xbeta");
+    });
+
+    it("Ctrl+Y restores text erased after the cursor", async () => {
+      await shell.handleInput("echo alpha beta");
+      await shell.handleInput("\x1b[1;3D");
+      await shell.handleInput("\x0b");
+      output.length = 0;
+
+      await shell.handleInput("\x19");
+      expect(output).toEqual(["beta"]);
+
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("echo alpha beta");
+    });
+
+    it("combines consecutive backward erasures in their original order", async () => {
+      await shell.handleInput("echo one two three");
+      await shell.handleInput("\x17");
+      await shell.handleInput("\x1b\x7f");
+      output.length = 0;
+
+      await shell.handleInput("\x19");
+      expect(output).toEqual(["two three"]);
+
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("echo one two three");
+    });
+
+    it("Ctrl+U joins a preceding word erasure for Ctrl+Y", async () => {
+      await shell.handleInput("echo one two");
+      await shell.handleInput("\x17");
+      await shell.handleInput("\x15");
+      output.length = 0;
+
+      await shell.handleInput("\x19");
+      expect(output).toEqual(["echo one two"]);
+    });
+
+    it.each([
+      ["Ctrl+K then Ctrl+U", ["\x0b", "\x15"]],
+      ["Ctrl+U then Ctrl+K", ["\x15", "\x0b"]],
+    ])("%s restores the original order with Ctrl+Y", async (_key, keys) => {
+      await shell.handleInput("echo one two");
+      await shell.handleInput("\x1b[1;3D");
+      for (const key of keys) await shell.handleInput(key);
+      output.length = 0;
+
+      await shell.handleInput("\x19");
+      expect(output).toEqual(["echo one two"]);
+    });
+
+    it("Ctrl+Y keeps the previous erasure through ordinary edits", async () => {
+      await shell.handleInput("echo alpha");
+      await shell.handleInput("\x17");
+      await shell.handleInput("x");
+      await shell.handleInput("\x7f");
+      output.length = 0;
+
+      await shell.handleInput("\x19");
+      expect(output).toEqual(["alpha"]);
+    });
+
+    it("ordinary edits start a new consecutive erasure group", async () => {
+      await shell.handleInput("echo one two");
+      await shell.handleInput("\x17");
+      await shell.handleInput("x");
+      await shell.handleInput("\x17");
+      output.length = 0;
+
+      await shell.handleInput("\x19");
+      expect(output).toEqual(["x"]);
+    });
+
+    it("Backspace and Delete do not replace the text restored by Ctrl+Y", async () => {
+      await shell.handleInput("echo alpha");
+      await shell.handleInput("\x17");
+      await shell.handleInput("xy");
+      await shell.handleInput("\x7f");
+      await shell.handleInput("\x1b[D");
+      await shell.handleInput("\x1b[3~");
+      output.length = 0;
+
+      await shell.handleInput("\x19");
+      expect(output).toEqual(["alpha"]);
+    });
+
+    it("Ctrl+Y is silent until text has been erased", async () => {
+      await shell.handleInput("\x19");
+      expect(output).toEqual([]);
+    });
+
+    it("Ctrl+Y does not restore ordinary Backspace or Delete edits", async () => {
+      await shell.handleInput("ab");
+      await shell.handleInput("\x7f");
+      output.length = 0;
+      await shell.handleInput("\x19");
+      expect(output).toEqual([]);
+
+      await shell.handleInput("\x1b[D");
+      await shell.handleInput("\x1b[3~");
+      output.length = 0;
+      await shell.handleInput("\x19");
+      expect(output).toEqual([]);
+    });
+
     it("Ctrl+C aborts and reprints prompt", async () => {
       await shell.handleInput("partial");
       output.length = 0;
@@ -655,6 +772,20 @@ describe("BashShell", () => {
       await shell.handleInput("X");
       await shell.handleInput("\r");
       expect(mockExec.mock.calls[0]?.[0]).toContain("X界");
+    });
+
+    it("Ctrl+Y restores a wide erased prefix before the remaining text", async () => {
+      await shell.handleInput("echo 👩‍💻 界");
+      await shell.handleInput("\x1b[1;3D");
+      await shell.handleInput("\x15");
+      output.length = 0;
+
+      await shell.handleInput("\x19");
+      expect(output).toEqual(["echo 👩‍💻 界\x1b[K", "\x1b[2D"]);
+
+      await shell.handleInput("X");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("echo 👩‍💻 X界");
     });
 
     it("moves Home and End by displayed columns", async () => {
