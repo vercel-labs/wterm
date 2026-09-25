@@ -29,7 +29,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Pluggable cores** — built-in lightweight Zig core or opt-in [libghostty](packages/@wterm/ghostty) backend for full VT compliance
 - **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~26 KB `.wasm` binary (release build)
 - **DOM rendering** — native text selection, clipboard, browser find, and screen reader support for mounted rows
-- **Named terminal input** — the editable control exposes host labels and descriptions to assistive technology and follows the host's tab order
+- **Named terminal input** — the editable control exposes host labels and descriptions to assistive technology and follows the host's tab order; Escape followed by Tab or Shift+Tab moves focus back to the page
 - **Terminal-aware copy** — selected text preserves explicit newlines and complete Unicode cells, includes block glyphs, and joins confirmed Ghostty soft wraps
 - **Full-history Select All** — Cmd+A or Ctrl+Shift+A selects retained history and the active screen without mounting extra rows
 - **Word and line selection** — double-click paths and words or triple-click logical lines, including confirmed soft wraps and unmounted history

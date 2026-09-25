@@ -22,7 +22,7 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 - Terminal resizing, including browser pixel dimensions, is forwarded to the PTY via a custom escape sequence
 - The server restores PTY pixel dimensions after each resize so Kitty clients such as `kitten icat` can detect image support
 - Each sidebar tab keeps its terminal and shell session alive while other tabs are active
-- The editable terminal input uses its session name for assistive technology; inactive sessions are excluded from page tab entry
+- The editable terminal input uses its session name for assistive technology; inactive sessions are excluded from page tab entry. Escape followed by Tab or Shift+Tab moves focus back to the page
 - The `/ghostty` route uses the graphics-capable core and limits rendered Kitty images to 640×480 CSS pixels
 - Auto-sized Kitty images align with the terminal content origin and reserve their rendered height visually so the following shell prompt appears below the image
 - Each session displays its full current working directory in the sidebar, abbreviating the home directory as `~` and updating after `cd`

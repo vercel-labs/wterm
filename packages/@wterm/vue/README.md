@@ -126,7 +126,7 @@ Built-in: `solarized-dark`, `monokai`, `light`. Define custom themes with CSS cu
 
 ## Input accessibility
 
-Use `<Terminal aria-label="Build shell" aria-describedby="shell-help" />` to name and describe the actual input. `aria-labelledby` and `aria-description` are also supported, and attribute changes stay synchronized. The host defaults to a group; the native textarea is the editable control. `:tabindex="-1"` excludes input from page tab entry; the template ref's `focus()` method still focuses it. See the [DOM input accessibility contract](../dom/README.md#input-accessibility) for host tab-order ownership and output limits.
+Use `<Terminal aria-label="Build shell" aria-describedby="shell-help" />` to name and describe the actual input. `aria-labelledby` and `aria-description` are also supported, and attribute changes stay synchronized. The host defaults to a group; the native textarea is the editable control. `:tabindex="-1"` excludes input from page tab entry; the template ref's `focus()` method still focuses it. Press Escape, then Tab to move focus out of the terminal, or Escape, then Shift+Tab to move backward. See the [DOM input accessibility contract](../dom/README.md#input-accessibility) for host tab-order ownership and output limits.
 
 ## Selection and copy
 

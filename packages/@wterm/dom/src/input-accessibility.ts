@@ -5,17 +5,31 @@ const LABEL_ATTRIBUTES = [
   "aria-description",
 ] as const;
 
+const KEYBOARD_EXIT_HINT =
+  "Press Escape, then Tab to move focus out of the terminal, or Shift+Tab to move focus backward.";
+let nextHintId = 0;
+
 /** Keep host-provided names and tab order on the element receiving input. */
 export class InputAccessibility {
   private observer: MutationObserver;
   private tabIndex: string | null;
   private defaultRole: boolean;
   private destroyed = false;
+  private hint: HTMLSpanElement;
 
   constructor(
     private host: HTMLElement,
     private input: HTMLTextAreaElement,
   ) {
+    this.hint = host.ownerDocument.createElement("span");
+    do {
+      this.hint.id = `wterm-input-help-${++nextHintId}`;
+    } while (
+      (host.getRootNode() as ParentNode).querySelector(`#${this.hint.id}`)
+    );
+    this.hint.hidden = true;
+    this.hint.textContent = KEYBOARD_EXIT_HINT;
+    host.append(this.hint);
     this.tabIndex = host.getAttribute("tabindex");
     this.defaultRole = !host.hasAttribute("role");
     if (this.defaultRole) host.setAttribute("role", "group");
@@ -33,6 +47,20 @@ export class InputAccessibility {
     }
     if (!this.input.hasAttribute("aria-label"))
       this.input.setAttribute("aria-label", "Terminal");
+    // Described-by references take precedence over aria-description. Append
+    // instructions to both paths, preserving the host's own description.
+    const describedBy = this.input.getAttribute("aria-describedby");
+    if (describedBy)
+      this.input.setAttribute(
+        "aria-describedby",
+        `${describedBy} ${this.hint.id}`,
+      );
+    this.input.setAttribute(
+      "aria-description",
+      [this.input.getAttribute("aria-description"), KEYBOARD_EXIT_HINT]
+        .filter(Boolean)
+        .join(" "),
+    );
     this.input.setAttribute("tabindex", this.tabIndex ?? "0");
 
     // The host and textarea must not become two sequential tab stops. Do not
@@ -53,6 +81,7 @@ export class InputAccessibility {
     if (pending.some((record) => record.attributeName === "tabindex"))
       this.tabIndex = this.host.getAttribute("tabindex");
     this.observer.disconnect();
+    this.hint.remove();
     if (this.tabIndex === null) this.host.removeAttribute("tabindex");
     else this.host.setAttribute("tabindex", this.tabIndex);
     if (this.defaultRole && this.host.getAttribute("role") === "group")

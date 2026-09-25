@@ -132,6 +132,7 @@ export class InputHandler {
   private suppressedKeyUps = new Set<string>();
   private pressedModifiers = new Set<string>();
   private deliveredKeys = new Set<string>();
+  private tabExitArmed = false;
 
   private _onKeyDown: (e: KeyboardEvent) => void;
   private _onKeyUp: (e: KeyboardEvent) => void;
@@ -222,6 +223,7 @@ export class InputHandler {
       if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[I");
     };
     this._onBlur = () => {
+      this.tabExitArmed = false;
       this.focused = false;
       this.composing = false;
       this.recentCompositionCommit = null;
@@ -235,7 +237,10 @@ export class InputHandler {
       this.deliveredKeys.clear();
       if (this.getBridge()?.focusEvents?.()) this.onData("\x1b[O");
     };
-    this._onMouseDown = (event) => this.handleMouse(event, "press");
+    this._onMouseDown = (event) => {
+      this.tabExitArmed = false;
+      this.handleMouse(event, "press");
+    };
     this._onHoverMove = (event) => {
       if (this.mouseButtons !== 0) return;
       if (event.buttons !== 0 || event.shiftKey) {
@@ -326,6 +331,7 @@ export class InputHandler {
       this.pressedModifiers.add(e.code);
     }
     if (this.composing || e.isComposing || e.keyCode === 229) {
+      this.tabExitArmed = false;
       this.positionTextarea();
       this.suppressedKeyUps.add(keyId);
       return;
@@ -337,6 +343,33 @@ export class InputHandler {
     const kittyOwnsModifier =
       physicalModifier && Boolean(kittyFlags & KITTY_REPORT_ALL);
     const delivered = this.deliveredKeys.has(keyId);
+
+    // Leave focus traversal to the browser so host tab order, shadow roots,
+    // and the browser chrome keep their native behavior. Never steal a repeat
+    // from a key whose press was already delivered to a Kitty application.
+    if (
+      this.tabExitArmed &&
+      e.key === "Tab" &&
+      !e.altKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.repeat &&
+      !delivered
+    ) {
+      this.tabExitArmed = false;
+      this.suppressedKeyUps.add(keyId);
+      return;
+    }
+    // Shift may be pressed between Escape and Tab for backward traversal.
+    // There is deliberately no timeout for this two-key sequence.
+    if (e.key !== "Shift" || e.altKey || e.ctrlKey || e.metaKey) {
+      this.tabExitArmed =
+        e.key === "Escape" &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.shiftKey;
+    }
 
     // AltGr can appear as Control+Alt even though it inserts text. Let the
     // browser commit that text, including dead-key and layout-specific input.
@@ -456,8 +489,10 @@ export class InputHandler {
   private handleKeyUp(e: KeyboardEvent): void {
     const keyId = e.code || e.key;
     this.pressedModifiers.delete(e.code);
-    this.deliveredKeys.delete(keyId);
+    const delivered = this.deliveredKeys.delete(keyId);
     if (this.suppressedKeyUps.delete(keyId)) return;
+    // Focus can move here between a browser-owned press and its release.
+    if (!delivered) return;
     if (this.composing) return;
     const bridge = this.getBridge();
     const kittyFlags = bridge?.kittyKeyboardFlags?.() ?? 0;
@@ -475,6 +510,7 @@ export class InputHandler {
   }
 
   private handlePaste(e: ClipboardEvent): void {
+    this.tabExitArmed = false;
     this.recentCompositionCommit = null;
     this.suppressNextTouchDeleteInput = false;
     const text = e.clipboardData?.getData("text");
@@ -499,6 +535,7 @@ export class InputHandler {
   }
 
   private handleCompositionStart(): void {
+    this.tabExitArmed = false;
     this.prepareComposition();
     this.composing = true;
     this.recentCompositionCommit = null;
@@ -607,6 +644,7 @@ export class InputHandler {
   }
 
   private handleInput(event: Event): void {
+    this.tabExitArmed = false;
     if (this.composing) {
       this.sizeComposition();
       return;

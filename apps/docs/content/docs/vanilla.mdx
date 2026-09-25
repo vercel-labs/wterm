@@ -32,7 +32,7 @@ npm install @wterm/dom
 
 ## Input Accessibility
 
-Give the host an `aria-label` or `aria-labelledby`, with an optional `aria-describedby` or `aria-description`. WTerm applies these to the actual input and keeps changes synchronized. The input defaults to the name **Terminal**; the host defaults to a group. Host `tabindex="-1"` excludes input from page tab entry, while `term.focus()` still focuses it programmatically. See [Input Accessibility](/api-reference#input-accessibility) for tab-order ownership and output limits.
+Give the host an `aria-label` or `aria-labelledby`, with an optional `aria-describedby` or `aria-description`. WTerm applies these to the actual input and keeps changes synchronized. The input defaults to the name **Terminal**; the host defaults to a group. Host `tabindex="-1"` excludes input from page tab entry, while `term.focus()` still focuses it programmatically. Press Escape, then Tab to move focus out of the terminal, or Escape, then Shift+Tab to move backward. See [Input Accessibility](/api-reference#input-accessibility) for tab-order ownership and output limits.
 
 ## Custom Input Handling
 
