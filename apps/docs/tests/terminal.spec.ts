@@ -119,10 +119,14 @@ for (const [saved, system, dark] of [
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
+    let releaseScripts!: () => void;
+    const scripts = new Promise<void>((resolve) => {
+      releaseScripts = resolve;
+    });
     // Hold both hydration and WASM: the head script and server HTML must be
     // enough to render the selected theme before any client bundle executes.
     await page.route(/\.(?:wasm|js)(?:\?|$)/, async (route) => {
-      await gate;
+      await (/\.wasm(?:\?|$)/.test(route.request().url()) ? gate : scripts);
       await route.continue();
     });
     const errors: string[] = [];
@@ -134,6 +138,20 @@ for (const [saved, system, dark] of [
         "background-color",
         dark ? "rgb(23, 23, 23)" : "rgb(250, 250, 250)",
       );
+      // Check the handoff separately from the surrounding docs layout's
+      // hydration. WASM stays held while the page's scripts and fonts settle.
+      releaseScripts();
+      await page.waitForLoadState("domcontentloaded");
+      await expect(
+        page.getByRole("button", { name: "Fullscreen", exact: true }),
+      ).toBeEnabled();
+      await page.evaluate(async () => {
+        const heading = getComputedStyle(document.querySelector("h1")!);
+        await document.fonts.load(`${heading.fontSize} ${heading.fontFamily}`);
+        await new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        );
+      });
       const before = await geometry(page, preview);
       const foreground = await page
         .locator(`${preview} .term-row span`)
@@ -177,6 +195,7 @@ for (const [saved, system, dark] of [
           .filter({ hasText: /^hello-ready\s*$/ }),
       ).toHaveCount(1);
     } finally {
+      releaseScripts();
       release();
     }
   });
