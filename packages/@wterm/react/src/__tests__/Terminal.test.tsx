@@ -17,7 +17,9 @@ vi.mock("@wterm/dom", () => {
     this.cols = options?.cols ?? 80;
     this.rows = options?.rows ?? 24;
     this.onData = options?.onData ?? null;
+    this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
+    this.onBell = options?.onBell ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
@@ -69,6 +71,25 @@ describe("Terminal component", () => {
     expect(el.className).toContain("theme-dark");
   });
 
+  it("lets cursor blink props switch between forced and application-controlled behavior", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const { rerender, container } = render(<Terminal />);
+    await act(async () => {});
+    const element = container.querySelector('[role="textbox"]')!;
+    expect(element).not.toHaveClass("cursor-blink", "cursor-steady");
+    element.classList.add("focused", "has-scrollback");
+    rerender(<Terminal cursorBlink />);
+    expect(element).toHaveClass("cursor-blink");
+    expect(element).toHaveClass("focused", "has-scrollback");
+    rerender(<Terminal cursorBlink={false} />);
+    expect(element).toHaveClass("cursor-steady", "focused", "has-scrollback");
+    expect(element).not.toHaveClass("cursor-blink");
+    rerender(<Terminal />);
+    expect(element).not.toHaveClass("cursor-blink", "cursor-steady");
+    expect(element).toHaveClass("focused", "has-scrollback");
+    expect(lastWTermInstance.destroy).not.toHaveBeenCalled();
+  });
+
   it("creates WTerm instance on mount", async () => {
     const { WTerm } = await import("@wterm/dom");
     await renderTerminal();
@@ -87,6 +108,26 @@ describe("Terminal component", () => {
     await renderTerminal({ onReady });
     await act(async () => {});
     expect(onReady).toHaveBeenCalled();
+  });
+
+  it("forwards raw mouse bytes and follows onBinary prop changes", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const first = vi.fn();
+    const next = vi.fn();
+    const bytes = Uint8Array.of(27, 91, 77, 32, 132, 33);
+    const { rerender } = render(<Terminal onBinary={first} />);
+    await act(async () => {});
+
+    lastWTermInstance.onBinary(bytes);
+    expect(first).toHaveBeenCalledWith(bytes);
+
+    rerender(<Terminal onBinary={next} />);
+    lastWTermInstance.onBinary(bytes);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(bytes);
+
+    rerender(<Terminal />);
+    expect(lastWTermInstance.onBinary).toBeNull();
   });
 
   it("calls onError on init failure", async () => {
@@ -157,6 +198,23 @@ describe("Terminal component", () => {
     expect(lastWTermInstance.resize).toHaveBeenCalledWith(120, 40);
   });
 
+  it("does not repeat a capped size request on unrelated renders", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const { rerender } = render(<Terminal cols={320} rows={40} />);
+    await act(async () => {});
+    lastWTermInstance.cols = 256;
+
+    rerender(<Terminal cols={320} rows={40} className="updated" />);
+    expect(lastWTermInstance.resize).not.toHaveBeenCalled();
+
+    rerender(<Terminal cols={300} rows={40} className="updated" />);
+    expect(lastWTermInstance.resize).toHaveBeenCalledOnce();
+    expect(lastWTermInstance.resize).toHaveBeenCalledWith(300, 40);
+
+    rerender(<Terminal cols={300} rows={40} className="again" />);
+    expect(lastWTermInstance.resize).toHaveBeenCalledOnce();
+  });
+
   it("delegates focus through imperative handle", async () => {
     const ref = createRef<TerminalHandle>();
     const Terminal = (await import("../Terminal.js")).default;
@@ -165,6 +223,22 @@ describe("Terminal component", () => {
 
     ref.current!.focus();
     expect(lastWTermInstance.focus).toHaveBeenCalled();
+  });
+
+  it("forwards bell counts to the latest callback", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const first = vi.fn();
+    const next = vi.fn();
+    const { rerender } = render(<Terminal onBell={first} />);
+    await act(async () => {});
+
+    lastWTermInstance.onBell(2);
+    expect(first).toHaveBeenCalledWith(2);
+
+    rerender(<Terminal onBell={next} />);
+    lastWTermInstance.onBell(1);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(1);
   });
 });
 

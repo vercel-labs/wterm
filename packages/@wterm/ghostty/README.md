@@ -4,8 +4,22 @@ Full-featured terminal emulation core for [wterm](https://github.com/vercel-labs
 
 Drop-in replacement for wterm's built-in Zig core. Implements the same `TerminalCore` interface with comprehensive VT emulation: proper Unicode grapheme handling, all SGR attributes, terminal modes, and more.
 
-The core exposes SGR mouse tracking (modes 1000, 1002, and 1006), focus reporting (mode 1004), synchronized-output state (mode 2026), Kitty keyboard negotiation, and terminal responses including foreground/background color queries (OSC 10 and OSC 11) to `@wterm/dom`.
+The core exposes mouse tracking (modes 1000, 1002, and 1003), its active wire encoding through `mouseEncoding()`, focus reporting (mode 1004), synchronized-output state (mode 2026), Kitty keyboard negotiation, and terminal responses including foreground/background color queries (OSC 10 and OSC 11) to `@wterm/dom`. With the DOM layer, X10, UTF-8 (1005), SGR (1006), urxvt (1015), and SGR pixel (1016) reports are supported. Mode 1003 reports unpressed pointer movement once per cell for cell formats and once per CSS pixel for 1016.
 Combining marks and ZWJ emoji are exposed through `CellData.chars` as complete strings, including after their rows move into scrollback.
+`getCursor()` exposes Ghostty's block, bar, or underline `shape` and `blinking`
+state. The DOM renderer follows application requests (DECSCUSR and mode 12);
+an explicit `cursorBlink: true` or `false` on the terminal wrapper overrides
+blinking. Omitting the option follows the application, initially steady.
+
+OSC 0 and OSC 2 window-title changes reach `getTitle()` and the terminal
+wrapper's `onTitle` callback, including an empty title that clears the current
+name. When several changes arrive before a render, the latest complete title
+is delivered. Titles longer than Ghostty's 255-byte limit are ignored.
+
+`getBellCount()` reads and clears Ghostty's pending BEL count. `WTerm` forwards
+it through `onBell(count)` as output is written, even when synchronized output
+holds painting. BEL used to terminate an OSC sequence is excluded.
+
 Native OSC 8 hyperlinks are resolved from Ghostty's page-owned metadata and exposed through `CellData.linkUri`, `CellData.linkId`, and `CellData.linkKey` in both the viewport and scrollback.
 
 The Ghostty core also provides the optional terminal graphics API. The DOM
@@ -200,6 +214,18 @@ pnpm --filter @wterm/ghostty rebuild-wasm:docker
 
 Zig 0.15.x cannot link a native build runner on macOS 26, and Zig 0.16 fails inside ghostty's vendored build files, so neither drives `rebuild-wasm` there. The wasm target itself is unaffected. Container output is byte-identical to a host build.
 
+### Public API experiment
+
+The repository also contains an isolated
+[public libghostty WASM probe](../../../experiments/libghostty/README.md), using
+an unpatched upstream revision and Zig 0.16.0. Run `pnpm test:libghostty` from
+the repository root to build it and exercise rendering, terminal effects,
+history, and snapshots in Node and browser engines. It does not replace this
+package's v1.3.1 binary: the probed freestanding build disables Kitty graphics,
+and the public API still has gaps against the adapter's history, hyperlink
+identity, and resource-reporting contracts. The experiment documents the
+verified behavior and remaining compatibility gaps.
+
 ### Upgrading ghostty
 
 1. Edit the URL tag in `zig/build.zig.zon` to the new ghostty version
@@ -212,7 +238,7 @@ Zig 0.15.x cannot link a native build runner on macOS 26, and Zig 0.16 fails ins
 
 | | Built-in (default) | `@wterm/ghostty` |
 |---|---|---|
-| Bundle size | ~12 KB WASM | ~400 KB WASM |
+| WASM binary size | ~26 KB | ~580 KB |
 | VT compliance | Basic VT100/VT220/xterm | Comprehensive |
 | Unicode | Single codepoints | Full grapheme clusters |
 | Dependencies | None | None (WASM built from source) |

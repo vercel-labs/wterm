@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Terminal, useTerminal } from "@wterm/react";
+import type { WTerm } from "@wterm/dom";
+import { GhosttyCore } from "@wterm/ghostty";
 import { BashShell } from "@wterm/just-bash";
 import "@wterm/react/css";
 
 const INITIAL_FILES: Record<string, string> = {
   "/home/user/README.md":
-    "# wterm\n\nA terminal emulator for the web.\nRenders to the DOM — native text selection, copy/paste, and accessibility come for free.\nThe core is written in Zig and compiled to WASM.\n",
+    "# wterm\n\nA terminal emulator for the web.\nRenders to the DOM — native text selection, copy/paste, and accessibility come for free.\nThis example uses Ghostty's VT engine in WebAssembly.\n",
   "/home/user/package.json":
     '{\n  "name": "wterm",\n  "version": "0.1.0",\n  "description": "Terminal emulator for the web"\n}\n',
 };
@@ -19,6 +21,20 @@ const THEMES = [
   { value: "monokai", label: "Monokai" },
   { value: "light", label: "Light" },
 ] as const;
+
+function syncGhosttyColors(term: WTerm) {
+  const styles = getComputedStyle(term.element);
+  const palette = Array.from(
+    { length: 16 },
+    (_, index) =>
+      `${index};${styles.getPropertyValue(`--term-color-${index}`).trim()}`,
+  ).join(";");
+  const foreground = styles.getPropertyValue("--term-fg").trim();
+  const background = styles.getPropertyValue("--term-bg").trim();
+  term.write(
+    `\x1b]4;${palette}\x1b\\\x1b]10;${foreground}\x1b\\\x1b]11;${background}\x1b\\`,
+  );
+}
 
 function FullscreenIcon() {
   return (
@@ -61,44 +77,74 @@ function CollapseIcon() {
 }
 
 function HeroTerminal({
+  core,
+  loadError,
+  onError,
   theme,
   fullscreen,
 }: {
+  core: GhosttyCore | null;
+  loadError: boolean;
+  onError: () => void;
   theme?: string;
   fullscreen?: boolean;
 }) {
   const { ref, write } = useTerminal();
   const shellRef = useRef<BashShell | null>(null);
 
-  const handleReady = useCallback(() => {
-    const shell = new BashShell({
-      files: INITIAL_FILES,
-      greeting: [
-        "wterm — terminal emulator for the web",
-        "",
-        "\x1b[2mTry: ls, cat README.md, echo hello\x1b[0m",
-        "",
-      ],
-      network: { dangerouslyAllowFullInternetAccess: true },
-    });
-    shellRef.current = shell;
-    shell.attach(write);
-  }, [write]);
+  const handleReady = useCallback(
+    (term: WTerm) => {
+      syncGhosttyColors(term);
+      const shell = new BashShell({
+        files: INITIAL_FILES,
+        greeting: [
+          "wterm — terminal emulator for the web",
+          "",
+          "\x1b[2mTry: ls, cat README.md, echo hello\x1b[0m",
+          "",
+        ],
+        network: { dangerouslyAllowFullInternetAccess: true },
+      });
+      shellRef.current = shell;
+      shell.attach(write);
+    },
+    [write],
+  );
 
   const handleData = useCallback((data: string) => {
     shellRef.current?.handleInput(data);
   }, []);
 
+  useEffect(() => {
+    const term = ref.current?.instance;
+    if (term && shellRef.current) syncGhosttyColors(term);
+  }, [theme, ref]);
+
+  if (!core || loadError) {
+    return (
+      <div
+        role="status"
+        className={`wterm ${theme ? `theme-${theme}` : ""} ${fullscreen ? "h-full w-full text-sm" : "w-full text-sm"}`}
+        style={fullscreen ? undefined : { minHeight: 296 }}
+      >
+        {loadError
+          ? "The terminal could not load. Refresh to try again."
+          : "Loading terminal…"}
+      </div>
+    );
+  }
+
   return (
     <Terminal
       ref={ref}
+      core={core}
       cols={80}
       rows={fullscreen ? 24 : 16}
       autoResize={fullscreen}
-      wasmUrl="/wterm.wasm"
       theme={theme}
       onReady={handleReady}
       onData={handleData}
+      onError={onError}
       className={fullscreen ? "h-full w-full text-sm" : "w-full text-sm"}
     />
   );
@@ -107,10 +153,36 @@ function HeroTerminal({
 export function HeroSection() {
   const [theme, setTheme] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
+  const [core, setCore] = useState<GhosttyCore | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(
     null,
   );
+
+  useEffect(() => {
+    let active = true;
+    let loadedCore: GhosttyCore | null = null;
+
+    void GhosttyCore.load({ wasmPath: "/ghostty-vt.wasm" }).then(
+      (loaded) => {
+        if (!active) {
+          loaded.dispose();
+          return;
+        }
+        loadedCore = loaded;
+        setCore(loaded);
+      },
+      () => {
+        if (active) setLoadError(true);
+      },
+    );
+
+    return () => {
+      active = false;
+      loadedCore?.dispose();
+    };
+  }, []);
 
   // Syncs a fullscreen portal container with the DOM — setState is
   // intentional here because the render needs the container element.
@@ -220,13 +292,26 @@ export function HeroSection() {
                 </div>
               </div>
               <div style={{ flex: 1, minHeight: 0 }}>
-                <HeroTerminal theme={theme} fullscreen />
+                <HeroTerminal
+                  core={core}
+                  loadError={loadError}
+                  onError={() => setLoadError(true)}
+                  theme={theme}
+                  fullscreen
+                />
               </div>
             </div>,
             portalContainer,
           )
         : null}
-      {!fullscreen && <HeroTerminal theme={theme} />}
+      {!fullscreen && (
+        <HeroTerminal
+          core={core}
+          loadError={loadError}
+          onError={() => setLoadError(true)}
+          theme={theme}
+        />
+      )}
     </>
   );
 }

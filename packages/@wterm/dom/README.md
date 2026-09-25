@@ -46,11 +46,13 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `autoResize` | `boolean` | `true` | Auto-resize based on container dimensions |
 | `maxImageWidth` | `number` | — | Maximum rendered Kitty image width in CSS pixels. Images larger than the limit are scaled down proportionally. |
 | `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels. Images larger than the limit are scaled down proportionally. |
-| `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
+| `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
+| `onBinary` | `(data: Uint8Array) => void` | — | Called with raw X10 mouse bytes when supplied. Send the bytes unchanged to a binary-capable transport. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
-| `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
+| `onBell` | `(count: number) => void` | — | Called with the number of BEL controls since the last delivery |
+| `onResize` | `(cols: number, rows: number) => void` | — | Called with the grid dimensions applied by the core after resize |
 
 **Methods:**
 
@@ -62,13 +64,65 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `focus()` | Focus the terminal element |
 | `destroy()` | Clean up event listeners and DOM |
 
-When a terminal application enables modes 1000 or 1002 with SGR encoding (1006), pointer input is sent through `onData`. Focus reports are sent when mode 1004 is active.
+After `init()` or `resize()`, `term.cols` and `term.rows` reflect the grid size
+the core actually uses. Use these values, or the values passed to `onResize`,
+when sizing a connected PTY. The built-in core currently supports up to
+1024 columns and 512 rows; larger requests are clamped to those limits.
+
+When a terminal application enables mouse tracking (1000, 1002, or 1003), WTerm sends reports in the active encoding. UTF-8 (1005), SGR (1006), urxvt (1015), and SGR pixel (1016) reports reach `onData`; forward those strings through a UTF-8 transport. Mode 1016 reports 1-based CSS-pixel coordinates relative to the visible grid, independent of device pixel ratio. Mode 1003 reports unpressed pointer movement once per cell for cell formats and once per CSS pixel for 1016.
+
+X10 reports use `onBinary` when supplied, so raw bytes reach a binary-capable transport unchanged. Without `onBinary`, ASCII-only X10 reports reach `onData`; coordinates requiring non-ASCII bytes are skipped rather than changed by UTF-8 encoding. X10 coordinates above 223 and UTF-8 coordinates above 2015 cannot be represented and are skipped. Shift retains native text selection. Focus reports reach `onData` when mode 1004 is active.
+
+Mouse reports come from the live terminal grid. Clicks and wheel gestures over
+scrollback rows stay with the browser, and wheel gestures keep scrolling history
+until the terminal reaches the bottom. When mouse tracking is active, hold
+Shift while scrolling to move through history from the live viewport. A drag
+started in the live grid still reports its release if the pointer leaves it.
+
+`onBell` runs as BEL output is written, including during synchronized output.
+Several bells in one write chunk are delivered as one count. BEL used to end
+an OSC sequence does not ring. WTerm does not play sound automatically; the
+host chooses whether to play sound, show a visual alert, or ignore the event.
+
+Both cores expose application-requested block, bar, and underline cursors through
+`CursorState.shape` and blink mode through `CursorState.blinking`. The renderer
+updates these independently of dirty text rows, preserves cell colors during
+blink-off frames, and shows a steady outline when unfocused. Custom cores can
+omit the new fields for the existing steady block fallback. `cursorBlink`
+overrides blinking when explicitly set; shape always follows the core.
 
 WTerm implements the Kitty keyboard protocol when the active core exposes negotiated flags. The built-in and Ghostty cores support query, push, pop, set, OR, and NOT operations, with independent state for the primary and alternate screens. Cores without `kittyKeyboardFlags()` keep the legacy keyboard path unchanged.
 
+When the browser identifies a printable AltGr key, WTerm lets its committed character pass through native text input even in Kitty keyboard mode. This also covers Control+Alt text typed with the right Alt key when the browser does not expose AltGraph state. Control+Alt chords without either AltGr signal retain their Kitty encoding.
+
+Without Kitty keyboard negotiation, Shift, Alt, and Control modifiers on arrow,
+Home/End, Insert/Delete, Page Up/Down, and F1–F12 keys use xterm-style CSI
+sequences. Unmodified application cursor keys still use SS3 when the core
+requests application mode. Browser-reserved shortcuts may never reach WTerm.
+
+While the terminal is focused, handled key presses do not bubble to page-level
+shortcut listeners. Control+K can reach the terminal instead of opening search.
+
+Without Kitty keyboard negotiation, Control+Space sends NUL, Control+/ sends
+US, and Control+Backspace sends BS. Control+Alt printable input stays on the
+native text path in this mode so keyboard layouts using AltGr can enter
+characters.
+
 Browser keyboard events do not expose every native field the protocol can carry. WTerm reports physical functional and modifier keys from `KeyboardEvent.code`, text from `KeyboardEvent.key`, and shifted alternates when available. It does not invent the base-layout alternate, cannot synthesize release events the browser never delivers, and limits associated text to the current press event.
 
+During IME composition, tentative text appears at the terminal cursor in the
+browser's input field. The connected application receives only the committed
+text. When composition starts while reading scrollback, WTerm returns to the
+live viewport so the text and candidate window stay near the cursor.
+
+On touch-first devices, the transparent input target stays at the terminal
+cursor so tapping can open the soft keyboard and native paste menu. Holding
+Backspace continues deleting through repeated browser input events. Paste
+still follows the application's bracketed-paste mode when enabled.
+
 WTerm honors synchronized output mode (CSI `?2026`) by painting the block atomically when the mode closes. Each synchronized block can hold rendering for at most one second from its opening sequence. Ordinary payload does not extend that deadline. If the deadline expires, WTerm resumes painting until a fresh synchronized block begins.
+
+The built-in and Ghostty cores answer `CSI ?2026$p` with the mode's current set/reset status. WTerm forwards this and other core responses through `onData`, so a connected application can detect synchronized output support.
 
 Ordinary writes schedule `requestAnimationFrame` directly. Multiple writes before the frame are coalesced into one render.
 
@@ -147,6 +201,23 @@ element.classList.add("theme-monokai");
 ```
 
 All colors use CSS custom properties (`--term-fg`, `--term-bg`, `--term-color-0` through `--term-color-15`, etc.) so you can define your own theme with plain CSS.
+
+Use a monospace font through `--term-font-family`. Cells use its measured width,
+so braille, box drawing, and other fallback glyphs cannot push later columns out
+of alignment. Wide characters occupy two cells, and oversized glyphs are clipped
+to their cells. Widths update when fonts load or the font size changes, including
+with `autoResize: false`. Unicode text remains selectable and OSC 8 links keep
+their text together.
+
+Common light, heavy, and rounded box-drawing characters keep their strokes
+connected across cell edges even when the selected font leaves gaps. The
+characters remain selectable and copy as text.
+
+Colored and reversed cells keep their backgrounds within their columns, including
+the last column and rows in scrollback. A complete row with one shared, opaque
+background extends that color to the container's right edge, so full-width
+status bars stay filled. Mixed, dim, or hidden cells do not change the background
+behind neighboring cells or other rows.
 
 ## License
 

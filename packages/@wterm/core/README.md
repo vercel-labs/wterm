@@ -22,7 +22,7 @@ npm install @wterm/core
 
 ## Pluggable Cores
 
-`@wterm/core` defines a `TerminalCore` interface that any terminal emulation backend can implement. The built-in `WasmBridge` implements it using wterm's lightweight Zig WASM binary (~12 KB). For additional protocols and proper grapheme handling, use [`@wterm/ghostty`](https://www.npmjs.com/package/@wterm/ghostty), which implements the same interface using libghostty (~400 KB).
+`@wterm/core` defines a `TerminalCore` interface that any terminal emulation backend can implement. The built-in `WasmBridge` implements it using wterm's lightweight Zig WASM binary (~26 KB). For additional protocols and proper grapheme handling, use [`@wterm/ghostty`](https://www.npmjs.com/package/@wterm/ghostty), which implements the same interface using libghostty.
 
 ```ts
 import { WTerm } from "@wterm/dom";
@@ -50,7 +50,7 @@ bridge.init(80, 24);
 bridge.writeString("Hello, world!\r\n");
 
 const cell = bridge.getCell(0, 0); // { char, chars?, fg, bg, flags, width, linkUri?, linkId?, linkKey? }
-const cursor = bridge.getCursor();  // { row, col, visible }
+const cursor = bridge.getCursor();  // { row, col, visible, shape, blinking }
 ```
 
 | Method | Description |
@@ -61,11 +61,12 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 | `writeRaw(data, afterChunk?)` | Write raw bytes, optionally running a callback after each internal chunk |
 | `resize(cols, rows)` | Resize the terminal grid |
 | `getCell(row, col)` | Get cell data, including optional resolved OSC 8 metadata (`linkUri`, explicit `linkId`, and opaque `linkKey`) |
-| `getCursor()` | Get cursor state (`{ row, col, visible }`) |
-| `getCols()` / `getRows()` | Get current grid dimensions |
+| `getCursor()` | Get cursor state (`{ row, col, visible, shape?, blinking? }`) |
+| `getCols()` / `getRows()` | Get applied grid dimensions after initialization or resize. The built-in core clamps requests to 1–1024 columns and 1–512 rows. |
 | `isDirtyRow(row)` | Check if a row needs re-rendering |
 | `clearDirty()` | Reset all dirty-row flags |
 | `getTitle()` | Get pending title change (or `null`) |
+| `getBellCount()` | Read and clear the number of pending BEL controls; `0` when none |
 | `getResponse()` | Get pending host response (or `null`) |
 | `getResourceState()` | Get optional core resource state, including built-in hyperlink identity saturation |
 | `getScrollbackCount()` | Number of lines in the scrollback buffer |
@@ -75,8 +76,9 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 | `cursorKeysApp()` | Whether cursor keys are in application mode |
 | `bracketedPaste()` | Whether bracketed paste mode is active |
 | `usingAltScreen()` | Whether the alternate screen buffer is active |
-| `mouseTracking()` | Active mouse tracking mode (`0`, `1000`, or `1002`) |
-| `mouseSgr()` | Whether SGR mouse encoding is active |
+| `mouseTracking()` | Active mouse tracking mode (`0`, `1000`, `1002`, or `1003`) |
+| `mouseSgr()` | Whether cell-coordinate SGR mouse encoding (1006) is active |
+| `mouseEncoding()` | Active mouse wire format (`x10`, `utf8`, `sgr`, `urxvt`, or `sgr-pixels`). The DOM layer handles all five; `sgr-pixels` reports 1-based CSS pixels. |
 | `focusEvents()` | Whether focus reporting is active |
 | `synchronizedOutput()` | Whether synchronized output mode (2026) is active |
 | `synchronizedOutputGeneration()` | Monotonic generation for synchronized output blocks |
@@ -84,7 +86,24 @@ const cursor = bridge.getCursor();  // { row, col, visible }
 
 OSC 8 hyperlink metadata is optional so third-party `TerminalCore` implementations remain source-compatible. Cores should expose the resolved URI and an opaque semantic key rather than a private numeric index.
 
+Wide CJK, fullwidth, and emoji codepoints occupy a leading cell with `width: 2` and a continuation with `width: 0`. Character insertion (`ICH`) and deletion (`DCH`) shift the requested number of columns from the cursor, replacing split wide characters with background-colored spaces. With automatic wrapping disabled, a wide character that cannot fit at the right edge leaves the row unchanged. A one-column terminal consumes wide characters as spaces.
+
+The built-in core supports ASCII (`B`), British (`A`), and DEC Special Graphics (`0`) designations for G0–G3. For example, `\x1b(0lqqk\x1b(B` produces `┌──┐`. SI/SO select G0/G1; `ESC n/o` select G2/G3, and `ESC N/O` select them for one character. Cursor save/restore preserves character-set state. Mapping affects ASCII characters only, so UTF-8 text remains intact.
+
+`CursorState.shape` (`"block"`, `"bar"`, or `"underline"`) and `blinking` are
+optional for custom cores. The built-in and Ghostty cores expose both fields
+from DECSCUSR (`CSI Ps SP q`) and cursor blink mode (`CSI ? 12 h/l`). Missing
+fields render as a steady block unless the host sets `cursorBlink`. Style 0
+or an omitted parameter restores the default steady block; styles 1/2, 3/4,
+and 5/6 select blinking/steady block, underline, and bar respectively.
+
 `TerminalCore.kittyKeyboardFlags()` is also optional. The DOM input handler uses it to encode negotiated Kitty keyboard events; cores that omit it retain the existing legacy keyboard behavior.
+
+The built-in core answers DEC private-mode status queries (`CSI ? Ps $ p`) through `getResponse()`. It reports `1` for set, `2` for reset, and `0` for unrecognized modes, including the current state of synchronized output (`?2026`), bracketed paste (`?2004`), mouse tracking and encoding, focus reporting, cursor modes, and alternate-screen modes. For example, `\x1b[?2026$p` receives `\x1b[?2026;2$y` until mode 2026 is enabled.
+
+Primary device-attributes queries (`CSI c` or `CSI 0 c`) receive `\x1b[?1;2c` through `getResponse()`, identifying VT100 advanced-video support. Secondary and private variants receive no reply.
+
+An operating-status query (`CSI 5 n`) receives `\x1b[0n`, indicating the terminal is ready. A cursor-position query (`CSI 6 n`) receives `\x1b[row;colR`. These replies share the same response queue as device attributes and preserve query order. Unsupported or malformed status requests receive no reply.
 
 The built-in core reports its fixed hyperlink identity capacity through `getResourceState()`. When `hyperlinks.saturated` is true, new distinct OSC 8 links render as plain text and `hyperlinks.rejected` counts capacity-rejected opens. Existing identities remain valid.
 

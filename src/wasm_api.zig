@@ -8,7 +8,7 @@ const Terminal = terminal_mod.Terminal;
 
 var terminal: Terminal = undefined;
 var scrollback: scrollback_mod.Scrollback = .{};
-var alt_grid: grid_mod.Grid = undefined;
+var alt_grid: grid_mod.Grid = .{};
 var input_buffer: [8192]u8 = undefined;
 var initialized: bool = false;
 
@@ -17,7 +17,12 @@ var initialized: bool = false;
 export fn init(cols: u32, rows: u32) void {
     const c: u16 = if (cols > grid_mod.MAX_COLS) grid_mod.MAX_COLS else if (cols == 0) 1 else @intCast(cols);
     const r: u16 = if (rows > grid_mod.MAX_ROWS) grid_mod.MAX_ROWS else if (rows == 0) 1 else @intCast(rows);
-    terminal.reset(c, r);
+    if (initialized) {
+        terminal.reset(c, r);
+        alt_grid.deinit();
+    } else {
+        terminal = Terminal.init(c, r);
+    }
     terminal.hyperlinks.reset();
     terminal.scrollback = &scrollback;
     terminal.alt_grid = &alt_grid;
@@ -45,11 +50,11 @@ export fn writeBytes(len: u32) void {
 // -- Grid data --
 
 export fn getGridPtr() [*]const u8 {
-    return @ptrCast(&terminal.grid.cells);
+    return @ptrCast(terminal.grid.cells.ptr);
 }
 
 export fn getDirtyPtr() [*]const u8 {
-    return @ptrCast(&terminal.grid.dirty);
+    return @ptrCast(terminal.grid.dirty.ptr);
 }
 
 export fn clearDirty() void {
@@ -68,6 +73,14 @@ export fn getCursorCol() u32 {
 
 export fn getCursorVisible() u32 {
     return if (terminal.cursor_visible) 1 else 0;
+}
+
+export fn getCursorShape() u32 {
+    return @intFromEnum(terminal.cursor_shape);
+}
+
+export fn getCursorBlinking() u32 {
+    return if (terminal.cursor_blinking) 1 else 0;
 }
 
 export fn getCols() u32 {
@@ -95,7 +108,11 @@ export fn getMouseTracking() u32 {
 }
 
 export fn getMouseSgr() u32 {
-    return if (terminal.mouse_sgr) 1 else 0;
+    return if (terminal.mouse_encoding == .sgr) 1 else 0;
+}
+
+export fn getMouseEncoding() u32 {
+    return @intFromEnum(terminal.mouse_encoding);
 }
 
 export fn getFocusEvents() u32 {
@@ -130,6 +147,12 @@ export fn getTitleChanged() u32 {
         return 1;
     }
     return 0;
+}
+
+export fn getBellCount() u32 {
+    const count = terminal.bell_count;
+    terminal.bell_count = 0;
+    return count;
 }
 
 export fn getLinkUriPtr(index: u32) [*]const u8 {
@@ -179,7 +202,7 @@ var scrollback_line_buf: [grid_mod.MAX_COLS * cell_mod.Cell.BYTE_SIZE]u8 = undef
 export fn getScrollbackLine(offset: u32) [*]const u8 {
     const line = scrollback.getLine(offset);
     if (line) |l| {
-        return @ptrCast(&l.cells);
+        return @ptrCast(l.cells.ptr);
     }
     return &scrollback_line_buf;
 }
@@ -232,4 +255,8 @@ export fn getCellSize() u32 {
 
 export fn getMaxCols() u32 {
     return grid_mod.MAX_COLS;
+}
+
+export fn getGridStride() u32 {
+    return terminal.grid.stride;
 }

@@ -5,7 +5,7 @@ navTitle: "Core / Advanced"
 
 `@wterm/core` provides the headless terminal engine and WebSocket transport. Use it when you need direct access to the WASM bridge for a custom renderer, headless testing, or a server-connected terminal without the DOM layer.
 
-With `@wterm/dom`, terminal applications can enable SGR mouse tracking (modes 1000, 1002, and 1006) and focus reporting (mode 1004). Pointer and focus reports are emitted through `onData`.
+With `@wterm/dom`, terminal applications can enable mouse tracking (modes 1000, 1002, and 1003) in X10, UTF-8 (1005), SGR (1006), urxvt (1015), or SGR pixel (1016) encoding, plus focus reporting (mode 1004). UTF-8, SGR, urxvt, SGR pixel, and focus reports reach `onData`; raw X10 reports reach `onBinary` when provided. SGR pixel reports use 1-based CSS pixels relative to the visible grid. Mode 1003 reports unpressed pointer motion once per cell in cell formats and once per CSS pixel in 1016.
 
 ## Install
 
@@ -29,9 +29,19 @@ const bridge = await WasmBridge.load();
 const bridge = await WasmBridge.load("/wterm.wasm");
 ```
 
-When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string inlined in the package. Pass a URL when you want to serve the binary separately for caching or CDN use.
+When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string inlined in the package. Pass a URL when you want to serve the binary separately for caching or CDN use. The grid grows as needed, up to 1024 columns and 512 rows.
 
 See the full [WasmBridge](/api-reference#wasmbridge) reference for all methods, types, and scrollback APIs.
+
+The built-in core answers DEC private-mode status queries through `getResponse()`. For example, `\x1b[?2026$p` receives `\x1b[?2026;2$y` when synchronized output is off and `\x1b[?2026;1$y` when it is on. It also reports supported mouse, focus, cursor, bracketed-paste, and alternate-screen modes; unrecognized modes return status `0`. Drain responses and send them back to a connected application. `WTerm` does this through `onData`.
+
+The built-in core also answers primary device-attributes queries (`CSI c`, including `CSI 0 c`) with `\x1b[?1;2c`, identifying VT100 advanced-video support. It does not claim secondary or private device attributes.
+
+Operating-status queries (`CSI 5 n`) receive `\x1b[0n` when the built-in core is ready. Cursor-position queries (`CSI 6 n`) receive `\x1b[row;colR`. These replies share the `getResponse()` queue with device-attribute replies and preserve query order; unsupported or malformed status requests receive no reply.
+
+`getBellCount()` reads and clears pending BEL controls. A BEL used to terminate
+an OSC sequence does not count. The DOM wrapper forwards the count through
+`onBell`, leaving the alert behavior to the host.
 
 ### Example
 
@@ -58,7 +68,21 @@ const cursor = bridge.getCursor();
 
 Wide single-codepoint characters such as CJK, fullwidth forms, and emoji expose `width: 2` on the leading cell and `width: 0` on the continuation cell. Custom renderers should skip continuation cells.
 
+Character insertion (`ICH`) and deletion (`DCH`) shift exactly the requested number of columns from the cursor, up to the right edge. If an edit splits a wide character, its remaining cells become spaces with the current background color. With automatic wrapping disabled (`CSI ? 7 l`), a wide character that cannot fit at the right edge leaves the row unchanged. In a one-column terminal, wide characters are consumed as spaces with normal cursor and wrapping behavior.
+
 Cores that preserve multi-codepoint graphemes expose the complete string as `chars`. Render `chars` when present and fall back to `String.fromCodePoint(char)` otherwise.
+
+### DEC line drawing
+
+The built-in core translates DEC Special Graphics sequences used by tmux and other TUIs into Unicode cells. For example:
+
+```ts
+bridge.writeString("\x1b(0lqqk\x1b(B"); // ┌──┐
+```
+
+`ESC (` through `ESC +` designate G0 through G3. The supported sets are ASCII (`B`), British (`A`, mapping `#` to `£`), and DEC Special Graphics (`0`). SI/SO select G0/G1; `ESC n` and `ESC o` select G2/G3. `ESC N` and `ESC O` use G2/G3 for the next printed character only. Unsupported designations are ignored.
+
+Character-set state is preserved by cursor save/restore and restored when returning from the alternate screen with `CSI ? 1049 l`. Soft and full resets restore the built-in core's default ASCII sets. Mapping changes printable ASCII only; UTF-8 text keeps its original codepoints. Custom renderers receive the translated Unicode characters through `getCell()` and `getScrollbackCell()`.
 
 ### Optional terminal graphics
 

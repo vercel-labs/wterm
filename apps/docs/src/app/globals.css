@@ -12,28 +12,6 @@
   }
 }
 
-.wterm-header {
-  container: wterm-header / inline-size;
-}
-
-.wterm-header-desktop {
-  display: none;
-}
-
-.wterm-header-mobile {
-  display: flex;
-}
-
-@container wterm-header (min-width: 1024px) {
-  .wterm-header-desktop {
-    display: flex;
-  }
-
-  .wterm-header-mobile {
-    display: none;
-  }
-}
-
 @container (width < 1200px) {
   #nd-page {
     @apply px-6 pt-6;

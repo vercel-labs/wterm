@@ -26,6 +26,13 @@ function createKeyUpEvent(
   });
 }
 
+function markAltGraph(event: KeyboardEvent): KeyboardEvent {
+  Object.defineProperty(event, "getModifierState", {
+    value: (modifier: string) => modifier === "AltGraph",
+  });
+  return event;
+}
+
 describe("InputHandler", () => {
   let container: HTMLElement;
   let received: string[];
@@ -66,6 +73,14 @@ describe("InputHandler", () => {
       expect(ta.getAttribute("autocomplete")).toBe("off");
       expect(ta.getAttribute("spellcheck")).toBe("false");
     });
+
+    it("keeps the input on-screen when focused", () => {
+      const ta = getTextarea();
+      handler.focus();
+      expect(ta.style.left).toBe("0px");
+      expect(ta.style.top).toBe("0px");
+      expect(ta.style.opacity).toBe("0");
+    });
   });
 
   describe("focus", () => {
@@ -74,6 +89,98 @@ describe("InputHandler", () => {
       const focusSpy = vi.spyOn(ta, "focus");
       handler.focus();
       expect(focusSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe("IME composition", () => {
+    it("shows tentative text at the input without forwarding it", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.value = "にほんご";
+      ta.dispatchEvent(
+        new InputEvent("input", {
+          data: "にほんご",
+          inputType: "insertCompositionText",
+        }),
+      );
+
+      expect(ta.style.opacity).toBe("1");
+      expect(ta.value).toBe("にほんご");
+      expect(received).toEqual([]);
+
+      ta.dispatchEvent(
+        new CompositionEvent("compositionend", { data: "日本語" }),
+      );
+      expect(ta.style.opacity).toBe("0");
+      expect(ta.value).toBe("");
+      expect(received).toEqual(["日本語"]);
+    });
+
+    it("ignores an extra input event for the committed text", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.dispatchEvent(
+        new CompositionEvent("compositionend", { data: "中文" }),
+      );
+      ta.value = "中文";
+      ta.dispatchEvent(
+        new InputEvent("input", {
+          data: "中文",
+          inputType: "insertText",
+        }),
+      );
+      expect(received).toEqual(["中文"]);
+      expect(ta.value).toBe("");
+
+      ta.value = "next";
+      ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+      expect(received).toEqual(["中文", "next"]);
+    });
+
+    it("accepts a commit supplied only by the following input event", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.dispatchEvent(new CompositionEvent("compositionend"));
+      ta.value = "中文";
+      ta.dispatchEvent(
+        new InputEvent("input", {
+          data: "中文",
+          inputType: "insertFromComposition",
+        }),
+      );
+      expect(received).toEqual(["中文"]);
+    });
+
+    it("ignores a duplicate commit when inputType is unavailable", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.dispatchEvent(
+        new CompositionEvent("compositionend", { data: "中文" }),
+      );
+      ta.value = "中文";
+      ta.dispatchEvent(new Event("input"));
+      expect(received).toEqual(["中文"]);
+    });
+
+    it("accepts repeated text after another keydown", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.dispatchEvent(new CompositionEvent("compositionend", { data: "a" }));
+      ta.dispatchEvent(createKeyboardEvent("Shift", { code: "ShiftLeft" }));
+      ta.value = "a";
+      ta.dispatchEvent(
+        new InputEvent("input", { data: "a", inputType: "insertText" }),
+      );
+      expect(received).toEqual(["a", "a"]);
+    });
+
+    it("clears tentative text when focus leaves the terminal", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.value = "にほんご";
+      ta.dispatchEvent(new FocusEvent("blur"));
+      expect(ta.style.opacity).toBe("0");
+      expect(ta.value).toBe("");
     });
   });
 
@@ -147,7 +254,71 @@ describe("InputHandler", () => {
     });
   });
 
+  describe("key mapping - modified functional keys", () => {
+    it.each([
+      ["ArrowLeft", { ctrlKey: true }, "\x1b[1;5D"],
+      ["ArrowRight", { altKey: true }, "\x1b[1;3C"],
+      ["ArrowUp", { shiftKey: true, ctrlKey: true }, "\x1b[1;6A"],
+      ["Home", { shiftKey: true }, "\x1b[1;2H"],
+      ["End", { altKey: true, ctrlKey: true }, "\x1b[1;7F"],
+      ["F1", { shiftKey: true }, "\x1b[1;2P"],
+      ["F4", { ctrlKey: true }, "\x1b[1;5S"],
+      ["Insert", { shiftKey: true }, "\x1b[2;2~"],
+      ["Delete", { ctrlKey: true }, "\x1b[3;5~"],
+      ["PageUp", { shiftKey: true }, "\x1b[5;2~"],
+      ["PageDown", { altKey: true }, "\x1b[6;3~"],
+      ["F5", { shiftKey: true }, "\x1b[15;2~"],
+      ["F12", { altKey: true, ctrlKey: true }, "\x1b[24;7~"],
+    ] as const)("reports modifiers for %s", (key, modifiers, expected) => {
+      const event = createKeyboardEvent(key, modifiers);
+      getTextarea().dispatchEvent(event);
+      expect(received).toEqual([expected]);
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("reports modified arrows in application cursor mode", () => {
+      bridgeMock = { cursorKeysApp: () => true } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(createKeyboardEvent("ArrowUp"));
+      ta.dispatchEvent(createKeyboardEvent("ArrowUp", { ctrlKey: true }));
+      expect(received).toEqual(["\x1bOA", "\x1b[1;5A"]);
+    });
+  });
+
   describe("key mapping - ctrl sequences", () => {
+    it("keeps handled terminal shortcuts from reaching page listeners", () => {
+      const pageKeydown = vi.fn();
+      document.addEventListener("keydown", pageKeydown);
+      try {
+        const handled = createKeyboardEvent("k", { ctrlKey: true });
+        getTextarea().dispatchEvent(handled);
+        expect(received).toEqual(["\x0b"]);
+        expect(handled.defaultPrevented).toBe(true);
+        expect(pageKeydown).not.toHaveBeenCalled();
+
+        getTextarea().dispatchEvent(createKeyboardEvent("Unidentified"));
+        expect(pageKeydown).toHaveBeenCalledOnce();
+      } finally {
+        document.removeEventListener("keydown", pageKeydown);
+      }
+    });
+
+    it.each([
+      ["Backspace", { altKey: true }, "\x1b\x7f"],
+      ["w", { ctrlKey: true }, "\x17"],
+      ["k", { ctrlKey: true }, "\x0b"],
+      ["u", { ctrlKey: true }, "\x15"],
+      ["y", { ctrlKey: true }, "\x19"],
+    ] as const)(
+      "sends the shell editing shortcut for %s",
+      (key, modifiers, expected) => {
+        const event = createKeyboardEvent(key, modifiers);
+        getTextarea().dispatchEvent(event);
+        expect(received).toEqual([expected]);
+        expect(event.defaultPrevented).toBe(true);
+      },
+    );
+
     it("maps Ctrl+A to SOH", () => {
       const ta = getTextarea();
       ta.dispatchEvent(createKeyboardEvent("a", { ctrlKey: true }));
@@ -164,6 +335,49 @@ describe("InputHandler", () => {
       const ta = getTextarea();
       ta.dispatchEvent(createKeyboardEvent("z", { ctrlKey: true }));
       expect(received).toContain("\x1a");
+    });
+
+    it.each([
+      [" ", {}, "\0"],
+      ["2", {}, "\0"],
+      ["/", {}, "\x1f"],
+      ["?", { shiftKey: true }, "\x7f"],
+      ["Backspace", {}, "\x08"],
+    ] as const)(
+      "maps Ctrl+%s to a control byte",
+      (key, modifiers, expected) => {
+        const event = createKeyboardEvent(key, { ctrlKey: true, ...modifiers });
+        getTextarea().dispatchEvent(event);
+        expect(received).toEqual([expected]);
+        expect(event.defaultPrevented).toBe(true);
+      },
+    );
+
+    it("lets Control+Alt printable input reach the native text event", () => {
+      const ta = getTextarea();
+      const keydown = createKeyboardEvent("@", {
+        ctrlKey: true,
+        altKey: true,
+      });
+      ta.dispatchEvent(keydown);
+      expect(keydown.defaultPrevented).toBe(false);
+      expect(received).toEqual([]);
+
+      ta.value = "@";
+      ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+      expect(received).toEqual(["@"]);
+    });
+
+    it("lets browser-identified AltGr text bypass the legacy Alt prefix", () => {
+      const ta = getTextarea();
+      const keydown = markAltGraph(
+        createKeyboardEvent("€", { code: "KeyE", altKey: true }),
+      );
+      ta.dispatchEvent(keydown);
+      expect(keydown.defaultPrevented).toBe(false);
+      ta.value = "€";
+      ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+      expect(received).toEqual(["€"]);
     });
   });
 
@@ -201,9 +415,144 @@ describe("InputHandler", () => {
       ta.dispatchEvent(createKeyboardEvent("x"));
       expect(received).toContain("x");
     });
+
+    it("lets unmapped keys reach the native input event", () => {
+      const ta = getTextarea();
+      const keydown = createKeyboardEvent("Unidentified");
+      ta.dispatchEvent(keydown);
+      expect(keydown.defaultPrevented).toBe(false);
+
+      ta.value = "字";
+      ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+      expect(received).toEqual(["字"]);
+    });
   });
 
   describe("Kitty keyboard protocol", () => {
+    it.each([1, 1 | 2 | 8 | 16])(
+      "accepts native AltGr text with Kitty flags %i without a stray release",
+      (flags) => {
+        bridgeMock = { kittyKeyboardFlags: () => flags } as any;
+        const ta = getTextarea();
+        const keydown = markAltGraph(
+          createKeyboardEvent("@", {
+            code: "KeyQ",
+            ctrlKey: true,
+            altKey: true,
+          }),
+        );
+        ta.dispatchEvent(keydown);
+        expect(keydown.defaultPrevented).toBe(false);
+        expect(received).toEqual([]);
+
+        ta.value = "@";
+        ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+        ta.dispatchEvent(
+          markAltGraph(
+            createKeyboardEvent("@", {
+              code: "KeyQ",
+              ctrlKey: true,
+              altKey: true,
+              repeat: true,
+            }),
+          ),
+        );
+        ta.dispatchEvent(
+          markAltGraph(
+            createKeyUpEvent("@", {
+              code: "KeyQ",
+              ctrlKey: true,
+              altKey: true,
+            }),
+          ),
+        );
+        expect(received).toEqual(["@"]);
+      },
+    );
+
+    it("does not mistake AltGr text for copy or paste shortcuts", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const ta = getTextarea();
+      const selected = document.createElement("span");
+      selected.textContent = "selected";
+      container.append(selected);
+      const selection = window.getSelection()!;
+      const range = document.createRange();
+      range.selectNodeContents(selected);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      for (const [key, code] of [
+        ["c", "KeyC"],
+        ["v", "KeyV"],
+      ]) {
+        const keydown = markAltGraph(
+          createKeyboardEvent(key, { code, ctrlKey: true, altKey: true }),
+        );
+        ta.dispatchEvent(keydown);
+        expect(keydown.defaultPrevented).toBe(false);
+        ta.value = key;
+        ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+        ta.dispatchEvent(
+          markAltGraph(
+            createKeyUpEvent(key, { code, ctrlKey: true, altKey: true }),
+          ),
+        );
+      }
+      expect(received).toEqual(["c", "v"]);
+      selection.removeAllRanges();
+    });
+
+    it("accepts right Alt text when the browser omits AltGraph state", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("Alt", { code: "AltRight", altKey: true }),
+      );
+      const keydown = createKeyboardEvent("€", {
+        code: "KeyE",
+        ctrlKey: true,
+        altKey: true,
+      });
+      ta.dispatchEvent(keydown);
+      expect(keydown.defaultPrevented).toBe(false);
+      ta.value = "€";
+      ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+      ta.dispatchEvent(
+        createKeyUpEvent("€", {
+          code: "KeyE",
+          ctrlKey: true,
+          altKey: true,
+        }),
+      );
+      expect(received).toEqual(["\x1b[57449;3u", "€"]);
+    });
+
+    it("still encodes functional keys while AltGraph is active", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const keydown = markAltGraph(
+        createKeyboardEvent("ArrowLeft", {
+          code: "ArrowLeft",
+          ctrlKey: true,
+          altKey: true,
+        }),
+      );
+      getTextarea().dispatchEvent(keydown);
+      expect(keydown.defaultPrevented).toBe(true);
+      expect(received).toEqual(["\x1b[1;7D"]);
+    });
+
+    it("still encodes an actual Control+Alt printable shortcut", () => {
+      bridgeMock = { kittyKeyboardFlags: () => 1 | 2 | 8 } as any;
+      const keydown = createKeyboardEvent("q", {
+        code: "KeyQ",
+        ctrlKey: true,
+        altKey: true,
+      });
+      getTextarea().dispatchEvent(keydown);
+      expect(keydown.defaultPrevented).toBe(true);
+      expect(received).toEqual(["\x1b[113;7u"]);
+    });
+
     it("uses the negotiated flags for press, repeat, and release", () => {
       bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
       const ta = getTextarea();

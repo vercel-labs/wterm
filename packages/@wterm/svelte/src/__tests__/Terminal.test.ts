@@ -16,7 +16,9 @@ vi.mock("@wterm/dom", () => {
     this.cols = options?.cols ?? 80;
     this.rows = options?.rows ?? 24;
     this.onData = options?.onData ?? null;
+    this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
+    this.onBell = options?.onBell ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
@@ -131,6 +133,25 @@ describe("Terminal component", () => {
     expect(onData).toHaveBeenCalledWith("hello");
   });
 
+  it("forwards raw mouse bytes and follows onBinary prop changes", async () => {
+    const first = vi.fn();
+    const next = vi.fn();
+    const bytes = Uint8Array.of(27, 91, 77, 32, 132, 33);
+    const result = render(Terminal, { props: { onBinary: first } });
+    await Promise.resolve();
+
+    lastWTermInstance.onBinary(bytes);
+    expect(first).toHaveBeenCalledWith(bytes);
+
+    await result.rerender({ onBinary: next });
+    lastWTermInstance.onBinary(bytes);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(bytes);
+
+    await result.rerender({ onBinary: undefined });
+    expect(lastWTermInstance.onBinary).toBeNull();
+  });
+
   it("updates the WTerm input handler when onData changes", async () => {
     const result = render(Terminal);
     await Promise.resolve();
@@ -211,29 +232,35 @@ describe("Terminal component", () => {
   it("supports Svelte 5 callback-style event props", async () => {
     const ondata = vi.fn();
     const ontitle = vi.fn();
+    const onbell = vi.fn();
     const onresize = vi.fn();
-    render(Terminal, { props: { ondata, ontitle, onresize } });
+    render(Terminal, { props: { ondata, ontitle, onbell, onresize } });
     await Promise.resolve();
 
     lastWTermInstance.onData("hello");
     lastWTermInstance.onTitle("my title");
+    lastWTermInstance.onBell(2);
     lastWTermInstance.onResize(100, 30);
 
     expect(ondata).toHaveBeenCalledWith("hello");
     expect(ontitle).toHaveBeenCalledWith("my title");
+    expect(onbell).toHaveBeenCalledWith(2);
     expect(onresize).toHaveBeenCalledWith(100, 30);
   });
 
-  it("forwards title and resize callbacks", async () => {
+  it("forwards title, bell, and resize callbacks", async () => {
     const onTitle = vi.fn();
+    const onBell = vi.fn();
     const onResize = vi.fn();
-    render(Terminal, { props: { onTitle, onResize } });
+    render(Terminal, { props: { onTitle, onBell, onResize } });
     await Promise.resolve();
 
     lastWTermInstance.onTitle("my title");
+    lastWTermInstance.onBell(3);
     lastWTermInstance.onResize(100, 30);
 
     expect(onTitle).toHaveBeenCalledWith("my title");
+    expect(onBell).toHaveBeenCalledWith(3);
     expect(onResize).toHaveBeenCalledWith(100, 30);
   });
 
@@ -242,11 +269,30 @@ describe("Terminal component", () => {
       props: { cols: 80, rows: 24, cursorBlink: false },
     });
     await Promise.resolve();
+    lastWTermInstance.element.classList.add("focused", "has-scrollback");
 
     await result.rerender({ cols: 120, rows: 40, cursorBlink: true });
 
     expect(lastWTermInstance.resize).toHaveBeenCalledWith(120, 40);
     expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      true,
+    );
+    await result.rerender({ cursorBlink: false });
+    expect(lastWTermInstance.element.classList.contains("cursor-steady")).toBe(
+      true,
+    );
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      false,
+    );
+    await result.rerender({ cursorBlink: undefined });
+    expect(lastWTermInstance.element.classList.contains("cursor-steady")).toBe(
+      false,
+    );
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      false,
+    );
+    expect(lastWTermInstance.element.classList.contains("focused")).toBe(true);
+    expect(lastWTermInstance.element.classList.contains("has-scrollback")).toBe(
       true,
     );
   });

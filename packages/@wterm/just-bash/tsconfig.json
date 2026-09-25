@@ -2,7 +2,8 @@
   "extends": "@internal/ts/tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "lib": ["ES2020", "ES2022.Intl", "DOM"]
   },
   "include": ["src"],
   "exclude": ["src/__tests__"]

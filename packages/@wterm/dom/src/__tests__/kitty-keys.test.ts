@@ -66,6 +66,12 @@ describe("encodeKittyKey", () => {
     });
     for (const flags of [KITTY_REPORT_EVENTS, KITTY_REPORT_ALTERNATES]) {
       expect(encodeKittyKey(control, flags, "press")).toBe("\x01");
+      expect(encodeKittyKey(key(" ", { ctrlKey: true }), flags, "press")).toBe(
+        "\0",
+      );
+      expect(encodeKittyKey(key("/", { ctrlKey: true }), flags, "press")).toBe(
+        "\x1f",
+      );
       expect(encodeKittyKey(alt, flags, "press")).toBe("\x1ba");
       expect(encodeKittyKey(controlUnmapped, flags, "press")).toBe(";");
       expect(encodeKittyKey(shiftedAlt, flags, "press")).toBe("\x1bA");

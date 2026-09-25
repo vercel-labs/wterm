@@ -1,5 +1,12 @@
 # wterm
 
+<p>
+  <a href="https://vercel.com/labs#active-experiments"><img alt="Vercel Labs Experiment" src="https://img.shields.io/badge/LABS-EXPERIMENT-0a0a0a.svg?style=for-the-badge&amp;logo=Vercel&amp;labelColor=000000" height="28"></a>
+  <a href="https://www.npmjs.com/package/@wterm/core"><img alt="npm version: @wterm/core" src="https://img.shields.io/npm/v/%40wterm%2Fcore.svg?style=for-the-badge&amp;labelColor=000000" height="28"></a>
+  <a href="https://github.com/vercel-labs/wterm/blob/main/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/github/license/vercel-labs/wterm.svg?style=for-the-badge&amp;labelColor=000000" height="28"></a>
+  <a href="https://www.npmjs.com/package/@wterm/core"><img alt="npm downloads per month: @wterm/core" src="https://img.shields.io/npm/dm/%40wterm%2Fcore.svg?style=for-the-badge&amp;labelColor=000000&amp;label=npm%20downloads" height="28"></a>
+</p>
+
 A terminal emulator for the web.
 
 wterm ("dub-term") renders to the DOM — native text selection, copy/paste, find, and accessibility work directly on the mounted rows. The core is written in Zig and compiled to WASM for near-native performance.
@@ -19,25 +26,39 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 
 ## Features
 
-- **Pluggable cores** — built-in lightweight Zig core (~12 KB) or opt-in [libghostty](packages/@wterm/ghostty) backend (~400 KB) for full VT compliance
-- **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~12 KB `.wasm` binary (release build)
+- **Pluggable cores** — built-in lightweight Zig core or opt-in [libghostty](packages/@wterm/ghostty) backend for full VT compliance
+- **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~26 KB `.wasm` binary (release build)
 - **DOM rendering** — native text selection, clipboard, browser find, and screen reader support for mounted rows
 - **Native hyperlinks** — OSC 8 links remain attached to their exact cells through viewport and scrollback, with safe HTTP(S) anchors
 - **Dirty-row tracking** — only touched rows are re-rendered each frame via `requestAnimationFrame`
 - **Frame-direct scheduling** — writes queue their render on the next animation frame without an extra timer hop
-- **Synchronized output** — mode 2026 blocks paint atomically with a bounded recovery deadline
+- **Synchronized output** — mode 2026 blocks paint atomically with a bounded recovery deadline; the built-in core answers private-mode status queries so applications can detect support
+- **Terminal queries** — the built-in core answers operating-status and cursor-position reports, plus primary device attributes for supported VT100 features
 - **Themes** — CSS custom properties with built-in Default, Solarized Dark, Monokai, and Light themes
+- **Cell backgrounds** — colored and reversed cells stay within their columns; uniformly colored rows fill the available width
+- **Aligned terminal borders** — fallback glyphs stay in their cells and common box-drawing strokes connect across rows and columns
 - **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly
+- **Application-controlled cursors** — block, bar, and underline shapes with terminal-requested blinking and a host override
+- **Window titles** — OSC 0/2 title changes reach `onTitle` with either the built-in or Ghostty core
+- **Bell events** — BEL reaches `onBell(count)` through either core, leaving sound or visual alerts to the host app
 - **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window
-- **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws aligned
+- **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws and column insertions/deletions aligned
+- **DEC line drawing** — character-set switches used by tmux and other TUIs produce borders and symbols instead of literal letters
 - **Grapheme strings** — the Ghostty core preserves combining marks and ZWJ emoji through the DOM renderer and scrollback
 - **Kitty terminal images** — Ghostty-backed terminals render direct PNG/RGB/RGBA graphics in a scroll-aware canvas overlay with configurable display bounds; implicit image placements keep following prompts visually below the image
 - **24-bit color** — full RGB SGR support
-- **Auto-resize** — `ResizeObserver`-based terminal resizing
+- **Auto-resize** — `ResizeObserver`-based terminal resizing; reported dimensions reflect the grid size applied by the core so connected PTYs stay aligned
+- **Wide grids** — the built-in core grows its cell storage as needed, up to 1024 columns and 512 rows
 - **Framework bindings** — React, Vue 3, and Svelte components
+- **In-browser Bash shell** — optional just-bash adapter with Unicode-aware line editing, command history that preserves unfinished input, cursor-aware tab completion, Home/End and Delete editing, word-wise cursor movement and erasure, Ctrl+U/Ctrl+K deletion before/after the cursor, and Ctrl+Y restoration
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
-- **Mouse and focus reporting** — DOM input for SGR mouse tracking and terminal focus events
-- **Kitty keyboard protocol**: negotiated key disambiguation, event types, alternate keys, all-key reporting, and associated text
+- **Mouse and focus reporting** — DOM input for X10, UTF-8 (1005), SGR (1006), urxvt (1015), and SGR pixel (1016) clicks, drags, wheel events, and pointer motion
+- **Mouse-aware scrollback** — clicks and wheel gestures on history remain available for selection and scrolling while an application tracks the mouse
+- **Kitty keyboard protocol**: negotiated key disambiguation, event types, alternate keys, all-key reporting, associated text, and native AltGr character input
+- **Modified navigation keys** — xterm-style Shift, Alt, and Control sequences for arrows, navigation, and function keys outside Kitty keyboard mode
+- **Legacy control keys** — Ctrl+Space, Ctrl+/, Ctrl+?, and Ctrl+Backspace send their terminal control bytes when the browser delivers those shortcuts
+- **IME composition** — tentative text appears at the terminal cursor; only committed text reaches the connected application
+- **Touch input** — a cursor-aligned input target supports soft keyboards, native paste, and held Backspace on touch-first devices
 
 ## Development
 
@@ -83,7 +104,7 @@ pnpm build
 
 ### Run the documentation
 
-The docs use Geistdocs with content in `apps/docs/content/docs`. Existing URLs stay at the site root, including `/get-started`, `/react`, and `/api-reference`. The homepage keeps the interactive terminal, and Ask AI keeps the wterm chat interface.
+The docs use Geistdocs with content in `apps/docs/content/docs`. Existing URLs stay at the site root, including `/get-started`, `/react`, and `/api-reference`. The homepage's interactive terminal uses `@wterm/ghostty` with just-bash, and Ask AI keeps the wterm chat interface.
 
 ```bash
 pnpm exec turbo run build --filter='@wterm/docs^...'
@@ -183,6 +204,67 @@ It opens at `svelte-example.wterm.localhost` through Portless.
 ```bash
 zig build test
 ```
+
+### Run PTY and terminal replay tests
+
+On macOS or Linux, test both cores against a real `/bin/sh` PTY and recorded
+Neovim/tmux output in Chromium, Firefox, and WebKit:
+
+```bash
+pnpm exec playwright install chromium firefox webkit
+pnpm test:pty
+```
+
+The runner builds the terminal packages and owns an isolated server on an
+available loopback port. Tests cover browser keyboard input, shell execution,
+resize, and exit. Replay cases check Unicode, styles, alternate screens,
+history, and synchronized output. JSON timing reports, a combined `baseline.json`,
+and failure traces are saved under `e2e/test-results/pty/`. CI runs the suite
+and uploads those artifacts. Playback uses checked-in bytes; Neovim and tmux
+are only needed to regenerate the recordings.
+Linux requires a C++/Python toolchain for the permitted `node-pty` native build.
+
+### Measure terminal output load
+
+Run repeatable plain-text, ANSI-colored, and full-screen redraw workloads for
+both cores in Chromium, Firefox, and WebKit:
+
+```bash
+pnpm bench:terminal
+WTERM_LOAD_PROFILE=stress pnpm bench:terminal --project chromium --repeat-each 3
+```
+
+The default smoke profile writes 1 MiB per case; `stress` writes 100 MiB,
+rounded up to a complete record. Reports under `e2e/test-results/load/` include
+write/render timings, frame intervals, event-loop delays, sampled memory and DOM
+size, workload hashes, and environment metadata. CI runs the smoke profile and
+uploads the reports. These are instrumented browser measurements with a fixed
+chunk schedule, not native-terminal throughput or physical display latency.
+See the [harness documentation](e2e/harness/README.md#output-load-measurements)
+for measurement boundaries and comparison guidance.
+
+### Use the interactive harness
+
+For interactive checks, run `pnpm --filter @internal/pty-harness dev` after the
+package build above. Portless prints the URL for `pty-harness.wterm.localhost`.
+The harness includes core switching and a round-trip probe. Timing callbacks
+measure frame opportunities, not physical display latency. See the
+[harness README](e2e/harness/README.md) for setup and measurement details.
+
+### Probe the public libghostty API
+
+With Zig 0.16.0 and the Playwright browsers installed, build a pinned, unpatched
+upstream WASM artifact and exercise its public C API in Node and all three
+browser engines:
+
+```bash
+pnpm test:libghostty
+```
+
+The isolated [libghostty experiment](experiments/libghostty/README.md) covers
+render state, terminal effects, retained history, snapshots, and application
+recordings. It documents the compatibility gaps that keep the shipped adapter
+on v1.3.1. Generated binaries and reports stay in its ignored `dist/` directory.
 
 ## License
 

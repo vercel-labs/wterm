@@ -27,6 +27,42 @@ describe("WasmBridge", () => {
       expect(bridge.getCols()).toBe(80);
       expect(bridge.getRows()).toBe(24);
     });
+
+    it("initializes a grid wider and taller than 256 cells", () => {
+      bridge.init(320, 300);
+      expect(bridge.getCols()).toBe(320);
+      expect(bridge.getRows()).toBe(300);
+      bridge.writeString("\x1b[300;320HZ");
+      expect(bridge.getCell(299, 319).char).toBe(90);
+    });
+  });
+
+  it("exposes any-motion mouse tracking from the committed WASM", () => {
+    expect(bridge.mouseEncoding()).toBe("x10");
+    bridge.writeString("\x1b[?1003h\x1b[?1006h");
+    expect(bridge.mouseTracking()).toBe(1003);
+    expect(bridge.mouseSgr()).toBe(true);
+    expect(bridge.mouseEncoding()).toBe("sgr");
+
+    bridge.writeString("\x1b[?1006l");
+    expect(bridge.mouseEncoding()).toBe("x10");
+
+    bridge.writeString("\x1b[?1003l");
+    expect(bridge.mouseTracking()).toBe(0);
+  });
+
+  it("exposes active extended mouse encoding from the committed WASM", () => {
+    bridge.writeString("\x1b[?1002h\x1b[?1005h");
+    expect(bridge.mouseTracking()).toBe(1002);
+    expect(bridge.mouseEncoding()).toBe("utf8");
+    expect(bridge.mouseSgr()).toBe(false);
+
+    bridge.writeString("\x1b[?1015h");
+    expect(bridge.mouseEncoding()).toBe("urxvt");
+    bridge.writeString("\x1b[?1016h");
+    expect(bridge.mouseEncoding()).toBe("sgr-pixels");
+    bridge.writeString("\x1b[?1016l");
+    expect(bridge.mouseEncoding()).toBe("x10");
   });
 
   describe("writeString / getCell", () => {
@@ -242,6 +278,22 @@ describe("WasmBridge", () => {
       expect(bridge.getRows()).toBe(12);
     });
 
+    it("resizes beyond the former grid capacity", () => {
+      bridge.resize(320, 300);
+      expect(bridge.getCols()).toBe(320);
+      expect(bridge.getRows()).toBe(300);
+      bridge.clearDirty();
+      bridge.writeString("\x1b[300;320HZ");
+      expect(bridge.getCell(299, 319).char).toBe(90);
+      expect(bridge.isDirtyRow(299)).toBe(true);
+    });
+
+    it("reports the applied size when a request exceeds the new limit", () => {
+      bridge.resize(1200, 600);
+      expect(bridge.getCols()).toBe(1024);
+      expect(bridge.getRows()).toBe(512);
+    });
+
     it("preserves content after resize", () => {
       bridge.writeString("A");
       bridge.resize(40, 12);
@@ -298,6 +350,20 @@ describe("WasmBridge", () => {
       expect(bridge.usingAltScreen()).toBe(false);
     });
 
+    it("reads the active grid across alternate-screen switches", () => {
+      bridge.init(320, 3);
+      bridge.writeString("\x1b[1;300HP\x1b[?1049h\x1b[1;300HA");
+      expect(bridge.getCell(0, 299).char).toBe(65);
+
+      bridge.resize(400, 4);
+      bridge.writeString("\x1b[4;399HZ");
+      expect(bridge.getCell(3, 398).char).toBe(90);
+
+      bridge.writeString("\x1b[?1049l");
+      expect(bridge.getCell(0, 299).char).toBe(80);
+      expect(bridge.getCell(3, 398).char).toBe(32);
+    });
+
     it("tracks synchronized output mode", () => {
       expect(bridge.synchronizedOutput()).toBe(false);
       bridge.writeString("\x1b[?2026h");
@@ -308,6 +374,37 @@ describe("WasmBridge", () => {
   });
 
   describe("terminal responses", () => {
+    it("returns operating status in order with other replies", () => {
+      bridge.writeString("\x1b[5n\x1b[c\x1b[6n\x1b[5n\x1b[?5n\x1b[5;6n");
+      expect(bridge.getResponse()).toBe("\x1b[0n");
+      expect(bridge.getResponse()).toBe("\x1b[?1;2c");
+      expect(bridge.getResponse()).toBe("\x1b[1;1R");
+      expect(bridge.getResponse()).toBe("\x1b[0n");
+      expect(bridge.getResponse()).toBeNull();
+    });
+
+    it("returns primary device attributes in order with other replies", () => {
+      bridge.writeString("\x1b[c\x1b[6n\x1b[0c\x1b[?c\x1b[>c");
+      expect(bridge.getResponse()).toBe("\x1b[?1;2c");
+      expect(bridge.getResponse()).toBe("\x1b[1;1R");
+      expect(bridge.getResponse()).toBe("\x1b[?1;2c");
+      expect(bridge.getResponse()).toBeNull();
+    });
+
+    it("returns DEC private-mode reports through the committed WASM", () => {
+      bridge.writeString("\x1b[?2026$p\x1b[?2026h\x1b[?2026$p");
+      expect(bridge.getResponse()).toBe("\x1b[?2026;2$y");
+      expect(bridge.getResponse()).toBe("\x1b[?2026;1$y");
+
+      bridge.writeString("\x1b[?1000h\x1b[?1002h\x1b[?1000$p\x1b[?1002$p");
+      expect(bridge.getResponse()).toBe("\x1b[?1000;1$y");
+      expect(bridge.getResponse()).toBe("\x1b[?1002;1$y");
+
+      bridge.writeString("\x1b[?7777$p");
+      expect(bridge.getResponse()).toBe("\x1b[?7777;0$y");
+      expect(bridge.getResponse()).toBeNull();
+    });
+
     it("tracks Kitty keyboard flags per screen with Ghostty-compatible resets", () => {
       expect(bridge.kittyKeyboardFlags()).toBe(0);
       bridge.writeString("\x1b[>6u\x1b[?u");
@@ -383,6 +480,23 @@ describe("WasmBridge", () => {
     });
   });
 
+  describe("bell", () => {
+    it("counts BEL controls and clears the count when read", () => {
+      expect(bridge.getBellCount()).toBe(0);
+      bridge.writeString("a\x07\x07b");
+      expect(bridge.getBellCount()).toBe(2);
+      expect(bridge.getBellCount()).toBe(0);
+    });
+
+    it("does not count BEL used to terminate OSC and clears pending bells on init", () => {
+      bridge.writeString("\x1b]2;title\x07");
+      expect(bridge.getBellCount()).toBe(0);
+      bridge.writeString("\x07");
+      bridge.init(80, 24);
+      expect(bridge.getBellCount()).toBe(0);
+    });
+  });
+
   describe("scrollback", () => {
     it("starts with zero scrollback", () => {
       expect(bridge.getScrollbackCount()).toBe(0);
@@ -404,6 +518,14 @@ describe("WasmBridge", () => {
         const cell = bridge.getScrollbackCell(0, 0);
         expect(cell.char).toBe(65); // 'A'
       }
+    });
+
+    it("retains history cells beyond column 256", () => {
+      bridge.init(320, 2);
+      bridge.writeString("\x1b[1;300HQ\x1b[2;1H\n");
+      expect(bridge.getScrollbackCount()).toBe(1);
+      expect(bridge.getScrollbackLineLen(0)).toBe(320);
+      expect(bridge.getScrollbackCell(0, 299).char).toBe(81);
     });
 
     it("keeps OSC 8 metadata after a row enters scrollback", () => {

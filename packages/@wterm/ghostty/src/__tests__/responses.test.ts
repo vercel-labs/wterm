@@ -191,3 +191,75 @@ describe("GhosttyCore terminal responses", () => {
     expect(core.getCursor().col).toBe(2);
   });
 });
+
+describe("GhosttyCore window titles", () => {
+  it("delivers OSC 0 and 2 titles once, including UTF-8 and an empty title", async () => {
+    const core = await newCore();
+    expect(core.getTitle()).toBeNull();
+
+    core.writeString("\x1b]0;café\x07");
+    expect(core.getTitle()).toBe("café");
+    expect(core.getTitle()).toBeNull();
+
+    core.writeString("\x1b]2;editor\x1b\\");
+    expect(core.getTitle()).toBe("editor");
+
+    core.writeString("\x1b]2;\x07");
+    expect(core.getTitle()).toBe("");
+    expect(core.getTitle()).toBeNull();
+    core.dispose();
+  });
+
+  it("keeps fragmented title sequences pending and exposes the latest complete title", async () => {
+    const core = await newCore();
+    core.writeRaw(new TextEncoder().encode("\x1b]2;hel"));
+    expect(core.getTitle()).toBeNull();
+    core.writeRaw(new TextEncoder().encode("lo"));
+    expect(core.getTitle()).toBeNull();
+    core.writeRaw(new TextEncoder().encode("\x1b"));
+    expect(core.getTitle()).toBe("hello");
+    core.writeRaw(new TextEncoder().encode("\\"));
+    expect(core.getTitle()).toBeNull();
+
+    core.writeString("\x1b]2;first\x07\x1b]2;last\x07");
+    expect(core.getTitle()).toBe("last");
+    expect(core.getTitle()).toBeNull();
+    core.dispose();
+  });
+
+  it("ignores titles beyond Ghostty's 255-byte limit and clears state on reinit", async () => {
+    const core = await newCore();
+    core.writeString(`\x1b]2;${"x".repeat(256)}\x07`);
+    expect(core.getTitle()).toBeNull();
+
+    core.writeString("\x1b]2;pending\x07");
+    core.init(20, 4);
+    expect(core.getTitle()).toBeNull();
+    core.dispose();
+    expect(core.getTitle()).toBeNull();
+  });
+});
+
+describe("GhosttyCore bell events", () => {
+  it("counts BEL controls without counting OSC terminators", async () => {
+    const core = await newCore();
+    expect(core.getBellCount()).toBe(0);
+    core.writeString("a\x07\x07b");
+    expect(core.getBellCount()).toBe(2);
+    expect(core.getBellCount()).toBe(0);
+
+    core.writeString("\x1b]2;title\x07");
+    expect(core.getBellCount()).toBe(0);
+    core.dispose();
+  });
+
+  it("clears pending bells on reinitialization and disposal", async () => {
+    const core = await newCore();
+    core.writeString("\x07");
+    core.init(20, 4);
+    expect(core.getBellCount()).toBe(0);
+    core.writeString("\x07");
+    core.dispose();
+    expect(core.getBellCount()).toBe(0);
+  });
+});

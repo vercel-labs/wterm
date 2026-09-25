@@ -1,0 +1,225 @@
+{
+  "schemaVersion": 1,
+  "id": "neovim-edit",
+  "source": {
+    "kind": "pty",
+    "capturedAt": "2026-09-24T05:26:52.694Z",
+    "platform": "darwin",
+    "arch": "arm64",
+    "osRelease": "25.6.0",
+    "node": "v24.20.0",
+    "nodePty": "1.1.0",
+    "terminalResponses": "none; applications use TERM and terminfo",
+    "term": "xterm-256color",
+    "locale": "en_US.UTF-8",
+    "terminfoSha256": "ec52a7879f3b6a857c0cabad5be0caee3558ff06c8363e405ca4aaed1617b7f4",
+    "terminfo": "#\tReconstructed via infocmp from file: /usr/share/terminfo/78/xterm-256color\nxterm-256color|xterm with 256 colors,\n\tam,\n\tbce,\n\tccc,\n\tkm,\n\tmc5i,\n\tmir,\n\tmsgr,\n\tnpc,\n\txenl,\n\tcolors#256,\n\tcols#80,\n\tit#8,\n\tlines#24,\n\tpairs#32767,\n\tacsc=``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~,\n\tbel=^G,\n\tblink=\\E[5m,\n\tbold=\\E[1m,\n\tcbt=\\E[Z,\n\tcivis=\\E[?25l,\n\tclear=\\E[H\\E[2J,\n\tcnorm=\\E[?12l\\E[?25h,\n\tcr=^M,\n\tcsr=\\E[%i%p1%d;%p2%dr,\n\tcub=\\E[%p1%dD,\n\tcub1=^H,\n\tcud=\\E[%p1%dB,\n\tcud1=^J,\n\tcuf=\\E[%p1%dC,\n\tcuf1=\\E[C,\n\tcup=\\E[%i%p1%d;%p2%dH,\n\tcuu=\\E[%p1%dA,\n\tcuu1=\\E[A,\n\tcvvis=\\E[?12;25h,\n\tdch=\\E[%p1%dP,\n\tdch1=\\E[P,\n\tdim=\\E[2m,\n\tdl=\\E[%p1%dM,\n\tdl1=\\E[M,\n\tech=\\E[%p1%dX,\n\ted=\\E[J,\n\tel=\\E[K,\n\tel1=\\E[1K,\n\tflash=\\E[?5h$<100/>\\E[?5l,\n\thome=\\E[H,\n\thpa=\\E[%i%p1%dG,\n\tht=^I,\n\thts=\\EH,\n\tich=\\E[%p1%d@,\n\til=\\E[%p1%dL,\n\til1=\\E[L,\n\tind=^J,\n\tindn=\\E[%p1%dS,\n\tinitc=\\E]4;%p1%d;rgb\\:%p2%{255}%*%{1000}%/%2.2X/%p3%{255}%*%{1000}%/%2.2X/%p4%{255}%*%{1000}%/%2.2X\\E\\\\,\n\tinvis=\\E[8m,\n\tis2=\\E[!p\\E[?3;4l\\E[4l\\E>,\n\tkDC=\\E[3;2~,\n\tkEND=\\E[1;2F,\n\tkHOM=\\E[1;2H,\n\tkIC=\\E[2;2~,\n\tkLFT=\\E[1;2D,\n\tkNXT=\\E[6;2~,\n\tkPRV=\\E[5;2~,\n\tkRIT=\\E[1;2C,\n\tkb2=\\EOE,\n\tkbs=^H,\n\tkcbt=\\E[Z,\n\tkcub1=\\EOD,\n\tkcud1=\\EOB,\n\tkcuf1=\\EOC,\n\tkcuu1=\\EOA,\n\tkdch1=\\E[3~,\n\tkend=\\EOF,\n\tkent=\\EOM,\n\tkf1=\\EOP,\n\tkf10=\\E[21~,\n\tkf11=\\E[23~,\n\tkf12=\\E[24~,\n\tkf13=\\E[1;2P,\n\tkf14=\\E[1;2Q,\n\tkf15=\\E[1;2R,\n\tkf16=\\E[1;2S,\n\tkf17=\\E[15;2~,\n\tkf18=\\E[17;2~,\n\tkf19=\\E[18;2~,\n\tkf2=\\EOQ,\n\tkf20=\\E[19;2~,\n\tkf21=\\E[20;2~,\n\tkf22=\\E[21;2~,\n\tkf23=\\E[23;2~,\n\tkf24=\\E[24;2~,\n\tkf25=\\E[1;5P,\n\tkf26=\\E[1;5Q,\n\tkf27=\\E[1;5R,\n\tkf28=\\E[1;5S,\n\tkf29=\\E[15;5~,\n\tkf3=\\EOR,\n\tkf30=\\E[17;5~,\n\tkf31=\\E[18;5~,\n\tkf32=\\E[19;5~,\n\tkf33=\\E[20;5~,\n\tkf34=\\E[21;5~,\n\tkf35=\\E[23;5~,\n\tkf36=\\E[24;5~,\n\tkf37=\\E[1;6P,\n\tkf38=\\E[1;6Q,\n\tkf39=\\E[1;6R,\n\tkf4=\\EOS,\n\tkf40=\\E[1;6S,\n\tkf41=\\E[15;6~,\n\tkf42=\\E[17;6~,\n\tkf43=\\E[18;6~,\n\tkf44=\\E[19;6~,\n\tkf45=\\E[20;6~,\n\tkf46=\\E[21;6~,\n\tkf47=\\E[23;6~,\n\tkf48=\\E[24;6~,\n\tkf49=\\E[1;3P,\n\tkf5=\\E[15~,\n\tkf50=\\E[1;3Q,\n\tkf51=\\E[1;3R,\n\tkf52=\\E[1;3S,\n\tkf53=\\E[15;3~,\n\tkf54=\\E[17;3~,\n\tkf55=\\E[18;3~,\n\tkf56=\\E[19;3~,\n\tkf57=\\E[20;3~,\n\tkf58=\\E[21;3~,\n\tkf59=\\E[23;3~,\n\tkf6=\\E[17~,\n\tkf60=\\E[24;3~,\n\tkf61=\\E[1;4P,\n\tkf62=\\E[1;4Q,\n\tkf63=\\E[1;4R,\n\tkf7=\\E[18~,\n\tkf8=\\E[19~,\n\tkf9=\\E[20~,\n\tkhome=\\EOH,\n\tkich1=\\E[2~,\n\tkind=\\E[1;2B,\n\tkmous=\\E[M,\n\tknp=\\E[6~,\n\tkpp=\\E[5~,\n\tkri=\\E[1;2A,\n\tmc0=\\E[i,\n\tmc4=\\E[4i,\n\tmc5=\\E[5i,\n\tmeml=\\El,\n\tmemu=\\Em,\n\top=\\E[39;49m,\n\trc=\\E8,\n\trev=\\E[7m,\n\tri=\\EM,\n\trin=\\E[%p1%dT,\n\tritm=\\E[23m,\n\trmacs=\\E(B,\n\trmam=\\E[?7l,\n\trmcup=\\E[?1049l,\n\trmir=\\E[4l,\n\trmkx=\\E[?1l\\E>,\n\trmm=\\E[?1034l,\n\trmso=\\E[27m,\n\trmul=\\E[24m,\n\trs1=\\Ec,\n\trs2=\\E[!p\\E[?3;4l\\E[4l\\E>,\n\tsc=\\E7,\n\tsetab=\\E[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;5;%p1%d%;m,\n\tsetaf=\\E[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5;%p1%d%;m,\n\tsgr=%?%p9%t\\E(0%e\\E(B%;\\E[0%?%p6%t;1%;%?%p5%t;2%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;%?%p7%t;8%;m,\n\tsgr0=\\E(B\\E[m,\n\tsitm=\\E[3m,\n\tsmacs=\\E(0,\n\tsmam=\\E[?7h,\n\tsmcup=\\E[?1049h,\n\tsmir=\\E[4h,\n\tsmkx=\\E[?1h\\E=,\n\tsmm=\\E[?1034h,\n\tsmso=\\E[7m,\n\tsmul=\\E[4m,\n\ttbc=\\E[3g,\n\tu6=\\E[%i%d;%dR,\n\tu7=\\E[6n,\n\tu8=\\E[?1;2c,\n\tu9=\\E[c,\n\tvpa=\\E[%i%p1%dd,\n",
+    "recorder": "e2e/harness/record-apps.mjs",
+    "application": "nvim",
+    "version": "NVIM v0.11.1"
+  },
+  "cols": 80,
+  "rows": 24,
+  "events": [
+    {
+      "atMs": 48,
+      "type": "output",
+      "data": "G1s/MTA0OWgbWzIyOzA7MHQbWz8xaBs9G1tIG1syShtbPzIwMDRoG1s/MjAyNiRwG1s/MjAyNyRwG1s/MjAzMSRwG1s/MjA0OCRwG1swbRtbNDozbRtQJHFtG1wbWz91G1tjG1s/MjVo"
+    },
+    {
+      "atMs": 61,
+      "type": "output",
+      "data": "G10xMTs/Bw=="
+    },
+    {
+      "atMs": 63,
+      "type": "output",
+      "data": "G1ArcTU0NjM7NTI0NzQyOzczNjU3NDcyNjc2MjY2OzczNjU3NDcyNjc2MjYyG1wbWzBtG1s0ODsyOzE7MjszbRtQJHFtG1w="
+    },
+    {
+      "atMs": 80,
+      "type": "output",
+      "data": "G1ArcTRENzMbXA=="
+    },
+    {
+      "atMs": 80,
+      "type": "output",
+      "data": "G1s/MjVsGyhCG1ttG1tIICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICANCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgDQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICANCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgDQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICANCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgDQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICANCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgDQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA0KICAgICAgICAgICAgICAgICAgICAgICAgIA=="
+    },
+    {
+      "atMs": 80,
+      "type": "output",
+      "data": "ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICANCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgDQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICANCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgDQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICANCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgDQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICANCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgG1tIGyhCG1ttd3Rlcm0gcmVwbGF5G1tLDQp3aWRlOiDnlYwgY2Fmw6kbWzI7MTRIG1tLDQplZGl0b3IgY2hhbmdlcw=="
+    },
+    {
+      "atMs": 80,
+      "type": "output",
+      "data": "IHN1cnZpdmUgcmVzaXplG1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLG1syIHEbWzIgcRtbPzEwMDJoG1s/MTAwNmgbW0h3dGVybSByZXBsYXkbW0sNCndpZGU6IOeVjCBjYWbDqRtbMjsxNEgbW0sNCmVkaXRvciBjaGFuZ2VzIHN1cnZpdmUgcmVzaXplG1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQobW0obW0gbWz8yNWg="
+    },
+    {
+      "atMs": 136,
+      "type": "output",
+      "data": "G1s/MjVsG1s/MTAwNGgbWz8yNWg="
+    },
+    {
+      "atMs": 341,
+      "type": "checkpoint",
+      "name": "open file",
+      "expected": {
+        "rows": {
+          "0": "wterm replay",
+          "1": "wide: 界 café",
+          "2": "editor changes survive resize"
+        },
+        "cursor": {
+          "row": 0,
+          "col": 0
+        },
+        "modes": {
+          "alternateScreen": true
+        },
+        "cells": [
+          {
+            "row": 1,
+            "col": 6,
+            "value": {
+              "char": 30028,
+              "width": 2
+            }
+          },
+          {
+            "row": 1,
+            "col": 7,
+            "value": {
+              "width": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "atMs": 341,
+      "type": "input",
+      "data": "ggIrecorded: \u001b"
+    },
+    {
+      "atMs": 342,
+      "type": "output",
+      "data": "G1s/MjVscmVjb3JkZWQ6IHd0ZXJtIHJlcGxheRtbNiBxG1sxMkQbWz8yNWg="
+    },
+    {
+      "atMs": 393,
+      "type": "output",
+      "data": "G1s/MjVsG1syIHEIG1s/MjVo"
+    },
+    {
+      "atMs": 601,
+      "type": "checkpoint",
+      "name": "insert text",
+      "expected": {
+        "rows": {
+          "0": "recorded: wterm replay"
+        },
+        "cursor": {
+          "row": 0,
+          "col": 9
+        }
+      }
+    },
+    {
+      "atMs": 601,
+      "type": "resize",
+      "cols": 52,
+      "rows": 16
+    },
+    {
+      "atMs": 601,
+      "type": "output",
+      "data": "G1s/MjVsG1tIG1sySnJlY29yZGVkOiB3dGVybSByZXBsYXkNCndpZGU6IOeVjCBjYWbDqRtbMzsxSGVkaXRvciBjaGFuZ2VzIHN1cnZpdmUgcmVzaXplDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQobW0obWzE7MTBIG1s/MjVo"
+    },
+    {
+      "atMs": 602,
+      "type": "output",
+      "data": "G1s/MjVsG1syIHEbWzIgcRtbPzI1aA=="
+    },
+    {
+      "atMs": 810,
+      "type": "checkpoint",
+      "name": "narrow editor",
+      "expected": {
+        "cols": 52,
+        "height": 16,
+        "rows": {
+          "0": "recorded: wterm replay",
+          "1": "wide: 界 café"
+        },
+        "cursor": {
+          "row": 0,
+          "col": 9
+        }
+      }
+    },
+    {
+      "atMs": 810,
+      "type": "resize",
+      "cols": 80,
+      "rows": 24
+    },
+    {
+      "atMs": 811,
+      "type": "output",
+      "data": "G1s/MjVsG1tIG1syShtbMTRCICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICANCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgDQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICANCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgDQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICANCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgDQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIBtbSHJlY29yZGVkOiB3dGVybSByZXBsYXkNCndpZGU6IOeVjCBjYWbDqRtbMzsxSGVkaXRvciBjaGFuZ2VzIHN1cnZpdmUgcmVzaXplDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQp+G1tLDQobW0obWzE7MTBIG1s/MjVo"
+    },
+    {
+      "atMs": 811,
+      "type": "output",
+      "data": "G1s/MjVsG1syIHEbWzIgcRtbPzI1aA=="
+    },
+    {
+      "atMs": 1017,
+      "type": "checkpoint",
+      "name": "wide editor",
+      "expected": {
+        "cols": 80,
+        "height": 24,
+        "rows": {
+          "0": "recorded: wterm replay",
+          "2": "editor changes survive resize"
+        },
+        "modes": {
+          "alternateScreen": true
+        }
+      }
+    },
+    {
+      "atMs": 1017,
+      "type": "input",
+      "data": ":qa!\r"
+    },
+    {
+      "atMs": 1018,
+      "type": "output",
+      "data": "G1s/MjVsDRtbMjNCOnFhIRtbMiBxG1s/MTAwMmwbWz8xMDA2bA0bWzI0OzFIG1s/MjVo"
+    },
+    {
+      "atMs": 1018,
+      "type": "output",
+      "data": "G1s/MjVsG1syIHEbWz8xMDAyaBtbPzEwMDZoG1s/MjVoG1s/MjVsG1s/MjAzMWwbWzIgcRtbPzEwMDJsG1s/MTAwNmwbKEIbW20bWz8yNWgbWz8xbBs+G1s+NDswbRtbPzIwNDhsG1s/MjAwNGwbWz8xMDA0bBtbYxtbPzI1aA=="
+    },
+    {
+      "atMs": 2019,
+      "type": "output",
+      "data": "G1s/MjVsG1s/MTA0OWwbWzIzOzA7MHQbWz8yNWg="
+    },
+    {
+      "atMs": 2032,
+      "type": "checkpoint",
+      "name": "editor exit",
+      "expected": {
+        "modes": {
+          "alternateScreen": false
+        }
+      }
+    }
+  ]
+}

@@ -51,6 +51,8 @@ export interface GhosttyExports {
   get_cursor_row(ptr: number): number;
   get_cursor_col(ptr: number): number;
   get_cursor_visible(ptr: number): number;
+  get_cursor_shape?(ptr: number): number;
+  get_cursor_blinking?(ptr: number): number;
 
   // Modes
   cursor_keys_app(ptr: number): number;
@@ -58,6 +60,7 @@ export interface GhosttyExports {
   using_alt_screen(ptr: number): number;
   mouse_tracking(ptr: number): number;
   mouse_sgr(ptr: number): number;
+  mouse_encoding?(ptr: number): number;
   focus_events(ptr: number): number;
   synchronized_output(ptr: number): number;
   synchronized_output_generation(ptr: number): number;
@@ -115,6 +118,11 @@ export interface GhosttyExports {
 
   // Responses
   read_response(ptr: number, buf_ptr: number, buf_len: number): number;
+
+  // Host effects. Optional for apps still serving an older Ghostty binary.
+  get_title_len?(ptr: number): number;
+  get_title_ptr?(ptr: number): number;
+  get_bell_count?(ptr: number): number;
 
   // Memory
   alloc_buffer(len: number): number;

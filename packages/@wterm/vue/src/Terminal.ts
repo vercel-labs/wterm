@@ -86,10 +86,9 @@ const Terminal = defineComponent({
     /** Maximum rendered Kitty image height in CSS pixels. */
     maxImageHeight: Number,
     /**
-     * Toggles the `cursor-blink` class on the root element.
-     * @defaultValue false
+     * Force blinking on/off; omit to follow the terminal application's request.
      */
-    cursorBlink: Boolean,
+    cursorBlink: { type: Boolean, default: undefined },
     /**
      * Enable debug mode (init-only — changing after mount has no effect).
      * Exposes a `DebugAdapter` on the underlying `WTerm` instance.
@@ -106,10 +105,14 @@ const Terminal = defineComponent({
      * terminal (e.g. keystrokes or paste).
      */
     data: (_data: string) => true,
+    /** Raw X10 mouse reports for transports that accept bytes. */
+    binary: (_data: Uint8Array) => true,
     /**
      * Forwards `WTerm`'s `onTitle` callback.
      */
     title: (_title: string) => true,
+    /** Forwards `WTerm`'s `onBell` callback with the number of BEL controls. */
+    bell: (_count: number) => true,
     /**
      * Forwards `WTerm`'s `onResize` callback with the new column and row
      * counts.
@@ -135,6 +138,7 @@ const Terminal = defineComponent({
       if (!el) return;
 
       const hasDataListener = !!getCurrentInstance()?.vnode.props?.onData;
+      const hasBinaryListener = !!getCurrentInstance()?.vnode.props?.onBinary;
 
       const wt = new WTerm(el, {
         cols: props.cols,
@@ -149,7 +153,11 @@ const Terminal = defineComponent({
         onData: hasDataListener
           ? (data: string) => emit("data", data)
           : undefined,
+        onBinary: hasBinaryListener
+          ? (data: Uint8Array) => emit("binary", data)
+          : undefined,
         onTitle: (title: string) => emit("title", title),
+        onBell: (count: number) => emit("bell", count),
         onResize: (c: number, r: number) => emit("resize", c, r),
       });
 
@@ -186,10 +194,11 @@ const Terminal = defineComponent({
     watch(
       () => props.cursorBlink,
       (blink) => {
-        const wt = wterm.value;
-        if (!wt) return;
-        wt.element.classList.toggle("cursor-blink", blink);
+        const el = wterm.value?.element;
+        el?.classList.toggle("cursor-blink", blink === true);
+        el?.classList.toggle("cursor-steady", blink === false);
       },
+      { flush: "post" },
     );
 
     // Returning bindings from setup is the typed equivalent of defineExpose:

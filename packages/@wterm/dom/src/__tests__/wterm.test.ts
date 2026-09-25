@@ -2,13 +2,21 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { WasmBridge } from "@wterm/core";
 
 function createMockBridge(): WasmBridge {
+  let cols = 80;
+  let rows = 24;
   return {
-    init: vi.fn(),
+    init: vi.fn((nextCols: number, nextRows: number) => {
+      cols = nextCols;
+      rows = nextRows;
+    }),
     writeString: vi.fn(),
     writeRaw: vi.fn(),
-    resize: vi.fn(),
-    getRows: vi.fn(() => 24),
-    getCols: vi.fn(() => 80),
+    resize: vi.fn((nextCols: number, nextRows: number) => {
+      cols = nextCols;
+      rows = nextRows;
+    }),
+    getRows: vi.fn(() => rows),
+    getCols: vi.fn(() => cols),
     getCell: vi.fn(() => ({ char: 0, fg: 256, bg: 256, flags: 0 })),
     isDirtyRow: vi.fn(() => true),
     clearDirty: vi.fn(),
@@ -17,6 +25,7 @@ function createMockBridge(): WasmBridge {
     getScrollbackCell: vi.fn(() => ({ char: 0, fg: 256, bg: 256, flags: 0 })),
     getScrollbackLineLen: vi.fn(() => 0),
     getTitle: vi.fn(() => null),
+    getBellCount: vi.fn(() => 0),
     getResponse: vi.fn(() => null),
     cursorKeysApp: vi.fn(() => false),
     bracketedPaste: vi.fn(() => false),
@@ -75,6 +84,13 @@ describe("WTerm", () => {
     it("does not add cursor-blink class by default", () => {
       new WTerm(element);
       expect(element.classList.contains("cursor-blink")).toBe(false);
+      expect(element.classList.contains("cursor-steady")).toBe(false);
+    });
+
+    it("forces a steady cursor when cursorBlink is explicitly false", () => {
+      new WTerm(element, { cursorBlink: false });
+      expect(element.classList.contains("cursor-blink")).toBe(false);
+      expect(element.classList.contains("cursor-steady")).toBe(true);
     });
 
     it("defaults to 80 cols and 24 rows", () => {
@@ -396,6 +412,42 @@ describe("WTerm", () => {
   });
 
   describe("resize", () => {
+    it("uses the core's applied dimensions after initialization", async () => {
+      vi.mocked(mockBridge.init).mockImplementation(() => {
+        vi.mocked(mockBridge.getCols).mockReturnValue(256);
+        vi.mocked(mockBridge.getRows).mockReturnValue(120);
+      });
+      const term = new WTerm(element, {
+        cols: 320,
+        rows: 120,
+        autoResize: false,
+      });
+      await term.init();
+
+      expect(mockBridge.init).toHaveBeenCalledWith(320, 120);
+      expect(term.cols).toBe(256);
+      expect(term.rows).toBe(120);
+      expect(element.querySelectorAll(".term-row")).toHaveLength(120);
+    });
+
+    it("renders and reports the dimensions applied by the core", async () => {
+      const onResize = vi.fn();
+      const term = new WTerm(element, { autoResize: false, onResize });
+      await term.init();
+      vi.mocked(mockBridge.resize).mockImplementation(() => {
+        vi.mocked(mockBridge.getCols).mockReturnValue(256);
+        vi.mocked(mockBridge.getRows).mockReturnValue(40);
+      });
+
+      term.resize(320, 40);
+
+      expect(mockBridge.resize).toHaveBeenCalledWith(320, 40);
+      expect(term.cols).toBe(256);
+      expect(term.rows).toBe(40);
+      expect(onResize).toHaveBeenCalledWith(256, 40);
+      expect(element.querySelectorAll(".term-row")).toHaveLength(40);
+    });
+
     it("updates cols and rows", async () => {
       const term = new WTerm(element, { autoResize: false });
       await term.init();
@@ -579,6 +631,58 @@ describe("WTerm", () => {
       await term.init();
 
       expect(onTitle).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("onBell callback", () => {
+    it("delivers the pending count as output is written", async () => {
+      const onBell = vi.fn();
+      const term = new WTerm(element, { autoResize: false, onBell });
+      await term.init();
+      vi.mocked(mockBridge.getBellCount).mockReturnValueOnce(3);
+
+      term.write("bells");
+
+      expect(onBell).toHaveBeenCalledExactlyOnceWith(3);
+      expect(mockBridge.getBellCount).toHaveBeenCalled();
+    });
+
+    it("delivers a bell even while synchronized output holds painting", async () => {
+      const onBell = vi.fn();
+      const term = new WTerm(element, { autoResize: false, onBell });
+      await term.init();
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      vi.mocked(mockBridge.getBellCount).mockReturnValueOnce(1);
+
+      term.write("\x1b[?2026h\x07");
+
+      expect(onBell).toHaveBeenCalledExactlyOnceWith(1);
+    });
+
+    it("continues draining and painting when the bell handler throws", async () => {
+      const error = new Error("bell handler failed");
+      const onBell = vi.fn(() => {
+        throw error;
+      });
+      const term = new WTerm(element, { autoResize: false, onBell });
+      await term.init();
+      const scheduleRender = vi.spyOn(
+        term as unknown as { _scheduleRender(): void },
+        "_scheduleRender",
+      );
+      vi.mocked(mockBridge.getBellCount)
+        .mockReturnValueOnce(1)
+        .mockReturnValueOnce(2);
+      vi.mocked(mockBridge.writeString).mockImplementation(
+        (_data, afterChunk) => {
+          afterChunk?.();
+          afterChunk?.();
+        },
+      );
+
+      expect(() => term.write("\x07")).toThrow(error);
+      expect(scheduleRender).toHaveBeenCalled();
+      expect(onBell.mock.calls).toEqual([[1], [2]]);
     });
   });
 

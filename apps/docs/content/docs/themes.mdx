@@ -184,3 +184,26 @@ Then apply it the same way as a built-in theme:
 </table>
 
 Colors beyond the 16-color palette (indices 16–255 and true-color RGB) are computed by the renderer and do not use custom properties.
+
+## Font and cell alignment
+
+Choose a monospace font with `--term-font-family` and set its size with
+`--term-font-size`. wterm measures the font's cell width and uses it for text,
+backgrounds, and cursors. Braille, box drawing, and other fallback glyphs stay
+within their assigned columns even when the fallback font has wider glyphs.
+Wide characters occupy two cells; oversized glyphs are clipped to their cells.
+Common light, heavy, and rounded box-drawing characters connect across cell
+edges even when the font's glyphs fall short. They remain selectable as text.
+
+Cell widths update when fonts load or the font size changes, including when
+`autoResize` is disabled. Native selection and OSC 8 link text are preserved.
+This behavior is shared by both cores and all framework components.
+
+## Cell backgrounds
+
+Colored and reversed cells keep their backgrounds within their columns,
+including the last column and rows in scrollback. A complete row with one
+shared, opaque background extends that color to the container's right edge,
+keeping full-width status bars filled. Mixed, dim, or hidden cells do not
+repaint neighboring cells or other rows. This behavior is shared by both cores
+and all framework components.

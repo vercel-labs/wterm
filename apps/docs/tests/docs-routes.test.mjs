@@ -161,12 +161,14 @@ describe("Geistdocs public route contract", () => {
   test("WASM and OG routes bypass locale rewriting", {
     timeout: 60000,
   }, async () => {
-    const wasm = await get("/wterm.wasm");
-    assert.strictEqual(wasm.status, 200);
-    assert.deepStrictEqual(
-      [...new Uint8Array(await wasm.arrayBuffer()).slice(0, 4)],
-      [0, 97, 115, 109],
-    );
+    for (const path of ["/wterm.wasm", "/ghostty-vt.wasm"]) {
+      const wasm = await get(path);
+      assert.strictEqual(wasm.status, 200);
+      assert.deepStrictEqual(
+        [...new Uint8Array(await wasm.arrayBuffer()).slice(0, 4)],
+        [0, 97, 115, 109],
+      );
+    }
     for (const path of ["/og", "/og/ghostty"]) {
       const response = await get(path);
       assert.strictEqual(response.status, 200);

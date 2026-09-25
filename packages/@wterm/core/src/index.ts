@@ -1,8 +1,10 @@
 export type {
   CellData,
+  CursorShape,
   CursorState,
   GraphicsResourceState,
   HyperlinkResourceState,
+  MouseEncoding,
   TerminalGraphicsState,
   TerminalImageData,
   TerminalImageDescriptor,

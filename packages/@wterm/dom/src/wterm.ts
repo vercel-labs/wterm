@@ -23,10 +23,15 @@ export interface WTermOptions {
   maxImageWidth?: number;
   /** Maximum rendered Kitty image height in CSS pixels. */
   maxImageHeight?: number;
+  /** Force blinking on/off; omit to follow the terminal application's request. */
   cursorBlink?: boolean;
   debug?: boolean;
   onData?: (data: string) => void;
+  /** Raw input bytes, used by X10 mouse reports. */
+  onBinary?: (data: Uint8Array) => void;
   onTitle?: (title: string) => void;
+  /** Called with the number of BEL controls since the last delivery. */
+  onBell?: (count: number) => void;
   onResize?: (cols: number, rows: number) => void;
 }
 
@@ -65,7 +70,9 @@ export class WTerm {
   private _onWindowBlur: () => void;
 
   onData: ((data: string) => void) | null;
+  onBinary: ((data: Uint8Array) => void) | null;
   onTitle: ((title: string) => void) | null;
+  onBell: ((count: number) => void) | null;
   onResize: ((cols: number, rows: number) => void) | null;
 
   private _container: HTMLDivElement;
@@ -82,14 +89,20 @@ export class WTerm {
     this._debugEnabled = options.debug ?? false;
 
     this.onData = options.onData || null;
+    this.onBinary = options.onBinary || null;
     this.onTitle = options.onTitle || null;
+    this.onBell = options.onBell || null;
     this.onResize = options.onResize || null;
 
     this._container = document.createElement("div");
     this._container.className = "term-grid";
     this.element.appendChild(this._container);
     this.element.classList.add("wterm");
-    if (options.cursorBlink) this.element.classList.add("cursor-blink");
+    this.element.classList.toggle("cursor-blink", options.cursorBlink === true);
+    this.element.classList.toggle(
+      "cursor-steady",
+      options.cursorBlink === false,
+    );
 
     this._onClickFocus = (event) => {
       const target = event.target;
@@ -163,6 +176,8 @@ export class WTerm {
       }
       if (this._destroyed) return this;
       this.bridge.init(this.cols, this.rows);
+      this.cols = this.bridge.getCols();
+      this.rows = this.bridge.getRows();
 
       if (this._debugEnabled) {
         this.debug = new DebugAdapter();
@@ -194,11 +209,21 @@ export class WTerm {
           this._charWidth > 0 && this._rowHeight > 0
             ? { charWidth: this._charWidth, rowHeight: this._rowHeight }
             : null,
+        () => this._scrollToBottom(),
+        (data) => {
+          this._scrollToBottom();
+          if (this.onBinary) {
+            this.onBinary(data);
+          } else if (!this.onData) {
+            this.write(data);
+          } else if (data.every((byte) => byte < 128)) {
+            this.onData(String.fromCharCode(...data));
+          }
+        },
       );
 
-      if (this.autoResize) {
-        this._setupResizeObserver();
-      } else {
+      this._setupResizeObserver();
+      if (!this.autoResize) {
         this._lockHeight();
       }
 
@@ -238,11 +263,21 @@ export class WTerm {
     const windowSizeQueries = this._collectWindowSizeQueries(data);
     let deliveryError: unknown;
     let hasDeliveryError = false;
+    const recordDeliveryError = (error: unknown) => {
+      if (hasDeliveryError) return;
+      hasDeliveryError = true;
+      deliveryError = error;
+    };
     const drain = () => {
       const result = this._drainResponses();
-      if (!hasDeliveryError && result.hasError) {
-        hasDeliveryError = true;
-        deliveryError = result.error;
+      if (result.hasError) recordDeliveryError(result.error);
+      const bells = this.bridge?.getBellCount?.() ?? 0;
+      if (bells > 0) {
+        try {
+          this.onBell?.(bells);
+        } catch (error) {
+          recordDeliveryError(error);
+        }
       }
     };
     if (typeof data === "string") {
@@ -262,10 +297,7 @@ export class WTerm {
       try {
         this.onData?.(this._windowSizeResponse(query));
       } catch (error) {
-        if (!hasDeliveryError) {
-          hasDeliveryError = true;
-          deliveryError = error;
-        }
+        recordDeliveryError(error);
       }
     }
     if (hasDeliveryError) throw deliveryError;
@@ -275,18 +307,18 @@ export class WTerm {
     if (!this.bridge) return;
     this._shouldScrollToBottom =
       this._pendingResizeScrollTop === null && this._isScrolledToBottom();
-    this.cols = cols;
-    this.rows = rows;
     this.bridge.resize(cols, rows);
+    this.cols = this.bridge.getCols();
+    this.rows = this.bridge.getRows();
     const synchronized = this.bridge.synchronizedOutput?.() ?? false;
     const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
     if (this._updateSynchronizedOutput(synchronized, generation)) {
       this._rendererNeedsSetup = true;
     } else {
-      this._setupRenderer(cols, rows);
+      this._setupRenderer(this.cols, this.rows);
       this._scheduleRender();
     }
-    if (this.onResize) this.onResize(cols, rows);
+    if (this.onResize) this.onResize(this.cols, this.rows);
   }
 
   focus(): void {
@@ -451,6 +483,8 @@ export class WTerm {
       this._setScrollTop(0);
     }
 
+    this.input?.syncInputPosition();
+
     const title = this.bridge.getTitle();
     if (title !== null && this.onTitle) {
       this.onTitle(title);
@@ -600,6 +634,8 @@ export class WTerm {
     row.style.position = "absolute";
 
     const probe = document.createElement("span");
+    // Measure the font itself, not the cell width from an earlier measurement.
+    probe.style.width = "auto";
     probe.textContent = "W";
     row.appendChild(probe);
 
@@ -611,32 +647,37 @@ export class WTerm {
     if (charWidth === 0 || rowHeight === 0) return null;
     this._charWidth = charWidth;
     this._rowHeight = rowHeight;
+    this.element.style.setProperty("--term-cell-width", `${charWidth}px`);
     return { charWidth, rowHeight };
   }
 
   private _setupResizeObserver(): void {
-    const initial = this._measureCharSize();
-    if (!initial) return;
-
-    let { charWidth, rowHeight } = initial;
+    // This probe survives grid rebuilds and changes size when a web font loads
+    // or the host changes typography, even if the container stays the same size.
+    const probe = document.createElement("span");
+    probe.className = "term-size-probe";
+    probe.setAttribute("aria-hidden", "true");
+    probe.textContent = "W";
+    this.element.appendChild(probe);
+    let containerRect: DOMRectReadOnly | undefined;
 
     this.resizeObserver = new ResizeObserver((entries) => {
-      const measured = this._measureCharSize();
-      if (measured) {
-        charWidth = measured.charWidth;
-        rowHeight = measured.rowHeight;
-      }
-
+      if (this._destroyed) return;
       for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        const newCols = Math.max(1, Math.floor(width / charWidth));
-        const newRows = Math.max(1, Math.floor(height / rowHeight));
-        if (newCols !== this.cols || newRows !== this.rows) {
-          this.resize(newCols, newRows);
-        }
+        if (entry.target === this.element) containerRect = entry.contentRect;
+      }
+      const measured = this._measureCharSize();
+      if (!measured || !this.autoResize || !containerRect) return;
+
+      const { charWidth, rowHeight } = measured;
+      const newCols = Math.max(1, Math.floor(containerRect.width / charWidth));
+      const newRows = Math.max(1, Math.floor(containerRect.height / rowHeight));
+      if (newCols !== this.cols || newRows !== this.rows) {
+        this.resize(newCols, newRows);
       }
     });
-    this.resizeObserver.observe(this.element);
+    this.resizeObserver.observe(probe);
+    if (this.autoResize) this.resizeObserver.observe(this.element);
   }
 
   destroy(): void {

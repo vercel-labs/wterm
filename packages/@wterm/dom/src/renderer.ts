@@ -103,6 +103,10 @@ function cursorCellStyle(style: string): string {
     .replace(/(^|;)background:/g, "$1--term-cell-bg:");
 }
 
+function columnStyle(columns: number): string {
+  return columns === 1 ? "" : `--term-span-cols:${columns};`;
+}
+
 function appendRun(parent: HTMLElement, text: string, style: string): void {
   const span = document.createElement("span");
   if (style) span.style.cssText = style;
@@ -250,6 +254,93 @@ function getBlockBackground(cp: number, fg: string, bg: string): string {
   }
 }
 
+// Keep box characters as text for selection and copy while painting their
+// strokes to cell edges. Some fallback fonts leave gaps at those boundaries.
+const LIGHT_BOX_ARMS: Record<number, string> = {
+  0x2500: "lr", // ─
+  0x2502: "ud", // │
+  0x250c: "dr", // ┌
+  0x2510: "dl", // ┐
+  0x2514: "ur", // └
+  0x2518: "ul", // ┘
+  0x251c: "udr", // ├
+  0x2524: "udl", // ┤
+  0x252c: "dlr", // ┬
+  0x2534: "ulr", // ┴
+  0x253c: "udlr", // ┼
+  0x2574: "l", // ╴
+  0x2575: "u", // ╵
+  0x2576: "r", // ╶
+  0x2577: "d", // ╷
+};
+const HEAVY_BOX_ARMS: Record<number, string> = {
+  0x2501: "lr", // ━
+  0x2503: "ud", // ┃
+  0x250f: "dr", // ┏
+  0x2513: "dl", // ┓
+  0x2517: "ur", // ┗
+  0x251b: "ul", // ┛
+  0x2523: "udr", // ┣
+  0x252b: "udl", // ┫
+  0x2533: "dlr", // ┳
+  0x253b: "ulr", // ┻
+  0x254b: "udlr", // ╋
+  0x2578: "l", // ╸
+  0x2579: "u", // ╹
+  0x257a: "r", // ╺
+  0x257b: "d", // ╻
+};
+const ROUNDED_BOX_CORNERS: Record<number, string> = {
+  0x256d: "tl", // ╭
+  0x256e: "tr", // ╮
+  0x256f: "br", // ╯
+  0x2570: "bl", // ╰
+};
+
+type BoxStyle = { className: string; style: string };
+const BOX_STYLES: Record<number, BoxStyle> = {};
+
+function addBoxStyles(
+  characters: Record<number, string>,
+  className: string,
+): void {
+  const stroke = "var(--term-box-stroke)";
+  const verticalLength = `calc(50% + ${stroke})`;
+  const horizontalLength = `calc(50% + ${stroke})`;
+  for (const [codepoint, arms] of Object.entries(characters)) {
+    const selected: [position: string, size: string][] = [];
+    if (arms.includes("u") && arms.includes("d")) {
+      selected.push(["center center", `${stroke} 100%`]);
+    } else {
+      if (arms.includes("u"))
+        selected.push(["center top", `${stroke} ${verticalLength}`]);
+      if (arms.includes("d"))
+        selected.push(["center bottom", `${stroke} ${verticalLength}`]);
+    }
+    if (arms.includes("l") && arms.includes("r")) {
+      selected.push(["center center", `100% ${stroke}`]);
+    } else {
+      if (arms.includes("l"))
+        selected.push(["left center", `${horizontalLength} ${stroke}`]);
+      if (arms.includes("r"))
+        selected.push(["right center", `${horizontalLength} ${stroke}`]);
+    }
+    BOX_STYLES[Number(codepoint)] = {
+      className,
+      style: `background-image:${selected.map(() => "linear-gradient(currentColor,currentColor)").join(",")};background-position:${selected.map(([position]) => position).join(",")};background-size:${selected.map(([, size]) => size).join(",")};background-repeat:no-repeat;`,
+    };
+  }
+}
+
+addBoxStyles(LIGHT_BOX_ARMS, "term-box");
+addBoxStyles(HEAVY_BOX_ARMS, "term-box term-box-heavy");
+for (const [codepoint, corner] of Object.entries(ROUNDED_BOX_CORNERS)) {
+  BOX_STYLES[Number(codepoint)] = {
+    className: `term-box term-box-round term-box-round-${corner}`,
+    style: "",
+  };
+}
+
 export class Renderer {
   private container: HTMLElement;
   private rows = 0;
@@ -258,7 +349,7 @@ export class Renderer {
   private rowEls: HTMLDivElement[] = [];
   private prevCursorRow = -1;
   private prevCursorCol = -1;
-  private prevContainerBg = "";
+  private prevCursorVisible = false;
   private prevRowBg: string[] = [];
 
   private _scrollbackRowEls: HTMLDivElement[] = [];
@@ -328,6 +419,8 @@ export class Renderer {
     let runLinkKey = "";
     let runLinkUri: string | undefined;
     let outputLinkKey = "";
+    let rowBackground: string | undefined;
+    let uniformBackground = lineLen >= this.cols;
 
     const appendContent = (
       content: string,
@@ -358,8 +451,9 @@ export class Renderer {
         const after = runCells.slice(offset + 1).join("");
 
         if (before) {
-          content += runStyle
-            ? `<span style="${runStyle}">${escapeHTML(before)}</span>`
+          const style = columnStyle(offset) + runStyle;
+          content += style
+            ? `<span style="${style}">${escapeHTML(before)}</span>`
             : `<span>${escapeHTML(before)}</span>`;
         }
         const cursorStyle = cursorCellStyle(runStyle);
@@ -367,13 +461,15 @@ export class Renderer {
           ? `<span class="term-cursor" style="${cursorStyle}">${escapeHTML(cursorChar)}</span>`
           : `<span class="term-cursor">${escapeHTML(cursorChar)}</span>`;
         if (after) {
-          content += runStyle
-            ? `<span style="${runStyle}">${escapeHTML(after)}</span>`
+          const style = columnStyle(runCells.length - offset - 1) + runStyle;
+          content += style
+            ? `<span style="${style}">${escapeHTML(after)}</span>`
             : `<span>${escapeHTML(after)}</span>`;
         }
       } else {
-        content += runStyle
-          ? `<span style="${runStyle}">${escaped}</span>`
+        const style = columnStyle(runCells.length) + runStyle;
+        content += style
+          ? `<span style="${style}">${escaped}</span>`
           : `<span>${escaped}</span>`;
       }
       appendContent(content, runLinkKey, runLinkUri);
@@ -405,13 +501,38 @@ export class Renderer {
       const cellLinkKey = inBounds ? linkIdentity(cell) : "";
       const cellLinkUri = inBounds ? cell.linkUri : undefined;
 
+      // Only a shared, opaque background can fill the unused row width.
+      // Otherwise it would also show through default, dim, or hidden cells.
+      // A wide continuation is painted by its lead, not by its own style.
+      const continuesWide =
+        inBounds &&
+        width === 0 &&
+        col > 0 &&
+        (getCell(col - 1).width ?? 1) === 2;
+      if (uniformBackground && !continuesWide) {
+        const bg = resolveColors(
+          cell.fg,
+          cell.bg,
+          cell.flags,
+          cell.fgRgb,
+          cell.bgRgb,
+        ).bg;
+        if (
+          cell.flags & (FLAG_DIM | FLAG_INVISIBLE) ||
+          (rowBackground !== undefined && rowBackground !== bg)
+        ) {
+          uniformBackground = false;
+        } else {
+          rowBackground = bg;
+        }
+      }
+
       if (inBounds && width === 0) {
         flushRun(col);
         // Skipping is only right when this continues the wide cell to the
         // left, which already covers both columns and its cursor. A width-0
         // cell with no wide cell before it owns its column, so dropping it
         // would shorten the row.
-        const continuesWide = col > 0 && (getCell(col - 1).width ?? 1) === 2;
         if (!continuesWide) {
           const style = buildCellStyle(
             cell.fg,
@@ -533,6 +654,31 @@ export class Renderer {
           ? buildCellStyle(cell.fg, cell.bg, cell.flags, cell.fgRgb, cell.bgRgb)
           : "";
 
+        // Font fallback can give a narrow Unicode glyph a different advance
+        // from ASCII. Bound each such cell (including complete graphemes) so
+        // it cannot move later cells within a text run.
+        if (ch.length !== 1 || ch.charCodeAt(0) > 0x7e) {
+          flushRun(col);
+          const cursor = col === cursorCol;
+          const box = BOX_STYLES[cp];
+          const boxStyle = box && ch === String.fromCodePoint(cp) ? box : null;
+          let className = boxStyle?.className ?? "";
+          if (boxStyle && cell.flags & FLAG_BOLD) className += " term-box-bold";
+          if (cursor) className += className ? " term-cursor" : "term-cursor";
+          appendStyledSpan(
+            className,
+            (cursor ? cursorCellStyle(style) : style) + (boxStyle?.style ?? ""),
+            ch,
+            cellLinkKey,
+            cellLinkUri,
+          );
+          runStyle = "";
+          runLinkKey = "";
+          runLinkUri = undefined;
+          runStart = col + 1;
+          continue;
+        }
+
         if (style !== runStyle || cellLinkKey !== runLinkKey) {
           flushRun(col);
           runStyle = style;
@@ -552,28 +698,17 @@ export class Renderer {
 
     rowEl.innerHTML = html;
 
-    let bgCss = "";
-    if (lineLen >= this.cols && this.cols > 0) {
-      const lastCell = getCell(this.cols - 1);
-      let bgIdx = lastCell.bg;
-      let bgR = lastCell.bgRgb;
-      if (lastCell.flags & FLAG_REVERSE) {
-        bgIdx = lastCell.fg;
-        bgR = lastCell.fgRgb;
-        if (bgR === undefined && bgIdx === DEFAULT_COLOR) bgIdx = 7;
-      }
-      bgCss = cellBgCSS(bgIdx, bgR) || "";
-    }
-    const boxShadow = bgCss ? `0 1px 0 ${bgCss}` : "";
+    const bgCss =
+      uniformBackground && rowBackground !== "var(--term-bg)"
+        ? (rowBackground ?? "")
+        : "";
     if (rowIndex >= 0) {
       if (bgCss !== (this.prevRowBg[rowIndex] ?? "")) {
         rowEl.style.background = bgCss;
-        rowEl.style.boxShadow = boxShadow;
         this.prevRowBg[rowIndex] = bgCss;
       }
     } else {
       rowEl.style.background = bgCss;
-      rowEl.style.boxShadow = boxShadow;
     }
   }
 
@@ -721,9 +856,18 @@ export class Renderer {
 
     const cursor = core.getCursor();
     const cursorVisible = cursor.visible;
+    const shape = cursor.shape ?? "block";
+    const blink = String(cursor.blinking ?? false);
+    // Shape and blink changes need no cell replacement: CSS reads the grid state.
+    if (this.container.dataset.cursorShape !== shape)
+      this.container.dataset.cursorShape = shape;
+    if (this.container.dataset.cursorBlink !== blink)
+      this.container.dataset.cursorBlink = blink;
 
     const needsCursorUpdate =
-      cursor.row !== this.prevCursorRow || cursor.col !== this.prevCursorCol;
+      cursor.row !== this.prevCursorRow ||
+      cursor.col !== this.prevCursorCol ||
+      cursorVisible !== this.prevCursorVisible;
 
     for (let r = 0; r < this.rows; r++) {
       const isDirty = resized || core.isDirtyRow(r);
@@ -744,24 +888,7 @@ export class Renderer {
 
     this.prevCursorRow = cursor.row;
     this.prevCursorCol = cursor.col;
-
-    const lastRowDirty = resized || core.isDirtyRow(this.rows - 1);
-    if (lastRowDirty) {
-      const bottomRight = core.getCell(this.rows - 1, this.cols - 1);
-      let gridBgIdx = bottomRight.bg;
-      let gridBgRgb = bottomRight.bgRgb;
-      if (bottomRight.flags & FLAG_REVERSE) {
-        gridBgIdx = bottomRight.fg;
-        gridBgRgb = bottomRight.fgRgb;
-        if (gridBgRgb === undefined && gridBgIdx === DEFAULT_COLOR)
-          gridBgIdx = 7;
-      }
-      const containerBg = cellBgCSS(gridBgIdx, gridBgRgb) || "";
-      if (containerBg !== this.prevContainerBg) {
-        this.container.style.background = containerBg;
-        this.prevContainerBg = containerBg;
-      }
-    }
+    this.prevCursorVisible = cursorVisible;
 
     core.clearDirty();
     this.graphics.reconcile(core, {

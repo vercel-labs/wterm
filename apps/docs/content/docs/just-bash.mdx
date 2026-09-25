@@ -67,13 +67,13 @@ Each submitted command runs once. After it completes, the shell automatically up
   <tbody>
     <tr>
       <td><code>files</code></td>
-      <td><code>Record&lt;string, string&gt;</code></td>
+      <td><code>{"Record<string, string>"}</code></td>
       <td><code>&#123;&#125;</code></td>
       <td>Virtual filesystem (keys are absolute paths, values are file contents)</td>
     </tr>
     <tr>
       <td><code>env</code></td>
-      <td><code>Record&lt;string, string&gt;</code></td>
+      <td><code>{"Record<string, string>"}</code></td>
       <td><code>&#123; SHELL, TERM &#125;</code></td>
       <td>Environment variables</td>
     </tr>
@@ -115,11 +115,11 @@ Each submitted command runs once. After it completes, the shell automatically up
   </thead>
   <tbody>
     <tr>
-      <td><code>attach(write): Promise&lt;void&gt;</code></td>
+      <td><code>{"attach(write): Promise<void>"}</code></td>
       <td>Connect to a terminal write function. Loads just-bash, prints the greeting, and displays the initial prompt.</td>
     </tr>
     <tr>
-      <td><code>handleInput(data): Promise&lt;void&gt;</code></td>
+      <td><code>{"handleInput(data): Promise<void>"}</code></td>
       <td>Process terminal input (keystrokes, paste). Call this from the terminal's <code>onData</code> callback.</td>
     </tr>
   </tbody>
@@ -181,6 +181,8 @@ The `NetworkConfig` type is re-exported from `just-bash`. See the [just-bash doc
 
 ## Keyboard Shortcuts
 
+The command line accepts pasted Unicode text and treats emoji and combining sequences as whole characters when moving or deleting. Cursor movement uses terminal columns, keeping wide characters aligned.
+
 <table>
   <thead>
     <tr>
@@ -191,27 +193,47 @@ The `NetworkConfig` type is re-exported from `just-bash`. See the [just-bash doc
   <tbody>
     <tr>
       <td><code>Tab</code></td>
-      <td>Autocomplete files and commands</td>
+      <td>Autocomplete files and commands at the cursor, including when editing earlier words in a command</td>
     </tr>
     <tr>
       <td><code>Up</code> / <code>Down</code></td>
-      <td>Navigate command history</td>
+      <td>Navigate command history; returning to the newest entry restores your unfinished command and cursor position</td>
     </tr>
     <tr>
       <td><code>Left</code> / <code>Right</code></td>
       <td>Move cursor within the current line</td>
     </tr>
     <tr>
-      <td><code>Ctrl+A</code></td>
+      <td><code>Backspace</code> / <code>Delete</code></td>
+      <td>Remove the character before / at the cursor</td>
+    </tr>
+    <tr>
+      <td><code>Option/Alt+Left</code> / <code>Option/Alt+Right</code>, <code>Ctrl+Left</code> / <code>Ctrl+Right</code>, or <code>Alt+B</code> / <code>Alt+F</code></td>
+      <td>Move the cursor by word</td>
+    </tr>
+    <tr>
+      <td><code>Option/Alt+Backspace</code> / <code>Ctrl+W</code></td>
+      <td>Remove the word before the cursor</td>
+    </tr>
+    <tr>
+      <td><code>Home</code> / <code>Ctrl+A</code></td>
       <td>Jump to start of line</td>
     </tr>
     <tr>
-      <td><code>Ctrl+E</code></td>
+      <td><code>End</code> / <code>Ctrl+E</code></td>
       <td>Jump to end of line</td>
     </tr>
     <tr>
-      <td><code>Ctrl+U</code></td>
-      <td>Clear the current line</td>
+      <td><code>Ctrl+U</code> / <code>Command+Backspace</code> (macOS)</td>
+      <td>Remove text before the cursor</td>
+    </tr>
+    <tr>
+      <td><code>Ctrl+K</code></td>
+      <td>Remove text after the cursor</td>
+    </tr>
+    <tr>
+      <td><code>Ctrl+Y</code></td>
+      <td>Restore text removed with Option/Alt+Backspace, Ctrl+W, Ctrl+U, or Ctrl+K; consecutive erasures restore together</td>
     </tr>
     <tr>
       <td><code>Ctrl+C</code></td>

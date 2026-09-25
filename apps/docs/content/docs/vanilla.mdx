@@ -46,15 +46,55 @@ await term.init();
 
 ## Options and Methods
 
-The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `onData`, `onTitle`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
+The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `onData`, `onBinary`, `onTitle`, `onBell`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
 
 See [WTerm Methods](/api-reference#wterm-methods) for the full list of instance methods (`init`, `write`, `resize`, `focus`, `destroy`).
 
-When a terminal application enables SGR mouse tracking or focus reporting, WTerm sends those reports through `onData` with keyboard input and host responses.
+When a terminal application enables mouse tracking, UTF-8 (1005), SGR (1006), urxvt (1015), and SGR pixel (1016) reports reach `onData` with keyboard input and focus reports. Forward `onData` strings through a UTF-8 transport. Mode 1016 uses 1-based CSS-pixel coordinates relative to the visible grid, independent of device pixel ratio. Mode 1003 sends unpressed pointer motion once per cell in cell formats and once per CSS pixel in 1016.
+
+X10 mouse reports go to `onBinary` as raw bytes when that callback is supplied. Without `onBinary`, ASCII-safe X10 reports reach `onData`; coordinates requiring non-ASCII bytes are skipped. Hold Shift for native text selection.
+
+When mouse tracking is active, clicks and wheel gestures on scrollback rows
+stay with the browser. If you are reading history, the wheel scrolls it until
+you reach the bottom; hold Shift and scroll to move through history from the
+live viewport. A drag begun on the live grid still reports its release after
+leaving the grid.
+
+When an application rings BEL, `onBell(count)` receives the number of bells as
+output is written. WTerm does not play sound automatically; your application
+can choose an audible or visual notification.
 
 When the active core negotiates the Kitty keyboard protocol, WTerm encodes key presses, repeats, and available releases from the core's current flags. The built-in and Ghostty cores keep separate primary and alternate-screen flag stacks. Third-party cores without Kitty state retain legacy keyboard behavior.
 
+The built-in core answers DEC private-mode status queries such as `CSI ?2026$p` for synchronized output. A response of `CSI ?2026;1$y` means the mode is set; `CSI ?2026;2$y` means it is reset. WTerm forwards the response through `onData` to your connected application.
+
+Printable AltGr input uses the browser's committed text path even in Kitty mode, so layouts that use AltGr can enter characters. This includes Control+Alt text with the right Alt key when the browser does not report AltGraph state. Control+Alt chords without either AltGr signal keep their Kitty encoding.
+
+Outside Kitty keyboard mode, modified arrow, Home/End, Insert/Delete, Page
+Up/Down, and F1–F12 keys use xterm-style CSI modifier sequences. For example,
+Control+Left sends `CSI 1;5D` instead of an unmodified Left arrow. Unmodified
+arrows still honor application cursor mode. Browser-reserved shortcuts may not
+reach the terminal.
+
+While the terminal is focused, handled key presses do not bubble to page-level
+shortcut listeners. Control+K can reach the terminal instead of opening docs
+search.
+
+When Kitty keyboard mode is not negotiated, Control+Space sends NUL, Control+/
+sends US, and Control+Backspace sends BS. Browsers may reserve some shortcuts.
+Control+Alt printable input remains on the native text path in this mode for
+keyboard layouts that use AltGr.
+
 Browsers do not expose every native keyboard field. WTerm uses `KeyboardEvent.code` for functional and modifier identity, `KeyboardEvent.key` for text, and reports shifted alternates when available. It does not invent a base-layout alternate, synthesize missing release events, or retain associated text beyond the current press.
+
+IME composition displays tentative text at the terminal cursor and sends only
+the committed text to `onData`. If you are viewing scrollback when composition
+starts, WTerm returns to the live viewport so the browser's candidate window
+appears by the current input.
+
+On touch-first devices, the transparent input target stays at the cursor for
+soft-keyboard focus and the native paste menu. Holding Backspace sends repeated
+deletions, and pasted text follows the application's bracketed-paste mode.
 
 Application-provided OSC 8 hyperlinks render as native anchors across both the active viewport and scrollback. Only absolute HTTP and HTTPS URIs become clickable; invalid, relative, and executable schemes remain ordinary terminal text.
 While hovering an anchor, holding Command on macOS or Control on Windows and Linux reveals its underline and pointer cursor. Plain clicks remain terminal interaction. Command-click, Control-click, or native keyboard activation when an anchor receives focus opens the link. Modified link activation remains available while SGR mouse tracking is active and is not forwarded to the terminal application.

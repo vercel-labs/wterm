@@ -54,7 +54,7 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 | `autoResize` | `boolean` | `false` | Auto-resize based on container dimensions |
 | `maxImageWidth` | `number` | — | Maximum rendered Kitty image width in CSS pixels; images scale down proportionally |
 | `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels; images scale down proportionally |
-| `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
+| `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the underlying `WTerm` instance for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 
 Standard DOM attributes (`class`, `style`, `id`, ARIA props, etc.) are forwarded to the root `<div>` via `inheritAttrs`.
@@ -70,7 +70,9 @@ preserving their aspect ratio. Image canvases are decorative and
 | Event | Payload | Description |
 |---|---|---|
 | `data` | `(data: string)` | Emitted when the terminal produces data (user input or host response). When no listener is attached, input is echoed back automatically. |
+| `binary` | `(data: Uint8Array)` | Emitted for raw X10 mouse reports. Send the bytes unchanged to a binary-capable transport; without a listener, only ASCII-safe reports reach `data`. |
 | `title` | `(title: string)` | Emitted when the terminal title changes via an escape sequence. |
+| `bell` | `(count: number)` | Emitted with the pending BEL count as output is written; the host controls any alert. |
 | `resize` | `(cols: number, rows: number)` | Emitted after the terminal is resized. |
 | `ready` | `(wt: WTerm)` | Emitted once after `WTerm.init()` resolves, carrying the underlying `WTerm` instance. |
 | `error` | `(err: unknown)` | Emitted if WASM loading or initialization fails. |

@@ -294,10 +294,14 @@ export class GhosttyCore implements TerminalCore {
       return { row: 0, col: 0, visible: false };
     }
     this._ensureViewport();
+    const shape = this.wasm.exports.get_cursor_shape?.(this.termPtr) ?? 0;
     return {
       row: this.wasm.exports.get_cursor_row(this.termPtr),
       col: this.wasm.exports.get_cursor_col(this.termPtr),
       visible: this.wasm.exports.get_cursor_visible(this.termPtr) !== 0,
+      shape: shape === 1 ? "underline" : shape === 2 ? "bar" : "block",
+      blinking:
+        (this.wasm.exports.get_cursor_blinking?.(this.termPtr) ?? 0) !== 0,
     };
   }
 
@@ -318,15 +322,35 @@ export class GhosttyCore implements TerminalCore {
     return this.wasm.exports.using_alt_screen(this.termPtr) !== 0;
   }
 
-  mouseTracking(): 0 | 1000 | 1002 {
+  mouseTracking(): 0 | 1000 | 1002 | 1003 {
     if (this._disposed || this.termPtr === 0) return 0;
     const mode = this.wasm.exports.mouse_tracking(this.termPtr);
-    return mode === 1000 || mode === 1002 ? mode : 0;
+    return mode === 1000 || mode === 1002 || mode === 1003 ? mode : 0;
   }
 
   mouseSgr(): boolean {
     if (this._disposed || this.termPtr === 0) return false;
     return this.wasm.exports.mouse_sgr(this.termPtr) !== 0;
+  }
+
+  mouseEncoding(): "x10" | "utf8" | "sgr" | "urxvt" | "sgr-pixels" | null {
+    if (this._disposed || this.termPtr === 0) return null;
+    const mode = this.wasm.exports.mouse_encoding?.(this.termPtr);
+    if (mode === undefined) return this.mouseSgr() ? "sgr" : null;
+    switch (mode) {
+      case 0:
+        return "x10";
+      case 1:
+        return "utf8";
+      case 2:
+        return "sgr";
+      case 3:
+        return "urxvt";
+      case 4:
+        return "sgr-pixels";
+      default:
+        return null;
+    }
   }
 
   focusEvents(): boolean {
@@ -555,10 +579,19 @@ export class GhosttyCore implements TerminalCore {
   // -- Side outputs --
 
   getTitle(): string | null {
-    // Title changes are delivered through OSC sequences which the
-    // ReadonlyStream handler doesn't capture. A full stream handler
-    // would be needed for title support.
-    return null;
+    if (this._disposed || this.termPtr === 0) return null;
+    const { get_title_len, get_title_ptr, memory } = this.wasm.exports;
+    if (!get_title_len || !get_title_ptr) return null;
+    const len = get_title_len(this.termPtr);
+    if (len < 0) return null;
+    return new TextDecoder().decode(
+      new Uint8Array(memory.buffer, get_title_ptr(this.termPtr), len),
+    );
+  }
+
+  getBellCount(): number {
+    if (this._disposed || this.termPtr === 0) return 0;
+    return this.wasm.exports.get_bell_count?.(this.termPtr) ?? 0;
   }
 
   getResponse(): string | null {

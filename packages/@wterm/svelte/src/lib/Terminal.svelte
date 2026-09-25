@@ -2,16 +2,20 @@
   import type { WTerm as WTermType, WTermOptions } from "@wterm/dom";
 
   export interface TerminalProps
-    extends Omit<WTermOptions, "onData" | "onTitle" | "onResize"> {
+    extends Omit<WTermOptions, "onData" | "onBinary" | "onTitle" | "onBell" | "onResize"> {
     theme?: string;
     className?: string;
     onData?: (data: string) => void;
+    onBinary?: (data: Uint8Array) => void;
     onTitle?: (title: string) => void;
+    onBell?: (count: number) => void;
     onResize?: (cols: number, rows: number) => void;
     onReady?: (wt: WTermType) => void;
     onError?: (error: unknown) => void;
     ondata?: (data: string) => void;
+    onbinary?: (data: Uint8Array) => void;
     ontitle?: (title: string) => void;
+    onbell?: (count: number) => void;
     onresize?: (cols: number, rows: number) => void;
     onready?: (wt: WTermType) => void;
     onerror?: (error: unknown) => void;
@@ -41,17 +45,21 @@
   export let autoResize = false;
   export let maxImageWidth: number | undefined = undefined;
   export let maxImageHeight: number | undefined = undefined;
-  export let cursorBlink = false;
+  export let cursorBlink: boolean | undefined = undefined;
   export let debug = false;
   export let className = "";
   export let onData: ((data: string) => void) | undefined = undefined;
+  export let onBinary: ((data: Uint8Array) => void) | undefined = undefined;
   export let onTitle: ((title: string) => void) | undefined = undefined;
+  export let onBell: ((count: number) => void) | undefined = undefined;
   export let onResize: ((cols: number, rows: number) => void) | undefined =
     undefined;
   export let onReady: ((wt: WTerm) => void) | undefined = undefined;
   export let onError: ((error: unknown) => void) | undefined = undefined;
   export let ondata: ((data: string) => void) | undefined = undefined;
+  export let onbinary: ((data: Uint8Array) => void) | undefined = undefined;
   export let ontitle: ((title: string) => void) | undefined = undefined;
+  export let onbell: ((count: number) => void) | undefined = undefined;
   export let onresize: ((cols: number, rows: number) => void) | undefined =
     undefined;
   export let onready: ((wt: WTerm) => void) | undefined = undefined;
@@ -64,7 +72,6 @@
   $: classes = [
     "wterm",
     theme ? `theme-${theme}` : "",
-    cursorBlink ? "cursor-blink" : "",
     className,
     typeof $$restProps.class === "string" ? $$restProps.class : "",
   ]
@@ -81,9 +88,19 @@
     ondata?.(data);
   }
 
+  function handleBinary(data: Uint8Array): void {
+    onBinary?.(data);
+    onbinary?.(data);
+  }
+
   function handleTitle(title: string): void {
     onTitle?.(title);
     ontitle?.(title);
+  }
+
+  function handleBell(count: number): void {
+    onBell?.(count);
+    onbell?.(count);
   }
 
   function handleResize(nextCols: number, nextRows: number): void {
@@ -93,6 +110,10 @@
 
   function hasDataHandler(): boolean {
     return Boolean(onData || ondata);
+  }
+
+  function hasBinaryHandler(): boolean {
+    return Boolean(onBinary || onbinary);
   }
 
   export function write(data: string | Uint8Array): void {
@@ -120,7 +141,9 @@
       cursorBlink,
       debug,
       onData: hasDataHandler() ? handleData : undefined,
+      onBinary: hasBinaryHandler() ? handleBinary : undefined,
       onTitle: handleTitle,
+      onBell: handleBell,
       onResize: handleResize,
     });
 
@@ -154,8 +177,8 @@
     if (!autoResize && (instance.cols !== cols || instance.rows !== rows)) {
       instance.resize(cols, rows);
     }
-    instance.element.classList.toggle("cursor-blink", cursorBlink);
     instance.onData = dataHandler ? handleData : null;
+    instance.onBinary = hasBinaryHandler() ? handleBinary : null;
   }
 </script>
 
@@ -163,6 +186,8 @@
   bind:this={element}
   {...$$restProps}
   class={classes}
+  class:cursor-blink={cursorBlink === true}
+  class:cursor-steady={cursorBlink === false}
   style={mergedStyle || undefined}
   role={$$restProps.role ?? "textbox"}
   aria-label={$$restProps["aria-label"] ?? "Terminal"}

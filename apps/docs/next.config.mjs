@@ -9,6 +9,7 @@ const nextConfig = {
   transpilePackages: [
     "@wterm/core",
     "@wterm/dom",
+    "@wterm/ghostty",
     "@wterm/just-bash",
     "@wterm/markdown",
     "@wterm/react",

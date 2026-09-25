@@ -15,7 +15,9 @@ vi.mock("@wterm/dom", () => {
     this.cols = options?.cols ?? 80;
     this.rows = options?.rows ?? 24;
     this.onData = options?.onData ?? null;
+    this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
+    this.onBell = options?.onBell ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
@@ -87,6 +89,17 @@ describe("Terminal component", () => {
     await flushPromises();
     expect(wrapper.emitted("ready")).toBeTruthy();
     expect(wrapper.emitted("ready")![0][0]).toBe(lastWTermInstance);
+  });
+
+  it("emits raw X10 bytes through the binary event", async () => {
+    const onBinary = vi.fn();
+    const wrapper = await mountTerminal({}, { onBinary });
+    const bytes = Uint8Array.of(27, 91, 77, 32, 132, 33);
+
+    expect(lastWTermInstance.onBinary).toBeTypeOf("function");
+    lastWTermInstance.onBinary(bytes);
+    expect(onBinary).toHaveBeenCalledWith(bytes);
+    expect(wrapper.emitted("binary")?.[0]).toEqual([bytes]);
   });
 
   it("emits error on init failure", async () => {
@@ -168,6 +181,7 @@ describe("Terminal component", () => {
   it("toggles cursor-blink class on prop change", async () => {
     const wrapper = await mountTerminal({ cursorBlink: false });
     await flushPromises();
+    lastWTermInstance.element.classList.add("focused", "has-scrollback");
     await wrapper.setProps({ cursorBlink: true });
     await nextTick();
     expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
@@ -178,6 +192,19 @@ describe("Terminal component", () => {
     expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
       false,
     );
+    expect(lastWTermInstance.element.classList.contains("cursor-steady")).toBe(
+      true,
+    );
+    await wrapper.setProps({ cursorBlink: undefined });
+    await nextTick();
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      false,
+    );
+    expect(lastWTermInstance.element.classList.contains("cursor-steady")).toBe(
+      false,
+    );
+    expect(wrapper.classes()).toContain("focused");
+    expect(wrapper.classes()).toContain("has-scrollback");
   });
 
   it("emits data when WTerm onData fires", async () => {
@@ -217,6 +244,13 @@ describe("Terminal component", () => {
     await flushPromises();
     lastWTermInstance.onTitle("my title");
     expect(wrapper.emitted("title")![0]).toEqual(["my title"]);
+  });
+
+  it("emits bell counts when WTerm onBell fires", async () => {
+    const wrapper = await mountTerminal();
+    await flushPromises();
+    lastWTermInstance.onBell(3);
+    expect(wrapper.emitted("bell")![0]).toEqual([3]);
   });
 
   it("emits resize when WTerm onResize fires", async () => {

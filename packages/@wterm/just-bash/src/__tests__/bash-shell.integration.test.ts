@@ -89,6 +89,15 @@ describe("BashShell with just-bash", () => {
     expect(output.join("")).toContain(prompt(`${customCwd}/child`));
   });
 
+  it("preserves configured environment variables while updating the directory", async () => {
+    const { shell, output } = await createShell({ env: { GREETING: "hello" } });
+
+    await submit(shell, 'cd /tmp; echo "$GREETING"');
+
+    expect(output.join("")).toContain("hello\r\n");
+    expect(shell.cwd).toBe("/tmp");
+  });
+
   it("updates cwd after a nonzero command and retains it after a failed cd", async () => {
     const { shell, output } = await createShell({
       cwd: customCwd,

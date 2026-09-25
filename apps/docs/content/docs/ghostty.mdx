@@ -7,9 +7,30 @@ The `@wterm/ghostty` package provides a full-featured terminal emulation core po
 
 ## Why use it?
 
-wterm ships with a lightweight built-in core (~12 KB WASM) that covers basic VT100/VT220/xterm escape sequences. For apps that need comprehensive terminal emulation — full Unicode grapheme clusters, all SGR attributes, terminal modes, and more — `@wterm/ghostty` provides all of that via Ghostty's battle-tested VT parser (~400 KB WASM).
+wterm ships with a lightweight built-in core (~26 KB WASM) that covers basic VT100/VT220/xterm escape sequences. For apps that need comprehensive terminal emulation — full Unicode grapheme clusters, all SGR attributes, terminal modes, and more — `@wterm/ghostty` provides all of that via Ghostty's battle-tested VT parser.
 
 Ghostty's native OSC 8 metadata is preserved through the active viewport, scrollback, and reflow. The DOM renderer resolves it into safe HTTP and HTTPS anchors without exposing Ghostty's page-local numeric IDs.
+
+Ghostty's cursor shape and blink state also reach the DOM renderer. Applications
+can switch between block, bar, and underline cursors; the wrapper's optional
+`cursorBlink` setting can force blinking on or off. See
+[cursor appearance](/configuration#cursor-appearance) for the shared behavior.
+
+Shells and applications can set the window title with OSC 0 or OSC 2. The
+Ghostty core forwards the latest complete title to `WTerm`'s `onTitle`
+callback, including an empty title that clears it. As with the built-in core,
+multiple changes before a render deliver the latest title. Ghostty ignores
+titles longer than 255 bytes.
+
+BEL controls reach the shared `onBell(count)` callback as output is written.
+The BEL that terminates an OSC title does not count as a bell.
+
+With mouse tracking enabled, `mouseEncoding()` exposes Ghostty's active wire
+format. The DOM layer sends UTF-8 (1005), SGR (1006), urxvt (1015), and SGR
+pixel (1016) reports through `onData`; X10 reports use `onBinary` when provided.
+Mode 1003 sends unpressed pointer motion once per cell for cell formats and
+once per CSS pixel for 1016. Pixel coordinates are 1-based and relative to the
+visible grid.
 
 Ghostty-backed terminals also render direct Kitty Graphics Protocol PNG, RGB,
 and RGBA data through the optional graphics contract. The DOM layer draws
@@ -38,7 +59,12 @@ import { GhosttyCore } from "@wterm/ghostty";
 import "@wterm/dom/css";
 
 const core = await GhosttyCore.load();
-const term = new WTerm(document.getElementById("terminal"), { core });
+const term = new WTerm(document.getElementById("terminal"), {
+  core,
+  onTitle(title) {
+    document.title = title || "Terminal";
+  },
+});
 await term.init();
 ```
 
@@ -309,9 +335,9 @@ pnpm --filter @wterm/ghostty rebuild-wasm:docker
   </thead>
   <tbody>
     <tr>
-      <td>Bundle size</td>
-      <td>~12 KB WASM (inlined)</td>
-      <td>~400 KB WASM (fetched)</td>
+      <td>WASM binary size</td>
+      <td>~26 KB WASM (inlined)</td>
+      <td>~580 KB WASM (fetched)</td>
     </tr>
     <tr>
       <td>VT compliance</td>

@@ -45,7 +45,10 @@ function onData(data: string) {
 <Terminal {onData} />
 ```
 
-The other callback props are `onTitle`, `onResize`, `onReady`, and `onError`.
+`onBinary` receives raw X10 mouse bytes. Forward its `Uint8Array` unchanged
+when the terminal input transport accepts binary data.
+
+The other callback props are `onTitle`, `onBell`, `onResize`, `onReady`, and `onError`.
 `onReady` receives the underlying `WTerm` instance.
 
 ## Props

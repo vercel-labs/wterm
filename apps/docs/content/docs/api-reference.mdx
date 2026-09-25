@@ -115,7 +115,7 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
       <td><code>wasmUrl</code></td>
       <td><code>string</code></td>
       <td>—</td>
-      <td>URL to serve the WASM binary separately. When omitted, the ~12 KB binary is decoded from an inlined base64 string. Ignored when <code>core</code> is provided.</td>
+      <td>URL to serve the WASM binary separately. When omitted, the ~26 KB binary is decoded from an inlined base64 string. Ignored when <code>core</code> is provided.</td>
     </tr>
     <tr>
       <td><code>autoResize</code></td>
@@ -138,8 +138,8 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
     <tr>
       <td><code>cursorBlink</code></td>
       <td><code>boolean</code></td>
-      <td><code>false</code></td>
-      <td>Enable cursor blinking animation</td>
+      <td>Application-controlled</td>
+      <td>Force blinking on (<code>true</code>) or off (<code>false</code>); omit to follow the terminal (initially steady).</td>
     </tr>
     <tr>
       <td><code>debug</code></td>
@@ -154,16 +154,28 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
       <td>Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically.</td>
     </tr>
     <tr>
+      <td><code>onBinary</code></td>
+      <td><code>(data: Uint8Array) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called with raw X10 mouse reports when supplied. Forward the bytes unchanged to a binary-capable transport; without it, only ASCII-safe X10 reports reach <code>onData</code>.</td>
+    </tr>
+    <tr>
       <td><code>onTitle</code></td>
       <td><code>(title: string) =&gt; void</code></td>
       <td>—</td>
       <td>Called when the terminal title changes via an escape sequence</td>
     </tr>
     <tr>
+      <td><code>onBell</code></td>
+      <td><code>(count: number) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called as output is written with the number of pending BEL controls. The host decides whether to play sound or show a visual alert.</td>
+    </tr>
+    <tr>
       <td><code>onResize</code></td>
       <td><code>(cols: number, rows: number) =&gt; void</code></td>
       <td>—</td>
-      <td>Called after the terminal is resized</td>
+      <td>Called after resize with the grid dimensions applied by the core. Use these values when resizing a connected PTY.</td>
     </tr>
   </tbody>
 </table>
@@ -215,7 +227,7 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
     <tr>
       <td><code>theme</code></td>
       <td><code>string</code></td>
-      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>). Applied as a <code>theme-&lt;name&gt;</code> class on the root element.</td>
+      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>). Applied as a <code>{"theme-<name>"}</code> class on the root element.</td>
     </tr>
   </tbody>
 </table>
@@ -237,9 +249,19 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
       <td>Emitted when the terminal produces data (user input or host response). When no listener is attached, input is echoed back automatically.</td>
     </tr>
     <tr>
+      <td><code>binary</code></td>
+      <td><code>(data: Uint8Array)</code></td>
+      <td>Emitted with raw X10 mouse reports for a binary-capable transport.</td>
+    </tr>
+    <tr>
       <td><code>title</code></td>
       <td><code>(title: string)</code></td>
       <td>Emitted when the terminal title changes via an escape sequence.</td>
+    </tr>
+    <tr>
+      <td><code>bell</code></td>
+      <td><code>(count: number)</code></td>
+      <td>Emitted as output is written with the number of pending BEL controls.</td>
     </tr>
     <tr>
       <td><code>resize</code></td>
@@ -277,7 +299,7 @@ attributes such as `class`, `style`, `id`, and ARIA attributes to its root
     <tr>
       <td><code>theme</code></td>
       <td><code>string</code></td>
-      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>). Applied as a <code>theme-&lt;name&gt;</code> class.</td>
+      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>). Applied as a <code>{"theme-<name>"}</code> class.</td>
     </tr>
     <tr>
       <td><code>onData</code></td>
@@ -285,9 +307,19 @@ attributes such as `class`, `style`, `id`, and ARIA attributes to its root
       <td>Called for terminal input and host responses. When omitted, input is echoed automatically.</td>
     </tr>
     <tr>
+      <td><code>onBinary</code></td>
+      <td><code>(data: Uint8Array) =&gt; void</code></td>
+      <td>Called with raw X10 mouse reports for a binary-capable transport.</td>
+    </tr>
+    <tr>
       <td><code>onTitle</code></td>
       <td><code>(title: string) =&gt; void</code></td>
       <td>Called when the terminal title changes.</td>
+    </tr>
+    <tr>
+      <td><code>onBell</code></td>
+      <td><code>(count: number) =&gt; void</code></td>
+      <td>Called with the pending BEL count as output is written.</td>
     </tr>
     <tr>
       <td><code>onResize</code></td>
@@ -311,6 +343,11 @@ attributes such as `class`, `style`, `id`, and ARIA attributes to its root
 
 Instance methods on the vanilla `WTerm` class:
 
+After `init()` or `resize()`, `wt.cols` and `wt.rows` report the applied grid
+dimensions. A core may cap the requested size; the built-in core currently
+supports up to 1024 columns and 512 rows. Use the applied dimensions for a
+connected PTY so its output wraps at the same columns as the browser terminal.
+
 WTerm renders synchronized output blocks (CSI `?2026`) atomically when the mode closes. Each block can hold rendering for at most one second from its opening sequence. Ordinary payload does not extend that deadline. If the deadline expires, WTerm resumes painting until a fresh block begins.
 
 Outside synchronized output, writes request the next animation frame directly. Writes received before that frame share one render.
@@ -324,7 +361,7 @@ Outside synchronized output, writes request the next animation frame directly. W
   </thead>
   <tbody>
     <tr>
-      <td><code>init(): Promise&lt;WTerm&gt;</code></td>
+      <td><code>{"init(): Promise<WTerm>"}</code></td>
       <td>Load WASM and start rendering</td>
     </tr>
     <tr>
@@ -333,7 +370,7 @@ Outside synchronized output, writes request the next animation frame directly. W
     </tr>
     <tr>
       <td><code>resize(cols, rows)</code></td>
-      <td>Resize the terminal grid</td>
+      <td>Request a grid size; read <code>wt.cols</code> and <code>wt.rows</code> afterward for the applied size</td>
     </tr>
     <tr>
       <td><code>focus()</code></td>
@@ -364,8 +401,8 @@ const { ref, write, resize, focus } = useTerminal();
   <tbody>
     <tr>
       <td><code>ref</code></td>
-      <td><code>RefObject&lt;TerminalHandle&gt;</code></td>
-      <td>Pass to <code>&lt;Terminal ref=&#123;ref&#125;&gt;</code></td>
+      <td><code>{"RefObject<TerminalHandle>"}</code></td>
+      <td>Pass to <code>{"<Terminal ref={ref}>"}</code></td>
     </tr>
     <tr>
       <td><code>write</code></td>
@@ -617,7 +654,7 @@ const bridge = await WasmBridge.load();
 const bridge = await WasmBridge.load("/wterm.wasm");
 ```
 
-When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string inlined in the package. Pass a URL when you want to serve the binary separately for caching or CDN use.
+When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string inlined in the package. Pass a URL when you want to serve the binary separately for caching or CDN use.
 
 ### Methods
 
@@ -630,7 +667,7 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
   </thead>
   <tbody>
     <tr>
-      <td><code>WasmBridge.load(url?): Promise&lt;WasmBridge&gt;</code></td>
+      <td><code>{"WasmBridge.load(url?): Promise<WasmBridge>"}</code></td>
       <td>Load the WASM binary and return a new bridge instance</td>
     </tr>
     <tr>
@@ -674,6 +711,10 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
       <td>Get pending title change (via OSC escape), or <code>null</code> if unchanged</td>
     </tr>
     <tr>
+      <td><code>getBellCount?(): number</code></td>
+      <td>Read and clear pending BEL controls. Optional for custom cores; the built-in and Ghostty cores return <code>0</code> when none are pending.</td>
+    </tr>
+    <tr>
       <td><code>getResponse(): string | null</code></td>
       <td>Dequeue one pending host response (e.g. DSR), or <code>null</code>.</td>
     </tr>
@@ -711,11 +752,15 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
     </tr>
     <tr>
       <td><code>mouseTracking(): number</code></td>
-      <td>Active mouse tracking mode (<code>0</code>, <code>1000</code>, or <code>1002</code>)</td>
+      <td>Active mouse tracking mode (<code>0</code>, <code>1000</code>, <code>1002</code>, or <code>1003</code>)</td>
     </tr>
     <tr>
       <td><code>mouseSgr(): boolean</code></td>
-      <td>Whether SGR mouse encoding (mode 1006) is active</td>
+      <td>Whether cell-coordinate SGR mouse encoding (mode 1006) is active</td>
+    </tr>
+    <tr>
+      <td><code>mouseEncoding(): MouseEncoding | null</code></td>
+      <td>Active mouse wire format: <code>x10</code>, <code>utf8</code>, <code>sgr</code>, <code>urxvt</code>, or <code>sgr-pixels</code>. Optional for custom cores. The DOM layer sends all five formats; <code>sgr-pixels</code> uses 1-based CSS-pixel coordinates.</td>
     </tr>
     <tr>
       <td><code>focusEvents(): boolean</code></td>
@@ -752,5 +797,7 @@ interface CursorState {
   row: number;
   col: number;
   visible: boolean;
+  shape?: "block" | "bar" | "underline";
+  blinking?: boolean;
 }
 ```

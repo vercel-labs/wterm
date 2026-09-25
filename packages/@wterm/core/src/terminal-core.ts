@@ -19,10 +19,18 @@ export interface CellData {
   linkKey?: string;
 }
 
+export type CursorShape = "block" | "underline" | "bar";
+
+export type MouseEncoding = "x10" | "utf8" | "sgr" | "urxvt" | "sgr-pixels";
+
 export interface CursorState {
   row: number;
   col: number;
   visible: boolean;
+  /** Application-requested shape. Omitted by older/custom cores; defaults to block. */
+  shape?: CursorShape;
+  /** Application-requested blinking. Omitted by older/custom cores; defaults to false. */
+  blinking?: boolean;
 }
 
 export interface UnhandledSequence {
@@ -115,6 +123,7 @@ export interface TerminalCore {
   getCell(row: number, col: number): CellData;
   isDirtyRow(row: number): boolean;
   clearDirty(): void;
+  /** Applied grid dimensions after init() or resize(), which may differ from the request. */
   getCols(): number;
   getRows(): number;
 
@@ -125,8 +134,11 @@ export interface TerminalCore {
   cursorKeysApp(): boolean;
   bracketedPaste(): boolean;
   usingAltScreen(): boolean;
-  mouseTracking?(): 0 | 1000 | 1002;
+  mouseTracking?(): 0 | 1000 | 1002 | 1003;
+  /** True only for cell-coordinate SGR mode 1006; use mouseEncoding() for pixel mode 1016. */
   mouseSgr?(): boolean;
+  /** Active mouse wire format. Optional for cores that only expose SGR state. */
+  mouseEncoding?(): MouseEncoding | null;
   focusEvents?(): boolean;
   synchronizedOutput?(): boolean;
   synchronizedOutputGeneration?(): number;
@@ -134,6 +146,8 @@ export interface TerminalCore {
 
   // -- Side outputs --
   getTitle(): string | null;
+  /** Read and clear the number of pending BEL controls. Optional for custom cores. */
+  getBellCount?(): number;
   getResponse(): string | null;
   getResourceState?(): TerminalResourceState;
 

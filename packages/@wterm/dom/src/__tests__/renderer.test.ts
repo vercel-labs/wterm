@@ -61,6 +61,140 @@ describe("Renderer", () => {
   });
 
   describe("render", () => {
+    it.each([
+      ["red", makeCell(" ", 256, 1)],
+      ["reverse", makeCell(" ", 256, 256, 0x20)],
+      ["RGB", { ...makeCell(" "), bgRgb: 0x123456 }],
+    ])("keeps an isolated %s background in its cell", (_name, lastCell) => {
+      const bridge = createMockBridge(4, 2, [
+        [makeCell("a"), makeCell("b"), makeCell("c"), lastCell],
+        [makeCell("d"), makeCell("e"), makeCell("f"), lastCell],
+      ]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+
+      expect(container.style.background).toBe("");
+      for (const row of container.querySelectorAll<HTMLElement>(".term-row")) {
+        expect(row.style.background).toBe("");
+        expect(row.style.boxShadow).toBe("");
+        expect((row.lastElementChild as HTMLElement).style.background).not.toBe(
+          "",
+        );
+      }
+    });
+
+    it("extends a shared row background and clears it on a partial redraw", () => {
+      const cells = [
+        makeCell("a", 256, 1),
+        makeCell("b", 2, 1),
+        makeCell("c", 1, 3, 0x20),
+        makeCell(" ", 256, 1),
+      ];
+      const bridge = createMockBridge(4, 2, [cells]);
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector<HTMLElement>(".term-row")!;
+      expect(row.style.background).toBe("var(--term-color-1)");
+      expect(row.style.boxShadow).toBe("");
+      expect(container.style.background).toBe("");
+
+      cells[1] = makeCell("b");
+      bridge.isDirtyRow = (row) => row === 0;
+      renderer.render(bridge);
+      expect(row.style.background).toBe("");
+      expect(row.textContent).toBe("abc ");
+    });
+
+    it("uses the wide lead's background for both columns", () => {
+      const bridge = createMockBridge(3, 1, [
+        [
+          { ...makeCell("界", 256, 256, 0, 2), bgRgb: 0x123456 },
+          makeCell(" ", 256, 256, 0, 0),
+          { ...makeCell("x"), bgRgb: 0x123456 },
+        ],
+      ]);
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      expect(
+        container.querySelector<HTMLElement>(".term-row")!.style.background,
+      ).toBe("rgb(18, 52, 86)");
+      expect(container.style.background).toBe("");
+    });
+
+    it.each([0x02, 0x40])(
+      "does not put an opaque background behind cells with flag %s",
+      (flags) => {
+        const bridge = createMockBridge(2, 1, [
+          [makeCell("a", 256, 1, flags), makeCell("b", 256, 1, flags)],
+        ]);
+        const renderer = new Renderer(container);
+        renderer.render(bridge);
+        expect(
+          container.querySelector<HTMLElement>(".term-row")!.style.background,
+        ).toBe("");
+        expect(container.style.background).toBe("");
+      },
+    );
+
+    it("keeps scrollback backgrounds independent of the active screen and stored width", () => {
+      const bridge = createMockBridge(3, 1, [
+        [makeCell(" ", 256, 1), makeCell(" ", 256, 1), makeCell(" ", 256, 1)],
+      ]);
+      bridge.getScrollbackCount = () => 1;
+      bridge.getScrollbackLineLen = () => 3;
+      bridge.getScrollbackCell = (_offset, col) =>
+        makeCell(" ", 256, col === 2 ? 4 : 256);
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      expect(
+        container.querySelector<HTMLElement>(".term-scrollback-row")!.style
+          .background,
+      ).toBe("");
+      expect(container.style.background).toBe("");
+
+      bridge.getScrollbackCell = () => makeCell(" ", 256, 4);
+      renderer.render(bridge);
+      expect(
+        container.querySelector<HTMLElement>(".term-scrollback-row")!.style
+          .background,
+      ).toBe("var(--term-color-4)");
+      bridge.getCols = () => 4;
+      renderer.render(bridge);
+      const history = container.querySelector<HTMLElement>(
+        ".term-scrollback-row",
+      )!;
+      expect(history.style.background).toBe("");
+      expect(history.textContent).toBe("    ");
+    });
+
+    it("supports legacy cursor state and updates metadata without replacing clean rows", () => {
+      const bridge = createMockBridge(4, 1);
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+      expect(container.dataset.cursorShape).toBe("block");
+      expect(container.dataset.cursorBlink).toBe("false");
+      const row = container.querySelector(".term-row")!;
+      const cursor = row.querySelector(".term-cursor");
+      bridge.getCursor = () => ({
+        row: 0,
+        col: 0,
+        visible: true,
+        shape: "bar",
+        blinking: true,
+      });
+      renderer.render(bridge as any);
+      expect(container.dataset.cursorShape).toBe("bar");
+      expect(container.dataset.cursorBlink).toBe("true");
+      expect(row.querySelector(".term-cursor")).toBe(cursor);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      renderer.render(bridge as any);
+      expect(row.querySelector(".term-cursor")).toBeNull();
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: true });
+      renderer.render(bridge as any);
+      expect(row.querySelector(".term-cursor")).not.toBeNull();
+    });
+
     it("renders contiguous OSC 8 cells as one safe anchor", () => {
       const grid = [
         [

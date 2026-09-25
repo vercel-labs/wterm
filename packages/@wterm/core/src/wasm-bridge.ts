@@ -1,6 +1,7 @@
 import type {
   CellData,
   CursorState,
+  MouseEncoding,
   TerminalResourceState,
   UnhandledSequence,
   TerminalCore,
@@ -18,6 +19,8 @@ interface WasmExports {
   getCursorRow(): number;
   getCursorCol(): number;
   getCursorVisible(): number;
+  getCursorShape?(): number;
+  getCursorBlinking?(): number;
   getCols(): number;
   getRows(): number;
   getCursorKeysApp(): number;
@@ -25,6 +28,7 @@ interface WasmExports {
   getUsingAltScreen(): number;
   getMouseTracking(): number;
   getMouseSgr(): number;
+  getMouseEncoding?(): number;
   getFocusEvents(): number;
   getSynchronizedOutput(): number;
   getSynchronizedOutputGeneration(): number;
@@ -32,6 +36,7 @@ interface WasmExports {
   getTitlePtr(): number;
   getTitleLen(): number;
   getTitleChanged(): number;
+  getBellCount?(): number;
   getLinkUriPtr(index: number): number;
   getLinkUriLen(index: number): number;
   getLinkIdPtr(index: number): number;
@@ -47,7 +52,7 @@ interface WasmExports {
   getResponseLen(): number;
   clearResponse(): void;
   getCellSize(): number;
-  getMaxCols(): number;
+  getGridStride(): number;
   getDebugLogPtr(): number;
   getDebugLogCount(): number;
   getDebugLogEntrySize(): number;
@@ -70,7 +75,7 @@ export class WasmBridge implements TerminalCore {
   private dirtyPtr = 0;
   private writeBufferPtr = 0;
   private cellSize = 12;
-  private maxCols = 256;
+  private gridStride = 0;
   private encoder = new TextEncoder();
   private decoder = new TextDecoder();
   private _dv!: DataView;
@@ -121,7 +126,7 @@ export class WasmBridge implements TerminalCore {
     this.dirtyPtr = this.exports.getDirtyPtr();
     this.writeBufferPtr = this.exports.getWriteBuffer();
     this.cellSize = this.exports.getCellSize();
-    this.maxCols = this.exports.getMaxCols();
+    this.gridStride = this.exports.getGridStride();
   }
 
   writeString(str: string, afterChunk?: () => void): void {
@@ -136,13 +141,15 @@ export class WasmBridge implements TerminalCore {
       const buf = new Uint8Array(this.memory.buffer, this.writeBufferPtr, 8192);
       buf.set(data.subarray(offset, offset + chunk));
       this.exports.writeBytes(chunk);
+      // Escape sequences can swap the active screen and its backing storage.
+      this._updatePointers();
       offset += chunk;
       afterChunk?.();
     }
   }
 
   getCell(row: number, col: number): CellData {
-    const offset = this.gridPtr + (row * this.maxCols + col) * this.cellSize;
+    const offset = this.gridPtr + (row * this.gridStride + col) * this.cellSize;
     const dv = this.dv;
     const result: CellData = {
       char: dv.getUint32(offset, true),
@@ -156,7 +163,10 @@ export class WasmBridge implements TerminalCore {
   }
 
   isDirtyRow(row: number): boolean {
-    return new Uint8Array(this.memory.buffer, this.dirtyPtr, 256)[row] !== 0;
+    return (
+      new Uint8Array(this.memory.buffer, this.dirtyPtr, this.getRows())[row] !==
+      0
+    );
   }
 
   clearDirty(): void {
@@ -164,10 +174,13 @@ export class WasmBridge implements TerminalCore {
   }
 
   getCursor(): CursorState {
+    const shape = this.exports.getCursorShape?.() ?? 0;
     return {
       row: this.exports.getCursorRow(),
       col: this.exports.getCursorCol(),
       visible: this.exports.getCursorVisible() !== 0,
+      shape: shape === 1 ? "underline" : shape === 2 ? "bar" : "block",
+      blinking: (this.exports.getCursorBlinking?.() ?? 0) !== 0,
     };
   }
 
@@ -187,12 +200,31 @@ export class WasmBridge implements TerminalCore {
   usingAltScreen(): boolean {
     return this.exports.getUsingAltScreen() !== 0;
   }
-  mouseTracking(): 0 | 1000 | 1002 {
+  mouseTracking(): 0 | 1000 | 1002 | 1003 {
     const mode = this.exports.getMouseTracking();
-    return mode === 1000 || mode === 1002 ? mode : 0;
+    return mode === 1000 || mode === 1002 || mode === 1003 ? mode : 0;
   }
   mouseSgr(): boolean {
     return this.exports.getMouseSgr() !== 0;
+  }
+  mouseEncoding(): MouseEncoding | null {
+    const mode = this.exports.getMouseEncoding?.();
+    switch (mode) {
+      case 0:
+        return "x10";
+      case 1:
+        return "utf8";
+      case 2:
+        return "sgr";
+      case 3:
+        return "urxvt";
+      case 4:
+        return "sgr-pixels";
+      case undefined:
+        return this.mouseSgr() ? "sgr" : "x10";
+      default:
+        return null;
+    }
   }
   focusEvents(): boolean {
     return this.exports.getFocusEvents() !== 0;
@@ -213,6 +245,10 @@ export class WasmBridge implements TerminalCore {
     const len = this.exports.getTitleLen();
     const bytes = new Uint8Array(this.memory.buffer, ptr, len);
     return this.decoder.decode(bytes);
+  }
+
+  getBellCount(): number {
+    return this.exports.getBellCount?.() ?? 0;
   }
 
   getResponse(): string | null {

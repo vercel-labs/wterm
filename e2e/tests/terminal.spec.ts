@@ -154,7 +154,74 @@ test.describe("rendering", () => {
   });
 });
 
+test.describe("terminal responses", () => {
+  test("forwards private-mode reports while synchronized output is active", async ({
+    page,
+  }) => {
+    const responses = await page.evaluate(() => {
+      const term = (
+        globalThis as typeof globalThis & {
+          __wterm: {
+            write: (data: string) => void;
+            onData: ((data: string) => void) | null;
+          };
+        }
+      ).__wterm;
+      const received: string[] = [];
+      term.onData = (data) => received.push(data);
+      term.write("\x1b[?2026$p");
+      term.write("\x1b[?2026h\x1b[?2026$p");
+      term.write("\x1b[?2026l\x1b[?2026$p");
+      return received;
+    });
+
+    expect(responses).toEqual([
+      "\x1b[?2026;2$y",
+      "\x1b[?2026;1$y",
+      "\x1b[?2026;2$y",
+    ]);
+  });
+});
+
 test.describe("keyboard input", () => {
+  test("reports legacy modified and control key input", async ({ page }) => {
+    await page.locator(".wterm").click();
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __legacyKeys: string[];
+        __wterm: { onData: ((data: string) => void) | null };
+      };
+      scope.__legacyKeys = [];
+      scope.__wterm.onData = (data) => scope.__legacyKeys.push(data);
+    });
+
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Control+ArrowLeft");
+    await page.keyboard.press("Shift+ArrowRight");
+    await page.keyboard.press("Control+Delete");
+    await page.keyboard.press("Shift+F1");
+    await page.keyboard.press("Control+Space");
+    await page.keyboard.press("Control+Slash");
+    await page.keyboard.press("Control+Backspace");
+
+    expect(
+      await page.evaluate(
+        () =>
+          (globalThis as typeof globalThis & { __legacyKeys: string[] })
+            .__legacyKeys,
+      ),
+    ).toEqual([
+      "\x1b[A",
+      "\x1b[1;5D",
+      "\x1b[1;2C",
+      "\x1b[3;5~",
+      "\x1b[1;2P",
+      "\0",
+      "\x1f",
+      "\x08",
+    ]);
+  });
+
   test("Kitty report-all preserves Meta lifecycle and browser shortcuts", async ({
     page,
   }) => {
@@ -221,6 +288,74 @@ test.describe("keyboard input", () => {
           .__reviewProbe,
     );
     expect.soft(shortcut).toEqual(["\x1b[57444;9u", "\x1b[57444;1:3u"]);
+  });
+
+  test("Kitty mode accepts AltGr text without turning it into a shortcut", async ({
+    page,
+  }) => {
+    await page.locator(".wterm").click();
+    const result = await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __wterm: {
+          bridge: { kittyKeyboardFlags: () => number };
+          onData: ((data: string) => void) | null;
+        };
+      };
+      const textarea = document.querySelector(".wterm textarea");
+      if (!(textarea instanceof HTMLTextAreaElement)) {
+        throw new Error("missing terminal textarea");
+      }
+      const received: string[] = [];
+      scope.__wterm.bridge.kittyKeyboardFlags = () => 31;
+      scope.__wterm.onData = (data) => received.push(data);
+
+      const altGrKey = new KeyboardEvent("keydown", {
+        key: "@",
+        code: "KeyQ",
+        ctrlKey: true,
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      Object.defineProperty(altGrKey, "getModifierState", {
+        value: (modifier: string) => modifier === "AltGraph",
+      });
+      textarea.dispatchEvent(altGrKey);
+      textarea.value = "@";
+      textarea.dispatchEvent(
+        new InputEvent("input", { inputType: "insertText", bubbles: true }),
+      );
+      textarea.dispatchEvent(
+        new KeyboardEvent("keyup", {
+          key: "@",
+          code: "KeyQ",
+          ctrlKey: true,
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+      const shortcut = new KeyboardEvent("keydown", {
+        key: "q",
+        code: "KeyQ",
+        ctrlKey: true,
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      textarea.dispatchEvent(shortcut);
+      return {
+        altGrPrevented: altGrKey.defaultPrevented,
+        shortcutPrevented: shortcut.defaultPrevented,
+        received,
+      };
+    });
+    expect(result).toEqual({
+      altGrPrevented: false,
+      shortcutPrevented: true,
+      received: ["@", "\x1b[113;7u"],
+    });
   });
 
   test("Kitty encoding follows real Chromium shifted-text and modifier-release events", async ({
@@ -533,6 +668,110 @@ test.describe("cursor", () => {
 });
 
 test.describe("scrollback", () => {
+  test("keeps history interaction local while mouse tracking is enabled", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __historyMouseReports: string[];
+        __wterm: {
+          onData: ((data: string) => void) | null;
+          write: (data: string) => void;
+        };
+      };
+      scope.__historyMouseReports = [];
+      scope.__wterm.onData = (data) => scope.__historyMouseReports.push(data);
+      scope.__wterm.write(
+        Array.from({ length: 160 }, (_, index) => `history ${index}\r\n`).join(
+          "",
+        ) + "\x1b[?1002h\x1b[?1006h",
+      );
+    });
+    await expect(terminal).toHaveClass(/has-scrollback/);
+
+    const point = await terminal.evaluate(async (element) => {
+      element.scrollTop = 0;
+      element.dispatchEvent(new Event("scroll"));
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const host = element.getBoundingClientRect();
+      const row = Array.from(
+        element.querySelectorAll<HTMLElement>(".term-scrollback-row"),
+      ).find((candidate) => {
+        const rect = candidate.getBoundingClientRect();
+        return rect.top >= host.top && rect.bottom <= host.bottom;
+      });
+      if (!row) throw new Error("missing visible scrollback row");
+      const rect = row.getBoundingClientRect();
+      const x = rect.left + 10;
+      const y = rect.top + rect.height / 2;
+      const press = new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        buttons: 1,
+        clientX: x,
+        clientY: y,
+      });
+      row.dispatchEvent(press);
+      if (press.defaultPrevented) throw new Error("history click was captured");
+      return { x, y };
+    });
+
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.wheel(0, 120);
+    await expect
+      .poll(() => terminal.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            globalThis as typeof globalThis & {
+              __historyMouseReports: string[];
+            }
+          ).__historyMouseReports,
+      ),
+    ).toEqual([]);
+
+    await terminal.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect
+      .poll(() =>
+        terminal.evaluate(
+          (element) =>
+            element.scrollHeight - element.scrollTop - element.clientHeight,
+        ),
+      )
+      .toBeLessThanOrEqual(1);
+    const bottom = await terminal.evaluate((element) => element.scrollTop);
+    const liveRow = terminal
+      .locator(".term-row:not(.term-scrollback-row)")
+      .first();
+    const liveBox = await liveRow.boundingBox();
+    if (!liveBox) throw new Error("missing live terminal row");
+    await page.mouse.move(liveBox.x + 10, liveBox.y + liveBox.height / 2);
+    await page.keyboard.down("Shift");
+    await page.mouse.wheel(0, -120);
+    await page.keyboard.up("Shift");
+    await expect
+      .poll(() => terminal.evaluate((element) => element.scrollTop))
+      .toBeLessThan(bottom);
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            globalThis as typeof globalThis & {
+              __historyMouseReports: string[];
+            }
+          ).__historyMouseReports,
+      ),
+    ).toEqual([]);
+  });
+
   test("applies one scroll adjustment when old rows are discarded across frames", async ({
     page,
   }) => {

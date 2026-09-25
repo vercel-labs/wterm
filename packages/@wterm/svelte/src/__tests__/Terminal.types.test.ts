@@ -10,6 +10,9 @@ describe("Terminal types", () => {
     expectTypeOf<TerminalProps["onData"]>().toEqualTypeOf<
       ((data: string) => void) | undefined
     >();
+    expectTypeOf<TerminalProps["onBinary"]>().toEqualTypeOf<
+      ((data: Uint8Array) => void) | undefined
+    >();
     expectTypeOf<TerminalProps["onReady"]>().toEqualTypeOf<
       ((wt: WTerm) => void) | undefined
     >();
