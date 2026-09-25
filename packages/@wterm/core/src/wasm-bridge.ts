@@ -34,6 +34,7 @@ interface WasmExports {
   getTitlePtr(): number;
   getTitleLen(): number;
   getTitleChanged(): number;
+  getBellCount?(): number;
   getLinkUriPtr(index: number): number;
   getLinkUriLen(index: number): number;
   getLinkIdPtr(index: number): number;
@@ -218,6 +219,10 @@ export class WasmBridge implements TerminalCore {
     const len = this.exports.getTitleLen();
     const bytes = new Uint8Array(this.memory.buffer, ptr, len);
     return this.decoder.decode(bytes);
+  }
+
+  getBellCount(): number {
+    return this.exports.getBellCount?.() ?? 0;
   }
 
   getResponse(): string | null {

@@ -18,6 +18,7 @@ vi.mock("@wterm/dom", () => {
     this.rows = options?.rows ?? 24;
     this.onData = options?.onData ?? null;
     this.onTitle = options?.onTitle ?? null;
+    this.onBell = options?.onBell ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
@@ -184,6 +185,22 @@ describe("Terminal component", () => {
 
     ref.current!.focus();
     expect(lastWTermInstance.focus).toHaveBeenCalled();
+  });
+
+  it("forwards bell counts to the latest callback", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const first = vi.fn();
+    const next = vi.fn();
+    const { rerender } = render(<Terminal onBell={first} />);
+    await act(async () => {});
+
+    lastWTermInstance.onBell(2);
+    expect(first).toHaveBeenCalledWith(2);
+
+    rerender(<Terminal onBell={next} />);
+    lastWTermInstance.onBell(1);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(1);
   });
 });
 

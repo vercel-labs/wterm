@@ -16,6 +16,7 @@ vi.mock("@wterm/dom", () => {
     this.rows = options?.rows ?? 24;
     this.onData = options?.onData ?? null;
     this.onTitle = options?.onTitle ?? null;
+    this.onBell = options?.onBell ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
@@ -231,6 +232,13 @@ describe("Terminal component", () => {
     await flushPromises();
     lastWTermInstance.onTitle("my title");
     expect(wrapper.emitted("title")![0]).toEqual(["my title"]);
+  });
+
+  it("emits bell counts when WTerm onBell fires", async () => {
+    const wrapper = await mountTerminal();
+    await flushPromises();
+    lastWTermInstance.onBell(3);
+    expect(wrapper.emitted("bell")![0]).toEqual([3]);
   });
 
   it("emits resize when WTerm onResize fires", async () => {

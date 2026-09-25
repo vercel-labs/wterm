@@ -123,15 +123,15 @@ const ResponseQueue = struct {
     }
 };
 
-/// Wraps ghostty's own readonly handler instead of reimplementing it. Every
-/// action that mutates terminal state is delegated untouched; only the query
-/// actions, which the readonly handler documents as having "no terminal
-/// modifying effect" and drops, are answered here.
+/// Wraps ghostty's readonly handler instead of reimplementing it. Most
+/// terminal state changes are delegated; host-visible effects and supported
+/// queries that the readonly handler drops are handled here.
 const ResponseHandler = struct {
     alloc: Allocator,
     inner: ReadonlyHandler,
     queue: *ResponseQueue,
     title: *TitleState,
+    bell_count: *u32,
     synchronized_output_generation: *u32,
     rejected_images: *u32,
     apc: KittyHandler = .{},
@@ -143,6 +143,7 @@ const ResponseHandler = struct {
         terminal: *Terminal,
         queue: *ResponseQueue,
         title: *TitleState,
+        bell_count: *u32,
         generation: *u32,
         rejected_images: *u32,
     ) ResponseHandler {
@@ -151,6 +152,7 @@ const ResponseHandler = struct {
             .inner = .init(terminal),
             .queue = queue,
             .title = title,
+            .bell_count = bell_count,
             .synchronized_output_generation = generation,
             .rejected_images = rejected_images,
         };
@@ -281,6 +283,7 @@ const ResponseHandler = struct {
                 self.queue.push(out);
             },
             .window_title => self.title.set(value.title),
+            .bell => self.bell_count.* +|= 1,
             .color_operation => {
                 try self.inner.vt(action, value);
                 var it = value.requests.constIterator(0);
@@ -358,6 +361,7 @@ const State = struct {
     render: RenderState,
     responses: ResponseQueue,
     title: TitleState,
+    bell_count: u32,
     synchronized_output_generation: u32,
     graphics_generation: u32,
     graphics_fingerprint: u64,
@@ -581,6 +585,7 @@ export fn init(
     };
     state.responses = .{};
     state.title = .{};
+    state.bell_count = 0;
     state.synchronized_output_generation = 0;
     state.graphics_generation = 0;
     state.rejected_images = 0;
@@ -590,6 +595,7 @@ export fn init(
         &state.terminal,
         &state.responses,
         &state.title,
+        &state.bell_count,
         &state.synchronized_output_generation,
         &state.rejected_images,
     ));
@@ -633,6 +639,13 @@ export fn get_title_len(ptr: usize) i32 {
 
 export fn get_title_ptr(ptr: usize) [*]const u8 {
     return &stateFromPtr(ptr).title.bytes;
+}
+
+export fn get_bell_count(ptr: usize) u32 {
+    const state = stateFromPtr(ptr);
+    const count = state.bell_count;
+    state.bell_count = 0;
+    return count;
 }
 
 // -- Render state -----------------------------------------------

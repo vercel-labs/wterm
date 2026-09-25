@@ -569,6 +569,11 @@ export class GhosttyCore implements TerminalCore {
     );
   }
 
+  getBellCount(): number {
+    if (this._disposed || this.termPtr === 0) return 0;
+    return this.wasm.exports.get_bell_count?.(this.termPtr) ?? 0;
+  }
+
   getResponse(): string | null {
     if (this._disposed || this.termPtr === 0) return null;
     const bufSize = 4096;

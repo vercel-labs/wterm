@@ -56,6 +56,7 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the underlying `WTerm` instance for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
+| `onBell` | `(count: number) => void` | — | Called with pending BEL count as output is written; the host controls any alert |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
 | `onReady` | `(wt: WTerm) => void` | — | Called after WASM is loaded and the terminal is initialized |
 

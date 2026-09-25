@@ -160,6 +160,12 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
       <td>Called when the terminal title changes via an escape sequence</td>
     </tr>
     <tr>
+      <td><code>onBell</code></td>
+      <td><code>(count: number) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called as output is written with the number of pending BEL controls. The host decides whether to play sound or show a visual alert.</td>
+    </tr>
+    <tr>
       <td><code>onResize</code></td>
       <td><code>(cols: number, rows: number) =&gt; void</code></td>
       <td>—</td>
@@ -242,6 +248,11 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
       <td>Emitted when the terminal title changes via an escape sequence.</td>
     </tr>
     <tr>
+      <td><code>bell</code></td>
+      <td><code>(count: number)</code></td>
+      <td>Emitted as output is written with the number of pending BEL controls.</td>
+    </tr>
+    <tr>
       <td><code>resize</code></td>
       <td><code>(cols: number, rows: number)</code></td>
       <td>Emitted after the terminal is resized.</td>
@@ -288,6 +299,11 @@ attributes such as `class`, `style`, `id`, and ARIA attributes to its root
       <td><code>onTitle</code></td>
       <td><code>(title: string) =&gt; void</code></td>
       <td>Called when the terminal title changes.</td>
+    </tr>
+    <tr>
+      <td><code>onBell</code></td>
+      <td><code>(count: number) =&gt; void</code></td>
+      <td>Called with the pending BEL count as output is written.</td>
     </tr>
     <tr>
       <td><code>onResize</code></td>
@@ -672,6 +688,10 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
     <tr>
       <td><code>getTitle(): string | null</code></td>
       <td>Get pending title change (via OSC escape), or <code>null</code> if unchanged</td>
+    </tr>
+    <tr>
+      <td><code>getBellCount?(): number</code></td>
+      <td>Read and clear pending BEL controls. Optional for custom cores; the built-in and Ghostty cores return <code>0</code> when none are pending.</td>
     </tr>
     <tr>
       <td><code>getResponse(): string | null</code></td>

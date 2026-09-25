@@ -39,6 +39,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly
 - **Application-controlled cursors** — block, bar, and underline shapes with terminal-requested blinking and a host override
 - **Window titles** — OSC 0/2 title changes reach `onTitle` with either the built-in or Ghostty core
+- **Bell events** — BEL reaches `onBell(count)` through either core, leaving sound or visual alerts to the host app
 - **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window
 - **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws and column insertions/deletions aligned
 - **DEC line drawing** — character-set switches used by tmux and other TUIs produce borders and symbols instead of literal letters

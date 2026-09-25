@@ -34,6 +34,7 @@ export interface TerminalProps extends Omit<
   debug?: boolean;
   onData?: (data: string) => void;
   onTitle?: (title: string) => void;
+  onBell?: (count: number) => void;
   onResize?: (cols: number, rows: number) => void;
   onReady?: (wt: WTerm) => void;
   onError?: (error: unknown) => void;
@@ -60,6 +61,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     debug = false,
     onData,
     onTitle,
+    onBell,
     onResize,
     onReady,
     onError,
@@ -73,13 +75,21 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
   const callbacksRef = useRef({
     onData,
     onTitle,
+    onBell,
     onResize,
     onReady,
     onError,
   });
   const autoResizeRef = useRef(autoResize);
 
-  callbacksRef.current = { onData, onTitle, onResize, onReady, onError };
+  callbacksRef.current = {
+    onData,
+    onTitle,
+    onBell,
+    onResize,
+    onReady,
+    onError,
+  };
   autoResizeRef.current = autoResize;
 
   useImperativeHandle(ref, () => ({
@@ -117,6 +127,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
           ? (data: string) => callbacksRef.current.onData?.(data)
           : undefined,
         onTitle: (title: string) => callbacksRef.current.onTitle?.(title),
+        onBell: (count: number) => callbacksRef.current.onBell?.(count),
         onResize: (c: number, r: number) =>
           callbacksRef.current.onResize?.(c, r),
       });

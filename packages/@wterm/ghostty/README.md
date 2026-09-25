@@ -16,6 +16,10 @@ wrapper's `onTitle` callback, including an empty title that clears the current
 name. When several changes arrive before a render, the latest complete title
 is delivered. Titles longer than Ghostty's 255-byte limit are ignored.
 
+`getBellCount()` reads and clears Ghostty's pending BEL count. `WTerm` forwards
+it through `onBell(count)` as output is written, even when synchronized output
+holds painting. BEL used to terminate an OSC sequence is excluded.
+
 Native OSC 8 hyperlinks are resolved from Ghostty's page-owned metadata and exposed through `CellData.linkUri`, `CellData.linkId`, and `CellData.linkKey` in both the viewport and scrollback.
 
 The Ghostty core also provides the optional terminal graphics API. The DOM

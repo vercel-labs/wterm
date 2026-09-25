@@ -49,6 +49,7 @@ The terminal accepts the shared `WTerm` options `cols`, `rows`, `core`,
 | `theme`    | `string`                               | —       | Theme name, such as `"solarized-dark"`, `"monokai"`, or `"light"`                         |
 | `onData`   | `(data: string) => void`               | —       | Called for terminal input and host responses; when omitted, input is echoed automatically |
 | `onTitle`  | `(title: string) => void`              | —       | Called when the terminal title changes                                                    |
+| `onBell`   | `(count: number) => void`              | —       | Called with the pending BEL count; the host controls any alert                            |
 | `onResize` | `(cols: number, rows: number) => void` | —       | Called after the terminal is resized                                                      |
 | `onReady`  | `(wt: WTerm) => void`                  | —       | Called after initialization completes                                                     |
 | `onError`  | `(error: unknown) => void`             | —       | Called if WASM loading or initialization fails                                            |

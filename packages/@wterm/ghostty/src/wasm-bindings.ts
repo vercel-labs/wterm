@@ -118,9 +118,10 @@ export interface GhosttyExports {
   // Responses
   read_response(ptr: number, buf_ptr: number, buf_len: number): number;
 
-  // Window title. Optional for apps still serving an older Ghostty binary.
+  // Host effects. Optional for apps still serving an older Ghostty binary.
   get_title_len?(ptr: number): number;
   get_title_ptr?(ptr: number): number;
+  get_bell_count?(ptr: number): number;
 
   // Memory
   alloc_buffer(len: number): number;

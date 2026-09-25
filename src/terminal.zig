@@ -131,6 +131,9 @@ pub const Terminal = struct {
     title_len: u16 = 0,
     title_changed: bool = false,
 
+    // BEL controls waiting for the host.
+    bell_count: u32 = 0,
+
     // Bounded FIFO for DSR and similar host-to-application replies.
     // When full, new responses are dropped so accepted responses stay ordered.
     response_queue: [RESPONSE_QUEUE_MAX][RESPONSE_MAX_BYTES]u8 = undefined,
@@ -254,6 +257,7 @@ pub const Terminal = struct {
         self.alternate_kitty_keyboard = .{};
         self.title_len = 0;
         self.title_changed = false;
+        self.bell_count = 0;
         self.response_head = 0;
         self.response_tail = 0;
         self.response_count = 0;
@@ -489,7 +493,7 @@ pub const Terminal = struct {
 
     fn executeControl(self: *Terminal, byte: u8) void {
         switch (byte) {
-            0x07 => {}, // BEL
+            0x07 => self.bell_count +|= 1, // BEL
             0x08, 0x7F => self.backspace(),
             0x09 => self.horizontalTab(),
             0x0A, 0x0B, 0x0C => {

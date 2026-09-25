@@ -40,6 +40,7 @@ let socket: WebSocket;
 let outputTail = "";
 const responses: string[] = [];
 const titles: string[] = [];
+const bells: number[] = [];
 let pendingProbe: {
   marker: string;
   matched: boolean;
@@ -122,6 +123,7 @@ function snapshot() {
     ),
     responses: [...responses],
     titles: [...titles],
+    bells: [...bells],
   };
 }
 
@@ -249,6 +251,7 @@ async function init() {
       : undefined,
     onData: sendInput,
     onTitle: (title) => titles.push(title),
+    onBell: (count) => bells.push(count),
     onResize: (cols, rows) => {
       if (socket?.readyState === WebSocket.OPEN)
         socket.send(JSON.stringify({ type: "resize", cols, rows }));
