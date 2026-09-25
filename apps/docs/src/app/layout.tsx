@@ -1,3 +1,4 @@
+import { GeistdocsThemeScript } from "@vercel/geistdocs/layout";
 import { Footer } from "@vercel/geistdocs/footer";
 import { Navbar } from "@vercel/geistdocs/navbar";
 import { config } from "@/lib/geistdocs/config";
@@ -48,6 +49,9 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}
     >
+      <head>
+        <GeistdocsThemeScript />
+      </head>
       <body>
         <DocsProvider>
           <DocsChatProvider>

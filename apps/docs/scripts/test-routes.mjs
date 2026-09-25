@@ -94,7 +94,15 @@ try {
       "Docs server did not become ready. Run the docs build first.",
     );
   if (!stopping) {
-    tests = launch(["--test", "tests/docs-routes.test.mjs"], {
+    const args = process.argv.includes("--terminal")
+      ? [
+          fileURLToPath(import.meta.resolve("@playwright/test/cli")),
+          "test",
+          "--config",
+          "tests/terminal.config.ts",
+        ]
+      : ["--test", "tests/docs-routes.test.mjs"];
+    tests = launch(args, {
       ...process.env,
       DOCS_TEST_URL: url,
     });
