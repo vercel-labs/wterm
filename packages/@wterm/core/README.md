@@ -66,6 +66,7 @@ const cursor = bridge.getCursor();  // { row, col, visible, shape, blinking }
 | `isDirtyRow(row)` | Check if a row needs re-rendering |
 | `clearDirty()` | Reset all dirty-row flags |
 | `getTitle()` | Get pending title change (or `null`) |
+| `getBellCount()` | Read and clear the number of pending BEL controls; `0` when none |
 | `getResponse()` | Get pending host response (or `null`) |
 | `getResourceState()` | Get optional core resource state, including built-in hyperlink identity saturation |
 | `getScrollbackCount()` | Number of lines in the scrollback buffer |

@@ -71,6 +71,7 @@ preserving their aspect ratio. Image canvases are decorative and
 |---|---|---|
 | `data` | `(data: string)` | Emitted when the terminal produces data (user input or host response). When no listener is attached, input is echoed back automatically. |
 | `title` | `(title: string)` | Emitted when the terminal title changes via an escape sequence. |
+| `bell` | `(count: number)` | Emitted with the pending BEL count as output is written; the host controls any alert. |
 | `resize` | `(cols: number, rows: number)` | Emitted after the terminal is resized. |
 | `ready` | `(wt: WTerm)` | Emitted once after `WTerm.init()` resolves, carrying the underlying `WTerm` instance. |
 | `error` | `(err: unknown)` | Emitted if WASM loading or initialization fails. |

@@ -2,16 +2,18 @@
   import type { WTerm as WTermType, WTermOptions } from "@wterm/dom";
 
   export interface TerminalProps
-    extends Omit<WTermOptions, "onData" | "onTitle" | "onResize"> {
+    extends Omit<WTermOptions, "onData" | "onTitle" | "onBell" | "onResize"> {
     theme?: string;
     className?: string;
     onData?: (data: string) => void;
     onTitle?: (title: string) => void;
+    onBell?: (count: number) => void;
     onResize?: (cols: number, rows: number) => void;
     onReady?: (wt: WTermType) => void;
     onError?: (error: unknown) => void;
     ondata?: (data: string) => void;
     ontitle?: (title: string) => void;
+    onbell?: (count: number) => void;
     onresize?: (cols: number, rows: number) => void;
     onready?: (wt: WTermType) => void;
     onerror?: (error: unknown) => void;
@@ -46,12 +48,14 @@
   export let className = "";
   export let onData: ((data: string) => void) | undefined = undefined;
   export let onTitle: ((title: string) => void) | undefined = undefined;
+  export let onBell: ((count: number) => void) | undefined = undefined;
   export let onResize: ((cols: number, rows: number) => void) | undefined =
     undefined;
   export let onReady: ((wt: WTerm) => void) | undefined = undefined;
   export let onError: ((error: unknown) => void) | undefined = undefined;
   export let ondata: ((data: string) => void) | undefined = undefined;
   export let ontitle: ((title: string) => void) | undefined = undefined;
+  export let onbell: ((count: number) => void) | undefined = undefined;
   export let onresize: ((cols: number, rows: number) => void) | undefined =
     undefined;
   export let onready: ((wt: WTerm) => void) | undefined = undefined;
@@ -83,6 +87,11 @@
   function handleTitle(title: string): void {
     onTitle?.(title);
     ontitle?.(title);
+  }
+
+  function handleBell(count: number): void {
+    onBell?.(count);
+    onbell?.(count);
   }
 
   function handleResize(nextCols: number, nextRows: number): void {
@@ -120,6 +129,7 @@
       debug,
       onData: hasDataHandler() ? handleData : undefined,
       onTitle: handleTitle,
+      onBell: handleBell,
       onResize: handleResize,
     });
 

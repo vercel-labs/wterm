@@ -140,6 +140,12 @@ export fn getTitleChanged() u32 {
     return 0;
 }
 
+export fn getBellCount() u32 {
+    const count = terminal.bell_count;
+    terminal.bell_count = 0;
+    return count;
+}
+
 export fn getLinkUriPtr(index: u32) [*]const u8 {
     const entry = terminal.hyperlinks.get(@intCast(index)) orelse return &input_buffer;
     return &entry.uri;

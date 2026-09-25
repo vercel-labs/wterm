@@ -109,6 +109,8 @@ const Terminal = defineComponent({
      * Forwards `WTerm`'s `onTitle` callback.
      */
     title: (_title: string) => true,
+    /** Forwards `WTerm`'s `onBell` callback with the number of BEL controls. */
+    bell: (_count: number) => true,
     /**
      * Forwards `WTerm`'s `onResize` callback with the new column and row
      * counts.
@@ -149,6 +151,7 @@ const Terminal = defineComponent({
           ? (data: string) => emit("data", data)
           : undefined,
         onTitle: (title: string) => emit("title", title),
+        onBell: (count: number) => emit("bell", count),
         onResize: (c: number, r: number) => emit("resize", c, r),
       });
 

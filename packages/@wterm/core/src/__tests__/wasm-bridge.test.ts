@@ -383,6 +383,23 @@ describe("WasmBridge", () => {
     });
   });
 
+  describe("bell", () => {
+    it("counts BEL controls and clears the count when read", () => {
+      expect(bridge.getBellCount()).toBe(0);
+      bridge.writeString("a\x07\x07b");
+      expect(bridge.getBellCount()).toBe(2);
+      expect(bridge.getBellCount()).toBe(0);
+    });
+
+    it("does not count BEL used to terminate OSC and clears pending bells on init", () => {
+      bridge.writeString("\x1b]2;title\x07");
+      expect(bridge.getBellCount()).toBe(0);
+      bridge.writeString("\x07");
+      bridge.init(80, 24);
+      expect(bridge.getBellCount()).toBe(0);
+    });
+  });
+
   describe("scrollback", () => {
     it("starts with zero scrollback", () => {
       expect(bridge.getScrollbackCount()).toBe(0);

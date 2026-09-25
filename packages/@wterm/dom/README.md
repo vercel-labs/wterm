@@ -50,6 +50,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
+| `onBell` | `(count: number) => void` | — | Called with the number of BEL controls since the last delivery |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
 
 **Methods:**
@@ -63,6 +64,11 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `destroy()` | Clean up event listeners and DOM |
 
 When a terminal application enables modes 1000 or 1002 with SGR encoding (1006), pointer input is sent through `onData`. Focus reports are sent when mode 1004 is active.
+
+`onBell` runs as BEL output is written, including during synchronized output.
+Several bells in one write chunk are delivered as one count. BEL used to end
+an OSC sequence does not ring. WTerm does not play sound automatically; the
+host chooses whether to play sound, show a visual alert, or ignore the event.
 
 Both cores expose application-requested block, bar, and underline cursors through
 `CursorState.shape` and blink mode through `CursorState.blinking`. The renderer

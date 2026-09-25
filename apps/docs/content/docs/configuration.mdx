@@ -5,9 +5,16 @@ navTitle: "Configuration"
 
 ## Options
 
-The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, and `debug` — plus event callbacks `onData`, `onTitle`, and `onResize` (exposed as `@data`, `@title`, and `@resize` events in Vue).
+The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, and `onResize` (exposed as `@data`, `@title`, `@bell`, and `@resize` events in Vue).
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
+
+### Bell notifications
+
+Both cores count BEL controls outside OSC sequences. `onBell(count)` runs as
+output is written, even if synchronized output is holding a paint. Several
+bells in one write chunk arrive as one count. WTerm leaves sound and visual
+alerts to the host application.
 
 ### Cursor appearance
 
@@ -54,7 +61,7 @@ See [Vue-Only Props](/api-reference#vue-only-props) and [Vue Events](/api-refere
 
 The Svelte `Terminal` component adds the `theme` prop and forwards standard
 `<div>` attributes such as `class`, `style`, `id`, and ARIA attributes. Svelte 5
-applications can use the `onData`, `onTitle`, `onResize`, `onReady`, and
+applications can use the `onData`, `onTitle`, `onBell`, `onResize`, `onReady`, and
 `onError` callback props.
 
 See [Svelte-only Props](/api-reference#svelte-only-props) for details.

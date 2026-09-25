@@ -28,6 +28,8 @@ export interface WTermOptions {
   debug?: boolean;
   onData?: (data: string) => void;
   onTitle?: (title: string) => void;
+  /** Called with the number of BEL controls since the last delivery. */
+  onBell?: (count: number) => void;
   onResize?: (cols: number, rows: number) => void;
 }
 
@@ -67,6 +69,7 @@ export class WTerm {
 
   onData: ((data: string) => void) | null;
   onTitle: ((title: string) => void) | null;
+  onBell: ((count: number) => void) | null;
   onResize: ((cols: number, rows: number) => void) | null;
 
   private _container: HTMLDivElement;
@@ -84,6 +87,7 @@ export class WTerm {
 
     this.onData = options.onData || null;
     this.onTitle = options.onTitle || null;
+    this.onBell = options.onBell || null;
     this.onResize = options.onResize || null;
 
     this._container = document.createElement("div");
@@ -242,11 +246,21 @@ export class WTerm {
     const windowSizeQueries = this._collectWindowSizeQueries(data);
     let deliveryError: unknown;
     let hasDeliveryError = false;
+    const recordDeliveryError = (error: unknown) => {
+      if (hasDeliveryError) return;
+      hasDeliveryError = true;
+      deliveryError = error;
+    };
     const drain = () => {
       const result = this._drainResponses();
-      if (!hasDeliveryError && result.hasError) {
-        hasDeliveryError = true;
-        deliveryError = result.error;
+      if (result.hasError) recordDeliveryError(result.error);
+      const bells = this.bridge?.getBellCount?.() ?? 0;
+      if (bells > 0) {
+        try {
+          this.onBell?.(bells);
+        } catch (error) {
+          recordDeliveryError(error);
+        }
       }
     };
     if (typeof data === "string") {
@@ -266,10 +280,7 @@ export class WTerm {
       try {
         this.onData?.(this._windowSizeResponse(query));
       } catch (error) {
-        if (!hasDeliveryError) {
-          hasDeliveryError = true;
-          deliveryError = error;
-        }
+        recordDeliveryError(error);
       }
     }
     if (hasDeliveryError) throw deliveryError;

@@ -239,3 +239,27 @@ describe("GhosttyCore window titles", () => {
     expect(core.getTitle()).toBeNull();
   });
 });
+
+describe("GhosttyCore bell events", () => {
+  it("counts BEL controls without counting OSC terminators", async () => {
+    const core = await newCore();
+    expect(core.getBellCount()).toBe(0);
+    core.writeString("a\x07\x07b");
+    expect(core.getBellCount()).toBe(2);
+    expect(core.getBellCount()).toBe(0);
+
+    core.writeString("\x1b]2;title\x07");
+    expect(core.getBellCount()).toBe(0);
+    core.dispose();
+  });
+
+  it("clears pending bells on reinitialization and disposal", async () => {
+    const core = await newCore();
+    core.writeString("\x07");
+    core.init(20, 4);
+    expect(core.getBellCount()).toBe(0);
+    core.writeString("\x07");
+    core.dispose();
+    expect(core.getBellCount()).toBe(0);
+  });
+});

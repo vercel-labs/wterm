@@ -17,6 +17,7 @@ function createMockBridge(): WasmBridge {
     getScrollbackCell: vi.fn(() => ({ char: 0, fg: 256, bg: 256, flags: 0 })),
     getScrollbackLineLen: vi.fn(() => 0),
     getTitle: vi.fn(() => null),
+    getBellCount: vi.fn(() => 0),
     getResponse: vi.fn(() => null),
     cursorKeysApp: vi.fn(() => false),
     bracketedPaste: vi.fn(() => false),
@@ -586,6 +587,58 @@ describe("WTerm", () => {
       await term.init();
 
       expect(onTitle).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("onBell callback", () => {
+    it("delivers the pending count as output is written", async () => {
+      const onBell = vi.fn();
+      const term = new WTerm(element, { autoResize: false, onBell });
+      await term.init();
+      vi.mocked(mockBridge.getBellCount).mockReturnValueOnce(3);
+
+      term.write("bells");
+
+      expect(onBell).toHaveBeenCalledExactlyOnceWith(3);
+      expect(mockBridge.getBellCount).toHaveBeenCalled();
+    });
+
+    it("delivers a bell even while synchronized output holds painting", async () => {
+      const onBell = vi.fn();
+      const term = new WTerm(element, { autoResize: false, onBell });
+      await term.init();
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      vi.mocked(mockBridge.getBellCount).mockReturnValueOnce(1);
+
+      term.write("\x1b[?2026h\x07");
+
+      expect(onBell).toHaveBeenCalledExactlyOnceWith(1);
+    });
+
+    it("continues draining and painting when the bell handler throws", async () => {
+      const error = new Error("bell handler failed");
+      const onBell = vi.fn(() => {
+        throw error;
+      });
+      const term = new WTerm(element, { autoResize: false, onBell });
+      await term.init();
+      const scheduleRender = vi.spyOn(
+        term as unknown as { _scheduleRender(): void },
+        "_scheduleRender",
+      );
+      vi.mocked(mockBridge.getBellCount)
+        .mockReturnValueOnce(1)
+        .mockReturnValueOnce(2);
+      vi.mocked(mockBridge.writeString).mockImplementation(
+        (_data, afterChunk) => {
+          afterChunk?.();
+          afterChunk?.();
+        },
+      );
+
+      expect(() => term.write("\x07")).toThrow(error);
+      expect(scheduleRender).toHaveBeenCalled();
+      expect(onBell.mock.calls).toEqual([[1], [2]]);
     });
   });
 

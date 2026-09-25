@@ -140,6 +140,8 @@ export interface TerminalCore {
 
   // -- Side outputs --
   getTitle(): string | null;
+  /** Read and clear the number of pending BEL controls. Optional for custom cores. */
+  getBellCount?(): number;
   getResponse(): string | null;
   getResourceState?(): TerminalResourceState;
 

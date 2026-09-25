@@ -22,6 +22,9 @@ callback, including an empty title that clears it. As with the built-in core,
 multiple changes before a render deliver the latest title. Ghostty ignores
 titles longer than 255 bytes.
 
+BEL controls reach the shared `onBell(count)` callback as output is written.
+The BEL that terminates an OSC title does not count as a bell.
+
 Ghostty-backed terminals also render direct Kitty Graphics Protocol PNG, RGB,
 and RGBA data through the optional graphics contract. The DOM layer draws
 bounded, transient canvas overlays for pinned placements and follows scrollback,

@@ -17,6 +17,7 @@ vi.mock("@wterm/dom", () => {
     this.rows = options?.rows ?? 24;
     this.onData = options?.onData ?? null;
     this.onTitle = options?.onTitle ?? null;
+    this.onBell = options?.onBell ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
@@ -211,29 +212,35 @@ describe("Terminal component", () => {
   it("supports Svelte 5 callback-style event props", async () => {
     const ondata = vi.fn();
     const ontitle = vi.fn();
+    const onbell = vi.fn();
     const onresize = vi.fn();
-    render(Terminal, { props: { ondata, ontitle, onresize } });
+    render(Terminal, { props: { ondata, ontitle, onbell, onresize } });
     await Promise.resolve();
 
     lastWTermInstance.onData("hello");
     lastWTermInstance.onTitle("my title");
+    lastWTermInstance.onBell(2);
     lastWTermInstance.onResize(100, 30);
 
     expect(ondata).toHaveBeenCalledWith("hello");
     expect(ontitle).toHaveBeenCalledWith("my title");
+    expect(onbell).toHaveBeenCalledWith(2);
     expect(onresize).toHaveBeenCalledWith(100, 30);
   });
 
-  it("forwards title and resize callbacks", async () => {
+  it("forwards title, bell, and resize callbacks", async () => {
     const onTitle = vi.fn();
+    const onBell = vi.fn();
     const onResize = vi.fn();
-    render(Terminal, { props: { onTitle, onResize } });
+    render(Terminal, { props: { onTitle, onBell, onResize } });
     await Promise.resolve();
 
     lastWTermInstance.onTitle("my title");
+    lastWTermInstance.onBell(3);
     lastWTermInstance.onResize(100, 30);
 
     expect(onTitle).toHaveBeenCalledWith("my title");
+    expect(onBell).toHaveBeenCalledWith(3);
     expect(onResize).toHaveBeenCalledWith(100, 30);
   });
 

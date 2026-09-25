@@ -46,11 +46,15 @@ await term.init();
 
 ## Options and Methods
 
-The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `onData`, `onTitle`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
+The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `onData`, `onTitle`, `onBell`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
 
 See [WTerm Methods](/api-reference#wterm-methods) for the full list of instance methods (`init`, `write`, `resize`, `focus`, `destroy`).
 
 When a terminal application enables SGR mouse tracking or focus reporting, WTerm sends those reports through `onData` with keyboard input and host responses.
+
+When an application rings BEL, `onBell(count)` receives the number of bells as
+output is written. WTerm does not play sound automatically; your application
+can choose an audible or visual notification.
 
 When the active core negotiates the Kitty keyboard protocol, WTerm encodes key presses, repeats, and available releases from the core's current flags. The built-in and Ghostty cores keep separate primary and alternate-screen flag stacks. Third-party cores without Kitty state retain legacy keyboard behavior.
 

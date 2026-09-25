@@ -33,6 +33,10 @@ When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string 
 
 See the full [WasmBridge](/api-reference#wasmbridge) reference for all methods, types, and scrollback APIs.
 
+`getBellCount()` reads and clears pending BEL controls. A BEL used to terminate
+an OSC sequence does not count. The DOM wrapper forwards the count through
+`onBell`, leaving the alert behavior to the host.
+
 ### Example
 
 Headless usage — load the bridge, write data, and read cells back:
