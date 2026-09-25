@@ -93,6 +93,8 @@ overrides blinking when explicitly set; shape always follows the core.
 
 WTerm implements the Kitty keyboard protocol when the active core exposes negotiated flags. The built-in and Ghostty cores support query, push, pop, set, OR, and NOT operations, with independent state for the primary and alternate screens. Cores without `kittyKeyboardFlags()` keep the legacy keyboard path unchanged.
 
+When the browser identifies a printable AltGr key, WTerm lets its committed character pass through native text input even in Kitty keyboard mode. This also covers Control+Alt text typed with the right Alt key when the browser does not expose AltGraph state. Control+Alt chords without either AltGr signal retain their Kitty encoding.
+
 Without Kitty keyboard negotiation, Shift, Alt, and Control modifiers on arrow,
 Home/End, Insert/Delete, Page Up/Down, and F1–F12 keys use xterm-style CSI
 sequences. Unmodified application cursor keys still use SS3 when the core

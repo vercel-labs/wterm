@@ -66,6 +66,8 @@ can choose an audible or visual notification.
 
 When the active core negotiates the Kitty keyboard protocol, WTerm encodes key presses, repeats, and available releases from the core's current flags. The built-in and Ghostty cores keep separate primary and alternate-screen flag stacks. Third-party cores without Kitty state retain legacy keyboard behavior.
 
+Printable AltGr input uses the browser's committed text path even in Kitty mode, so layouts that use AltGr can enter characters. This includes Control+Alt text with the right Alt key when the browser does not report AltGraph state. Control+Alt chords without either AltGr signal keep their Kitty encoding.
+
 Outside Kitty keyboard mode, modified arrow, Home/End, Insert/Delete, Page
 Up/Down, and F1–F12 keys use xterm-style CSI modifier sequences. For example,
 Control+Left sends `CSI 1;5D` instead of an unmodified Left arrow. Unmodified

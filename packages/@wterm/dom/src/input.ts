@@ -81,6 +81,26 @@ const SCROLLBACK_BOTTOM_TOLERANCE = 5;
 // iOS needs a deletable value to keep emitting input events for held Backspace.
 const TOUCH_INPUT_PLACEHOLDER = "\u200b";
 
+function isAltGraphTextInput(
+  event: KeyboardEvent,
+  pressedModifiers: ReadonlySet<string>,
+): boolean {
+  if (
+    event.metaKey ||
+    !(
+      event.getModifierState("AltGraph") ||
+      (event.ctrlKey && event.altKey && pressedModifiers.has("AltRight"))
+    )
+  )
+    return false;
+  const chars = Array.from(event.key);
+  return (
+    chars.length === 1 &&
+    chars[0].codePointAt(0)! >= 0x20 &&
+    chars[0] !== "\x7f"
+  );
+}
+
 export class InputHandler {
   private element: HTMLElement;
   private textarea: HTMLTextAreaElement;
@@ -310,6 +330,13 @@ export class InputHandler {
     const kittyOwnsModifier =
       physicalModifier && Boolean(kittyFlags & KITTY_REPORT_ALL);
     const delivered = this.deliveredKeys.has(keyId);
+
+    // AltGr can appear as Control+Alt even though it inserts text. Let the
+    // browser commit that text, including dead-key and layout-specific input.
+    if (isAltGraphTextInput(e, this.pressedModifiers)) {
+      if (!delivered) this.suppressedKeyUps.add(keyId);
+      return;
+    }
 
     if (!delivered && (e.metaKey || e.ctrlKey) && e.key === "c") {
       const sel = window.getSelection();
