@@ -279,6 +279,54 @@ describe("BashShell", () => {
       expect(mockExec.mock.calls[0]?.[0]).toContain("ls");
       expect(mockExec.mock.calls[0]?.[0]).not.toContain("[1;2D");
     });
+
+    it.each(["\x1b[H", "\x1bOH"])(
+      "moves Home to the start of the line for %s",
+      async (sequence) => {
+        await shell.handleInput("echo hello");
+        output.length = 0;
+        await shell.handleInput(sequence);
+        expect(output).toEqual(["\x1b[10D"]);
+
+        await shell.handleInput("X");
+        await shell.handleInput("\r");
+        expect(mockExec.mock.calls[0]?.[0]).toContain("Xecho hello");
+      },
+    );
+
+    it.each(["\x1b[F", "\x1bOF"])(
+      "moves End to the end of the line for %s",
+      async (sequence) => {
+        await shell.handleInput("echo hi");
+        await shell.handleInput("\x1b[H");
+        output.length = 0;
+        await shell.handleInput(sequence);
+        expect(output).toEqual(["\x1b[7C"]);
+
+        await shell.handleInput("!");
+        await shell.handleInput("\r");
+        expect(mockExec.mock.calls[0]?.[0]).toContain("echo hi!");
+      },
+    );
+
+    it("deletes the character at the cursor and redraws the remaining text", async () => {
+      await shell.handleInput("abc");
+      await shell.handleInput("\x1b[H");
+      await shell.handleInput("\x1b[C");
+      output.length = 0;
+
+      await shell.handleInput("\x1b[3~");
+      expect(output).toEqual(["c\x1b[K", "\x1b[1D"]);
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("ac");
+    });
+
+    it("does not delete past the end of the line", async () => {
+      await shell.handleInput("abc");
+      output.length = 0;
+      await shell.handleInput("\x1b[3~");
+      expect(output).toEqual([]);
+    });
   });
 
   describe("handleInput - history navigation", () => {

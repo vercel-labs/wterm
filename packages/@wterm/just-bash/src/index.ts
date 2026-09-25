@@ -18,6 +18,8 @@ function defaultPrompt(cwd: string): string {
 
 const WORD_LEFT_SEQUENCES = new Set(["\x1b[1;3D", "\x1b[1;5D", "\x1bb"]);
 const WORD_RIGHT_SEQUENCES = new Set(["\x1b[1;3C", "\x1b[1;5C", "\x1bf"]);
+const HOME_SEQUENCES = new Set(["\x1b[H", "\x1bOH"]);
+const END_SEQUENCES = new Set(["\x1b[F", "\x1bOF"]);
 
 export class BashShell {
   private _bash: Bash | null = null;
@@ -139,6 +141,13 @@ export class BashShell {
         write("\b" + tail + "\x1b[K");
         if (tail.length > 0) write(`\x1b[${tail.length}D`);
       }
+    } else if (data === "\x1b[3~") {
+      if (this._cursor < this._line.length) {
+        const tail = this._line.slice(this._cursor + 1);
+        this._line = this._line.slice(0, this._cursor) + tail;
+        write(tail + "\x1b[K");
+        if (tail.length > 0) write(`\x1b[${tail.length}D`);
+      }
     } else if (data === "\x1b[A") {
       if (!this._history.length) return;
       if (this._historyPos < 0) this._historyPos = this._history.length;
@@ -184,12 +193,12 @@ export class BashShell {
         this._line = "";
         this._cursor = 0;
       }
-    } else if (data === "\x01") {
+    } else if (data === "\x01" || HOME_SEQUENCES.has(data)) {
       if (this._cursor > 0) {
         write(`\x1b[${this._cursor}D`);
         this._cursor = 0;
       }
-    } else if (data === "\x05") {
+    } else if (data === "\x05" || END_SEQUENCES.has(data)) {
       if (this._cursor < this._line.length) {
         write(`\x1b[${this._line.length - this._cursor}C`);
         this._cursor = this._line.length;
