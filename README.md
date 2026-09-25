@@ -52,6 +52,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
 - **Mouse and focus reporting** — DOM input for SGR clicks, drags, wheel events, and cell-level pointer motion in mode 1003
 - **Kitty keyboard protocol**: negotiated key disambiguation, event types, alternate keys, all-key reporting, and associated text
+- **IME composition** — tentative text appears at the terminal cursor; only committed text reaches the connected application
 
 ## Development
 

@@ -66,6 +66,14 @@ describe("InputHandler", () => {
       expect(ta.getAttribute("autocomplete")).toBe("off");
       expect(ta.getAttribute("spellcheck")).toBe("false");
     });
+
+    it("keeps the input on-screen when focused", () => {
+      const ta = getTextarea();
+      handler.focus();
+      expect(ta.style.left).toBe("0px");
+      expect(ta.style.top).toBe("0px");
+      expect(ta.style.opacity).toBe("0");
+    });
   });
 
   describe("focus", () => {
@@ -74,6 +82,98 @@ describe("InputHandler", () => {
       const focusSpy = vi.spyOn(ta, "focus");
       handler.focus();
       expect(focusSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe("IME composition", () => {
+    it("shows tentative text at the input without forwarding it", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.value = "にほんご";
+      ta.dispatchEvent(
+        new InputEvent("input", {
+          data: "にほんご",
+          inputType: "insertCompositionText",
+        }),
+      );
+
+      expect(ta.style.opacity).toBe("1");
+      expect(ta.value).toBe("にほんご");
+      expect(received).toEqual([]);
+
+      ta.dispatchEvent(
+        new CompositionEvent("compositionend", { data: "日本語" }),
+      );
+      expect(ta.style.opacity).toBe("0");
+      expect(ta.value).toBe("");
+      expect(received).toEqual(["日本語"]);
+    });
+
+    it("ignores an extra input event for the committed text", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.dispatchEvent(
+        new CompositionEvent("compositionend", { data: "中文" }),
+      );
+      ta.value = "中文";
+      ta.dispatchEvent(
+        new InputEvent("input", {
+          data: "中文",
+          inputType: "insertText",
+        }),
+      );
+      expect(received).toEqual(["中文"]);
+      expect(ta.value).toBe("");
+
+      ta.value = "next";
+      ta.dispatchEvent(new InputEvent("input", { inputType: "insertText" }));
+      expect(received).toEqual(["中文", "next"]);
+    });
+
+    it("accepts a commit supplied only by the following input event", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.dispatchEvent(new CompositionEvent("compositionend"));
+      ta.value = "中文";
+      ta.dispatchEvent(
+        new InputEvent("input", {
+          data: "中文",
+          inputType: "insertFromComposition",
+        }),
+      );
+      expect(received).toEqual(["中文"]);
+    });
+
+    it("ignores a duplicate commit when inputType is unavailable", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.dispatchEvent(
+        new CompositionEvent("compositionend", { data: "中文" }),
+      );
+      ta.value = "中文";
+      ta.dispatchEvent(new Event("input"));
+      expect(received).toEqual(["中文"]);
+    });
+
+    it("accepts repeated text after another keydown", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.dispatchEvent(new CompositionEvent("compositionend", { data: "a" }));
+      ta.dispatchEvent(createKeyboardEvent("Shift", { code: "ShiftLeft" }));
+      ta.value = "a";
+      ta.dispatchEvent(
+        new InputEvent("input", { data: "a", inputType: "insertText" }),
+      );
+      expect(received).toEqual(["a", "a"]);
+    });
+
+    it("clears tentative text when focus leaves the terminal", () => {
+      const ta = getTextarea();
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+      ta.value = "にほんご";
+      ta.dispatchEvent(new FocusEvent("blur"));
+      expect(ta.style.opacity).toBe("0");
+      expect(ta.value).toBe("");
     });
   });
 

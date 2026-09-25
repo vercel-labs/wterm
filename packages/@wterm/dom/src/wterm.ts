@@ -205,6 +205,7 @@ export class WTerm {
           this._charWidth > 0 && this._rowHeight > 0
             ? { charWidth: this._charWidth, rowHeight: this._rowHeight }
             : null,
+        () => this._scrollToBottom(),
       );
 
       this._setupResizeObserver();
@@ -467,6 +468,8 @@ export class WTerm {
     } else if (!hasScrollback && this.element.scrollTop !== 0) {
       this._setScrollTop(0);
     }
+
+    this.input?.syncCompositionPosition();
 
     const title = this.bridge.getTitle();
     if (title !== null && this.onTitle) {

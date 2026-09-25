@@ -86,6 +86,11 @@ WTerm implements the Kitty keyboard protocol when the active core exposes negoti
 
 Browser keyboard events do not expose every native field the protocol can carry. WTerm reports physical functional and modifier keys from `KeyboardEvent.code`, text from `KeyboardEvent.key`, and shifted alternates when available. It does not invent the base-layout alternate, cannot synthesize release events the browser never delivers, and limits associated text to the current press event.
 
+During IME composition, tentative text appears at the terminal cursor in the
+browser's input field. The connected application receives only the committed
+text. When composition starts while reading scrollback, WTerm returns to the
+live viewport so the text and candidate window stay near the cursor.
+
 WTerm honors synchronized output mode (CSI `?2026`) by painting the block atomically when the mode closes. Each synchronized block can hold rendering for at most one second from its opening sequence. Ordinary payload does not extend that deadline. If the deadline expires, WTerm resumes painting until a fresh synchronized block begins.
 
 Ordinary writes schedule `requestAnimationFrame` directly. Multiple writes before the frame are coalesced into one render.
