@@ -106,7 +106,10 @@ export class HistorySelection {
     owners.get(doc)?.clear();
     this.clear();
     owners.set(doc, this);
-    doc.getSelection()?.removeAllRanges();
+    // Removing a collapsed textarea caret makes Chromium scroll it back into
+    // view on the next key event, overriding the terminal's scroll position.
+    const native = doc.getSelection();
+    if (native && !native.isCollapsed) native.removeAllRanges();
     this.status.textContent = "Selecting terminal text…";
     return new Promise((resolve) => {
       this.resolve = resolve;

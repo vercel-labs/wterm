@@ -232,4 +232,22 @@ describe("full-history selection", () => {
     expect(clipboardData.setData).not.toHaveBeenCalled();
     expect(term.getSelectionText()).toBeNull();
   });
+
+  it("does not remove the browser's collapsed input caret when typing or selecting", async () => {
+    const textarea = element.querySelector("textarea")!;
+    textarea.focus();
+    const selection = document.getSelection()!;
+    const remove = vi.spyOn(selection, "removeAllRanges");
+    await selectAll();
+    term.clearSelection();
+    textarea.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "x",
+        code: "KeyX",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(remove).not.toHaveBeenCalled();
+  });
 });

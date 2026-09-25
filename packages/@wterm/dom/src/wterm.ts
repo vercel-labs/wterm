@@ -280,7 +280,7 @@ export class WTerm {
             void this.selectAll();
           },
           hasSelection: () => this._historySelection.active,
-          clearSelection: () => this.clearSelection(),
+          clearSelection: () => this._historySelection.clear(),
         },
       );
 
@@ -432,7 +432,7 @@ export class WTerm {
   clearSelection(): void {
     this._historySelection.clear();
     const selection = this.element.ownerDocument.getSelection();
-    if (!selection) return;
+    if (!selection || selection.isCollapsed) return;
     for (let index = 0; index < selection.rangeCount; index++) {
       const range = selection.getRangeAt(index);
       if (
