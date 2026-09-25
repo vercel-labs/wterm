@@ -487,6 +487,108 @@ describe("BashShell", () => {
     });
   });
 
+  describe("handleInput - Unicode editing", () => {
+    beforeEach(async () => {
+      shell = new BashShell();
+      await shell.attach(write);
+      output.length = 0;
+    });
+
+    it("accepts pasted emoji, combining marks, and CJK text as one command", async () => {
+      await shell.handleInput("echo 👩‍💻 e\u0301 界");
+      await shell.handleInput("\r");
+
+      expect(mockExec.mock.calls[0]?.[0]).toContain("echo 👩‍💻 e\u0301 界");
+    });
+
+    it("moves across a joined emoji without splitting it", async () => {
+      await shell.handleInput("echo 👩");
+      await shell.handleInput("\u200d");
+      await shell.handleInput("💻x");
+      output.length = 0;
+
+      await shell.handleInput("\x1b[D");
+      await shell.handleInput("\x1b[D");
+      await shell.handleInput("\x1b[C");
+      expect(output).toEqual(["\x1b[D", "\x1b[2D", "\x1b[2C"]);
+
+      await shell.handleInput("Y");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("echo 👩‍💻Yx");
+    });
+
+    it("backspaces a whole emoji and redraws the remaining text", async () => {
+      await shell.handleInput("echo 👩‍💻!");
+      await shell.handleInput("\x1b[D");
+      output.length = 0;
+
+      await shell.handleInput("\x7f");
+      expect(output).toEqual(["\x1b[2D!\x1b[K", "\x1b[1D"]);
+
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("echo !");
+    });
+
+    it("deletes a whole combining sequence at the cursor", async () => {
+      await shell.handleInput("echo e");
+      await shell.handleInput("\u0301");
+      await shell.handleInput("x");
+      await shell.handleInput("\x1b[D");
+      await shell.handleInput("\x1b[D");
+      output.length = 0;
+
+      await shell.handleInput("\x1b[3~");
+      expect(output).toEqual(["x\x1b[K", "\x1b[1D"]);
+
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("echo x");
+    });
+
+    it("uses cell widths when inserting before wide text and moving by word", async () => {
+      await shell.handleInput("echo 界 👩‍💻");
+      output.length = 0;
+      await shell.handleInput("\x1b[1;3D");
+      await shell.handleInput("\x1b[1;3D");
+      expect(output).toEqual(["\x1b[2D", "\x1b[3D"]);
+
+      await shell.handleInput("X");
+      expect(output.at(-1)).toBe("\x1b[5D");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("echo X界 👩‍💻");
+    });
+
+    it("moves Home and End by displayed columns", async () => {
+      await shell.handleInput("A界👩‍💻");
+      output.length = 0;
+
+      await shell.handleInput("\x1b[H");
+      await shell.handleInput("\x1b[F");
+      expect(output).toEqual(["\x1b[5D", "\x1b[5C"]);
+    });
+
+    it("handles an emoji in a paste that also contains Enter", async () => {
+      await shell.handleInput("echo 👋\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("echo 👋");
+    });
+
+    it("restores the cell position of a draft after visiting history", async () => {
+      await shell.handleInput("first");
+      await shell.handleInput("\r");
+      await shell.handleInput("echo 👩‍💻x");
+      await shell.handleInput("\x1b[D");
+      await shell.handleInput("\x1b[D");
+      await shell.handleInput("\x1b[A");
+      output.length = 0;
+
+      await shell.handleInput("\x1b[B");
+      expect(output.at(-1)).toBe("\x1b[3D");
+
+      await shell.handleInput("Y");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[2]?.[0]).toContain("echo Y👩‍💻x");
+    });
+  });
+
   describe("custom prompt", () => {
     it("uses custom prompt function", async () => {
       shell = new BashShell({
