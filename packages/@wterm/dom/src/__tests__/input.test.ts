@@ -286,6 +286,38 @@ describe("InputHandler", () => {
   });
 
   describe("key mapping - ctrl sequences", () => {
+    it("keeps handled terminal shortcuts from reaching page listeners", () => {
+      const pageKeydown = vi.fn();
+      document.addEventListener("keydown", pageKeydown);
+      try {
+        const handled = createKeyboardEvent("k", { ctrlKey: true });
+        getTextarea().dispatchEvent(handled);
+        expect(received).toEqual(["\x0b"]);
+        expect(handled.defaultPrevented).toBe(true);
+        expect(pageKeydown).not.toHaveBeenCalled();
+
+        getTextarea().dispatchEvent(createKeyboardEvent("Unidentified"));
+        expect(pageKeydown).toHaveBeenCalledOnce();
+      } finally {
+        document.removeEventListener("keydown", pageKeydown);
+      }
+    });
+
+    it.each([
+      ["Backspace", { altKey: true }, "\x1b\x7f"],
+      ["w", { ctrlKey: true }, "\x17"],
+      ["k", { ctrlKey: true }, "\x0b"],
+      ["u", { ctrlKey: true }, "\x15"],
+    ] as const)(
+      "sends the shell editing shortcut for %s",
+      (key, modifiers, expected) => {
+        const event = createKeyboardEvent(key, modifiers);
+        getTextarea().dispatchEvent(event);
+        expect(received).toEqual([expected]);
+        expect(event.defaultPrevented).toBe(true);
+      },
+    );
+
     it("maps Ctrl+A to SOH", () => {
       const ta = getTextarea();
       ta.dispatchEvent(createKeyboardEvent("a", { ctrlKey: true }));

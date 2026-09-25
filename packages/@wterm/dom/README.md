@@ -100,6 +100,9 @@ Home/End, Insert/Delete, Page Up/Down, and F1–F12 keys use xterm-style CSI
 sequences. Unmodified application cursor keys still use SS3 when the core
 requests application mode. Browser-reserved shortcuts may never reach WTerm.
 
+While the terminal is focused, handled key presses do not bubble to page-level
+shortcut listeners. Control+K can reach the terminal instead of opening search.
+
 Without Kitty keyboard negotiation, Control+Space sends NUL, Control+/ sends
 US, and Control+Backspace sends BS. Control+Alt printable input stays on the
 native text path in this mode so keyboard layouts using AltGr can enter

@@ -82,10 +82,11 @@ new BashShell(options?: ShellOptions)
 ### Features
 
 - Line editing with Backspace, Delete, Home/End, and word-wise cursor movement (Option/Alt+arrows, Ctrl+arrows, Alt+B/F)
+- Erase the previous word with Option/Alt+Backspace or Ctrl+W; erase before or after the cursor with Ctrl+U or Ctrl+K
 - Unicode-aware editing for emoji, combining marks, and wide characters
 - Command history (up/down arrows) that restores your unfinished command and cursor position
 - Tab completion (files + commands)
-- Ctrl+C to cancel, Ctrl+L to clear
+- Ctrl+C to cancel, Ctrl+L to clear the screen
 - Directory-aware prompt updates
 
 ## License
