@@ -45,6 +45,8 @@ export class BashShell {
   private _history: string[] = [];
   private _historyPos = -1;
   private _historyDraft: { line: string; cursor: number } | null = null;
+  private _killBuffer = "";
+  private _lastActionWasKill = false;
   private _busy = false;
 
   private _files: Record<string, string>;
@@ -96,6 +98,9 @@ export class BashShell {
   async handleInput(data: string): Promise<void> {
     if (!this._write || this._busy) return;
     const write = this._write;
+    if (!WORD_ERASE_SEQUENCES.has(data) && data !== "\x15" && data !== "\x0b") {
+      this._lastActionWasKill = false;
+    }
 
     if (data === "\t") {
       await this._tabComplete();
@@ -156,7 +161,10 @@ export class BashShell {
         );
       }
     } else if (WORD_ERASE_SEQUENCES.has(data)) {
-      this._eraseBeforeCursor(this._wordBoundary(-1));
+      this._recordKill(
+        this._eraseBeforeCursor(this._wordBoundary(-1)),
+        "backward",
+      );
     } else if (data === "\x1b[3~") {
       if (this._cursor < this._line.length) {
         const tail = this._line.slice(
@@ -206,12 +214,16 @@ export class BashShell {
     } else if (WORD_RIGHT_SEQUENCES.has(data)) {
       this._moveWord(1);
     } else if (data === "\x15") {
-      this._eraseBeforeCursor(0);
+      this._recordKill(this._eraseBeforeCursor(0), "backward");
     } else if (data === "\x0b") {
-      if (this._cursor < this._line.length) {
+      const removed = this._line.slice(this._cursor);
+      this._recordKill(removed, "forward");
+      if (removed) {
         this._line = this._line.slice(0, this._cursor);
         write("\x1b[K");
       }
+    } else if (data === "\x19") {
+      if (this._killBuffer) this._insertText(this._killBuffer);
     } else if (data === "\x01" || HOME_SEQUENCES.has(data)) {
       if (this._cursor > 0) {
         this._moveCells(stringWidth(this._line.slice(0, this._cursor)), "D");
@@ -274,11 +286,12 @@ export class BashShell {
     }
   }
 
-  private _eraseBeforeCursor(start: number): void {
-    if (start === this._cursor) return;
+  private _eraseBeforeCursor(start: number): string {
+    if (start === this._cursor) return "";
     const write = this._write;
-    if (!write) return;
-    const removedWidth = stringWidth(this._line.slice(start, this._cursor));
+    if (!write) return "";
+    const removed = this._line.slice(start, this._cursor);
+    const removedWidth = stringWidth(removed);
     const tail = this._line.slice(this._cursor);
     this._line = this._line.slice(0, start) + tail;
     this._cursor = start;
@@ -290,6 +303,23 @@ export class BashShell {
           : "";
     write(moveLeft + tail + "\x1b[K");
     this._moveCells(stringWidth(tail), "D");
+    return removed;
+  }
+
+  private _recordKill(text: string, direction: "backward" | "forward"): void {
+    if (!text) {
+      this._lastActionWasKill = false;
+      return;
+    }
+    if (this._lastActionWasKill) {
+      this._killBuffer =
+        direction === "backward"
+          ? text + this._killBuffer
+          : this._killBuffer + text;
+    } else {
+      this._killBuffer = text;
+    }
+    this._lastActionWasKill = true;
   }
 
   private _showLine(line: string, cursor = line.length): void {

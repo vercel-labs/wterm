@@ -50,7 +50,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Auto-resize** — `ResizeObserver`-based terminal resizing; reported dimensions reflect the grid size applied by the core so connected PTYs stay aligned
 - **Wide grids** — the built-in core grows its cell storage as needed, up to 1024 columns and 512 rows
 - **Framework bindings** — React, Vue 3, and Svelte components
-- **In-browser Bash shell** — optional just-bash adapter with Unicode-aware line editing, command history that preserves unfinished input, tab completion, Home/End and Delete editing, word-wise cursor movement and erasure, and Ctrl+U/Ctrl+K deletion before/after the cursor
+- **In-browser Bash shell** — optional just-bash adapter with Unicode-aware line editing, command history that preserves unfinished input, tab completion, Home/End and Delete editing, word-wise cursor movement and erasure, Ctrl+U/Ctrl+K deletion before/after the cursor, and Ctrl+Y restoration
 - **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
 - **Mouse and focus reporting** — DOM input for X10, UTF-8 (1005), SGR (1006), urxvt (1015), and SGR pixel (1016) clicks, drags, wheel events, and pointer motion
 - **Mouse-aware scrollback** — clicks and wheel gestures on history remain available for selection and scrolling while an application tracks the mouse

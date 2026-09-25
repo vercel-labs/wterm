@@ -83,6 +83,7 @@ new BashShell(options?: ShellOptions)
 
 - Line editing with Backspace, Delete, Home/End, and word-wise cursor movement (Option/Alt+arrows, Ctrl+arrows, Alt+B/F)
 - Erase the previous word with Option/Alt+Backspace or Ctrl+W; erase before or after the cursor with Ctrl+U or Ctrl+K
+- Ctrl+Y restores the text erased by those shortcuts, including consecutive erasures
 - Unicode-aware editing for emoji, combining marks, and wide characters
 - Command history (up/down arrows) that restores your unfinished command and cursor position
 - Tab completion (files + commands)
