@@ -54,16 +54,36 @@ describe("Terminal component", () => {
 
   it("renders a div with terminal role and a11y attrs", async () => {
     const wrapper = await mountTerminal();
-    const el = wrapper.get("[role='textbox']");
+    const el = wrapper.get("[role='group']");
     expect(el.attributes("aria-label")).toBe("Terminal");
     expect(el.attributes("aria-roledescription")).toBe("terminal");
-    expect(el.attributes("aria-multiline")).toBe("true");
+    expect(el.attributes("aria-multiline")).toBeUndefined();
   });
 
   it("applies class from attribute fallthrough", async () => {
     const wrapper = await mountTerminal({}, { class: "custom" });
     expect(wrapper.classes()).toContain("custom");
     expect(wrapper.classes()).toContain("wterm");
+  });
+
+  it("updates host input labels and tab order without restarting the terminal", async () => {
+    const wrapper = await mountTerminal(
+      {},
+      { "aria-label": "Build shell", "aria-describedby": "help", tabindex: 0 },
+    );
+    const instance = lastWTermInstance;
+    await wrapper.setProps({
+      "aria-label": "Test shell",
+      "aria-labelledby": "heading",
+      "aria-describedby": undefined,
+      tabindex: -1,
+    } as any);
+    expect(wrapper.attributes("aria-label")).toBe("Test shell");
+    expect(wrapper.attributes("aria-labelledby")).toBe("heading");
+    expect(wrapper.attributes("aria-describedby")).toBeUndefined();
+    expect(wrapper.attributes("tabindex")).toBe("-1");
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
   });
 
   it("applies theme class", async () => {

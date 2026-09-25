@@ -30,6 +30,10 @@ npm install @wterm/dom
 </script>
 ```
 
+## Input Accessibility
+
+Give the host an `aria-label` or `aria-labelledby`, with an optional `aria-describedby` or `aria-description`. WTerm applies these to the actual input and keeps changes synchronized. The input defaults to the name **Terminal**; the host defaults to a group. Host `tabindex="-1"` excludes input from page tab entry, while `term.focus()` still focuses it programmatically. See [Input Accessibility](/api-reference#input-accessibility) for tab-order ownership and output limits.
+
 ## Custom Input Handling
 
 By default, typed input is echoed back to the terminal. Pass `onData` when you need control over input — for example, sending it to a server:

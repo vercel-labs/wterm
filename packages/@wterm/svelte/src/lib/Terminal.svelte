@@ -189,8 +189,7 @@
   class:cursor-blink={cursorBlink === true}
   class:cursor-steady={cursorBlink === false}
   style={mergedStyle || undefined}
-  role={$$restProps.role ?? "textbox"}
+  role={$$restProps.role ?? "group"}
   aria-label={$$restProps["aria-label"] ?? "Terminal"}
-  aria-multiline={$$restProps["aria-multiline"] ?? "true"}
   aria-roledescription={$$restProps["aria-roledescription"] ?? "terminal"}
 ></div>

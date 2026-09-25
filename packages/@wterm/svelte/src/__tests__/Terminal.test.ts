@@ -54,10 +54,10 @@ describe("Terminal component", () => {
 
   it("renders an accessible terminal element", () => {
     const { getByRole } = render(Terminal);
-    const element = getByRole("textbox");
+    const element = getByRole("group");
 
     expect(element.getAttribute("aria-label")).toBe("Terminal");
-    expect(element.getAttribute("aria-multiline")).toBe("true");
+    expect(element.hasAttribute("aria-multiline")).toBe(false);
     expect(element.getAttribute("aria-roledescription")).toBe("terminal");
   });
 
@@ -69,13 +69,37 @@ describe("Terminal component", () => {
         theme: "dark",
       },
     });
-    const element = getByRole("textbox");
+    const element = getByRole("group");
 
     expect(element.classList.contains("wterm")).toBe(true);
     expect(element.classList.contains("custom")).toBe(true);
     expect(element.classList.contains("theme-dark")).toBe(true);
     expect(element.style.background).toBe("purple");
     expect(element.style.height).toBe("432px");
+  });
+
+  it("updates host input labels and tab order without restarting the terminal", async () => {
+    const { rerender, getByRole } = render(Terminal, {
+      props: {
+        "aria-label": "Build shell",
+        "aria-describedby": "help",
+        tabindex: 0,
+      },
+    });
+    const host = getByRole("group", { name: "Build shell" });
+    const instance = lastWTermInstance;
+    await rerender({
+      "aria-label": "Test shell",
+      "aria-labelledby": "heading",
+      "aria-describedby": undefined,
+      tabindex: -1,
+    });
+    expect(host.getAttribute("aria-label")).toBe("Test shell");
+    expect(host.getAttribute("aria-labelledby")).toBe("heading");
+    expect(host.hasAttribute("aria-describedby")).toBe(false);
+    expect(host.getAttribute("tabindex")).toBe("-1");
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
   });
 
   it("creates and initializes WTerm on mount", async () => {

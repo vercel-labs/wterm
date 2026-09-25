@@ -1,4 +1,5 @@
 import type { TerminalCore } from "@wterm/core";
+import { InputAccessibility } from "./input-accessibility.js";
 import { isLinkActivationModifier } from "./hyperlink.js";
 import {
   encodeKittyKey,
@@ -127,6 +128,7 @@ export class InputHandler {
     y: number;
   } | null = null;
   private focused = false;
+  private accessibility: InputAccessibility;
   private suppressedKeyUps = new Set<string>();
   private pressedModifiers = new Set<string>();
   private deliveredKeys = new Set<string>();
@@ -176,8 +178,6 @@ export class InputHandler {
     this.textarea.setAttribute("autocorrect", "off");
     this.textarea.setAttribute("spellcheck", "false");
     this.textarea.setAttribute("enterkeyhint", "send");
-    this.textarea.setAttribute("tabindex", "0");
-    this.textarea.setAttribute("aria-hidden", "true");
     this.textarea.wrap = "off";
     const s = this.textarea.style;
     s.position = "absolute";
@@ -205,6 +205,7 @@ export class InputHandler {
     s.color = "transparent";
     s.background = "transparent";
     element.appendChild(this.textarea);
+    this.accessibility = new InputAccessibility(element, this.textarea);
 
     this._onKeyDown = this.handleKeyDown.bind(this);
     this._onKeyUp = this.handleKeyUp.bind(this);
@@ -291,6 +292,7 @@ export class InputHandler {
   }
 
   destroy(): void {
+    this.accessibility.destroy();
     this.textarea.removeEventListener("keydown", this._onKeyDown);
     this.textarea.removeEventListener("keyup", this._onKeyUp);
     this.textarea.removeEventListener("paste", this._onPaste as EventListener);

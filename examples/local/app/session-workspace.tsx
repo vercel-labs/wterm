@@ -432,6 +432,7 @@ function SessionTerminal({
           onReady={handleReady}
           onData={handleData}
           onResize={handleResize}
+          aria-label={session.name}
           tabIndex={active ? 0 : -1}
           className="local-terminal h-full w-full"
           style={

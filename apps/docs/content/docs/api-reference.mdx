@@ -395,6 +395,22 @@ attributes such as `class`, `style`, `id`, and ARIA attributes to its root
   </tbody>
 </table>
 
+## Input Accessibility
+
+The actual terminal input is a native multiline textbox named **Terminal** by default. Set `aria-label`, `aria-labelledby`, `aria-describedby`, or `aria-description` on the host element, or pass them to the React, Vue, or Svelte component. WTerm keeps those attributes synchronized with the input, including removals. Referenced labels and descriptions follow normal browser ARIA precedence.
+
+```html
+<h2 id="shell-heading">Build shell</h2>
+<p id="shell-help">Commands run in the selected session.</p>
+<div id="terminal" aria-labelledby="shell-heading" aria-describedby="shell-help"></div>
+```
+
+The host defaults to `role="group"` after initialization; framework wrappers also render a group before initialization. The textarea is the editable control, and mounted output remains readable separately. If you previously set `role="textbox"` and `aria-multiline` on the host yourself, remove them or use `role="group"`. Other explicit host roles remain under your control.
+
+Host `tabindex` (React `tabIndex`) controls the input's tab stop: `0` for normal page entry, `-1` to exclude it. When supplied, WTerm normalizes the host itself to `-1` to avoid a duplicate stop, then restores the latest requested value on destruction. Omitting `tabindex` gives input a tab index of `0`. Use `wt.focus()` to focus input programmatically. Label and tab-order changes do not move focus. Tab and Shift+Tab inside input continue to reach the terminal application for completion/navigation.
+
+This exposes input semantics and mounted output; it does not enable output announcements or make unmounted history available to screen readers. Ancestor `aria-hidden` and `inert` remain authoritative for hidden terminals.
+
 ## WTerm Methods
 
 Instance methods on the vanilla `WTerm` class:
