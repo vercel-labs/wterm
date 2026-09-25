@@ -361,6 +361,47 @@ describe("BashShell", () => {
       const joined = output.join("");
       expect(joined).toContain("\x1b[K");
     });
+
+    it("restores an unfinished command after browsing history", async () => {
+      await shell.handleInput("draft");
+      await shell.handleInput("\x1b[A");
+      await shell.handleInput("\x1b[A");
+      await shell.handleInput("\x1b[B");
+      output.length = 0;
+
+      await shell.handleInput("\x1b[B");
+      expect(output.join("")).toContain("\x1b[Kdraft");
+
+      const callCount = mockExec.mock.calls.length;
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[callCount]?.[0]).toContain("draft");
+    });
+
+    it("restores the draft cursor position so typing resumes in place", async () => {
+      await shell.handleInput("echo hi");
+      await shell.handleInput("\x1b[D");
+      await shell.handleInput("\x1b[D");
+      await shell.handleInput("\x1b[A");
+      output.length = 0;
+
+      await shell.handleInput("\x1b[B");
+      expect(output.at(-1)).toBe("\x1b[2D");
+
+      await shell.handleInput("X");
+      const callCount = mockExec.mock.calls.length;
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[callCount]?.[0]).toContain("echo Xhi");
+    });
+
+    it("discards the saved draft when Ctrl+C cancels history browsing", async () => {
+      await shell.handleInput("draft");
+      await shell.handleInput("\x1b[A");
+      await shell.handleInput("\x03");
+      output.length = 0;
+
+      await shell.handleInput("\x1b[B");
+      expect(output).toEqual([]);
+    });
   });
 
   describe("handleInput - control sequences", () => {
