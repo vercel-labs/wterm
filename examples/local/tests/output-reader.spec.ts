@@ -54,6 +54,14 @@ for (const path of ["/", "/ghostty"]) {
     await expect(output).toHaveValue(lines.join("\n"));
     await page.keyboard.press("Tab");
     await expect(output).toBeFocused();
+    // WebKit can drop native textarea scrolling before focus has painted,
+    // including in a plain read-only textarea without any app event handlers.
+    await output.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
     await page.keyboard.press("PageDown");
     await expect
       .poll(() => output.evaluate((el) => el.scrollTop))
