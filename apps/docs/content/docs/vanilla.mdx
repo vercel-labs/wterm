@@ -105,6 +105,8 @@ Copying a terminal selection preserves complete Unicode cells and explicit newli
 
 With Ghostty's current WASM binary, selections also follow output scrolling and resize/reflow. Overwritten or discarded text, resets, and screen switches clear the selection. See the same reference for preservation limits and behavior while a frame is pending.
 
+Use `await wt.selectAll()` on the WTerm instance to select all retained history and the active screen without mounting extra rows, then read `wt.getSelectionText()`. Cmd+A or Ctrl+Shift+A invokes the same action from terminal input. `wt.clearSelection()` cancels it. See [Select All](/api-reference#select-all) for capture limits, shortcuts, and when selection clears.
+
 ### Terminal images
 
 When the supplied core exposes the optional graphics methods, `WTerm` renders

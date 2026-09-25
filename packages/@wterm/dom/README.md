@@ -161,7 +161,22 @@ The method reads the painted text, including while synchronized output holds a n
 
 With Ghostty's current WASM binary, WTerm tracks both selection edges through output scrolling and resize/reflow and restores the native highlight, including backward selections. If selected text changes, an edge is discarded, or the application resets or switches screens, the selection clears. The copied text stays tied to what was selected. Resize reports applied dimensions immediately and rebuilds the DOM on the next paint frame.
 
-Preservation covers selections of at most 1,000 physical rows and 1,048,576 UTF-16 units. Reflow beyond the row limit clears a tracked selection. Larger selections, cores without `trackPosition`, and new selections made while an older frame awaits rendering retain native browser behavior and may change or clear on rendering. Select after the current frame has painted for tracked preservation. Selection still begins in mounted text; this does not select all retained history. The method is available through the underlying WTerm instance in every framework binding.
+Preservation covers native selections of at most 1,000 physical rows and 1,048,576 UTF-16 units. Reflow beyond the row limit clears a tracked selection. Larger selections, cores without `trackPosition`, and new selections made while an older frame awaits rendering retain native browser behavior and may change or clear on rendering. Select after the current frame has painted for tracked preservation. Native selection begins in mounted text. The method is available through the underlying WTerm instance in every framework binding.
+
+#### Select All
+
+Press **Cmd+A** or **Ctrl+Shift+A** while terminal input is focused to select all retained history and the active screen. **Ctrl+A** still reaches the shell. Copy with **Cmd+C**, **Ctrl+C**, or **Ctrl+Shift+C**. The shortcuts also work with Kitty keyboard mode. Escape clears Select All without sending Escape to the application.
+
+```ts
+if (await term.selectAll()) {
+  console.log(term.getSelectionText());
+}
+term.clearSelection();
+```
+
+`selectAll(): Promise<boolean>` captures the complete buffer in cancellable batches after painting. It resolves `true` when ready, or `false` if unavailable, cancelled, or too large. It uses the same line/cell semantics as native Copy and includes blank screen rows. Only the active screen and its retained history are included; discarded history and the inactive screen are excluded. Virtual highlights do not mount extra rows or create a browser DOM selection. Set `--term-selection-bg` to customize their color. These methods are available through the underlying WTerm instance in every framework binding.
+
+Select All retains at most 16,777,216 UTF-16 units. It never exposes or copies a truncated prefix. While preparing, `getSelectionText()` returns `null` and Copy is withheld; wait until “Selecting terminal text…” disappears before copying. A visible status reports cancellation during capture or failure. Selection remains intact while scrolling. Any `write` or `resize`, new input, pointer selection, focus outside the terminal, replacement selection, or destruction clears it. Route core mutations through WTerm. `clearSelection()` also clears a native selection wholly inside this terminal, leaving selections elsewhere untouched.
 
 ### Terminal search
 
