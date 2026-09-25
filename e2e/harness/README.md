@@ -53,6 +53,8 @@ a separate input to verify the browser's actual clipboard payload.
 
 Ghostty cases also preserve backward Unicode selections through narrower/wider reflow and distant output, check that gaps stay virtualized, and verify clearing on overwrites, resets, screen switches, and history pruning.
 
+`select-all.spec.ts` checks full retained-history selection in both cores, bounded mounted rows while scrolling, real keyboard Copy/Paste, Unicode wraps, active-screen isolation, and cancellation. `window.ptyHarness.selectAll()` resolves when capture completes; `clearSelection()` cancels it.
+
 `cell-width.spec.ts` checks column positions across ASCII, braille, box drawing,
 wide characters, links, cursors, and scrollback. It also exercises font changes
 and enlarged fallback glyphs without relying on a particular installed font.

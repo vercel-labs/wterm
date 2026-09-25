@@ -130,6 +130,8 @@ Native Copy uses terminal line and cell semantics, joining Ghostty soft wraps wh
 
 With the current Ghostty WASM binary, selections follow output scrolling and resize/reflow while their text remains intact. Overwritten or discarded text, resets, and screen switches clear the selection. The linked reference describes preservation limits and pending-frame behavior.
 
+Use `await instance.selectAll()` to select all retained history and the active screen, then read `instance.getSelectionText()`. Cmd+A or Ctrl+Shift+A invokes the same action while terminal input is focused. Capture is cancellable and bounded; output or resize clears it. Call `instance.clearSelection()` to cancel. See the linked selection reference for limits and copy shortcuts.
+
 ## Terminal search
 
 Use the underlying `WTerm` instance to call `search(query, { caseSensitive })`, `findNext()`, `findPrevious()`, `getSearchState()`, and `clearSearch()`. Set its `onSearchChange` callback to update your Find controls. Access the instance through `ready` or the template ref’s `instance`. Search includes unmounted retained history; Ghostty also joins soft wraps. See the [search semantics and limits](../dom/README.md#terminal-search).

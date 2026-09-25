@@ -1,6 +1,7 @@
 import { WasmBridge, type TerminalCore } from "@wterm/core";
 import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
+import { HistorySelection } from "./history-selection.js";
 import { DebugAdapter } from "./debug.js";
 import { isLinkActivationModifier } from "./hyperlink.js";
 import {
@@ -71,6 +72,7 @@ export class WTerm {
   private _charWidth = 0;
   private _windowSizeQueryBuffer = "";
   private _search: SearchController;
+  private _historySelection: HistorySelection;
   private _searchReveal = false;
   private _onClickFocus: (event: MouseEvent) => void;
   private _onScroll: () => void;
@@ -125,6 +127,7 @@ export class WTerm {
     this._container.className = "term-grid";
     this.element.appendChild(this._container);
     this.element.classList.add("wterm");
+    this._historySelection = new HistorySelection(this.element);
     this.element.classList.toggle("cursor-blink", options.cursorBlink === true);
     this.element.classList.toggle(
       "cursor-steady",
@@ -203,6 +206,11 @@ export class WTerm {
       )
         return;
       const text = this.getSelectionText();
+      // A pending full-history snapshot must never fall back to a partial copy.
+      if (this._historySelection.pending) {
+        event.preventDefault();
+        return;
+      }
       if (text === null) return;
       event.clipboardData.setData("text/plain", text);
       event.preventDefault();
@@ -252,8 +260,12 @@ export class WTerm {
           this._charWidth > 0 && this._rowHeight > 0
             ? { charWidth: this._charWidth, rowHeight: this._rowHeight }
             : null,
-        () => this._scrollToBottom(),
+        () => {
+          this._historySelection.clear();
+          this._scrollToBottom();
+        },
         (data) => {
+          this._historySelection.clear();
           this._scrollToBottom();
           if (this.onBinary) {
             this.onBinary(data);
@@ -262,6 +274,13 @@ export class WTerm {
           } else if (data.every((byte) => byte < 128)) {
             this.onData(String.fromCharCode(...data));
           }
+        },
+        {
+          selectAll: () => {
+            void this.selectAll();
+          },
+          hasSelection: () => this._historySelection.active,
+          clearSelection: () => this._historySelection.clear(),
         },
       );
 
@@ -301,6 +320,7 @@ export class WTerm {
 
   write(data: string | Uint8Array): void {
     if (!this.bridge || this._destroyed) return;
+    this._historySelection.invalidate();
     this.renderer?.beforeMutation(this.bridge);
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._isScrolledToBottom();
@@ -350,6 +370,7 @@ export class WTerm {
 
   resize(cols: number, rows: number): void {
     if (!this.bridge || this._destroyed) return;
+    this._historySelection.invalidate();
     this.renderer?.beforeMutation(this.bridge);
     this._shouldScrollToBottom =
       this._pendingResizeScrollTop === null && this._isScrolledToBottom();
@@ -388,9 +409,39 @@ export class WTerm {
     return this._search.snapshot();
   }
 
-  /** Read the native terminal selection with terminal line and cell semantics. */
+  /** Read the terminal selection with terminal line and cell semantics. */
   getSelectionText(): string | null {
-    return this._destroyed ? null : (this.renderer?.getSelectionText() ?? null);
+    if (this._destroyed) return null;
+    return (
+      this._historySelection.getText() ??
+      this.renderer?.getSelectionText() ??
+      null
+    );
+  }
+
+  /** Select retained history and the active screen without mounting extra rows. */
+  selectAll(): Promise<boolean> {
+    if (this._destroyed || !this.renderer || !this.bridge)
+      return Promise.resolve(false);
+    const selected = this._historySelection.select();
+    this._scheduleRender();
+    return selected;
+  }
+
+  /** Cancel Select All and clear a native selection wholly owned by this terminal. */
+  clearSelection(): void {
+    this._historySelection.clear();
+    const selection = this.element.ownerDocument.getSelection();
+    if (!selection || selection.isCollapsed) return;
+    for (let index = 0; index < selection.rangeCount; index++) {
+      const range = selection.getRangeAt(index);
+      if (
+        !this.element.contains(range.startContainer) ||
+        !this.element.contains(range.endContainer)
+      )
+        return;
+    }
+    selection.removeAllRanges();
   }
 
   private _invalidateSearch(): void {
@@ -660,6 +711,7 @@ export class WTerm {
     }
     this._paintSearch();
     this._search.resume(this.bridge);
+    this._historySelection.resume(this.bridge);
 
     const title = this.bridge.getTitle();
     if (title !== null && this.onTitle) {
@@ -858,6 +910,7 @@ export class WTerm {
 
   destroy(): void {
     this._destroyed = true;
+    this._historySelection.destroy();
     this._search.cancel();
     this.onSearchChange = null;
     this._windowSizeQueryBuffer = "";

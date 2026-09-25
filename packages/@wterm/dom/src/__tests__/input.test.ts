@@ -61,6 +61,112 @@ describe("InputHandler", () => {
     return container.querySelector("textarea")!;
   }
 
+  describe("full-history selection shortcuts", () => {
+    it.each([0, 31])(
+      "owns Select All/Copy/Escape with Kitty flags %i",
+      (flags) => {
+        handler.destroy();
+        bridgeMock = { kittyKeyboardFlags: () => flags } as any;
+        let active = false;
+        const actions = {
+          selectAll: vi.fn(() => {
+            active = true;
+          }),
+          hasSelection: () => active,
+          clearSelection: vi.fn(() => {
+            active = false;
+          }),
+        };
+        handler = new InputHandler(
+          container,
+          (data) => received.push(data),
+          () => bridgeMock,
+          undefined,
+          undefined,
+          undefined,
+          actions,
+        );
+        const ta = getTextarea();
+        for (const modifiers of [
+          { metaKey: true },
+          { ctrlKey: true, shiftKey: true },
+        ]) {
+          const event = createKeyboardEvent("a", {
+            code: "KeyA",
+            ...modifiers,
+          });
+          ta.dispatchEvent(event);
+          ta.dispatchEvent(
+            createKeyUpEvent("a", { code: "KeyA", ...modifiers }),
+          );
+          expect(event.defaultPrevented).toBe(true);
+          expect(active).toBe(true);
+        }
+        const copy = createKeyboardEvent("c", { code: "KeyC", metaKey: true });
+        ta.dispatchEvent(copy);
+        ta.dispatchEvent(
+          createKeyUpEvent("c", { code: "KeyC", metaKey: true }),
+        );
+        expect(copy.defaultPrevented).toBe(false);
+        expect(received).toEqual([]);
+        ta.dispatchEvent(createKeyboardEvent("Escape", { code: "Escape" }));
+        ta.dispatchEvent(createKeyUpEvent("Escape", { code: "Escape" }));
+        expect(active).toBe(false);
+        expect(received).toEqual([]);
+        ta.dispatchEvent(
+          createKeyboardEvent("a", { code: "KeyA", ctrlKey: true }),
+        );
+        expect(received).toEqual([flags ? "\x1b[97;5u" : "\x01"]);
+        expect(actions.selectAll).toHaveBeenCalledTimes(2);
+      },
+    );
+
+    it("retains selection for reported modifiers and leaves AltGr/composition to input", () => {
+      handler.destroy();
+      bridgeMock = { kittyKeyboardFlags: () => 31 } as any;
+      const actions = {
+        selectAll: vi.fn(),
+        hasSelection: () => true,
+        clearSelection: vi.fn(),
+      };
+      handler = new InputHandler(
+        container,
+        (data) => received.push(data),
+        () => bridgeMock,
+        undefined,
+        undefined,
+        undefined,
+        actions,
+      );
+      const ta = getTextarea();
+      ta.dispatchEvent(
+        createKeyboardEvent("Meta", { code: "MetaLeft", metaKey: true }),
+      );
+      ta.dispatchEvent(createKeyUpEvent("Meta", { code: "MetaLeft" }));
+      expect(actions.clearSelection).not.toHaveBeenCalled();
+      ta.dispatchEvent(
+        markAltGraph(
+          createKeyboardEvent("a", {
+            code: "KeyA",
+            ctrlKey: true,
+            altKey: true,
+            shiftKey: true,
+          }),
+        ),
+      );
+      ta.dispatchEvent(
+        createKeyboardEvent("a", {
+          code: "KeyA",
+          metaKey: true,
+          isComposing: true,
+        }),
+      );
+      expect(actions.selectAll).not.toHaveBeenCalled();
+      ta.dispatchEvent(createKeyboardEvent("x", { code: "KeyX" }));
+      expect(actions.clearSelection).toHaveBeenCalledOnce();
+    });
+  });
+
   describe("setup", () => {
     it("creates a hidden textarea in the container", () => {
       const ta = getTextarea();

@@ -101,6 +101,37 @@
   contain: layout style;
 }
 
+.term-select-all .term-row {
+  position: relative;
+}
+
+.term-select-all .term-row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--term-selection-bg, rgb(80 140 255 / 30%));
+  pointer-events: none;
+  user-select: none;
+  z-index: 3;
+}
+
+.term-selection-status {
+  position: sticky;
+  bottom: 0;
+  width: fit-content;
+  max-width: 100%;
+  white-space: normal;
+  background: var(--term-bg);
+  color: var(--term-fg);
+  user-select: none;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.term-selection-status:empty {
+  display: none;
+}
+
 .term-scrollback-spacer {
   display: block;
   pointer-events: none;

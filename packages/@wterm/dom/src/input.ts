@@ -154,6 +154,11 @@ export class InputHandler {
       null,
     prepareComposition: () => void = () => {},
     onBinary?: (data: Uint8Array) => void,
+    private selectionActions?: {
+      selectAll: () => void;
+      hasSelection: () => boolean;
+      clearSelection: () => void;
+    },
   ) {
     this.element = element;
     this.onData = onData;
@@ -338,10 +343,52 @@ export class InputHandler {
       return;
     }
 
-    if (!delivered && (e.metaKey || e.ctrlKey) && e.key === "c") {
+    if (
+      !delivered &&
+      this.selectionActions &&
+      !e.altKey &&
+      ((e.metaKey && !e.ctrlKey && !e.shiftKey) ||
+        (e.ctrlKey && e.shiftKey && !e.metaKey)) &&
+      e.key.toLowerCase() === "a"
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.suppressedKeyUps.add(keyId);
+      this.selectionActions.selectAll();
+      return;
+    }
+    if (
+      !delivered &&
+      e.key === "Escape" &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      !e.shiftKey &&
+      this.selectionActions?.hasSelection()
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.suppressedKeyUps.add(keyId);
+      this.selectionActions.clearSelection();
+      return;
+    }
+    if (
+      !delivered &&
+      (e.metaKey || e.ctrlKey) &&
+      !e.altKey &&
+      e.key.toLowerCase() === "c"
+    ) {
       const sel = window.getSelection();
-      if (sel && sel.toString().length > 0) {
+      if (
+        this.selectionActions?.hasSelection() ||
+        (sel && sel.toString().length > 0)
+      ) {
         this.suppressedKeyUps.add(keyId);
+        if (e.ctrlKey && e.shiftKey && !e.metaKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.element.ownerDocument.execCommand("copy");
+        }
         return;
       }
     }
@@ -354,6 +401,7 @@ export class InputHandler {
       this.suppressedKeyUps.add(keyId);
       if (e.key === "Backspace") {
         e.preventDefault();
+        this.selectionActions?.clearSelection();
         this.onData("\x15");
       } else if (e.key === "a") {
         e.preventDefault();
@@ -384,6 +432,7 @@ export class InputHandler {
         bridge?.cursorKeysApp?.() ?? false,
       );
       if (seq) {
+        if (!physicalModifier) this.selectionActions?.clearSelection();
         if (nativeTouchDelete) this.suppressNextTouchDeleteInput = true;
         else e.preventDefault();
         e.stopPropagation();
@@ -394,6 +443,7 @@ export class InputHandler {
     }
     const seq = this.keyToSequence(e);
     if (seq) {
+      this.selectionActions?.clearSelection();
       if (nativeTouchDelete) this.suppressNextTouchDeleteInput = true;
       else e.preventDefault();
       e.stopPropagation();
@@ -434,6 +484,7 @@ export class InputHandler {
   }
 
   private sendPaste(text: string): void {
+    this.selectionActions?.clearSelection();
     const bridge = this.getBridge();
     if (bridge && bridge.bracketedPaste()) {
       // Strip ESC bytes so clipboard payloads cannot inject \x1b[201~ to
@@ -535,6 +586,7 @@ export class InputHandler {
   }
 
   private sendTouchDelete(): void {
+    this.selectionActions?.clearSelection();
     const bridge = this.getBridge();
     const flags = bridge?.kittyKeyboardFlags?.() ?? 0;
     const seq = flags
@@ -585,7 +637,10 @@ export class InputHandler {
     )
       return;
     if (inputType === "insertFromPaste") this.sendPaste(value);
-    else this.onData(value);
+    else {
+      this.selectionActions?.clearSelection();
+      this.onData(value);
+    }
   }
 
   private handleMouse(
