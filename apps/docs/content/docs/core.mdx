@@ -37,6 +37,8 @@ The built-in core answers DEC private-mode status queries through `getResponse()
 
 The built-in core also answers primary device-attributes queries (`CSI c`, including `CSI 0 c`) with `\x1b[?1;2c`, identifying VT100 advanced-video support. It does not claim secondary or private device attributes.
 
+Operating-status queries (`CSI 5 n`) receive `\x1b[0n` when the built-in core is ready. Cursor-position queries (`CSI 6 n`) receive `\x1b[row;colR`. These replies share the `getResponse()` queue with device-attribute replies and preserve query order; unsupported or malformed status requests receive no reply.
+
 `getBellCount()` reads and clears pending BEL controls. A BEL used to terminate
 an OSC sequence does not count. The DOM wrapper forwards the count through
 `onBell`, leaving the alert behavior to the host.
