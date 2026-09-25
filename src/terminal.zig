@@ -67,6 +67,14 @@ comptime {
 
 pub const CursorShape = enum(u8) { block, underline, bar };
 
+pub const MouseEncoding = enum(u8) {
+    x10 = 0,
+    utf8 = 1,
+    sgr = 2,
+    urxvt = 3,
+    sgr_pixels = 4,
+};
+
 pub const Terminal = struct {
     grid: Grid,
     parser: Parser = .{},
@@ -107,7 +115,7 @@ pub const Terminal = struct {
     cursor_keys_app: bool = false,
     bracketed_paste: bool = false,
     mouse_tracking: u16 = 0,
-    mouse_sgr: bool = false,
+    mouse_encoding: MouseEncoding = .x10,
     focus_events: bool = false,
     synchronized_output: bool = false,
     synchronized_output_generation: u32 = 0,
@@ -241,7 +249,7 @@ pub const Terminal = struct {
         self.cursor_keys_app = false;
         self.bracketed_paste = false;
         self.mouse_tracking = 0;
-        self.mouse_sgr = false;
+        self.mouse_encoding = .x10;
         self.focus_events = false;
         self.synchronized_output = false;
         self.linefeed_mode = false;
@@ -793,7 +801,10 @@ pub const Terminal = struct {
                 1002 => self.setMouseTracking(1002, enabled),
                 1003 => self.setMouseTracking(1003, enabled),
                 1004 => self.focus_events = enabled,
-                1006 => self.mouse_sgr = enabled,
+                1005 => self.mouse_encoding = if (enabled) .utf8 else .x10,
+                1006 => self.mouse_encoding = if (enabled) .sgr else .x10,
+                1015 => self.mouse_encoding = if (enabled) .urxvt else .x10,
+                1016 => self.mouse_encoding = if (enabled) .sgr_pixels else .x10,
                 1047 => self.switchScreen(enabled, false),
                 1048 => {
                     if (enabled) self.saveCursor() else self.restoreCursor();
@@ -877,7 +888,7 @@ pub const Terminal = struct {
         self.cursor_keys_app = false;
         self.bracketed_paste = false;
         self.mouse_tracking = 0;
-        self.mouse_sgr = false;
+        self.mouse_encoding = .x10;
         self.focus_events = false;
         self.synchronized_output = false;
         self.scroll_top = 0;
@@ -1814,7 +1825,7 @@ test "tracks mouse and focus modes across reset" {
     var t = Terminal.init(80, 24);
     t.write("\x1b[?1000h\x1b[?1004h\x1b[?1006h");
     try testing.expectEqual(@as(u16, 1000), t.mouse_tracking);
-    try testing.expect(t.mouse_sgr);
+    try testing.expectEqual(MouseEncoding.sgr, t.mouse_encoding);
     try testing.expect(t.focus_events);
     t.write("\x1b[?1002h\x1b[?1000l");
     try testing.expectEqual(@as(u16, 1002), t.mouse_tracking);
@@ -1825,8 +1836,28 @@ test "tracks mouse and focus modes across reset" {
     t.write("\x1b[?1003h");
     t.write("\x1b[!p");
     try testing.expectEqual(@as(u16, 0), t.mouse_tracking);
-    try testing.expect(!t.mouse_sgr);
+    try testing.expectEqual(MouseEncoding.x10, t.mouse_encoding);
     try testing.expect(!t.focus_events);
+}
+
+test "tracks mouse wire encoding modes" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    try testing.expectEqual(MouseEncoding.x10, t.mouse_encoding);
+
+    t.write("\x1b[?1005h");
+    try testing.expectEqual(MouseEncoding.utf8, t.mouse_encoding);
+    t.write("\x1b[?1015h");
+    try testing.expectEqual(MouseEncoding.urxvt, t.mouse_encoding);
+    t.write("\x1b[?1006h");
+    try testing.expectEqual(MouseEncoding.sgr, t.mouse_encoding);
+    t.write("\x1b[?1016h");
+    try testing.expectEqual(MouseEncoding.sgr_pixels, t.mouse_encoding);
+
+    t.write("\x1b[?1016l");
+    try testing.expectEqual(MouseEncoding.x10, t.mouse_encoding);
+    t.write("\x1b[?1005h\x1b[!p");
+    try testing.expectEqual(MouseEncoding.x10, t.mouse_encoding);
 }
 
 test "tracks synchronized output across fragmented writes and reset" {
