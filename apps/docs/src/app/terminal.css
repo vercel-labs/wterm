@@ -6,11 +6,11 @@
   box-shadow: inset 0 0 0 1px #e5e5e5;
 }
 
-.dark .wterm {
+.dark-theme .wterm {
   box-shadow: inset 0 0 0 1px #262626;
 }
 
-.dark .wterm:focus-within {
+.dark-theme .wterm:focus-within {
   box-shadow: inset 0 0 0 1px #262626;
 }
 
@@ -36,7 +36,7 @@
   --term-color-15: #ffffff;
 }
 
-.dark .wterm:not([class*="theme-"]) {
+.dark-theme .wterm:not([class*="theme-"]) {
   --term-bg: #171717;
   --term-fg: #ededed;
   --term-cursor: #c472fb;
@@ -69,4 +69,39 @@
 .wterm.wterm-chat:focus-visible,
 .wterm.wterm-chat:focus-within {
   box-shadow: none;
+}
+
+/* The preview and live surface share terminal typography and the same bounds.
+   Keep the live terminal paintable below the opaque preview during startup. */
+.hero-terminal {
+  position: relative;
+  height: 296px;
+}
+
+.hero-terminal-fullscreen {
+  height: 100%;
+}
+
+.hero-terminal-preview,
+.hero-terminal-live {
+  position: absolute;
+  inset: 0;
+}
+
+.hero-terminal-preview {
+  z-index: 1;
+}
+
+/* Use the glyph advances, just as the live terminal's cell probe does.
+   Font-relative ch widths can use fallback metrics before the first paint. */
+.hero-terminal-preview .term-row > span {
+  width: auto;
+}
+
+.hero-terminal-live {
+  z-index: 0;
+}
+
+.hero-terminal[data-state="starting"] {
+  cursor: progress;
 }

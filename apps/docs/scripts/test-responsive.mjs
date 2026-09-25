@@ -91,7 +91,7 @@ try {
     browser(
       "wait",
       "--fn",
-      `document.documentElement.classList.contains('${theme}')`,
+      `document.documentElement.classList.contains('${theme}-theme')`,
     );
     for (const width of [
       320, 390, 430, 639, 640, 767, 768, 800, 960, 961, 1024, 1199, 1200, 1440,

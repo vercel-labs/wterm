@@ -108,7 +108,7 @@ pnpm build
 
 ### Run the documentation
 
-The docs use Geistdocs with content in `apps/docs/content/docs`. Existing URLs stay at the site root, including `/get-started`, `/react`, and `/api-reference`. The homepage's interactive terminal uses `@wterm/ghostty` with just-bash, and Ask AI keeps the wterm chat interface.
+The docs use Geistdocs with content in `apps/docs/content/docs`. Existing URLs stay at the site root, including `/get-started`, `/react`, and `/api-reference`. The homepage's interactive terminal uses `@wterm/ghostty` with just-bash. Its greeting renders with the page while the interactive terminal starts, and its Default preset follows the site's light, dark, or system theme, including in fullscreen. Ask AI keeps the wterm chat interface.
 
 ```bash
 pnpm exec turbo run build --filter='@wterm/docs^...'
@@ -124,6 +124,8 @@ NODE_EXTRA_CA_CERTS="$HOME/.portless/ca.pem" DOCS_TEST_URL=https://docs.wterm.lo
 ```
 
 CI also checks the production build with `pnpm --filter @wterm/docs test:routes`. This starts an isolated loopback server on an available port, runs the route suite, and shuts the server down. Build the docs first with `pnpm --filter @wterm/docs build`. Running the suite without a URL fails rather than silently skipping it.
+
+After installing Playwright's Chromium, Firefox, and WebKit browsers, run `pnpm --filter @wterm/docs test:terminal` against the production build to check the homepage greeting before JavaScript, delayed startup, theme changes, fullscreen, and load failures. It owns the same isolated server lifecycle and runs in CI.
 
 For responsive browser checks, install `agent-browser` separately and run `DOCS_TEST_URL=https://docs.wterm.localhost:1355 pnpm --filter @wterm/docs test:responsive`. It checks narrow, intermediate, and desktop widths in both themes, top/middle/bottom scroll positions, and chat opening/closing without making model requests. Screenshots and measurements go to `apps/docs/test-results/docs-responsive`, or `DOCS_ARTIFACT_DIR` when set. This optional browser check is separate from the dependency-free Node route suite in CI.
 
