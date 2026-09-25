@@ -66,6 +66,11 @@ Control+Left sends `CSI 1;5D` instead of an unmodified Left arrow. Unmodified
 arrows still honor application cursor mode. Browser-reserved shortcuts may not
 reach the terminal.
 
+When Kitty keyboard mode is not negotiated, Control+Space sends NUL, Control+/
+sends US, and Control+Backspace sends BS. Browsers may reserve some shortcuts.
+Control+Alt printable input remains on the native text path in this mode for
+keyboard layouts that use AltGr.
+
 Browsers do not expose every native keyboard field. WTerm uses `KeyboardEvent.code` for functional and modifier identity, `KeyboardEvent.key` for text, and reports shifted alternates when available. It does not invent a base-layout alternate, synthesize missing release events, or retain associated text beyond the current press.
 
 IME composition displays tentative text at the terminal cursor and sends only

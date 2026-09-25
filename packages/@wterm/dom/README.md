@@ -92,6 +92,11 @@ Home/End, Insert/Delete, Page Up/Down, and F1–F12 keys use xterm-style CSI
 sequences. Unmodified application cursor keys still use SS3 when the core
 requests application mode. Browser-reserved shortcuts may never reach WTerm.
 
+Without Kitty keyboard negotiation, Control+Space sends NUL, Control+/ sends
+US, and Control+Backspace sends BS. Control+Alt printable input stays on the
+native text path in this mode so keyboard layouts using AltGr can enter
+characters.
+
 Browser keyboard events do not expose every native field the protocol can carry. WTerm reports physical functional and modifier keys from `KeyboardEvent.code`, text from `KeyboardEvent.key`, and shifted alternates when available. It does not invent the base-layout alternate, cannot synthesize release events the browser never delivers, and limits associated text to the current press event.
 
 During IME composition, tentative text appears at the terminal cursor in the
