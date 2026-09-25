@@ -34,6 +34,32 @@ describe("BashShell with just-bash", () => {
     expect(await shell.bash?.readFile("/tmp/once.txt")).toBe("once\n");
   });
 
+  it("interrupts a sleeping command before the next statement", async () => {
+    const { shell, output } = await createShell();
+
+    await shell.handleInput("sleep 5; touch /tmp/after");
+    output.length = 0;
+    const running = shell.handleInput("\r");
+    let finished = false;
+    void running.then(() => {
+      finished = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(finished).toBe(false);
+    await shell.handleInput("\x03");
+    await running;
+
+    expect(output.join("")).toContain("^C\r\n");
+    expect(output.join("")).not.toContain("execution aborted");
+    expect(
+      await shell.bash?.readFile("/tmp/after").catch(() => null),
+    ).toBeNull();
+
+    output.length = 0;
+    await submit(shell, "echo ready");
+    expect(output.join("")).toContain("ready\r\n");
+  });
+
   it("tracks the directory reached by a conditional's first execution", async () => {
     const { shell, output } = await createShell();
 

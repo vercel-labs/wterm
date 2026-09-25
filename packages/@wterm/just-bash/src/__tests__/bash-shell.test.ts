@@ -329,6 +329,7 @@ describe("BashShell", () => {
       expect(mockExec).toHaveBeenCalledWith("ls", {
         cwd: "/home/user",
         env: { PWD: "/home/user" },
+        signal: expect.any(AbortSignal),
       });
     });
 
@@ -384,6 +385,7 @@ describe("BashShell", () => {
       expect(mockExec).toHaveBeenLastCalledWith("pwd", {
         cwd: "/tmp/project space $pecial",
         env: { PWD: "/tmp/project space $pecial" },
+        signal: expect.any(AbortSignal),
       });
     });
 
@@ -438,6 +440,45 @@ describe("BashShell", () => {
       expect(mockExec).toHaveBeenCalledTimes(2);
       expect(output.join("")).toContain("execution failed");
       expect(output.join("")).toContain("recovered");
+    });
+
+    it("interrupts a running command and accepts the next command", async () => {
+      mockExec.mockImplementationOnce(
+        (_command: string, { signal }: { signal: AbortSignal }) =>
+          new Promise((resolve) => {
+            signal.addEventListener(
+              "abort",
+              () =>
+                resolve({
+                  stdout: "late output\n",
+                  stderr: "bash: execution aborted\n",
+                  exitCode: 124,
+                  env: { PWD: "/home/user" },
+                }),
+              { once: true },
+            );
+          }),
+      );
+
+      await shell.handleInput("sleep 5");
+      const running = shell.handleInput("\r");
+      const signal = mockExec.mock.calls[0]?.[1]?.signal as AbortSignal;
+      expect(signal.aborted).toBe(false);
+
+      await shell.handleInput("ignored");
+      const firstInterrupt = shell.handleInput("\x03");
+      const secondInterrupt = shell.handleInput("\x03");
+      await Promise.all([firstInterrupt, secondInterrupt, running]);
+
+      expect(signal.aborted).toBe(true);
+      expect(output.filter((data) => data === "^C\r\n")).toHaveLength(1);
+      expect(output.join("")).not.toContain("late output");
+      expect(output.join("")).not.toContain("execution aborted");
+      expect(output.at(-1)).toContain("$ ");
+
+      await shell.handleInput("echo ready");
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[1]?.[0]).toBe("echo ready");
     });
 
     it("adds command to history", async () => {
@@ -815,6 +856,7 @@ describe("BashShell", () => {
       expect(mockExec).toHaveBeenCalledWith("echo beta", {
         cwd: "/home/user",
         env: { PWD: "/home/user" },
+        signal: expect.any(AbortSignal),
       });
       expect(output.join("")).toContain("\r$ \x1b[Kecho beta\r\n");
     });
@@ -1186,6 +1228,7 @@ describe("BashShell", () => {
       expect(mockExec).toHaveBeenCalledWith(`echo ${"\\"}\nhello`, {
         cwd: "/home/user",
         env: { PWD: "/home/user" },
+        signal: expect.any(AbortSignal),
       });
     });
   });
