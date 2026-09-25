@@ -490,6 +490,98 @@ describe("InputHandler mouse and focus modes", () => {
     expect(received).toEqual(["\x1b[<0;10;20M"]);
   });
 
+  it("leaves clicks and wheel events on scrollback rows to the browser", () => {
+    const historyRow = document.createElement("div");
+    historyRow.className = "term-row term-scrollback-row";
+    const liveRow = document.createElement("div");
+    liveRow.className = "term-row";
+    Object.defineProperty(liveRow, "getBoundingClientRect", {
+      value: () => ({ left: 10, top: 420, width: 800, height: 10 }),
+    });
+    container.append(historyRow, liveRow);
+
+    const press = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      buttons: 1,
+      clientX: 105,
+      clientY: 75,
+    });
+    const wheel = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 100,
+      clientX: 105,
+      clientY: 75,
+    });
+    historyRow.dispatchEvent(press);
+    historyRow.dispatchEvent(wheel);
+
+    expect(received).toEqual([]);
+    expect(press.defaultPrevented).toBe(false);
+    expect(wheel.defaultPrevented).toBe(false);
+  });
+
+  it("leaves the wheel with scrollback until the terminal is at the bottom", () => {
+    Object.defineProperties(container, {
+      clientHeight: { value: 400, configurable: true },
+      scrollHeight: { value: 800, configurable: true },
+    });
+    container.scrollTop = 100;
+    const wheel = () =>
+      new WheelEvent("wheel", {
+        cancelable: true,
+        deltaY: 100,
+        clientX: 105,
+        clientY: 75,
+      });
+
+    const historyWheel = wheel();
+    container.dispatchEvent(historyWheel);
+    expect(received).toEqual([]);
+    expect(historyWheel.defaultPrevented).toBe(false);
+
+    container.scrollTop = 400;
+    const liveWheel = wheel();
+    container.dispatchEvent(liveWheel);
+    expect(received).toEqual(["\x1b[<65;10;5M"]);
+    expect(liveWheel.defaultPrevented).toBe(true);
+  });
+
+  it("scrolls history with Shift+wheel instead of reporting to the application", () => {
+    Object.defineProperties(container, {
+      clientHeight: { value: 400, configurable: true },
+      scrollHeight: { value: 800, configurable: true },
+    });
+    container.scrollTop = 400;
+    const wheel = new WheelEvent("wheel", {
+      cancelable: true,
+      shiftKey: true,
+      deltaY: -120,
+      clientX: 105,
+      clientY: 75,
+    });
+    container.dispatchEvent(wheel);
+
+    expect(container.scrollTop).toBe(280);
+    expect(received).toEqual([]);
+    expect(wheel.defaultPrevented).toBe(true);
+
+    const horizontalWheel = new WheelEvent("wheel", {
+      cancelable: true,
+      shiftKey: true,
+      deltaX: -40,
+      deltaY: -1,
+      clientX: 105,
+      clientY: 75,
+    });
+    container.dispatchEvent(horizontalWheel);
+    expect(container.scrollTop).toBe(240);
+    expect(received).toEqual([]);
+    expect(horizontalWheel.defaultPrevented).toBe(true);
+  });
+
   it("measures cells from the content box", () => {
     container.style.padding = "10px";
     Object.defineProperty(container, "getBoundingClientRect", {
@@ -502,7 +594,7 @@ describe("InputHandler mouse and focus modes", () => {
         button: 0,
         buttons: 1,
         clientX: 20,
-        clientY: 30,
+        clientY: 35,
       }),
     );
 

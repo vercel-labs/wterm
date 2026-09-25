@@ -54,6 +54,12 @@ When a terminal application enables mouse tracking, UTF-8 (1005), SGR (1006), ur
 
 X10 mouse reports go to `onBinary` as raw bytes when that callback is supplied. Without `onBinary`, ASCII-safe X10 reports reach `onData`; coordinates requiring non-ASCII bytes are skipped. Hold Shift for native text selection.
 
+When mouse tracking is active, clicks and wheel gestures on scrollback rows
+stay with the browser. If you are reading history, the wheel scrolls it until
+you reach the bottom; hold Shift and scroll to move through history from the
+live viewport. A drag begun on the live grid still reports its release after
+leaving the grid.
+
 When an application rings BEL, `onBell(count)` receives the number of bells as
 output is written. WTerm does not play sound automatically; your application
 can choose an audible or visual notification.

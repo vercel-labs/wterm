@@ -73,6 +73,12 @@ When a terminal application enables mouse tracking (1000, 1002, or 1003), WTerm 
 
 X10 reports use `onBinary` when supplied, so raw bytes reach a binary-capable transport unchanged. Without `onBinary`, ASCII-only X10 reports reach `onData`; coordinates requiring non-ASCII bytes are skipped rather than changed by UTF-8 encoding. X10 coordinates above 223 and UTF-8 coordinates above 2015 cannot be represented and are skipped. Shift retains native text selection. Focus reports reach `onData` when mode 1004 is active.
 
+Mouse reports come from the live terminal grid. Clicks and wheel gestures over
+scrollback rows stay with the browser, and wheel gestures keep scrolling history
+until the terminal reaches the bottom. When mouse tracking is active, hold
+Shift while scrolling to move through history from the live viewport. A drag
+started in the live grid still reports its release if the pointer leaves it.
+
 `onBell` runs as BEL output is written, including during synchronized output.
 Several bells in one write chunk are delivered as one count. BEL used to end
 an OSC sequence does not ring. WTerm does not play sound automatically; the

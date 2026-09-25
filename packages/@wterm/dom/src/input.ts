@@ -77,6 +77,7 @@ const FIXED_KEYS: Record<string, string> = {
 };
 
 const COMPOSITION_INPUT_DEDUP_MS = 250;
+const SCROLLBACK_BOTTOM_TOLERANCE = 5;
 // iOS needs a deletable value to keep emitting input events for held Backspace.
 const TOUCH_INPUT_PLACEHOLDER = "\u200b";
 
@@ -578,6 +579,35 @@ export class InputHandler {
       this.lastMouseMotion = null;
       return;
     }
+    if (kind === "wheel") {
+      const wheel = event as WheelEvent;
+      const maxScrollTop =
+        this.element.scrollHeight - this.element.clientHeight;
+      if (
+        maxScrollTop > 0 &&
+        (wheel.shiftKey ||
+          maxScrollTop - this.element.scrollTop > SCROLLBACK_BOTTOM_TOLERANCE)
+      ) {
+        this.lastMouseMotion = null;
+        if (wheel.shiftKey) {
+          const delta =
+            Math.abs(wheel.deltaX) > Math.abs(wheel.deltaY)
+              ? wheel.deltaX
+              : wheel.deltaY;
+          const scale =
+            wheel.deltaMode === 1
+              ? (this.getCellSize()?.rowHeight ?? 16)
+              : wheel.deltaMode === 2
+                ? this.element.clientHeight
+                : 1;
+          if (delta !== 0) {
+            this.element.scrollTop += delta * scale;
+            wheel.preventDefault();
+          }
+        }
+        return;
+      }
+    }
     if (
       kind === "press" &&
       isLinkActivationModifier(
@@ -654,13 +684,16 @@ export class InputHandler {
       gridHeight <= 0
     )
       return;
+    const outsideGrid =
+      event.clientX < left ||
+      event.clientX >= left + gridWidth ||
+      event.clientY < top ||
+      event.clientY >= top + gridHeight;
     if (
-      kind === "move" &&
-      supportedButtons === 0 &&
-      (event.clientX < left ||
-        event.clientX >= left + gridWidth ||
-        event.clientY < top ||
-        event.clientY >= top + gridHeight)
+      outsideGrid &&
+      (kind === "press" ||
+        kind === "wheel" ||
+        (kind === "move" && supportedButtons === 0))
     ) {
       this.lastMouseMotion = null;
       return;
