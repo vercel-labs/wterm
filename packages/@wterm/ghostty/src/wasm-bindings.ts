@@ -91,9 +91,12 @@ export interface GhosttyExports {
   // Grid
   get_cols(ptr: number): number;
   get_rows(ptr: number): number;
+  /** Bit 0: wraps to next; bit 1: continues previous. -1 for an invalid row. */
+  get_row_wraps?(ptr: number, row: number): number;
 
   // Scrollback
   get_scrollback_count(ptr: number): number;
+  get_scrollback_row_wraps?(ptr: number, offset: number): number;
   get_scrollback_discarded_count(ptr: number): number;
   get_scrollback_line(
     ptr: number,

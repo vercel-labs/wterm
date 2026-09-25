@@ -38,6 +38,32 @@ const term = new WTerm(el, { core });
 
 ## API
 
+### Terminal row metadata
+
+`TerminalCore` optionally exposes `getRowMetadata(row)` for zero-based live
+rows and `getScrollbackRowMetadata(offset)` for history, where offset zero is
+the newest retained row. Both return a caller-owned `TerminalRowMetadata`
+object or `null` when the row is unavailable:
+
+```ts
+import type { TerminalCore } from "@wterm/core";
+
+function continuesIntoViewport(core: TerminalCore): boolean | undefined {
+  return core.getScrollbackRowMetadata?.(0)?.wrapsToNext;
+}
+```
+
+`wrapsToNext` means the following row continues the same logical line;
+`continuesPrevious` means this row continues the preceding row. Filling the
+rightmost cell alone does not count as wrapping. The first retained row can
+still continue a row that has been discarded.
+
+These are current physical-row relationships, not stable line IDs. Read them
+again after output, resize, reset, or screen changes; do not retain row indexes
+across those operations. Ghostty implements both methods with its native wrap
+flags. The lightweight core does not expose them, and older Ghostty WASM
+binaries return `null`. Missing metadata means unknown, not a hard newline.
+
 ### `WasmBridge`
 
 Low-level interface to the Zig/WASM terminal state machine. Implements the `TerminalCore` interface.

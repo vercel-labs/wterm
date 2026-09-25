@@ -1135,6 +1135,30 @@ export fn get_rows(ptr: usize) u32 {
 
 // -- Scrollback -------------------------------------------------
 
+// Read the native page metadata, not RenderState: callers may inspect rows
+// before a paint, and the same relationships must cross the history boundary.
+fn rowWrapFlags(pin: vt.Pin) i32 {
+    const row = pin.rowAndCell().row;
+    return @as(i32, @intFromBool(row.wrap)) |
+        (@as(i32, @intFromBool(row.wrap_continuation)) << 1);
+}
+
+export fn get_row_wraps(ptr: usize, row: u32) i32 {
+    const state = stateFromPtr(ptr);
+    if (row >= state.terminal.rows) return -1;
+    const screen: *Screen = state.terminal.screens.active;
+    const pin = screen.pages.getTopLeft(.active).down(row) orelse return -1;
+    return rowWrapFlags(pin);
+}
+
+export fn get_scrollback_row_wraps(ptr: usize, offset: u32) i32 {
+    const state = stateFromPtr(ptr);
+    const screen: *Screen = state.terminal.screens.active;
+    const rows_up = std.math.add(usize, offset, 1) catch return -1;
+    const pin = screen.pages.getTopLeft(.active).up(rows_up) orelse return -1;
+    return rowWrapFlags(pin);
+}
+
 export fn get_scrollback_count(ptr: usize) u32 {
     const state = stateFromPtr(ptr);
     const screen: *Screen = state.terminal.screens.active;

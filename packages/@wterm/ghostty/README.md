@@ -33,6 +33,17 @@ visual DOM flow so prompts emitted after an image remain visible below it.
 
 Ghostty also exposes the cumulative number of rows discarded from the oldest end of scrollback. `@wterm/dom` uses that signal to keep retained history anchored when the page budget rolls over.
 
+`getRowMetadata(row)` and `getScrollbackRowMetadata(offset)` return
+`{ wrapsToNext, continuesPrevious }` from Ghostty's native row flags. Live rows
+start at zero; history offset zero is the newest retained row. They distinguish
+soft wraps from explicit newlines, including across the live/history boundary
+and after resize reflow. Results are snapshots: re-read after output or resize,
+and treat row indexes as temporary. A retained row can continue an older row
+that has already been discarded. Invalid positions, disposed cores, and older
+WASM binaries without these exports return `null` rather than a hard-line
+assumption. The methods read terminal state immediately, without requiring a
+render or consuming dirty flags.
+
 Kitty keyboard flags stay authoritative in Ghostty's active screen. Queries return the native value, primary and alternate screens negotiate independently, DECSTR preserves the flags, and RIS clears them. `@wterm/dom` encodes browser keyboard events from those flags with the browser limitations documented in its README.
 
 ## Install

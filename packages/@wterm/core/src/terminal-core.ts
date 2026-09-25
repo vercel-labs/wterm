@@ -21,6 +21,14 @@ export interface CellData {
 
 export type CursorShape = "block" | "underline" | "bar";
 
+/** Soft-wrap relationships for one physical row of the active screen. */
+export interface TerminalRowMetadata {
+  /** The following row continues this row without an explicit newline. */
+  wrapsToNext: boolean;
+  /** This row continues the preceding row, which may have been discarded. */
+  continuesPrevious: boolean;
+}
+
 export type MouseEncoding = "x10" | "utf8" | "sgr" | "urxvt" | "sgr-pixels";
 
 export interface CursorState {
@@ -121,6 +129,8 @@ export interface TerminalCore {
 
   // -- Grid --
   getCell(row: number, col: number): CellData;
+  /** Zero-based live row. Null means unavailable or out of range. */
+  getRowMetadata?(row: number): TerminalRowMetadata | null;
   isDirtyRow(row: number): boolean;
   clearDirty(): void;
   /** Applied grid dimensions after init() or resize(), which may differ from the request. */
@@ -162,6 +172,8 @@ export interface TerminalCore {
   getScrollbackDiscardedCount?(): number;
   getScrollbackCell(offset: number, col: number): CellData;
   getScrollbackLineLen(offset: number): number;
+  /** Offset zero is the newest history row. Null means unavailable or out of range. */
+  getScrollbackRowMetadata?(offset: number): TerminalRowMetadata | null;
 
   // -- Debug --
   getUnhandledSequences(): UnhandledSequence[];

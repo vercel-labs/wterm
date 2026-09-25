@@ -58,6 +58,14 @@ vi.mock("../wasm-bindings.js", async () => {
 const { GhosttyCore } = await import("../ghostty-core.js");
 const { CELL_BYTES } = await import("../wasm-bindings.js");
 
+it("reports unknown row metadata when an older WASM binary omits the exports", async () => {
+  const core = await GhosttyCore.load();
+  core.init(80, 24);
+  expect(core.getRowMetadata(0)).toBeNull();
+  expect(core.getScrollbackRowMetadata(0)).toBeNull();
+  core.dispose();
+});
+
 /** Build one raw scrollback cell matching the 16-byte wasm_api.zig layout. */
 function buildCellBytes(opts: {
   codepoint: number;
