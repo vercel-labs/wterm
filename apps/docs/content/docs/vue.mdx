@@ -134,3 +134,7 @@ The component mounts in `onMounted`, so it is SSR-safe out of the box. If you ne
   </ClientOnly>
 </template>
 ```
+
+## Terminal Search
+
+The underlying WTerm instance exposes full-history `search`, `findNext`, `findPrevious`, `getSearchState`, and `clearSearch`. Set its `onSearchChange` callback to keep Find controls current. Use the `ready` event or template ref’s `instance`. See [Terminal Search](/api-reference#terminal-search) for Unicode behavior, progress, and limits.

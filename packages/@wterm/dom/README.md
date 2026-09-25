@@ -53,6 +53,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
 | `onBell` | `(count: number) => void` | — | Called with the number of BEL controls since the last delivery |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called with the grid dimensions applied by the core after resize |
+| `onSearchChange` | `(state: SearchState) => void` | — | Receives search progress, count, and active match changes |
 
 **Methods:**
 
@@ -62,6 +63,10 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `write(data: string \| Uint8Array)` | Write data to the terminal |
 | `resize(cols, rows)` | Resize the terminal grid |
 | `focus()` | Focus the terminal element |
+| `search(query, { caseSensitive? })` | Start plain-text search over retained history and the active screen |
+| `findNext()` / `findPrevious()` | Select and reveal a match, wrapping at either end; return false if there are none |
+| `getSearchState()` | Get query, caseSensitive, count, activeIndex, searching, and limited |
+| `clearSearch()` | Cancel search and remove highlights |
 | `destroy()` | Clean up event listeners and DOM |
 
 After `init()` or `resize()`, `term.cols` and `term.rows` reflect the grid size
@@ -136,6 +141,29 @@ WTerm answers xterm/Kitty pixel geometry queries (`CSI 14 t` and `CSI 16 t`) fro
 Scrollback normally keeps only the visible rows plus overscan mounted in the DOM. While native text selection is active, the selected range stays mounted so the browser can preserve it. Native browser find and accessibility inspect the mounted window, not every retained history row. Scrolling updates the window, while new output follows the exact bottom only when the terminal was already there.
 
 WTerm owns scrollback anchoring when old history is discarded. The package stylesheet disables browser-native scroll anchoring on the terminal scroller so rollover produces one deterministic adjustment across browsers.
+
+### Terminal search
+
+```ts
+term.onSearchChange = ({ count, activeIndex, searching, limited }) => {
+  console.log({ count, activeIndex, searching, limited });
+};
+term.search("connection refused", { caseSensitive: false });
+// Call from your Find controls:
+term.findNext();
+term.findPrevious();
+term.clearSearch();
+```
+
+Search reads all retained rows, including unmounted history, in cancellable batches. Matches appear in chronological order; the first result is selected and revealed. `activeIndex` is zero-based, or -1 with no results. Navigation wraps among the matches found so far. Highlights preserve native text nodes and selection. Set `--term-search-match`, `--term-search-active`, and `--term-search-border` to customize their colors.
+
+Ghostty joins confirmed soft wraps, including the history/screen boundary. Explicit newlines and unknown row boundaries separate matches; the built-in core currently searches each physical row independently. Search uses cell grapheme strings, omits wide-cell continuations and flagged spacer heads, and highlights the entire cell for partial-grapheme matches. Spaces, including terminal blank-cell padding, are literal; queries do not span hard line breaks. Regular expressions are not interpreted.
+
+Case-insensitive matching is the default. It lowercases each Unicode code point independently using JavaScript's locale-independent `toLowerCase()`, without normalization or full case folding: `é` differs from `e` plus a combining acute, `ß` differs from `ss`, and final sigma differs from sigma. Lowercase expansions retain their original cell positions.
+
+Queries are limited to 1,024 UTF-16 code units (`RangeError` otherwise). Up to 10,000 matches are retained; `limited` becomes true when another match exists. Narrow the query to reach additional matches. Empty queries cancel search. Output, pruning, resize, and screen switches clear stale results and restart after painting; continuous changes can delay completion. Refresh selects the first new result without scrolling away from the user's position. Synchronized output is searched after its paint is released. Destroying WTerm cancels outstanding work. Route mutations through WTerm's `write` and `resize` methods so search can track them.
+
+`SearchOptions` and `SearchState` are exported from `@wterm/dom` and the framework packages. Framework users can access these methods and `onSearchChange` through the underlying WTerm instance. The host owns Find controls and shortcuts; the local workspace includes both.
 
 ### Terminal images
 

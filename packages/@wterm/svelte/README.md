@@ -114,6 +114,10 @@ Import the stylesheet and switch themes with the `theme` prop:
 Built-in themes: `solarized-dark`, `monokai`, and `light`. Define custom themes
 with CSS custom properties.
 
+## Terminal search
+
+Use the underlying `WTerm` instance to call `search(query, { caseSensitive })`, `findNext()`, `findPrevious()`, `getSearchState()`, and `clearSearch()`. Set its `onSearchChange` callback to update your Find controls. Access the instance through `onReady` or `bind:instance`. Search includes unmounted retained history; Ghostty also joins soft wraps. See the [search semantics and limits](../dom/README.md#terminal-search).
+
 ## License
 
 Apache-2.0

@@ -359,6 +359,7 @@ export class Renderer {
   private _scrollbackTopSpacer: HTMLDivElement | null = null;
   private _scrollbackBottomSpacer: HTMLDivElement | null = null;
   private graphics: GraphicsLayer;
+  private searchLayer: HTMLDivElement;
 
   get hasImageFlow(): boolean {
     return (
@@ -370,6 +371,9 @@ export class Renderer {
   constructor(container: HTMLElement, options: GraphicsLayerOptions = {}) {
     this.container = container;
     this.graphics = new GraphicsLayer(container, options);
+    this.searchLayer = document.createElement("div");
+    this.searchLayer.className = "term-search-layer";
+    this.searchLayer.setAttribute("aria-hidden", "true");
   }
 
   setup(cols: number, rows: number): void {
@@ -399,6 +403,8 @@ export class Renderer {
       this.rowEls.push(rowEl);
     }
     this.container.appendChild(fragment);
+    this.searchLayer.replaceChildren();
+    this.container.appendChild(this.searchLayer);
     this.graphics.setup();
     this.prevCursorRow = -1;
     this.prevCursorCol = -1;
@@ -899,6 +905,27 @@ export class Renderer {
       overscanRows: viewport?.overscanRows ?? DEFAULT_SCROLLBACK_OVERSCAN_ROWS,
       scrollbackCount: core.getScrollbackCount(),
     });
+  }
+
+  /** Mounted rows in chronological, retained-buffer coordinates. */
+  *searchRows(): Generator<{ row: number; element: HTMLDivElement }> {
+    const start =
+      this._scrollbackStartKey - Math.max(0, this._renderedDiscardedCount);
+    for (let i = 0; i < this._scrollbackRowEls.length; i++) {
+      yield { row: start + i, element: this._scrollbackRowEls[i] };
+    }
+    for (let i = 0; i < this.rowEls.length; i++) {
+      yield {
+        row: Math.max(0, this._renderedScrollbackCount) + i,
+        element: this.rowEls[i],
+      };
+    }
+  }
+
+  /** Replaces decorations only, preserving native text selection. */
+  setSearchDecorations(decorations: DocumentFragment): void {
+    if (!decorations.firstChild && !this.searchLayer.firstChild) return;
+    this.searchLayer.replaceChildren(decorations);
   }
 
   destroy(): void {

@@ -3,6 +3,11 @@ import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
 import { DebugAdapter } from "./debug.js";
 import { isLinkActivationModifier } from "./hyperlink.js";
+import {
+  SearchController,
+  type SearchOptions,
+  type SearchState,
+} from "./search.js";
 
 const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
 const PROGRAMMATIC_SCROLL_TOLERANCE = 1;
@@ -33,6 +38,7 @@ export interface WTermOptions {
   /** Called with the number of BEL controls since the last delivery. */
   onBell?: (count: number) => void;
   onResize?: (cols: number, rows: number) => void;
+  onSearchChange?: (state: SearchState) => void;
 }
 
 export class WTerm {
@@ -64,6 +70,8 @@ export class WTerm {
   private _rowHeight = 0;
   private _charWidth = 0;
   private _windowSizeQueryBuffer = "";
+  private _search: SearchController;
+  private _searchReveal = false;
   private _onClickFocus: (event: MouseEvent) => void;
   private _onScroll: () => void;
   private _onModifierChange: (event: KeyboardEvent) => void;
@@ -74,6 +82,7 @@ export class WTerm {
   onTitle: ((title: string) => void) | null;
   onBell: ((count: number) => void) | null;
   onResize: ((cols: number, rows: number) => void) | null;
+  onSearchChange: ((state: SearchState) => void) | null;
 
   private _container: HTMLDivElement;
 
@@ -93,6 +102,23 @@ export class WTerm {
     this.onTitle = options.onTitle || null;
     this.onBell = options.onBell || null;
     this.onResize = options.onResize || null;
+    this.onSearchChange = options.onSearchChange || null;
+    this._search = new SearchController((reveal) => {
+      this._searchReveal ||= reveal;
+      if (reveal) {
+        const match = this._search.matches[this.getSearchState().activeIndex];
+        if (match) {
+          this._shouldScrollToBottom = false;
+          this._pendingResizeScrollTop = null;
+          this._setScrollTop(
+            (match.start.row + 0.5) * this._rowHeight -
+              this.element.clientHeight / 2,
+          );
+        }
+      }
+      if (this._synchronizedOutputState !== "held") this._scheduleRender();
+      this.onSearchChange?.(this.getSearchState());
+    });
 
     this._container = document.createElement("div");
     this._container.className = "term-grid";
@@ -257,7 +283,7 @@ export class WTerm {
   }
 
   write(data: string | Uint8Array): void {
-    if (!this.bridge) return;
+    if (!this.bridge || this._destroyed) return;
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._isScrolledToBottom();
     const windowSizeQueries = this._collectWindowSizeQueries(data);
@@ -288,6 +314,7 @@ export class WTerm {
     const synchronized = this.bridge.synchronizedOutput?.() ?? false;
     const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
     this._updateSynchronizedOutput(synchronized, generation);
+    this._invalidateSearch();
     if (this._synchronizedOutputState !== "held") {
       this._setupRendererIfNeeded();
       this._scheduleRender();
@@ -304,7 +331,7 @@ export class WTerm {
   }
 
   resize(cols: number, rows: number): void {
-    if (!this.bridge) return;
+    if (!this.bridge || this._destroyed) return;
     this._shouldScrollToBottom =
       this._pendingResizeScrollTop === null && this._isScrolledToBottom();
     this.bridge.resize(cols, rows);
@@ -318,7 +345,106 @@ export class WTerm {
       this._setupRenderer(this.cols, this.rows);
       this._scheduleRender();
     }
+    this._invalidateSearch();
     if (this.onResize) this.onResize(this.cols, this.rows);
+  }
+
+  /** Search retained history and the active screen, using plain text. */
+  search(query: string, options: SearchOptions = {}): void {
+    if (this._destroyed) return;
+    this._search.search(query, options);
+    this._paintSearch();
+  }
+
+  findNext(): boolean {
+    return !this._destroyed && this._search.navigate(1);
+  }
+  findPrevious(): boolean {
+    return !this._destroyed && this._search.navigate(-1);
+  }
+  clearSearch(): void {
+    this.search("");
+  }
+  getSearchState(): SearchState {
+    return this._search.snapshot();
+  }
+
+  private _invalidateSearch(): void {
+    if (!this.getSearchState().query) return;
+    this._searchReveal = false;
+    this._search.invalidate();
+    this._paintSearch();
+  }
+
+  private _paintSearch(): void {
+    if (!this.renderer || !this.bridge) return;
+    const fragment = document.createDocumentFragment();
+    const matches = this._search.matches;
+    if (!matches.length) {
+      this.renderer.setSearchDecorations(fragment);
+      return;
+    }
+    const active = this.getSearchState().activeIndex;
+    const viewport = this.element.getBoundingClientRect();
+    for (const { row, element } of this.renderer.searchRows()) {
+      const rect = element.getBoundingClientRect();
+      if (rect.bottom <= viewport.top || rect.top >= viewport.bottom) continue;
+      // Match ends are ordered, so offscreen history does not add paint work.
+      let low = 0,
+        high = matches.length;
+      while (low < high) {
+        const mid = (low + high) >>> 1;
+        if (matches[mid].end.row < row) low = mid + 1;
+        else high = mid;
+      }
+      const history = this.bridge.getScrollbackCount();
+      const offset = history - row - 1;
+      let cols =
+        row < history ? this.bridge.getScrollbackLineLen(offset) : this.cols;
+      if (cols <= 0) continue;
+      const last =
+        row < history
+          ? this.bridge.getScrollbackCell(offset, cols - 1)
+          : this.bridge.getCell(row - history, cols - 1);
+      if (last.spacerHead) cols--;
+      let rangeStart = -1,
+        rangeEnd = -1;
+      const draw = (start: number, end: number, selected: boolean) => {
+        if (end <= start) return;
+        const mark = document.createElement("div");
+        mark.className = `term-search-match${selected ? " term-search-active" : ""}`;
+        mark.style.cssText = `left:${start * this._charWidth}px;top:${element.offsetTop}px;width:${(end - start) * this._charWidth}px;height:${rect.height}px`;
+        fragment.appendChild(mark);
+      };
+      for (
+        let i = low;
+        i < matches.length && matches[i].start.row <= row;
+        i++
+      ) {
+        const match = matches[i];
+        const start = match.start.row === row ? match.start.col : 0;
+        const end = Math.min(
+          cols,
+          match.end.row === row ? match.end.endCol : cols,
+        );
+        if (rangeStart >= 0 && start > rangeEnd) {
+          draw(rangeStart, rangeEnd, false);
+          rangeStart = -1;
+        }
+        if (rangeStart < 0) rangeStart = start;
+        rangeEnd = Math.max(rangeEnd, end);
+      }
+      if (rangeStart >= 0) draw(rangeStart, rangeEnd, false);
+      const selected = matches[active];
+      if (selected && selected.start.row <= row && selected.end.row >= row) {
+        draw(
+          selected.start.row === row ? selected.start.col : 0,
+          Math.min(cols, selected.end.row === row ? selected.end.endCol : cols),
+          true,
+        );
+      }
+    }
+    this.renderer.setSearchDecorations(fragment);
   }
 
   focus(): void {
@@ -330,7 +456,7 @@ export class WTerm {
   }
 
   private _scheduleRender(): void {
-    if (this.rafId != null) return;
+    if (this._destroyed || this.rafId != null) return;
     this.rafId = requestAnimationFrame(() => {
       this.rafId = null;
       this._doRender();
@@ -418,7 +544,12 @@ export class WTerm {
   }
 
   private _doRender(): void {
-    if (!this.bridge || !this.renderer) return;
+    if (
+      !this.bridge ||
+      !this.renderer ||
+      this._synchronizedOutputState === "held"
+    )
+      return;
 
     let dirtyCount = 0;
     const t0 = this.debug ? performance.now() : 0;
@@ -484,6 +615,27 @@ export class WTerm {
     }
 
     this.input?.syncInputPosition();
+    if (this._searchReveal) {
+      this._searchReveal = false;
+      const match = this._search.matches[this.getSearchState().activeIndex];
+      const target =
+        match &&
+        Array.from(this.renderer.searchRows()).find(
+          ({ row }) => row === match.start.row,
+        );
+      if (target) {
+        const rect = target.element.getBoundingClientRect();
+        const viewport = this.element.getBoundingClientRect();
+        this._setScrollTop(
+          this.element.scrollTop +
+            rect.top -
+            viewport.top -
+            (this.element.clientHeight - rect.height) / 2,
+        );
+      }
+    }
+    this._paintSearch();
+    this._search.resume(this.bridge);
 
     const title = this.bridge.getTitle();
     if (title !== null && this.onTitle) {
@@ -682,6 +834,8 @@ export class WTerm {
 
   destroy(): void {
     this._destroyed = true;
+    this._search.cancel();
+    this.onSearchChange = null;
     this._windowSizeQueryBuffer = "";
     this._cancelScheduledRender();
     this._cancelSynchronizedOutputFallback();

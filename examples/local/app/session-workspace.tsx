@@ -8,9 +8,9 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { Plus, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, Search, X } from "lucide-react";
 import { Terminal as WTermTerminal, useTerminal } from "@wterm/react";
-import type { TerminalCore, WTerm } from "@wterm/dom";
+import type { SearchState, TerminalCore, WTerm } from "@wterm/dom";
 import "@wterm/react/css";
 
 type SessionStatus = "loading" | "connecting" | "connected" | "closed";
@@ -165,6 +165,45 @@ function SessionTerminal({
   const terminalRef = useRef<WTerm | null>(null);
   const connectFrameRef = useRef<number | null>(null);
   const disposedRef = useRef(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [searchState, setSearchState] = useState<SearchState | null>(null);
+  const findInputRef = useRef<HTMLInputElement>(null);
+
+  const openFind = useCallback(() => {
+    setFindOpen(true);
+    findInputRef.current?.focus();
+    findInputRef.current?.select();
+  }, []);
+
+  const closeFind = () => {
+    setFindOpen(false);
+    terminalRef.current?.clearSearch();
+    terminalRef.current?.focus();
+  };
+
+  useEffect(() => {
+    if (!active) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() === "f" &&
+        !event.altKey &&
+        ((event.metaKey && !event.ctrlKey) ||
+          (event.ctrlKey && event.shiftKey && !event.metaKey))
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        openFind();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [active, openFind]);
+
+  useEffect(() => {
+    if (findOpen) terminalRef.current?.search(query, { caseSensitive });
+  }, [query, caseSensitive, findOpen]);
 
   useEffect(() => {
     disposedRef.current = false;
@@ -209,13 +248,16 @@ function SessionTerminal({
   }, [core]);
 
   useEffect(() => {
-    if (active) ref.current?.focus();
-  }, [active, ref]);
+    if (!active) return;
+    if (findOpen) findInputRef.current?.focus();
+    else ref.current?.focus();
+  }, [active, findOpen, ref]);
 
   const handleReady = useCallback(
     (wt: WTerm) => {
       if (disposedRef.current || wsRef.current) return;
       terminalRef.current = wt;
+      wt.onSearchChange = setSearchState;
 
       // Let the first ResizeObserver pass settle before spawning the shell.
       // Otherwise zsh starts at 80x24, then redraws its prompt when the
@@ -281,31 +323,129 @@ function SessionTerminal({
   }
 
   return (
-    <WTermTerminal
-      ref={ref}
-      cols={80}
-      rows={24}
-      autoResize
-      debug={debugEnabled}
-      wasmUrl={wasmUrl}
-      maxImageWidth={maxImageWidth}
-      maxImageHeight={maxImageHeight}
-      core={core ?? undefined}
-      onReady={handleReady}
-      onData={handleData}
-      onResize={handleResize}
-      tabIndex={active ? 0 : -1}
-      className="local-terminal h-full w-full"
-      style={
-        {
-          borderRadius: 0,
-          boxShadow: "none",
-          padding: 0,
-          backgroundColor: "#000",
-          "--term-bg": "#000",
-        } as CSSProperties
-      }
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-[#1f1f1f] pb-2 text-xs">
+        {findOpen ? (
+          <div
+            className="flex min-w-0 flex-1 items-center gap-2"
+            role="search"
+            aria-label="Terminal output"
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeFind();
+              }
+              if (event.key === "Enter") {
+                event.preventDefault();
+                if (event.shiftKey) terminalRef.current?.findPrevious();
+                else terminalRef.current?.findNext();
+              }
+            }}
+          >
+            <input
+              ref={findInputRef}
+              type="text"
+              aria-label="Find in terminal"
+              placeholder="Find in terminal…"
+              maxLength={1024}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="min-w-0 flex-1 rounded border border-[#444] bg-[#161616] px-2 py-1 outline-none focus:border-[#999]"
+            />
+            <span
+              className="whitespace-nowrap text-[#aaa]"
+              role="status"
+              aria-live="polite"
+            >
+              {!query
+                ? ""
+                : searchState?.searching
+                  ? "Searching…"
+                  : searchState?.count
+                    ? `${searchState.activeIndex + 1} of ${searchState.count}${searchState.limited ? "+" : ""}`
+                    : "No matches"}
+            </span>
+            <button
+              type="button"
+              aria-label="Match case"
+              aria-pressed={caseSensitive}
+              title="Match case"
+              onClick={() => setCaseSensitive((value) => !value)}
+              className={`rounded px-2 py-1 ${caseSensitive ? "bg-[#444] text-white" : "text-[#aaa] hover:bg-[#222]"}`}
+            >
+              Aa
+            </button>
+            <button
+              type="button"
+              aria-label="Previous match"
+              title="Previous match (Shift+Enter)"
+              disabled={!searchState?.count}
+              className="rounded p-1 hover:bg-[#222] disabled:opacity-30"
+              onClick={() => terminalRef.current?.findPrevious()}
+            >
+              <ArrowUp size={16} />
+            </button>
+            <button
+              type="button"
+              aria-label="Next match"
+              title="Next match (Enter)"
+              disabled={!searchState?.count}
+              className="rounded p-1 hover:bg-[#222] disabled:opacity-30"
+              onClick={() => terminalRef.current?.findNext()}
+            >
+              <ArrowDown size={16} />
+            </button>
+            <button
+              type="button"
+              aria-label="Close find"
+              title="Close find (Escape)"
+              className="rounded p-1 hover:bg-[#222]"
+              onClick={closeFind}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={openFind}
+            title="Find in terminal (⌘F / Ctrl+Shift+F)"
+            className="ml-auto flex items-center gap-2 rounded px-2 py-1 text-[#aaa] hover:bg-[#222] hover:text-white"
+          >
+            <Search size={14} />
+            Find
+          </button>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 pt-2">
+        <WTermTerminal
+          ref={ref}
+          cols={80}
+          rows={24}
+          autoResize
+          debug={debugEnabled}
+          wasmUrl={wasmUrl}
+          maxImageWidth={maxImageWidth}
+          maxImageHeight={maxImageHeight}
+          core={core ?? undefined}
+          onReady={handleReady}
+          onData={handleData}
+          onResize={handleResize}
+          tabIndex={active ? 0 : -1}
+          className="local-terminal h-full w-full"
+          style={
+            {
+              borderRadius: 0,
+              boxShadow: "none",
+              padding: 0,
+              backgroundColor: "#000",
+              "--term-bg": "#000",
+            } as CSSProperties
+          }
+        />
+      </div>
+    </div>
   );
 }
 

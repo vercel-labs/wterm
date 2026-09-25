@@ -231,6 +231,11 @@ export type HarnessAPI = {
   close: () => void;
   replayWrite: typeof replayWrite;
   frame: () => Promise<void>;
+  search: WTerm["search"];
+  searchState: WTerm["getSearchState"];
+  findNext: WTerm["findNext"];
+  findPrevious: WTerm["findPrevious"];
+  clearSearch: WTerm["clearSearch"];
 };
 declare global {
   interface Window {
@@ -274,6 +279,11 @@ async function init() {
       setState("closed", "Session closed");
     },
     replayWrite,
+    search: (query, options) => terminal.search(query, options),
+    searchState: () => terminal.getSearchState(),
+    findNext: () => terminal.findNext(),
+    findPrevious: () => terminal.findPrevious(),
+    clearSearch: () => terminal.clearSearch(),
     frame: () =>
       new Promise((resolve) => requestAnimationFrame(() => resolve())),
   };
