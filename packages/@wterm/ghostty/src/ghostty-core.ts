@@ -6,6 +6,7 @@ import type {
   TerminalGraphicsState,
   TerminalImageData,
   TerminalResourceState,
+  TerminalRowMetadata,
 } from "@wterm/core";
 import {
   type GhosttyWasm,
@@ -226,6 +227,10 @@ export class GhosttyCore implements TerminalCore {
   }
 
   // -- Grid --
+
+  getRowMetadata(row: number): TerminalRowMetadata | null {
+    return this._readRowMetadata(this.wasm.exports.get_row_wraps, row);
+  }
 
   getCell(row: number, col: number): CellData {
     if (this._disposed || this.termPtr === 0) return BLANK_CELL;
@@ -652,6 +657,13 @@ export class GhosttyCore implements TerminalCore {
     return this._ensureScrollbackLine(offset);
   }
 
+  getScrollbackRowMetadata(offset: number): TerminalRowMetadata | null {
+    return this._readRowMetadata(
+      this.wasm.exports.get_scrollback_row_wraps,
+      offset,
+    );
+  }
+
   // -- Debug --
 
   getUnhandledSequences(): UnhandledSequence[] {
@@ -659,6 +671,27 @@ export class GhosttyCore implements TerminalCore {
   }
 
   // -- Internal helpers --
+
+  private _readRowMetadata(
+    read: ((ptr: number, index: number) => number) | undefined,
+    index: number,
+  ): TerminalRowMetadata | null {
+    if (
+      this._disposed ||
+      this.termPtr === 0 ||
+      !read ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index > MAX_WASM_U32
+    )
+      return null;
+    const flags = read(this.termPtr, index);
+    if (flags < 0) return null;
+    return {
+      wrapsToNext: (flags & 1) !== 0,
+      continuesPrevious: (flags & 2) !== 0,
+    };
+  }
 
   private _invalidate(): void {
     this._viewportStale = true;

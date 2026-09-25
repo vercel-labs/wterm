@@ -38,6 +38,56 @@ Complete reference for all wterm options, methods, types, and transport APIs.
 
 These fields are optional so custom `TerminalCore` implementations remain source-compatible.
 
+## Row Metadata
+
+`TerminalCore` has two optional methods for reading soft-wrap relationships.
+The Ghostty core implements both; the lightweight core omits them.
+
+<table>
+  <thead>
+    <tr><th>Method</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>getRowMetadata?(row)</code></td>
+      <td>Read a zero-based live row in the active screen.</td>
+    </tr>
+    <tr>
+      <td><code>getScrollbackRowMetadata?(offset)</code></td>
+      <td>Read retained history; offset zero is the newest row, directly above the live screen.</td>
+    </tr>
+  </tbody>
+</table>
+
+Each returns a caller-owned `TerminalRowMetadata` object or `null` when the
+row or metadata is unavailable. Ghostty returns `null` for negative,
+fractional, non-finite, or out-of-range indexes, before initialization, after
+disposal, and when an older WASM binary lacks the exports.
+
+<table>
+  <thead>
+    <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>wrapsToNext</code></td>
+      <td><code>boolean</code></td>
+      <td>The following row continues this logical line without an explicit newline. Merely filling the last column does not set this flag.</td>
+    </tr>
+    <tr>
+      <td><code>continuesPrevious</code></td>
+      <td><code>boolean</code></td>
+      <td>This row continues the preceding row, which may already have been discarded from history.</td>
+    </tr>
+  </tbody>
+</table>
+
+Metadata describes the current physical rows, not stable logical-line IDs.
+Re-read after output, resize/reflow, history pruning, reset, or screen changes;
+row indexes and scrollback offsets can change. Missing methods or `null`
+mean unknown, not a hard newline. Reads do not consume dirty flags or require
+a DOM render.
+
 ## Terminal Graphics
 
 Graphics methods are optional. Cores that support them return a snapshot for

@@ -10,6 +10,7 @@ export type {
   TerminalImageDescriptor,
   TerminalImagePlacement,
   TerminalResourceState,
+  TerminalRowMetadata,
   UnhandledSequence,
   TerminalCore,
 } from "./terminal-core.js";
