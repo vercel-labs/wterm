@@ -235,6 +235,50 @@ describe("BashShell", () => {
       await shell.handleInput("\x1b[C");
       expect(output).toHaveLength(0);
     });
+
+    it("moves backward by words for Option+Left without inserting its escape sequence", async () => {
+      await shell.handleInput("ls -la");
+      output.length = 0;
+
+      await shell.handleInput("\x1b[1;3D");
+      await shell.handleInput("\x1b[1;3D");
+      await shell.handleInput("\x1b[1;3D");
+      expect(output).toEqual(["\x1b[3D", "\x1b[3D"]);
+
+      await shell.handleInput("\x1b[1;3C");
+      await shell.handleInput("\x1b[1;3C");
+      expect(output).toEqual(["\x1b[3D", "\x1b[3D", "\x1b[2C", "\x1b[4C"]);
+    });
+
+    it("edits at the word boundary after Option+Left", async () => {
+      await shell.handleInput("ls -la");
+      await shell.handleInput("\x1b[1;3D");
+      await shell.handleInput("X");
+      await shell.handleInput("\r");
+
+      expect(mockExec.mock.calls[0]?.[0]).toContain("ls X-la");
+    });
+
+    it("also accepts Ctrl+arrows and Alt+B/F for word navigation", async () => {
+      await shell.handleInput("one two");
+      output.length = 0;
+      await shell.handleInput("\x1b[1;5D");
+      await shell.handleInput("\x1bb");
+      await shell.handleInput("\x1bf");
+      await shell.handleInput("\x1b[1;5C");
+      expect(output).toEqual(["\x1b[3D", "\x1b[4D", "\x1b[3C", "\x1b[4C"]);
+    });
+
+    it("does not insert unsupported functional-key sequences", async () => {
+      await shell.handleInput("ls");
+      output.length = 0;
+      await shell.handleInput("\x1b[1;2D");
+      expect(output).toEqual([]);
+
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toContain("ls");
+      expect(mockExec.mock.calls[0]?.[0]).not.toContain("[1;2D");
+    });
   });
 
   describe("handleInput - history navigation", () => {
