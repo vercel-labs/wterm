@@ -686,7 +686,7 @@ describe("BashShell", () => {
     });
   });
 
-  describe("handleInput - reverse history search", () => {
+  describe("handleInput - incremental history search", () => {
     beforeEach(async () => {
       shell = new BashShell({ prompt: () => "$ " });
       await shell.attach(write);
@@ -714,6 +714,95 @@ describe("BashShell", () => {
       const count = output.length;
       await shell.handleInput("\x12");
       expect(output).toHaveLength(count);
+    });
+
+    it("uses Ctrl+S to move toward newer matches without wrapping around", async () => {
+      await shell.handleInput("\x12");
+      await shell.handleInput("echo");
+      await shell.handleInput("\x12");
+      await shell.handleInput("\x12");
+      expect(output.at(-1)).toBe(
+        "\r\x1b[K(reverse-i-search)`echo': echo alpha",
+      );
+
+      await shell.handleInput("\x13");
+      expect(output.at(-1)).toBe("\r\x1b[K(forward-i-search)`echo': echo beta");
+      await shell.handleInput("\x13");
+      expect(output.at(-1)).toBe(
+        "\r\x1b[K(forward-i-search)`echo': echo alphabet",
+      );
+      const count = output.length;
+      await shell.handleInput("\x13");
+      expect(output).toHaveLength(count);
+
+      await shell.handleInput("\x12");
+      expect(output.at(-1)).toBe("\r\x1b[K(reverse-i-search)`echo': echo beta");
+    });
+
+    it("continues matching forward as the query grows and runs the selected command", async () => {
+      await shell.handleInput("\x12");
+      await shell.handleInput("echo");
+      await shell.handleInput("\x12");
+      await shell.handleInput("\x12");
+      await shell.handleInput("\x13");
+      await shell.handleInput(" alph");
+      expect(output.at(-1)).toBe(
+        "\r\x1b[K(forward-i-search)`echo alph': echo alphabet",
+      );
+
+      await shell.handleInput("\r");
+      expect(mockExec.mock.calls[0]?.[0]).toBe("echo alphabet");
+    });
+
+    it("can switch to forward search after a failed reverse query and still cancel", async () => {
+      await shell.handleInput("draft");
+      await shell.handleInput("\x12");
+      await shell.handleInput("alpha");
+      await shell.handleInput("\x12");
+      await shell.handleInput("bet");
+      expect(output.at(-1)).toBe(
+        "\r\x1b[K(failed reverse-i-search)`alphabet': ",
+      );
+
+      await shell.handleInput("\x13");
+      expect(output.at(-1)).toBe(
+        "\r\x1b[K(forward-i-search)`alphabet': echo alphabet",
+      );
+      await shell.handleInput("\x07");
+      expect(output.at(-1)).toBe("\r$ \x1b[Kdraft");
+      expect(mockExec).not.toHaveBeenCalled();
+    });
+
+    it("clears a forward query from the oldest history entry", async () => {
+      await shell.handleInput("\x12");
+      await shell.handleInput("echo");
+      await shell.handleInput("\x12");
+      await shell.handleInput("\x13");
+      await shell.handleInput("\x15");
+      expect(output.at(-1)).toBe("\r\x1b[K(forward-i-search)`': echo alpha");
+
+      await shell.handleInput("echo b");
+      expect(output.at(-1)).toBe(
+        "\r\x1b[K(forward-i-search)`echo b': echo beta",
+      );
+    });
+
+    it("recovers from a failed forward query with Backspace", async () => {
+      await shell.handleInput("\x12");
+      await shell.handleInput("echo");
+      await shell.handleInput("\x12");
+      await shell.handleInput("\x13");
+      await shell.handleInput(" z");
+      expect(output.at(-1)).toBe("\r\x1b[K(failed forward-i-search)`echo z': ");
+
+      await shell.handleInput("\x7f");
+      expect(output.at(-1)).toBe(
+        "\r\x1b[K(forward-i-search)`echo ': echo alpha",
+      );
+      await shell.handleInput("\x13");
+      expect(output.at(-1)).toBe(
+        "\r\x1b[K(forward-i-search)`echo ': echo beta",
+      );
     });
 
     it("executes the selected command on Enter", async () => {

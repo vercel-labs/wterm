@@ -86,7 +86,7 @@ new BashShell(options?: ShellOptions)
 - Ctrl+Y restores the text erased by those shortcuts, including consecutive erasures
 - Unicode-aware editing for emoji, combining marks, and wide characters
 - Command history (up/down arrows) that restores your unfinished command and cursor position
-- Ctrl+R to search command history from newest to oldest; press it again for older matches, Enter to run the match, Escape to edit it, or Ctrl+G to restore your unfinished command
+- Ctrl+R to search command history from newest to oldest; during a search, Ctrl+S moves toward newer matches, Enter runs a match, Escape opens it for editing, and Ctrl+G restores your unfinished command
 - Tab completion for files and commands at the cursor, including earlier words in a command
 - Ctrl+C to cancel, Ctrl+L to clear the screen
 - Each submitted command executes once
