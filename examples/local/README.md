@@ -22,6 +22,7 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 - Terminal resizing, including browser pixel dimensions, is forwarded to the PTY via a custom escape sequence
 - The server restores PTY pixel dimensions after each resize so Kitty clients such as `kitten icat` can detect image support
 - Each sidebar tab keeps its terminal and shell session alive while other tabs are active
+- **Read output** opens a stable snapshot of retained history and the active screen in a labelled, read-only text area. Use native keyboard navigation and Copy, **Refresh** to capture newer output, and **Close** or Escape to return to the opener. Output keeps running while the snapshot stays unchanged. A capture interrupted by output or resize can be retried; captures above 16,777,216 UTF-16 units fail without returning partial text. Closing cancels pending capture and releases the snapshot.
 - The editable terminal input uses its session name for assistive technology; inactive sessions are excluded from page tab entry. Escape followed by Tab or Shift+Tab moves focus back to the page
 - The `/ghostty` route uses the graphics-capable core and limits rendered Kitty images to 640×480 CSS pixels
 - Auto-sized Kitty images align with the terminal content origin and reserve their rendered height visually so the following shell prompt appears below the image
@@ -41,4 +42,9 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 | `app/page.tsx` | Built-in-core entry point |
 | `app/ghostty/page.tsx` | Ghostty-core entry point with bounded Kitty image rendering |
 | `app/session-workspace.tsx` | Sidebar, session tabs, Find controls, and terminal/WebSocket lifecycle |
+| `app/output-reader.tsx` | Read-only output snapshots, refresh, cancellation, and dialog focus |
 | `app/layout.tsx` | Root layout with metadata |
+
+## Output reader checks
+
+Run `pnpm --filter local build`, then `pnpm --filter local test:e2e` from the repository root. The browser suite starts an isolated production server and uses deterministic WebSocket output without spawning a shell. Chromium, Firefox, and WebKit cover unmounted history, native read-only navigation and Copy, explicit refresh, cancellation, and focus return. `app/output-reader.tsx` owns the dialog; `tests/output-reader.spec.ts` contains the browser cases.

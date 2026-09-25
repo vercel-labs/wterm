@@ -4,6 +4,8 @@ This workspace tests the built-in and Ghostty cores in Chromium, Firefox, and We
 
 ## Setup
 
+`read-text.spec.ts` checks stable text snapshots of unmounted history, cancellation, and selection/focus preservation for both cores.
+
 Input accessibility cases cover named editable controls, readable mounted output, live ARIA label/description changes, tab-order ownership, Escape-then-Tab focus exit in both directions, cancellation, Kitty key ownership, hidden terminals, and teardown across all three browser engines.
 
 Requires macOS or Linux, Node.js 24+, pnpm 11+, and a C++/Python build toolchain on Linux for `node-pty`. On macOS the package uses prebuilt binaries; the preparation script restores the published spawn helper's executable bit. The workspace allows `node-pty`'s native install scripts so clean Linux installs build the binding.

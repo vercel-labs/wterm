@@ -114,6 +114,10 @@ Import the stylesheet and switch themes with the `theme` prop:
 Built-in themes: `solarized-dark`, `monokai`, and `light`. Define custom themes
 with CSS custom properties.
 
+## Reading output
+
+Call `await instance.readText({ signal })` on the WTerm instance to capture retained history and the active screen without changing selection. Show the returned string in a labelled, read-only text area. Snapshots remain stable during new output; pending captures are cancellable and bounded. See [Reading terminal output](../dom/README.md#reading-terminal-output) for cancellation and resource limits.
+
 ## Input accessibility
 
 Use `<Terminal aria-label="Build shell" aria-describedby="shell-help" />` to name and describe the actual input. `aria-labelledby` and `aria-description` are also supported, and attribute changes stay synchronized. The host defaults to a group; the native textarea is the editable control. `tabindex={-1}` excludes input from page tab entry; the component's `focus()` method still focuses it. Press Escape, then Tab to move focus out of the terminal, or Escape, then Shift+Tab to move backward. See the [DOM input accessibility contract](../dom/README.md#input-accessibility) for host tab-order ownership and output limits.

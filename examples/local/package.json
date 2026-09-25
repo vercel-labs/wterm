@@ -9,7 +9,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test:e2e": "node run-e2e.mjs"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.2",

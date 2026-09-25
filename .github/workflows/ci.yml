@@ -72,6 +72,17 @@ jobs:
       - name: Homepage terminal tests
         run: pnpm --filter @wterm/docs test:terminal
 
+      - name: Local workspace output reader tests
+        run: pnpm --filter local test:e2e
+
+      - name: Upload local workspace failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-workspace
+          path: e2e/test-results/local/
+          if-no-files-found: ignore
+
       - name: Upload homepage terminal failure traces
         if: failure()
         uses: actions/upload-artifact@v4
