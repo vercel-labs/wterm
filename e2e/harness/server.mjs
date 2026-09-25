@@ -28,7 +28,7 @@ function validSize(message) {
     Number.isInteger(message.cols) &&
     Number.isInteger(message.rows) &&
     message.cols >= 2 &&
-    message.cols <= 256 &&
+    message.cols <= 1024 &&
     message.rows >= 2 &&
     message.rows <= 60
   );

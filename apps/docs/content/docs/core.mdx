@@ -29,7 +29,7 @@ const bridge = await WasmBridge.load();
 const bridge = await WasmBridge.load("/wterm.wasm");
 ```
 
-When no URL is provided, the ~12 KB WASM binary is decoded from a base64 string inlined in the package. Pass a URL when you want to serve the binary separately for caching or CDN use.
+When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string inlined in the package. Pass a URL when you want to serve the binary separately for caching or CDN use. The grid grows as needed, up to 1024 columns and 512 rows.
 
 See the full [WasmBridge](/api-reference#wasmbridge) reference for all methods, types, and scrollback APIs.
 

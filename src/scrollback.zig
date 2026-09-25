@@ -5,18 +5,23 @@ const Cell = cell_mod.Cell;
 pub const MAX_SCROLLBACK_LINES: u32 = 1000;
 
 pub const ScrollbackLine = struct {
-    cells: [grid_mod.MAX_COLS]Cell = undefined,
+    cells: []Cell = undefined,
+    capacity: u16 = 0,
     len: u16 = 0,
 };
 
 pub const Scrollback = struct {
-    lines: [MAX_SCROLLBACK_LINES]ScrollbackLine = undefined,
+    lines: [MAX_SCROLLBACK_LINES]ScrollbackLine = [_]ScrollbackLine{.{}} ** MAX_SCROLLBACK_LINES,
     count: u32 = 0,
     write_pos: u32 = 0,
     discarded: u32 = 0,
 
-    /// Reset counters without touching the lines array (avoids large stack copies).
+    /// Free retained rows when a terminal session is reset.
     pub fn reset(self: *Scrollback) void {
+        for (&self.lines) |*line| {
+            if (line.capacity != 0) grid_mod.allocator.free(line.cells);
+            line.* = .{};
+        }
         self.count = 0;
         self.write_pos = 0;
         self.discarded = 0;
@@ -24,10 +29,13 @@ pub const Scrollback = struct {
 
     pub fn push(self: *Scrollback, row: []const Cell, len: u16) void {
         var line = &self.lines[self.write_pos];
-        var i: u16 = 0;
-        while (i < len) : (i += 1) {
-            line.cells[i] = row[i];
+        if (line.capacity < len) {
+            const cells = grid_mod.allocator.alloc(Cell, len) catch return;
+            if (line.capacity != 0) grid_mod.allocator.free(line.cells);
+            line.cells = cells;
+            line.capacity = len;
         }
+        @memcpy(line.cells[0..len], row[0..len]);
         line.len = len;
 
         self.write_pos = (self.write_pos + 1) % MAX_SCROLLBACK_LINES;

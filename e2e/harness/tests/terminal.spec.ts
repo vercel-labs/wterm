@@ -71,12 +71,12 @@ for (const core of ["builtin", "ghostty"]) {
 
       if (core === "builtin") {
         await page.evaluate(() => window.ptyHarness.resize(320, 30));
-        await page.keyboard.type("printf 'CAPPED_'; stty size");
+        await page.keyboard.type("printf 'WIDE_'; stty size");
         await page.keyboard.press("Enter");
-        await expect(page.locator("#terminal")).toContainText("CAPPED_30 256");
-        const capped = await page.evaluate(() => window.ptyHarness.snapshot());
-        expect(capped.cols).toBe(256);
-        expect(capped.height).toBe(30);
+        await expect(page.locator("#terminal")).toContainText("WIDE_30 320");
+        const wide = await page.evaluate(() => window.ptyHarness.snapshot());
+        expect(wide.cols).toBe(320);
+        expect(wide.height).toBe(30);
       }
     });
 

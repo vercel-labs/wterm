@@ -238,7 +238,7 @@ verified behavior and remaining compatibility gaps.
 
 | | Built-in (default) | `@wterm/ghostty` |
 |---|---|---|
-| Bundle size | ~12 KB WASM | ~400 KB WASM |
+| WASM binary size | ~26 KB | ~580 KB |
 | VT compliance | Basic VT100/VT220/xterm | Comprehensive |
 | Unicode | Single codepoints | Full grapheme clusters |
 | Dependencies | None | None (WASM built from source) |

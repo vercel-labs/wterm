@@ -187,7 +187,7 @@ pub const Terminal = struct {
     ) void {
         var c: u16 = 0;
         while (c < width) : (c += 1) {
-            self.grid.cells[row][c] = if (c < line.len) line.cells[c] else Cell{};
+            self.grid.getRow(row)[c] = if (c < line.len) line.cells[c] else Cell{};
         }
         self.grid.sanitizeWideRowWidth(row, width, Cell{});
         self.grid.dirty[row] = 1;
@@ -306,6 +306,13 @@ pub const Terminal = struct {
 
         if (cols == old_cols and rows == old_rows) return;
 
+        // An allocation failure leaves both the active and inactive screens at
+        // their old size. The host can read the applied dimensions afterward.
+        self.grid.ensureCapacity(cols, rows) catch return;
+        if (self.using_alt_screen) {
+            self.alt_grid.?.ensureCapacity(cols, rows) catch return;
+        }
+
         // Clear cells beyond the new column width for each preserved row
         if (cols < old_cols) {
             const preserve_rows = if (rows < old_rows) rows else old_rows;
@@ -313,7 +320,7 @@ pub const Terminal = struct {
             while (r < preserve_rows) : (r += 1) {
                 var c: u16 = cols;
                 while (c < old_cols) : (c += 1) {
-                    self.grid.cells[r][c] = Cell{};
+                    self.grid.getRow(r)[c] = Cell{};
                 }
             }
         }
@@ -343,7 +350,7 @@ pub const Terminal = struct {
                         // width survives in history as a wide cell with no
                         // continuation.
                         self.grid.sanitizeWideRowWidth(r, push_cols, Cell{});
-                        self.scrollback.?.push(&self.grid.cells[r], push_cols);
+                        self.scrollback.?.push(self.grid.getRow(r), push_cols);
                     }
                 }
                 self.grid.scrollUp(0, old_rows, from_top, Cell{});
@@ -392,7 +399,7 @@ pub const Terminal = struct {
             while (r2 < preserve_rows) : (r2 += 1) {
                 var c: u16 = old_cols;
                 while (c < cols) : (c += 1) {
-                    self.grid.cells[r2][c] = Cell{};
+                    self.grid.getRow(r2)[c] = Cell{};
                 }
                 self.grid.dirty[r2] = 1;
             }
@@ -413,6 +420,7 @@ pub const Terminal = struct {
         while (r < rows) : (r += 1) {
             self.grid.dirty[r] = 1;
         }
+        if (self.using_alt_screen) self.alt_grid.?.resizeView(cols, rows);
     }
 
     // -- Byte processing --
@@ -527,7 +535,7 @@ pub const Terminal = struct {
         if (self.cursor_row + 1 >= self.scroll_bottom) {
             if (!self.using_alt_screen and self.scroll_top == 0) {
                 if (self.scrollback) |sb| {
-                    sb.push(&self.grid.cells[self.scroll_top], self.cols);
+                    sb.push(self.grid.getRow(self.scroll_top), self.cols);
                 }
             }
             self.grid.scrollUp(self.scroll_top, self.scroll_bottom, 1, self.blankCell());
@@ -816,15 +824,16 @@ pub const Terminal = struct {
         const ag = self.alt_grid orelse return;
 
         if (alt) {
+            ag.ensureCapacity(self.cols, self.rows) catch return;
             self.alt_saved_cursor_shape = self.cursor_shape;
             self.alt_saved_link = self.current_link;
             self.current_link = 0;
             if (save_cursor) self.saveCursorToAlt();
-            ag.* = self.grid;
+            std.mem.swap(Grid, &self.grid, ag);
             self.grid.reset(self.cols, self.rows);
             self.using_alt_screen = true;
         } else {
-            self.grid = ag.*;
+            std.mem.swap(Grid, &self.grid, ag);
             self.using_alt_screen = false;
             self.current_link = self.alt_saved_link;
             if (save_cursor) {
@@ -850,8 +859,8 @@ pub const Terminal = struct {
     }
 
     fn restoreCursorFromAlt(self: *Terminal) void {
-        self.cursor_row = self.alt_saved_cursor_row;
-        self.cursor_col = self.alt_saved_cursor_col;
+        self.cursor_row = @min(self.alt_saved_cursor_row, self.rows - 1);
+        self.cursor_col = @min(self.alt_saved_cursor_col, self.cols - 1);
         self.current_fg = self.alt_saved_fg;
         self.current_bg = self.alt_saved_bg;
         self.current_flags = self.alt_saved_flags;
@@ -1020,7 +1029,7 @@ pub const Terminal = struct {
             if (self.scrollback) |sb| {
                 var i: u16 = 0;
                 while (i < count and i < self.scroll_bottom - self.scroll_top) : (i += 1) {
-                    sb.push(&self.grid.cells[self.scroll_top + i], self.cols);
+                    sb.push(self.grid.getRow(self.scroll_top + i), self.cols);
                 }
             }
         }
@@ -1601,10 +1610,10 @@ test "wide characters that cannot fit with wrapping disabled leave the grid unto
     for ([_][]const u8{ "abcd", "abcde", "abc界" }) |input| {
         var t = Terminal.init(5, 2);
         t.write(input);
-        const before = t.grid.cells[0];
+        const before: [5]Cell = t.grid.getRow(0)[0..5].*;
         t.grid.clearDirty();
         t.write("\x1b[?7l界");
-        try std.testing.expectEqualDeep(before, t.grid.cells[0]);
+        try std.testing.expectEqualDeep(before, t.grid.getRow(0)[0..5].*);
         try std.testing.expectEqual(@as(u8, 0), t.grid.dirty[0]);
         try std.testing.expectEqual(@as(u8, 0), t.grid.dirty[1]);
         try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
@@ -2016,4 +2025,80 @@ test "scrollback" {
     const line0 = sb.getLine(0).?;
     try testing.expectEqual(@as(u32, 'L'), line0.cells[0].char);
     try testing.expectEqual(@as(u32, '2'), line0.cells[1].char);
+}
+
+test "grids grow beyond 256 columns and rows without losing cells" {
+    const testing = std.testing;
+    var t = Terminal.init(80, 24);
+    defer t.grid.deinit();
+    t.write("A");
+
+    t.resize(320, 300);
+    try testing.expectEqual(@as(u16, 320), t.cols);
+    try testing.expectEqual(@as(u16, 300), t.rows);
+    try testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 0).char);
+    t.write("\x1b[300;320HZ");
+    try testing.expectEqual(@as(u32, 'Z'), t.grid.getCell(299, 319).char);
+
+    t.resize(520, 320);
+    try testing.expectEqual(@as(u32, 'Z'), t.grid.getCell(299, 319).char);
+    t.grid.clearDirty();
+    t.grid.setCell(319, 519, Cell{ .char = 'X' });
+    try testing.expectEqual(@as(u8, 1), t.grid.dirty[319]);
+    try testing.expectEqual(@as(u32, 'X'), t.grid.getCell(319, 519).char);
+}
+
+test "scrollback preserves columns beyond 256" {
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(320, 2);
+    defer t.grid.deinit();
+    t.scrollback = sb;
+
+    t.write("\x1b[1;300HQ\x1b[2;1H\n");
+    try testing.expectEqual(@as(u32, 1), sb.count);
+    try testing.expectEqual(@as(u16, 320), sb.getLine(0).?.len);
+    try testing.expectEqual(@as(u32, 'Q'), sb.getLine(0).?.cells[299].char);
+
+    t.resize(320, 3);
+    try testing.expectEqual(@as(u32, 'Q'), t.grid.getCell(0, 299).char);
+}
+
+test "alternate screen and hidden primary resize together" {
+    const testing = std.testing;
+    var t = Terminal.init(320, 3);
+    defer t.grid.deinit();
+    var alternate = Grid.init(1, 1);
+    defer alternate.deinit();
+    t.alt_grid = &alternate;
+
+    t.write("\x1b[1;300HP\x1b[?1049h");
+    try testing.expect(t.using_alt_screen);
+    t.resize(400, 4);
+    t.write("\x1b[4;399HA\x1b[?1049l");
+    try testing.expect(!t.using_alt_screen);
+    try testing.expectEqual(@as(u16, 400), t.grid.cols);
+    try testing.expectEqual(@as(u16, 4), t.grid.rows);
+    try testing.expectEqual(@as(u32, 'P'), t.grid.getCell(0, 299).char);
+    try testing.expectEqual(@as(u32, ' '), t.grid.getCell(3, 398).char);
+}
+
+test "alternate screen exit clamps a saved cursor after shrinking" {
+    const testing = std.testing;
+    var t = Terminal.init(320, 4);
+    defer t.grid.deinit();
+    var alternate = Grid.init(1, 1);
+    defer alternate.deinit();
+    t.alt_grid = &alternate;
+
+    t.write("\x1b[4;320H\x1b[?1049h");
+    t.resize(80, 2);
+    t.write("\x1b[?1049l");
+    try testing.expectEqual(@as(u16, 1), t.cursor_row);
+    try testing.expectEqual(@as(u16, 79), t.cursor_col);
+    t.write("X");
+    try testing.expectEqual(@as(u32, 'X'), t.grid.getCell(1, 79).char);
 }
