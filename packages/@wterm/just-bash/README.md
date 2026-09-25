@@ -81,7 +81,7 @@ new BashShell(options?: ShellOptions)
 
 ### Features
 
-- Line editing with backspace
+- Line editing with backspace and word-wise cursor movement (Option/Alt+arrows, Ctrl+arrows, Alt+B/F)
 - Command history (up/down arrows)
 - Tab completion (files + commands)
 - Ctrl+C to cancel, Ctrl+L to clear

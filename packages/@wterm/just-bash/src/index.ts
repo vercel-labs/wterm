@@ -16,6 +16,9 @@ function defaultPrompt(cwd: string): string {
   return `\x1b[1;32muser@wterm\x1b[0m:\x1b[1;34m${display}\x1b[0m$ `;
 }
 
+const WORD_LEFT_SEQUENCES = new Set(["\x1b[1;3D", "\x1b[1;5D", "\x1bb"]);
+const WORD_RIGHT_SEQUENCES = new Set(["\x1b[1;3C", "\x1b[1;5C", "\x1bf"]);
+
 export class BashShell {
   private _bash: Bash | null = null;
   private _write: ((data: string) => void) | null = null;
@@ -170,6 +173,10 @@ export class BashShell {
         this._cursor++;
         write("\x1b[C");
       }
+    } else if (WORD_LEFT_SEQUENCES.has(data)) {
+      this._moveWord(-1);
+    } else if (WORD_RIGHT_SEQUENCES.has(data)) {
+      this._moveWord(1);
     } else if (data === "\x15") {
       if (this._line.length > 0) {
         if (this._cursor > 0) write(`\x1b[${this._cursor}D`);
@@ -210,11 +217,49 @@ export class BashShell {
         write(data + tail + "\x1b[K");
         write(`\x1b[${tail.length}D`);
       }
+    } else if (data.startsWith("\x1b[") || data.startsWith("\x1bO")) {
+      // Ignore unsupported functional keys instead of inserting their escape suffix.
+      return;
     } else if (data.length > 1) {
       for (const ch of data) {
         await this.handleInput(ch);
       }
     }
+  }
+
+  private _moveWord(direction: -1 | 1): void {
+    const start = this._cursor;
+    if (direction === -1) {
+      while (
+        this._cursor > 0 &&
+        /\s/.test(this._line.charAt(this._cursor - 1))
+      ) {
+        this._cursor--;
+      }
+      while (
+        this._cursor > 0 &&
+        !/\s/.test(this._line.charAt(this._cursor - 1))
+      ) {
+        this._cursor--;
+      }
+    } else {
+      while (
+        this._cursor < this._line.length &&
+        /\s/.test(this._line.charAt(this._cursor))
+      ) {
+        this._cursor++;
+      }
+      while (
+        this._cursor < this._line.length &&
+        !/\s/.test(this._line.charAt(this._cursor))
+      ) {
+        this._cursor++;
+      }
+    }
+
+    const count = Math.abs(this._cursor - start);
+    if (count > 0)
+      this._write?.(`\x1b[${count}${direction === -1 ? "D" : "C"}`);
   }
 
   private async _tabComplete(): Promise<void> {
