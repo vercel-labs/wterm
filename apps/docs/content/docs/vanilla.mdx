@@ -171,10 +171,22 @@ const ws = new WebSocketTransport({
 });
 
 ws.connect();
-term.onData = (data) => ws.send(data);
+term.onData = (data) => {
+  try {
+    ws.send(data);
+  } catch (error) {
+    console.error("Input was not sent", error); // Show this in your app's UI.
+  }
+};
 ```
 
 See the full [WebSocketTransport](/api-reference#websockettransport) reference for all options, methods, and properties.
+
+Sends are bounded to 1 MiB and 1,024 queued messages by default. Observe
+`onBackpressure` and catch buffer-limit `RangeError` to show input that was not
+accepted. Explicit close discards unsent input. See
+[Buffering and delivery](/api-reference#buffering-and-delivery) before wiring
+shell input or implementing reconnect behavior.
 
 ## Output announcements
 

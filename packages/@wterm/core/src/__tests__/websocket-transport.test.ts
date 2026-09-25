@@ -10,6 +10,7 @@ class MockWebSocket {
   url: string;
   readyState = MockWebSocket.CONNECTING;
   binaryType = "blob";
+  bufferedAmount = 0;
   onopen: ((ev: Event) => void) | null = null;
   onmessage: ((ev: MessageEvent) => void) | null = null;
   onclose: (() => void) | null = null;
@@ -23,6 +24,10 @@ class MockWebSocket {
 
   send(data: string | ArrayBufferView) {
     this.sent.push(data);
+    this.bufferedAmount +=
+      typeof data === "string"
+        ? new TextEncoder().encode(data).length
+        : data.byteLength;
   }
 
   close() {
@@ -308,5 +313,330 @@ describe("WebSocketTransport", () => {
       vi.advanceTimersByTime(60000);
       expect(mockInstances).toHaveLength(1);
     });
+  });
+});
+
+describe("bounded transport buffering", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    installMockWebSocket();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const decoded = (ws: MockWebSocket) =>
+    ws.sent.map((bytes) => new TextDecoder().decode(bytes as Uint8Array));
+
+  it("rejects a whole message before allocating or changing the queue", () => {
+    const transport = new WebSocketTransport({ maxBufferedBytes: 8 });
+    transport.send("語😀");
+    expect(transport.bufferedAmount).toBe(7);
+    const encode = vi.spyOn(TextEncoder.prototype, "encode");
+    expect(() => transport.send("x".repeat(1000000))).toThrow(RangeError);
+    expect(encode).not.toHaveBeenCalled();
+    encode.mockRestore();
+    expect(transport.queuedBytes).toBe(7);
+    expect(transport.queuedMessages).toBe(1);
+    transport.send("!");
+    transport.connect("ws://test");
+    mockInstances[0].simulateOpen();
+    expect(decoded(mockInstances[0])).toEqual(["語😀", "!"]);
+  });
+
+  it("counts lone surrogates exactly as TextEncoder does", () => {
+    const transport = new WebSocketTransport({ maxBufferedBytes: 9 });
+    transport.send("\ud800x\udc00é");
+    expect(transport.bufferedAmount).toBe(9);
+    expect(() => transport.send("x")).toThrow(RangeError);
+    transport.connect("ws://test");
+    mockInstances[0].simulateOpen();
+    expect(decoded(mockInstances[0])).toEqual(["�x�é"]);
+  });
+
+  it("copies only the supplied binary view before buffering", () => {
+    const transport = new WebSocketTransport();
+    const backing = new Uint8Array(100000);
+    const view = backing.subarray(100, 103);
+    view.set([1, 2, 3]);
+    transport.send(view);
+    view.fill(9);
+    transport.connect("ws://test");
+    mockInstances[0].simulateOpen();
+    const sent = mockInstances[0].sent[0] as Uint8Array;
+    expect([...sent]).toEqual([1, 2, 3]);
+    expect(sent.buffer.byteLength).toBe(3);
+    expect(transport.queuedBytes).toBe(0);
+  });
+
+  it("bounds message overhead including empty messages", () => {
+    const onBackpressure = vi.fn();
+    const transport = new WebSocketTransport({
+      maxBufferedMessages: 2,
+      onBackpressure,
+    });
+    transport.send("");
+    transport.send("");
+    expect(transport.backpressured).toBe(true);
+    expect(() => transport.send("")).toThrow(RangeError);
+    expect(transport.queuedMessages).toBe(2);
+    expect(transport.bufferedAmount).toBe(0);
+    transport.connect("ws://test");
+    mockInstances[0].simulateOpen();
+    expect(decoded(mockInstances[0])).toEqual(["", ""]);
+    expect(onBackpressure.mock.calls).toEqual([[true], [false]]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("applies the byte cap to the transport and socket buffers together", () => {
+    const transport = new WebSocketTransport({
+      url: "ws://test",
+      maxBufferedBytes: 10,
+      highWaterMark: 6,
+      lowWaterMark: 2,
+    });
+    transport.connect();
+    const ws = mockInstances[0];
+    ws.simulateOpen();
+    transport.send("123456");
+    transport.send("7890");
+    expect(transport.bufferedAmount).toBe(10);
+    expect(transport.queuedBytes).toBe(4);
+    expect(() => transport.send("!")).toThrow(RangeError);
+    expect(decoded(ws)).toEqual(["123456"]);
+    ws.bufferedAmount = 2;
+    vi.advanceTimersByTime(16);
+    expect(decoded(ws)).toEqual(["123456", "7890"]);
+    expect(transport.bufferedAmount).toBe(6);
+  });
+
+  it("drains in order with hysteresis and stops polling when idle", () => {
+    const onBackpressure = vi.fn();
+    const transport = new WebSocketTransport({
+      url: "ws://test",
+      highWaterMark: 8,
+      lowWaterMark: 2,
+      onBackpressure,
+    });
+    for (const message of ["12345678", "abcd", "ef"]) transport.send(message);
+    expect(onBackpressure.mock.calls).toEqual([[true]]);
+    expect(vi.getTimerCount()).toBe(0); // No disconnected polling.
+    transport.connect();
+    const ws = mockInstances[0];
+    ws.simulateOpen();
+    expect(decoded(ws)).toEqual(["12345678"]);
+    ws.bufferedAmount = 3;
+    vi.advanceTimersByTime(32);
+    expect(decoded(ws)).toEqual(["12345678"]);
+    ws.bufferedAmount = 2;
+    vi.advanceTimersByTime(16);
+    expect(decoded(ws)).toEqual(["12345678", "abcd", "ef"]);
+    expect(transport.queuedMessages).toBe(0);
+    expect(transport.backpressured).toBe(true);
+    ws.bufferedAmount = 2;
+    vi.advanceTimersByTime(16);
+    expect(onBackpressure.mock.calls).toEqual([[true], [false]]);
+    ws.bufferedAmount = 0;
+    vi.advanceTimersByTime(16);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("preserves a message larger than the high-water mark without splitting it", () => {
+    const transport = new WebSocketTransport({
+      url: "ws://test",
+      highWaterMark: 4,
+      lowWaterMark: 1,
+      maxBufferedBytes: 12,
+    });
+    transport.connect();
+    const ws = mockInstances[0];
+    ws.simulateOpen();
+    transport.send("a");
+    transport.send("12345678");
+    expect(decoded(ws)).toEqual(["a"]);
+    vi.advanceTimersByTime(16);
+    expect(decoded(ws)).toEqual(["a"]);
+    ws.bufferedAmount = 0;
+    vi.advanceTimersByTime(16);
+    expect(decoded(ws)).toEqual(["a", "12345678"]);
+    expect(transport.bufferedAmount).toBe(8);
+  });
+
+  it("yields while draining many small messages", () => {
+    const transport = new WebSocketTransport({ url: "ws://test" });
+    for (let i = 0; i < 130; i++) transport.send(String(i));
+    transport.connect();
+    const ws = mockInstances[0];
+    ws.simulateOpen();
+    expect(ws.sent).toHaveLength(64);
+    transport.send("last");
+    vi.advanceTimersByTime(16);
+    expect(decoded(ws)).toEqual([
+      ...Array.from({ length: 130 }, (_, i) => String(i)),
+      "last",
+    ]);
+    expect(transport.queuedBytes).toBe(0);
+  });
+
+  it("reconnects only unsent messages and never replays uncertain delivery", () => {
+    const transport = new WebSocketTransport({
+      url: "ws://test",
+      highWaterMark: 4,
+      lowWaterMark: 1,
+    });
+    transport.connect();
+    const first = mockInstances[0];
+    first.simulateOpen();
+    transport.send("sent");
+    transport.send("waiting");
+    first.close();
+    expect(transport.bufferedAmount).toBe(7);
+    expect(vi.getTimerCount()).toBe(1); // Reconnect only; no drain loop.
+    vi.advanceTimersByTime(1000);
+    const second = mockInstances[1];
+    second.simulateOpen();
+    expect(decoded(first)).toEqual(["sent"]);
+    expect(decoded(second)).toEqual(["waiting"]);
+  });
+
+  it("explicit close clears pending data and timers and rejects sends until connect", () => {
+    const onBackpressure = vi.fn();
+    const transport = new WebSocketTransport({
+      url: "ws://test",
+      highWaterMark: 4,
+      onBackpressure,
+    });
+    transport.connect();
+    mockInstances[0].simulateOpen();
+    transport.send("sent");
+    transport.send("queued");
+    transport.close();
+    transport.close();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(transport.bufferedAmount).toBe(0);
+    expect(transport.queuedMessages).toBe(0);
+    expect(onBackpressure.mock.calls).toEqual([[true], [false]]);
+    expect(() => transport.send("later")).toThrow("closed");
+    transport.connect();
+    mockInstances[1].simulateOpen();
+    expect(decoded(mockInstances[1])).toEqual([]);
+    transport.send("new");
+    expect(decoded(mockInstances[1])).toEqual(["new"]);
+  });
+
+  it("does not send queued commands to a different URL", () => {
+    const transport = new WebSocketTransport({ url: "ws://first" });
+    transport.connect();
+    const first = mockInstances[0];
+    transport.send("old command");
+    transport.connect("ws://second");
+    mockInstances[1].simulateOpen();
+    expect(first.closed).toBe(true);
+    expect(decoded(mockInstances[1])).toEqual([]);
+    expect(transport.bufferedAmount).toBe(0);
+  });
+
+  it("ignores delayed callbacks from replaced sockets", () => {
+    const onData = vi.fn(),
+      onOpen = vi.fn(),
+      onClose = vi.fn(),
+      onError = vi.fn();
+    const transport = new WebSocketTransport({
+      url: "ws://first",
+      onData,
+      onOpen,
+      onClose,
+      onError,
+    });
+    transport.connect();
+    const first = mockInstances[0];
+    const callbacks = {
+      open: first.onopen,
+      message: first.onmessage,
+      close: first.onclose,
+      error: first.onerror,
+    };
+    transport.connect("ws://second");
+    callbacks.open?.(new Event("open"));
+    callbacks.message?.(new MessageEvent("message", { data: "stale" }));
+    callbacks.close?.();
+    callbacks.error?.(new Event("error"));
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(onData).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(mockInstances[1].closed).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([false, true])(
+    "honors public URL changes without carrying old commands (connected: %s)",
+    (connected) => {
+      const transport = new WebSocketTransport({ url: "ws://first" });
+      if (connected) transport.connect();
+      transport.send("old command");
+      transport.url = "ws://second";
+      transport.connect();
+      expect(mockInstances).toHaveLength(connected ? 2 : 1);
+      const ws = mockInstances[mockInstances.length - 1];
+      ws.simulateOpen();
+      expect(ws.url).toBe("ws://second");
+      expect(decoded(ws)).toEqual([]);
+    },
+  );
+
+  it("does not create duplicate sockets or leave a retry after manual reconnect", () => {
+    const transport = new WebSocketTransport({ url: "ws://test" });
+    transport.connect();
+    transport.connect();
+    expect(mockInstances).toHaveLength(1);
+    mockInstances[0].close();
+    transport.connect();
+    vi.advanceTimersByTime(1000);
+    expect(mockInstances).toHaveLength(2);
+  });
+
+  it("allows closing from pressure and close callbacks without leaking timers", () => {
+    const transport = new WebSocketTransport({
+      url: "ws://test",
+      highWaterMark: 4,
+      onBackpressure: (paused) => {
+        if (paused) transport.close();
+      },
+      onClose: () => transport.close(),
+    });
+    transport.connect();
+    mockInstances[0].simulateOpen();
+    transport.send("four");
+    expect(transport.connected).toBe(false);
+    expect(transport.bufferedAmount).toBe(0);
+    expect(transport.backpressured).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not close a replacement opened by an error callback", () => {
+    const transport = new WebSocketTransport({
+      url: "ws://first",
+      onError: () => transport.connect("ws://second"),
+    });
+    transport.connect();
+    mockInstances[0].simulateError();
+    expect(mockInstances[1].closed).toBe(false);
+  });
+
+  it.each([
+    { maxBufferedBytes: 0 },
+    { maxBufferedBytes: Infinity },
+    { maxBufferedMessages: 0 },
+    { maxBufferedMessages: 1.5 },
+    { highWaterMark: 0 },
+    { highWaterMark: 9, maxBufferedBytes: 8 },
+    { lowWaterMark: -1 },
+    { highWaterMark: 4, lowWaterMark: 4 },
+    { lowWaterMark: NaN },
+  ])("rejects invalid limits %j", (options) => {
+    expect(() => new WebSocketTransport(options)).toThrow(RangeError);
   });
 });

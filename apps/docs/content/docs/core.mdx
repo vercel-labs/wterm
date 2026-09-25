@@ -96,7 +96,12 @@ Ghostty core for rendering Kitty PNG/RGB/RGBA output.
 
 ## WebSocketTransport
 
-Connect to a PTY backend over WebSocket with automatic reconnection and send buffering.
+Connect to a PTY backend over WebSocket with automatic reconnection and bounded
+send buffering. Defaults allow 1 MiB across the transport and socket buffers and
+1,024 queued messages. `onBackpressure` reports when producers should pause;
+`send()` throws `RangeError` before accepting a message that would exceed a
+limit. Report that rejected input to the user. Explicit close discards unsent
+data, and bytes already handed to the socket are never replayed.
 
 See the full [WebSocketTransport](/api-reference#websockettransport) reference for all options, methods, and properties.
 
@@ -122,7 +127,13 @@ const ws = new WebSocketTransport({
 });
 
 ws.connect();
-term.onData = (data) => ws.send(data);
+term.onData = (data) => {
+  try {
+    ws.send(data);
+  } catch (error) {
+    console.error("Input was not sent", error); // Show this in your app's UI.
+  }
+};
 ```
 
 For a full working example with a Node.js PTY server, see the [Local Shell example](https://github.com/vercel-labs/wterm/tree/main/examples/local).

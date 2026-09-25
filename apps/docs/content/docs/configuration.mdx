@@ -147,6 +147,9 @@ const ws = new WebSocketTransport({
   url: "wss://your-server.example/shell",
   reconnect: true,
   maxReconnectDelay: 5000,
+  onBackpressure(paused) {
+    console.log(paused ? "Waiting for the connection to drain" : "Send buffer ready");
+  },
   onData(data) {
     term.write(data);
   },
@@ -160,7 +163,11 @@ const ws = new WebSocketTransport({
 
 const term = new WTerm(document.getElementById("terminal"), {
   onData(data) {
-    ws.send(data);
+    try {
+      ws.send(data);
+    } catch (error) {
+      console.error("Input was not sent", error); // Show this in your app's UI.
+    }
   },
 });
 
@@ -170,7 +177,13 @@ ws.connect();
 
 See the full [WebSocketTransport](/api-reference#websockettransport) reference for all options, methods, and properties.
 
-The transport buffers any `send()` calls made before the connection is open and flushes them automatically on connect.
+The transport buffers sends within configurable byte/message limits and drains
+them in order. The defaults are 1 MiB across the transport and socket buffers,
+and 1,024 messages waiting in the transport. Use `onBackpressure` to pause
+producers and catch `RangeError` to report input that exceeded a limit. Explicit
+`close()` discards unsent data; reconnect never replays bytes already handed to
+the browser. See [Buffering and delivery](/api-reference#buffering-and-delivery)
+for thresholds, lifecycle behavior, and delivery limits.
 
 ## Output announcements
 

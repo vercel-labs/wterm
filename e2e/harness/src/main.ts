@@ -1,4 +1,4 @@
-import { WasmBridge, type TerminalCore } from "@wterm/core";
+import { WasmBridge, WebSocketTransport, type TerminalCore } from "@wterm/core";
 import { WTerm } from "@wterm/dom";
 import { GhosttyCore } from "@wterm/ghostty";
 import ghosttyWasm from "@wterm/ghostty/ghostty-vt.wasm?url";
@@ -224,6 +224,7 @@ function replayWrite(base64: string, chunkBytes: number): void {
 }
 
 export type HarnessAPI = {
+  WebSocketTransport: typeof WebSocketTransport;
   report: typeof report;
   snapshot: typeof snapshot;
   runProbe: typeof runProbe;
@@ -277,6 +278,7 @@ async function init() {
   });
   await terminal.init();
   window.ptyHarness = {
+    WebSocketTransport,
     report,
     snapshot,
     runProbe,

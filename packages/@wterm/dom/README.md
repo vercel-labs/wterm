@@ -78,6 +78,14 @@ cores should expose `getScrollbackDiscardedCount()` to avoid rereading shifted
 rows when their history limit is reached. Route writes and resizes through
 WTerm so announcements follow completed paints.
 
+## WebSocket transport
+
+`WebSocketTransport`, re-exported from `@wterm/core`, bounds outgoing data to
+1 MiB and 1,024 queued messages by default. Use `onBackpressure` to pause
+producers and catch buffer-limit `RangeError` to report input that was not
+accepted. See the [transport contract](../core/README.md#websockettransport)
+for configuration, queue properties, and reconnect/close behavior.
+
 ## Reading terminal output
 
 `readText({ signal? })` returns a `Promise<string>` containing a plain-text snapshot of all retained history and the active screen, including unmounted rows. It preserves complete Unicode cells, joins confirmed soft wraps, keeps hard line breaks and blank rows, and trims hard-line padding. Cores without wrap metadata keep physical row breaks.
