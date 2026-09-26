@@ -147,7 +147,7 @@ test("the Copy button writes to the native clipboard during its user gesture", a
   context,
   browserName,
 }) => {
-  const { socket } = await openTerminal(page, false);
+  const { socket, terminal, input } = await openTerminal(page, false);
   // Exercise Chromium's allowed-permission path; denial is covered above.
   if (browserName === "chromium")
     await context.grantPermissions(["clipboard-write"], {
@@ -159,6 +159,10 @@ test("the Copy button writes to the native clipboard during its user gesture", a
   await dialog.getByRole("button", { name: "Copy", exact: true }).click();
   await expect(dialog.getByRole("status")).toHaveText("Copied.");
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  // The dialog's close event returns focus asynchronously. Wait for it before
+  // focusing the paste target, so a late focus return cannot send text to the PTY.
+  await expect(dialog).not.toBeVisible();
+  await expect(terminal).toBeFocused();
   await page.evaluate(() => {
     const input = document.createElement("textarea");
     input.setAttribute("aria-label", "Paste check");
@@ -171,6 +175,7 @@ test("the Copy button writes to the native clipboard during its user gesture", a
   await expect(page.getByRole("textbox", { name: "Paste check" })).toHaveValue(
     "native clipboard text",
   );
+  expect(input).toEqual([]);
 });
 
 test("background sessions retain their own requests without moving focus", async ({
