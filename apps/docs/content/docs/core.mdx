@@ -137,3 +137,8 @@ term.onData = (data) => {
 ```
 
 For a full working example with a Node.js PTY server, see the [Local Shell example](https://github.com/vercel-labs/wterm/tree/main/examples/local).
+It uses its own client/server protocol: binary PTY output plus JSON input,
+resize, and consumption acknowledgments. A bounded output window pauses the
+PTY when the browser falls behind, and parsing yields between batches. The
+workspace reports rejected input and connection failures. This protocol
+requires both halves of the example; it is not built into `WebSocketTransport`.

@@ -9,8 +9,8 @@ for (const path of ["/", "/ghostty"]) {
     await page.routeWebSocket("**/api/terminal", (ws) => {
       socket = ws;
       ws.onMessage((message) => {
-        if (typeof message === "string" && !message.startsWith("\x1b[RESIZE:"))
-          input.push(message as string);
+        const parsed = JSON.parse(message.toString());
+        if (parsed.type === "input") input.push(parsed.data);
       });
     });
     await page.goto(path);
@@ -24,7 +24,7 @@ for (const path of ["/", "/ghostty"]) {
       { length: 500 },
       (_, i) => `output ${String(i).padStart(3, "0")} 語 e\u0301 😀`,
     );
-    socket!.send(JSON.stringify({ type: "output", data: lines.join("\r\n") }));
+    socket!.send(Buffer.from(lines.join("\r\n")));
     await expect(
       page.locator(".term-row").filter({ hasText: "output 499" }),
     ).toHaveCount(1);
@@ -75,7 +75,7 @@ for (const path of ["/", "/ghostty"]) {
       process.platform === "darwin" ? "Meta+c" : "Control+c",
     );
     const captured = await output.inputValue();
-    socket!.send(JSON.stringify({ type: "output", data: "\r\nnew output" }));
+    socket!.send(Buffer.from("\r\nnew output"));
     await expect(
       page.locator(".term-row").filter({ hasText: "new output" }),
     ).toHaveCount(1);
@@ -117,9 +117,7 @@ test("closing a pending capture cancels it and the reader can reopen", async ({
     page.getByRole("textbox", { name: "Terminal 1", exact: true }),
   ).toBeFocused();
   await expect.poll(() => !!socket).toBe(true);
-  socket!.send(
-    JSON.stringify({ type: "output", data: "\x1b[?2026h\x1b[Hheld" }),
-  );
+  socket!.send(Buffer.from("\x1b[?2026h\x1b[Hheld"));
   const opener = page.getByRole("button", { name: "Read output" });
   await opener.click();
   const dialog = page.getByRole("dialog", {
@@ -129,7 +127,7 @@ test("closing a pending capture cancels it and the reader can reopen", async ({
   await expect(dialog.getByRole("status")).toHaveText("Reading output…");
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
-  socket!.send(JSON.stringify({ type: "output", data: "\x1b[?2026l" }));
+  socket!.send(Buffer.from("\x1b[?2026l"));
   await opener.click();
   await expect(dialog.getByRole("status")).toHaveText("Output ready.");
   await expect(dialog.getByRole("textbox")).toHaveValue(/^held/);
@@ -147,7 +145,7 @@ test("failed refresh retains the previous snapshot and can be retried", async ({
     page.getByRole("textbox", { name: "Terminal 1", exact: true }),
   ).toBeFocused();
   await expect.poll(() => !!socket).toBe(true);
-  socket!.send(JSON.stringify({ type: "output", data: "old output" }));
+  socket!.send(Buffer.from("old output"));
   await page.getByRole("button", { name: "Read output" }).click();
   const dialog = page.getByRole("dialog", {
     name: "Terminal 1 output",
@@ -156,12 +154,10 @@ test("failed refresh retains the previous snapshot and can be retried", async ({
   const output = dialog.getByRole("textbox");
   await expect(output).toHaveValue(/^old output\n/);
   const previous = await output.inputValue();
-  socket!.send(
-    JSON.stringify({ type: "output", data: "\x1b[?2026h\x1b[Hnew output" }),
-  );
+  socket!.send(Buffer.from("\x1b[?2026h\x1b[Hnew output"));
   await dialog.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(dialog.getByRole("status")).toHaveText("Reading output…");
-  socket!.send(JSON.stringify({ type: "output", data: "\x1b[?2026l" }));
+  socket!.send(Buffer.from("\x1b[?2026l"));
   await expect(dialog.getByRole("status")).toHaveText(
     "Output changed while being read. Refresh to try again.",
   );
