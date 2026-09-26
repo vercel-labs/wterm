@@ -10,6 +10,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ghostty-wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Ghostty toolchain
+        run: bash packages/@wterm/ghostty/scripts/install-zig.sh /tmp/ghostty-zig
+      - name: Ghostty WASM drift check
+        env:
+          WTERM_GHOSTTY_ZIG: /tmp/ghostty-zig/zig
+        run: bash packages/@wterm/ghostty/scripts/build-wasm.sh --check
+
   ci:
     runs-on: ubuntu-latest
     steps:

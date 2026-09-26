@@ -35,7 +35,7 @@ The source pin and archive checksum live in [upstream.json](upstream.json):
 
 [build.mjs](build.mjs) verifies the archive before extracting a fresh source
 tree. All downloads, output, and Zig caches stay in ignored `dist/`; it never
-patches upstream sources or uses the shipped adapter's shared Zig cache. The
+patches upstream sources or shares build caches with the shipped adapter. The
 first build needs network access for upstream and its Zig dependencies.
 
 To rebuild or rerun individual suites:
