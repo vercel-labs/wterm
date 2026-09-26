@@ -32,6 +32,8 @@ export interface TerminalProps extends Omit<
   cursorBlink?: boolean;
   /** Politely announce terminal text changes while input has focus. */
   announceOutput?: boolean;
+  /** Suspend painting for an inactive pane; parsing and terminal effects continue. */
+  renderingPaused?: boolean;
   /** Enable debug mode (init-only — changing after mount has no effect). */
   debug?: boolean;
   onData?: (data: string) => void;
@@ -62,6 +64,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     maxImageHeight,
     cursorBlink,
     announceOutput = false,
+    renderingPaused = false,
     debug = false,
     onData,
     onBinary,
@@ -134,6 +137,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         maxImageHeight,
         cursorBlink,
         announceOutput,
+        renderingPaused,
         debug,
         onData: callbacksRef.current.onData
           ? (data: string) => callbacksRef.current.onData?.(data)
@@ -212,6 +216,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
   useLayoutEffect(() => {
     const el = wtermRef.current?.element;
     wtermRef.current?.setOutputAnnouncements(announceOutput);
+    wtermRef.current?.setRenderingPaused(renderingPaused);
     el?.classList.toggle("cursor-blink", cursorBlink === true);
     el?.classList.toggle("cursor-steady", cursorBlink === false);
   });

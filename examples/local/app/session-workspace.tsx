@@ -423,6 +423,7 @@ function SessionTerminal({
       <div className="min-h-0 flex-1 pt-2">
         <WTermTerminal
           ref={ref}
+          renderingPaused={!active}
           announceOutput={active && announceOutput}
           cols={80}
           rows={24}

@@ -50,7 +50,7 @@ await term.init();
 
 ## Options and Methods
 
-The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `onData`, `onBinary`, `onTitle`, `onBell`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
+The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `onData`, `onBinary`, `onTitle`, `onBell`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
 
 See [WTerm Methods](/api-reference#wterm-methods) for all instance methods, including [full-history Find](/api-reference#terminal-search): `search`, `findNext`, `findPrevious`, `getSearchState`, and `clearSearch`. Use the `onSearchChange` WTerm option or instance callback for progress and match counts.
 
@@ -197,3 +197,11 @@ without restarting the terminal, and vanilla callers use
 when focus leaves input. Bursts are bounded to avoid overwhelming the speech
 queue. See [Output announcements](/api-reference#output-announcements) for
 capture limits, pause/resume behavior, and redraw semantics.
+
+## Inactive panes
+
+Use `renderingPaused` for panes that are not visible. Parsing and terminal
+effects continue, and resuming paints the latest state without restarting.
+In vanilla code, call `term.setRenderingPaused(paused)`; framework props are
+reactive. Browser document visibility also pauses painting. See
+[Inactive panes](/configuration#inactive-panes) for focus and capture behavior.

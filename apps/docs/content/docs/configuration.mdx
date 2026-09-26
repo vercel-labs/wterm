@@ -5,9 +5,30 @@ navTitle: "Configuration"
 
 ## Options
 
-The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, and `onResize` (exposed as `@data`, `@title`, `@bell`, and `@resize` events in Vue).
+The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, and `onResize` (exposed as `@data`, `@title`, `@bell`, and `@resize` events in Vue).
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
+
+### Inactive panes
+
+Set `renderingPaused: true` for a pane that is not visible. Change it with
+`term.setRenderingPaused(paused)` in vanilla JavaScript, or the reactive
+`renderingPaused` prop in React, Vue, and Svelte. The local workspace does this
+automatically for inactive session tabs.
+
+Paused panes keep parsing output, retaining history, resizing the core, and
+delivering replies, titles, and bells. They stop scheduling terminal paints and
+show the latest state on the next eligible frame after resuming. Output is not
+queued for replay, and the PTY connection stays active. All terminals also pause
+painting while their browser document is hidden; returning does not override
+an explicitly paused pane.
+
+The option controls rendering only: hosts still manage visibility, focus,
+`inert`, and `aria-hidden`. CSS visibility alone does not set the option. New
+search scans, `readText()`, and Select All wait for a paint before starting;
+their existing cancellation rules still apply. Pending output announcements
+are discarded on pause. Synchronized drawing continues to hold a frame until
+the application ends the update or its recovery timeout expires.
 
 ### PTY size
 

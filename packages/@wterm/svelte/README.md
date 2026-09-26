@@ -41,7 +41,7 @@ when input needs to be sent to a PTY or another backend:
 ## Props
 
 The terminal accepts the shared `WTerm` options `cols`, `rows`, `core`,
-`wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, and
+`wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, and
 `debug`, plus these Svelte callbacks:
 
 | Prop       | Type                                   | Default | Description                                                                               |
@@ -143,6 +143,15 @@ while terminal input has focus. It defaults to `false` and can be toggled withou
 replacing the terminal. Announcements summarize changed text, are batched and
 bounded, and stop when focus leaves input. See the [DOM announcement contract](../dom/README.md#output-announcements)
 for pause/resume behavior, capture bounds, and redraw semantics.
+
+## Inactive panes
+
+Set the reactive `renderingPaused` prop for inactive panes. Toggling it keeps
+the same terminal and core: output, history, replies, titles, and bells continue
+while painting stops. Resuming schedules the latest state on the next eligible
+frame. Hidden browser documents also pause painting. Hosts still control pane
+visibility, focus, `inert`, and `aria-hidden`; CSS visibility alone does not set
+this option. New searches, `readText()`, and Select All wait for painting to resume.
 
 ## License
 

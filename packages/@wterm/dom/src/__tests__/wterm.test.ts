@@ -635,6 +635,174 @@ describe("WTerm", () => {
     });
   });
 
+  describe("paused rendering", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("cancels queued paint, parses all writes, and paints the latest state once on resume", async () => {
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const render = vi.spyOn(
+        (term as unknown as { renderer: Renderer }).renderer,
+        "render",
+      );
+      term.write("queued");
+      term.setRenderingPaused(true);
+      for (let i = 0; i < 100; i++) term.write(String(i));
+      await vi.runAllTimersAsync();
+      expect(mockBridge.writeString).toHaveBeenCalledTimes(101);
+      expect(render).not.toHaveBeenCalled();
+      term.setRenderingPaused(false);
+      term.setRenderingPaused(false);
+      await vi.runAllTimersAsync();
+      expect(render).toHaveBeenCalledTimes(1);
+      term.destroy();
+    });
+
+    it("can initialize paused and still deliver replies, titles, bells, and resize", async () => {
+      const onData = vi.fn(),
+        onTitle = vi.fn(),
+        onBell = vi.fn(),
+        onResize = vi.fn();
+      const term = new WTerm(element, {
+        autoResize: false,
+        renderingPaused: true,
+        onData,
+        onTitle,
+        onBell,
+        onResize,
+      });
+      await term.init();
+      expect(mockBridge.clearDirty).not.toHaveBeenCalled();
+      const render = vi.spyOn(
+        (term as unknown as { renderer: Renderer }).renderer,
+        "render",
+      );
+      vi.mocked(mockBridge.getResponse).mockReturnValueOnce("reply");
+      vi.mocked(mockBridge.getTitle).mockReturnValueOnce("background title");
+      vi.mocked(mockBridge.getBellCount).mockReturnValueOnce(2);
+      term.write(new Uint8Array([65]));
+      term.resize(100, 30);
+      await vi.runAllTimersAsync();
+      expect(mockBridge.writeRaw).toHaveBeenCalledWith(
+        new Uint8Array([65]),
+        expect.any(Function),
+      );
+      expect(onData).toHaveBeenCalledWith("reply");
+      expect(onTitle).toHaveBeenCalledExactlyOnceWith("background title");
+      expect(onBell).toHaveBeenCalledExactlyOnceWith(2);
+      expect(onResize).toHaveBeenCalledWith(100, 30);
+      expect(render).not.toHaveBeenCalled();
+      expect(element.querySelectorAll(".term-row")).toHaveLength(24);
+      term.setRenderingPaused(false);
+      await vi.runAllTimersAsync();
+      expect(render).toHaveBeenCalledTimes(1);
+      expect(element.querySelectorAll(".term-row")).toHaveLength(30);
+      term.destroy();
+    });
+
+    it("pauses hidden documents and does not override an explicitly paused pane", async () => {
+      const visibility = vi
+        .spyOn(document, "visibilityState", "get")
+        .mockReturnValue("visible");
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const render = vi.spyOn(
+        (term as unknown as { renderer: Renderer }).renderer,
+        "render",
+      );
+      term.write("pending");
+      visibility.mockReturnValue("hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+      term.write("background");
+      await vi.runAllTimersAsync();
+      expect(render).not.toHaveBeenCalled();
+      term.setRenderingPaused(true);
+      visibility.mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await vi.runAllTimersAsync();
+      expect(render).not.toHaveBeenCalled();
+      term.setRenderingPaused(false);
+      await vi.runAllTimersAsync();
+      expect(render).toHaveBeenCalledTimes(1);
+      term.destroy();
+      document.dispatchEvent(new Event("visibilitychange"));
+      await vi.runAllTimersAsync();
+      expect(render).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not let the synchronized-output fallback paint a paused pane", async () => {
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      const render = vi.spyOn(
+        (term as unknown as { renderer: Renderer }).renderer,
+        "render",
+      );
+      term.setRenderingPaused(true);
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      term.write("held");
+      term.resize(90, 20);
+      await vi.advanceTimersByTimeAsync(1001);
+      expect(render).not.toHaveBeenCalled();
+      term.setRenderingPaused(false);
+      await vi.runAllTimersAsync();
+      expect(render).toHaveBeenCalledTimes(1);
+      expect(element.querySelectorAll(".term-row")).toHaveLength(20);
+      term.destroy();
+    });
+
+    it("continues holding a synchronized update when a pane resumes before its deadline", async () => {
+      const term = new WTerm(element, {
+        autoResize: false,
+        renderingPaused: true,
+      });
+      await term.init();
+      const render = vi.spyOn(
+        (term as unknown as { renderer: Renderer }).renderer,
+        "render",
+      );
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      term.write("held");
+      term.setRenderingPaused(false);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(render).not.toHaveBeenCalled();
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(false);
+      term.write("end");
+      await vi.runAllTimersAsync();
+      expect(render).toHaveBeenCalledTimes(1);
+      term.destroy();
+    });
+
+    it("waits for paint before readText and cancels pending captures on destroy", async () => {
+      const term = new WTerm(element, {
+        autoResize: false,
+        renderingPaused: true,
+      });
+      await term.init();
+      const captured = vi.fn();
+      const text = term.readText().then(captured);
+      await vi.runAllTimersAsync();
+      expect(captured).not.toHaveBeenCalled();
+      term.setRenderingPaused(false);
+      await vi.runAllTimersAsync();
+      await text;
+      expect(captured).toHaveBeenCalledOnce();
+      term.setRenderingPaused(true);
+      const cancelled = expect(term.readText()).rejects.toMatchObject({
+        name: "AbortError",
+      });
+      term.destroy();
+      await cancelled;
+      term.setRenderingPaused(false);
+      await vi.runAllTimersAsync();
+      expect(element.children).toHaveLength(0);
+    });
+  });
+
   describe("onBell callback", () => {
     it("delivers the pending count as output is written", async () => {
       const onBell = vi.fn();

@@ -46,6 +46,21 @@ The input's accessible description includes the exit instructions after any host
 
 Mounted output remains readable separately from input. Use `readText()` to present retained history in an accessible reader; live output announcements are off by default. Ancestor `aria-hidden` and `inert` still control whether a terminal is available.
 
+## Inactive panes
+
+Use `renderingPaused: true` when creating an inactive pane and
+`term.setRenderingPaused(paused)` to change it. React, Vue, and Svelte expose
+the same reactive prop. Parsing, history, core resizing, replies, titles, and
+bells continue while painting is paused. Resuming schedules the latest state
+on the next eligible frame without replaying output. Hidden browser documents
+also pause painting; returning does not override the pane option.
+
+Hosts still manage visibility, focus, `inert`, and `aria-hidden`; CSS visibility
+alone does not pause rendering. New search scans, `readText()`, and Select All
+wait for a paint before starting, and retain their normal cancellation rules.
+Pending output announcements are discarded. Synchronized-output holds and
+their recovery timeout still apply.
+
 ## Output announcements
 
 Set `announceOutput: true` in vanilla JavaScript, or pass the `announceOutput`
@@ -125,6 +140,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels. Images larger than the limit are scaled down proportionally. |
 | `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
 | `announceOutput` | `boolean` | `false` | Politely announce bounded text changes while terminal input has focus; mutable via `setOutputAnnouncements()` |
+| `renderingPaused` | `boolean` | `false` | Suspend painting for an inactive pane while parsing and terminal effects continue; mutable without restarting |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onBinary` | `(data: Uint8Array) => void` | — | Called with raw X10 mouse bytes when supplied. Send the bytes unchanged to a binary-capable transport. |
@@ -142,6 +158,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `resize(cols, rows)` | Resize the terminal grid |
 | `focus()` | Focus the terminal element |
 | `setOutputAnnouncements(enabled)` | Enable or stop polite output announcements without moving focus |
+| `setRenderingPaused(paused)` | Pause pane painting while parsing and terminal effects continue; resuming schedules the latest state |
 | `search(query, { caseSensitive? })` | Start plain-text search over retained history and the active screen |
 | `findNext()` / `findPrevious()` | Select and reveal a match, wrapping at either end; return false if there are none |
 | `getSearchState()` | Get query, caseSensitive, count, activeIndex, searching, and limited |
