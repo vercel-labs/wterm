@@ -51,6 +51,7 @@ The terminal accepts the shared `WTerm` options `cols`, `rows`, `core`,
 | `onBinary` | `(data: Uint8Array) => void`           | —       | Called with raw X10 mouse reports for a binary-capable transport; without it, only ASCII-safe reports reach `onData` |
 | `onTitle`  | `(title: string) => void`              | —       | Called when the terminal title changes                                                    |
 | `onBell`   | `(count: number) => void`              | —       | Called with the pending BEL count; the host controls any alert                            |
+| `onClipboardWrite` | `(text: string) => void` | — | Application clipboard-write request; the host chooses whether to accept it |
 | `onResize` | `(cols: number, rows: number) => void` | —       | Called after the terminal is resized                                                      |
 | `onReady`  | `(wt: WTerm) => void`                  | —       | Called after initialization completes                                                     |
 | `onError`  | `(error: unknown) => void`             | —       | Called if WASM loading or initialization fails                                            |
@@ -154,6 +155,11 @@ while painting stops. Resuming schedules the latest state on the next eligible
 frame. Hidden browser documents also pause painting. Hosts still control pane
 visibility, focus, `inert`, and `aria-hidden`; CSS visibility alone does not set
 this option. New searches, `readText()`, and Select All wait for painting to resume.
+
+
+Ghostty clipboard writes are requests only: review the text and handle browser permissions before copying. No clipboard access occurs automatically. See [Application clipboard requests](../dom/README.md#application-clipboard-requests).
+
+The `onclipboardwrite` callback alias is also supported.
 
 ## License
 

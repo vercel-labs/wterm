@@ -46,7 +46,7 @@ function App() {
 
 ## Props
 
-The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `onData`, `onBinary`, `onTitle`, `onBell`, `onResize`) plus [React-only props](/api-reference#react-only-props) (`theme`, `onReady`, `onError`). Pass a [`TerminalCore`](/ghostty) instance to the `core` prop to use an alternative emulation backend.
+The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `onData`, `onBinary`, `onTitle`, `onBell`, `onClipboardWrite`, `onResize`) plus [React-only props](/api-reference#react-only-props) (`theme`, `onReady`, `onError`). Pass a [`TerminalCore`](/ghostty) instance to the `core` prop to use an alternative emulation backend.
 
 Standard `div` props (`className`, `style`, `id`, etc.) are forwarded to the container element.
 
@@ -128,3 +128,5 @@ effects continue, and resuming paints the latest state without restarting.
 In vanilla code, call `term.setRenderingPaused(paused)`; framework props are
 reactive. Browser document visibility also pauses painting. See
 [Inactive panes](/configuration#inactive-panes) for focus and capture behavior.
+
+Application clipboard writes require an explicit host policy; see [Clipboard requests](/configuration#clipboard-requests).

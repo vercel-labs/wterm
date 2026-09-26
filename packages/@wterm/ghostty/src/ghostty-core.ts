@@ -667,6 +667,18 @@ export class GhosttyCore implements TerminalCore {
     return this.wasm.exports.get_bell_count?.(this.termPtr) ?? 0;
   }
 
+  getClipboardWrite(): string | null {
+    if (this._disposed || this.termPtr === 0) return null;
+    const { get_clipboard_write_len, get_clipboard_write_ptr, memory } =
+      this.wasm.exports;
+    if (!get_clipboard_write_len || !get_clipboard_write_ptr) return null;
+    const len = get_clipboard_write_len(this.termPtr);
+    if (len < 0) return null;
+    return new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+      new Uint8Array(memory.buffer, get_clipboard_write_ptr(this.termPtr), len),
+    );
+  }
+
   getResponse(): string | null {
     if (this._disposed || this.termPtr === 0) return null;
     const bufSize = 4096;

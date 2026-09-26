@@ -18,6 +18,7 @@ vi.mock("@wterm/dom", () => {
     this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
     this.onBell = options?.onBell ?? null;
+    this.onClipboardWrite = options?.onClipboardWrite ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
@@ -291,6 +292,14 @@ describe("Terminal component", () => {
     await flushPromises();
     lastWTermInstance.onTitle("my title");
     expect(wrapper.emitted("title")![0]).toEqual(["my title"]);
+  });
+
+  it("emits clipboard writes including empty clears", async () => {
+    const wrapper = await mountTerminal();
+    await flushPromises();
+    lastWTermInstance.onClipboardWrite("copied");
+    lastWTermInstance.onClipboardWrite("");
+    expect(wrapper.emitted("clipboardWrite")).toEqual([["copied"], [""]]);
   });
 
   it("emits bell counts when WTerm onBell fires", async () => {

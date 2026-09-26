@@ -10,6 +10,7 @@
 #   6. kitty/graphics_unicode.zig — updates upstream image-storage tests
 #   7. page.zig — uses posix.mmap/munmap for page memory
 #   8. PageList.zig — pageAllocator() returns Mach VM allocator on macOS
+#   9. osc.zig — bounds encoded clipboard requests while parsing
 #
 # Page memory is replaced with wasm_allocator on WASM targets, Kitty file and
 # shared-memory media are disabled, Wuffs gets freestanding compatibility
@@ -27,6 +28,7 @@ IMAGE_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_image.zig"
 STORAGE_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_storage.zig"
 EXEC_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_exec.zig"
 UNICODE_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_unicode.zig"
+OSC_ZIG="$GHOSTTY_SRC/src/terminal/osc.zig"
 
 if [[ ! -f "$PAGE_ZIG" ]]; then
   echo "Error: $PAGE_ZIG not found"
@@ -44,10 +46,32 @@ for source in \
   "$IMAGE_ZIG" \
   "$STORAGE_ZIG" \
   "$EXEC_ZIG" \
-  "$UNICODE_ZIG"; do
+  "$UNICODE_ZIG" \
+  "$OSC_ZIG"; do
   [[ -f "$source.orig" ]] || cp "$source" "$source.orig"
   cp "$source.orig" "$source"
 done
+
+# Limit accumulation to base64 for 64 KiB of text, plus selector/separator:
+# 4 * ceil(65536 / 3) + 2 = 87386 bytes.
+python3 - "$OSC_ZIG" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+src = path.read_text()
+old = '''        if (self.writer) |writer| {
+            writer.writeByte(c) catch |err| switch (err) {'''
+new = '''        if (self.writer) |writer| {
+            if (self.state == .@"52" and writer.end >= 87386) {
+                self.state = .invalid;
+                return;
+            }
+            writer.writeByte(c) catch |err| switch (err) {'''
+if src.count(old) != 1:
+    raise SystemExit('OSC clipboard accumulation shape changed')
+path.write_text(src.replace(old, new, 1))
+PY
 
 # ---------------------------------------------------------------
 # Patch PageList.zig — pageAllocator()

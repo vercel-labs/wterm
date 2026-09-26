@@ -45,6 +45,14 @@ complete title. Titles longer than Ghostty's 255-byte limit are ignored.
 it through `onBell(count)` as output is written, even when synchronized output
 holds painting. BEL used to terminate an OSC sequence is excluded.
 
+OSC 52 clipboard writes reach `getClipboardWrite()` and `onClipboardWrite(text)`.
+The default selector and `c` are supported, with valid base64-encoded UTF-8 up
+to 65,536 decoded bytes; empty text requests a clear. Encoded accumulation is
+also bounded. Queries, other selectors, invalid text, and oversized requests
+are ignored. Only the latest valid pending write is retained. The host chooses
+whether to accept it; no browser clipboard access is automatic. Serve the
+updated bundled WASM to enable this optional effect.
+
 Native OSC 8 hyperlinks are resolved from Ghostty's page-owned metadata and exposed through `CellData.linkUri`, `CellData.linkId`, and `CellData.linkKey` in both the viewport and scrollback.
 
 The Ghostty core also provides the optional terminal graphics API. The DOM

@@ -20,6 +20,7 @@ vi.mock("@wterm/dom", () => {
     this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
     this.onBell = options?.onBell ?? null;
+    this.onClipboardWrite = options?.onClipboardWrite ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
@@ -278,6 +279,23 @@ describe("Terminal component", () => {
 
     ref.current!.focus();
     expect(lastWTermInstance.focus).toHaveBeenCalled();
+  });
+
+  it("forwards clipboard requests to the latest callback and honors removal", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const first = vi.fn();
+    const next = vi.fn();
+    const { rerender } = render(<Terminal onClipboardWrite={first} />);
+    await act(async () => {});
+    const instance = lastWTermInstance;
+    instance.onClipboardWrite("first");
+    rerender(<Terminal onClipboardWrite={next} />);
+    instance.onClipboardWrite("");
+    rerender(<Terminal />);
+    instance.onClipboardWrite("ignored");
+    expect(first).toHaveBeenCalledExactlyOnceWith("first");
+    expect(next).toHaveBeenCalledExactlyOnceWith("");
+    expect(lastWTermInstance).toBe(instance);
   });
 
   it("forwards bell counts to the latest callback", async () => {

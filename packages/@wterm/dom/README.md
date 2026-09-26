@@ -155,6 +155,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `onBinary` | `(data: Uint8Array) => void` | — | Called with raw X10 mouse bytes when supplied. Send the bytes unchanged to a binary-capable transport. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
 | `onBell` | `(count: number) => void` | — | Called with the number of BEL controls since the last delivery |
+| `onClipboardWrite` | `(text: string) => void` | — | Application clipboard-write request; the host chooses whether to accept it |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called with the grid dimensions applied by the core after resize |
 | `onSearchChange` | `(state: SearchState) => void` | — | Receives search progress, count, and active match changes |
 
@@ -453,6 +454,25 @@ the last column and rows in scrollback. A complete row with one shared, opaque
 background extends that color to the container's right edge, so full-width
 status bars stay filled. Mixed, dim, or hidden cells do not change the background
 behind neighboring cells or other rows.
+
+## Application clipboard requests
+
+With Ghostty, `onClipboardWrite(text)` receives OSC 52 writes as output is
+parsed, including while rendering is paused or synchronized. WTerm never reads
+or writes the browser clipboard automatically. A missing handler discards the
+request; attaching one later does not replay it. The handler is mutable.
+
+Show the requested text and apply your host policy before calling
+`navigator.clipboard.writeText(text)` from a user action. Keep a stable preview
+if newer requests arrive, and handle browser permission failures. The local
+workspace demonstrates this with **Review clipboard request** and **Copy**.
+
+Ghostty accepts the default or `c` selector and valid base64-encoded UTF-8 up to
+65,536 decoded bytes. Empty text requests a clear. Queries, unsupported
+selectors, invalid text, and oversized requests are ignored. Several writes
+within one parsed chunk may coalesce to the latest valid request. The built-in
+core, custom cores without `getClipboardWrite()`, and older Ghostty WASM assets
+produce no requests.
 
 ## License
 

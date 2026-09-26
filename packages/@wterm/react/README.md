@@ -60,6 +60,7 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 | `onBinary` | `(data: Uint8Array) => void` | — | Called with raw X10 mouse reports for a binary-capable transport. Without it, only ASCII-safe X10 reports reach `onData`. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
 | `onBell` | `(count: number) => void` | — | Called with pending BEL count as output is written; the host controls any alert |
+| `onClipboardWrite` | `(text: string) => void` | — | Application clipboard-write request; the host chooses whether to accept it |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called after resize with the grid dimensions applied by the core |
 | `onReady` | `(wt: WTerm) => void` | — | Called after WASM is loaded and the terminal is initialized; `wt.cols` and `wt.rows` report its applied grid size |
 
@@ -155,6 +156,9 @@ while painting stops. Resuming schedules the latest state on the next eligible
 frame. Hidden browser documents also pause painting. Hosts still control pane
 visibility, focus, `inert`, and `aria-hidden`; CSS visibility alone does not set
 this option. New searches, `readText()`, and Select All wait for painting to resume.
+
+
+Ghostty clipboard writes are requests only: review the text and handle browser permissions before copying. No clipboard access occurs automatically. See [Application clipboard requests](../dom/README.md#application-clipboard-requests).
 
 ## License
 

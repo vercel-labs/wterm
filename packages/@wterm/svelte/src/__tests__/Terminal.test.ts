@@ -19,6 +19,7 @@ vi.mock("@wterm/dom", () => {
     this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
     this.onBell = options?.onBell ?? null;
+    this.onClipboardWrite = options?.onClipboardWrite ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
@@ -300,6 +301,17 @@ describe("Terminal component", () => {
     expect(ontitle).toHaveBeenCalledWith("my title");
     expect(onbell).toHaveBeenCalledWith(2);
     expect(onresize).toHaveBeenCalledWith(100, 30);
+  });
+
+  it("forwards clipboard requests through both callback styles", async () => {
+    const onClipboardWrite = vi.fn();
+    const onclipboardwrite = vi.fn();
+    render(Terminal, { props: { onClipboardWrite, onclipboardwrite } });
+    await Promise.resolve();
+    lastWTermInstance.onClipboardWrite("copied");
+    lastWTermInstance.onClipboardWrite("");
+    expect(onClipboardWrite.mock.calls).toEqual([["copied"], [""]]);
+    expect(onclipboardwrite.mock.calls).toEqual([["copied"], [""]]);
   });
 
   it("forwards title, bell, and resize callbacks", async () => {

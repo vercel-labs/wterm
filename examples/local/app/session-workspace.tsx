@@ -12,6 +12,10 @@ import { ArrowDown, ArrowUp, Plus, Search, X } from "lucide-react";
 import { Terminal as WTermTerminal, useTerminal } from "@wterm/react";
 import type { SearchState, TerminalCore, WTerm } from "@wterm/dom";
 import { OutputReader } from "./output-reader";
+import {
+  ClipboardRequest,
+  type ClipboardWriteRequest,
+} from "./clipboard-request";
 import { TerminalConnection } from "../lib/terminal-connection";
 import "@wterm/react/css";
 
@@ -308,6 +312,12 @@ function SessionTerminal({
     wsRef.current?.input(data);
   }, []);
 
+  const [clipboardRequest, setClipboardRequest] =
+    useState<ClipboardWriteRequest | null>(null);
+  const handleClipboardWrite = useCallback((text: string) => {
+    setClipboardRequest({ text });
+  }, []);
+
   const handleResize = useCallback((cols: number, rows: number) => {
     const terminal = terminalRef.current;
     if (!terminal) return;
@@ -461,6 +471,17 @@ function SessionTerminal({
           {connectionMessage}
         </p>
       )}
+      <ClipboardRequest
+        request={clipboardRequest}
+        dismiss={(request) =>
+          setClipboardRequest((current) =>
+            current === request ? null : current,
+          )
+        }
+        terminal={terminalRef}
+        name={session.name}
+        active={active}
+      />
       <div className="min-h-0 flex-1 pt-2">
         <WTermTerminal
           ref={ref}
@@ -476,6 +497,7 @@ function SessionTerminal({
           core={core ?? undefined}
           onReady={handleReady}
           onData={handleData}
+          onClipboardWrite={handleClipboardWrite}
           onResize={handleResize}
           aria-label={session.name}
           tabIndex={active ? 0 : -1}

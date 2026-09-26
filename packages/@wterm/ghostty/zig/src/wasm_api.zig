@@ -84,6 +84,29 @@ const CELL_BYTES_V2 = 20;
 const RESPONSE_QUEUE_MAX = 256;
 const RESPONSE_MAX_BYTES = 64;
 const TITLE_BUFFER_BYTES = 256;
+const CLIPBOARD_MAX_BYTES = 64 * 1024;
+
+// Retain only the latest valid write. Reading the clipboard is never supported.
+const ClipboardState = struct {
+    bytes: [CLIPBOARD_MAX_BYTES]u8 = undefined,
+    len: u32 = 0,
+    changed: bool = false,
+
+    fn set(self: *ClipboardState, kind: u8, encoded: []const u8) void {
+        if (kind != 'c' or std.mem.eql(u8, encoded, "?")) return;
+        const decoder = std.base64.standard.Decoder;
+        const len = decoder.calcSizeForSlice(encoded) catch return;
+        if (len > CLIPBOARD_MAX_BYTES) return;
+        // Decode separately so an invalid request cannot corrupt a pending one.
+        const decoded = allocator.alloc(u8, len) catch return;
+        defer allocator.free(decoded);
+        decoder.decode(decoded, encoded) catch return;
+        if (!std.unicode.utf8ValidateSlice(decoded)) return;
+        @memcpy(self.bytes[0..len], decoded);
+        self.len = @intCast(len);
+        self.changed = true;
+    }
+};
 
 // A fixed table bounds host-owned tracking resources. IDs never alias released
 // or invalidated handles, even when their slots are reused.
@@ -150,6 +173,7 @@ const ResponseHandler = struct {
     inner: ReadonlyHandler,
     queue: *ResponseQueue,
     title: *TitleState,
+    clipboard: *ClipboardState,
     bell_count: *u32,
     synchronized_output_generation: *u32,
     rejected_images: *u32,
@@ -163,6 +187,7 @@ const ResponseHandler = struct {
         terminal: *Terminal,
         queue: *ResponseQueue,
         title: *TitleState,
+        clipboard: *ClipboardState,
         bell_count: *u32,
         generation: *u32,
         rejected_images: *u32,
@@ -173,6 +198,7 @@ const ResponseHandler = struct {
             .inner = .init(terminal),
             .queue = queue,
             .title = title,
+            .clipboard = clipboard,
             .bell_count = bell_count,
             .synchronized_output_generation = generation,
             .rejected_images = rejected_images,
@@ -309,6 +335,7 @@ const ResponseHandler = struct {
                 self.queue.push(out);
             },
             .window_title => self.title.set(value.title),
+            .clipboard_contents => self.clipboard.set(value.kind, value.data),
             .bell => self.bell_count.* +|= 1,
             .color_operation => {
                 try self.inner.vt(action, value);
@@ -401,6 +428,7 @@ const State = struct {
     render: RenderState,
     responses: ResponseQueue,
     title: TitleState,
+    clipboard: ClipboardState,
     bell_count: u32,
     synchronized_output_generation: u32,
     graphics_generation: u32,
@@ -626,6 +654,7 @@ export fn init(
     };
     state.responses = .{};
     state.title = .{};
+    state.clipboard = .{};
     state.bell_count = 0;
     state.synchronized_output_generation = 0;
     state.graphics_generation = 0;
@@ -637,6 +666,7 @@ export fn init(
         &state.terminal,
         &state.responses,
         &state.title,
+        &state.clipboard,
         &state.bell_count,
         &state.synchronized_output_generation,
         &state.rejected_images,
@@ -690,6 +720,17 @@ export fn get_bell_count(ptr: usize) u32 {
     const count = state.bell_count;
     state.bell_count = 0;
     return count;
+}
+
+export fn get_clipboard_write_len(ptr: usize) i32 {
+    const clipboard = &stateFromPtr(ptr).clipboard;
+    if (!clipboard.changed) return -1;
+    clipboard.changed = false;
+    return @intCast(clipboard.len);
+}
+
+export fn get_clipboard_write_ptr(ptr: usize) [*]const u8 {
+    return &stateFromPtr(ptr).clipboard.bytes;
 }
 
 // -- Render state -----------------------------------------------

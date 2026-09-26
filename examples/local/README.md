@@ -26,6 +26,7 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 - Inactive tabs pause painting while continuing to consume output and answer terminal queries. Switching back paints the latest screen and retained history; hiding the browser document pauses painting for all tabs.
 - **Read output** opens a stable snapshot of retained history and the active screen in a labelled, read-only text area. Use native keyboard navigation and Copy, **Refresh** to capture newer output, and **Close** or Escape to return to the opener. Output keeps running while the snapshot stays unchanged. A capture interrupted by output or resize can be retried; captures above 16,777,216 UTF-16 units fail without returning partial text. Closing cancels pending capture and releases the snapshot.
 - The editable terminal input uses its session name for assistive technology; inactive sessions are excluded from page tab entry. Escape followed by Tab or Shift+Tab moves focus back to the page
+- On `/ghostty`, an application clipboard-write request shows **Review clipboard request** and **Dismiss** without taking focus. Review opens a fixed, read-only preview; **Copy** (or **Clear clipboard** for empty text) writes only after you click it. New requests do not change an open preview. If the browser denies access, use native Copy from the text field. Clipboard reads are unsupported. Each session retains only its latest pending request, up to 65,536 UTF-8 bytes.
 - The `/ghostty` route uses the graphics-capable core and limits rendered Kitty images to 640×480 CSS pixels
 - Auto-sized Kitty images align with the terminal content origin and reserve their rendered height visually so the following shell prompt appears below the image
 - Each session displays its full current working directory in the sidebar, abbreviating the home directory as `~` and updating after `cd`
@@ -49,6 +50,7 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 | `app/page.tsx` | Built-in-core entry point |
 | `app/ghostty/page.tsx` | Ghostty-core entry point with bounded Kitty image rendering |
 | `app/session-workspace.tsx` | Sidebar, session tabs, Find controls, and terminal/WebSocket lifecycle |
+| `app/clipboard-request.tsx` | Application clipboard request review and explicit Copy |
 | `app/output-reader.tsx` | Read-only output snapshots, refresh, cancellation, and dialog focus |
 | `app/layout.tsx` | Root layout with metadata |
 

@@ -217,6 +217,10 @@ called. Connecting to a different URL also discards unsent messages. Repeated
 replaced sockets are ignored. These are client-side send bounds, not server
 acknowledgments, PTY flow control, or session recovery.
 
+## Clipboard write requests
+
+`TerminalCore.getClipboardWrite?()` consumes the latest application request. `null` means none and `""` requests a clear. Ghostty implements this optional effect; older/custom and built-in cores may omit it. Hosts own acceptance and browser permissions; there is no clipboard-read API or automatic clipboard access.
+
 ## License
 
 Apache-2.0

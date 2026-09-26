@@ -142,6 +142,8 @@ export interface GhosttyExports {
   get_title_len?(ptr: number): number;
   get_title_ptr?(ptr: number): number;
   get_bell_count?(ptr: number): number;
+  get_clipboard_write_len?(ptr: number): number;
+  get_clipboard_write_ptr?(ptr: number): number;
 
   // Memory
   alloc_buffer(len: number): number;

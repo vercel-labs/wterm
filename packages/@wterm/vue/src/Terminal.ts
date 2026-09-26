@@ -117,6 +117,8 @@ const Terminal = defineComponent({
     title: (_title: string) => true,
     /** Forwards `WTerm`'s `onBell` callback with the number of BEL controls. */
     bell: (_count: number) => true,
+    /** Application clipboard request; the host decides whether to accept it. */
+    clipboardWrite: (_text: string) => true,
     /**
      * Forwards `WTerm`'s `onResize` callback with the new column and row
      * counts.
@@ -164,6 +166,7 @@ const Terminal = defineComponent({
           : undefined,
         onTitle: (title: string) => emit("title", title),
         onBell: (count: number) => emit("bell", count),
+        onClipboardWrite: (text: string) => emit("clipboardWrite", text),
         onResize: (c: number, r: number) => emit("resize", c, r),
       });
 

@@ -930,6 +930,66 @@ describe("WTerm", () => {
     });
   });
 
+  describe("application clipboard requests", () => {
+    it("consumes ignored requests and delivers only new writes to the current handler, even when paint is paused", async () => {
+      const getClipboardWrite = vi
+        .fn<() => string | null>()
+        .mockReturnValue(null);
+      Object.assign(mockBridge, { getClipboardWrite });
+      const term = new WTerm(element, {
+        autoResize: false,
+        renderingPaused: true,
+      });
+      await term.init();
+      getClipboardWrite.mockReturnValueOnce("ignored");
+      term.write("output");
+      const onClipboardWrite = vi.fn();
+      term.onClipboardWrite = onClipboardWrite;
+      term.write("more output");
+      expect(onClipboardWrite).not.toHaveBeenCalled();
+      getClipboardWrite.mockReturnValueOnce("");
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      term.write("clear");
+      expect(onClipboardWrite).toHaveBeenCalledExactlyOnceWith("");
+      term.destroy();
+      getClipboardWrite.mockReturnValueOnce("destroyed");
+      term.write("late");
+      expect(onClipboardWrite).toHaveBeenCalledTimes(1);
+    });
+
+    it("finishes processing output and replies before surfacing a host callback error", async () => {
+      const error = new Error("host policy failed");
+      const getClipboardWrite = vi
+        .fn<() => string | null>()
+        .mockReturnValue(null);
+      Object.assign(mockBridge, { getClipboardWrite });
+      const onData = vi.fn();
+      const onClipboardWrite = vi.fn(() => {
+        throw error;
+      });
+      const term = new WTerm(element, {
+        autoResize: false,
+        onData,
+        onClipboardWrite,
+      });
+      await term.init();
+      getClipboardWrite
+        .mockReturnValueOnce("first")
+        .mockReturnValueOnce("second");
+      vi.mocked(mockBridge.writeString).mockImplementation(
+        (_text, afterChunk) => {
+          afterChunk?.();
+          vi.mocked(mockBridge.getResponse).mockReturnValueOnce("reply");
+          afterChunk?.();
+        },
+      );
+      expect(() => term.write("output")).toThrow(error);
+      expect(onClipboardWrite.mock.calls).toEqual([["first"], ["second"]]);
+      expect(onData).toHaveBeenCalledExactlyOnceWith("reply");
+      term.destroy();
+    });
+  });
+
   describe("response forwarding", () => {
     it("forwards every queued bridge response to onData", async () => {
       const onData = vi.fn();

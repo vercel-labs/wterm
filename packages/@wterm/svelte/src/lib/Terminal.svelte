@@ -2,13 +2,14 @@
   import type { WTerm as WTermType, WTermOptions } from "@wterm/dom";
 
   export interface TerminalProps
-    extends Omit<WTermOptions, "onData" | "onBinary" | "onTitle" | "onBell" | "onResize"> {
+    extends Omit<WTermOptions, "onData" | "onBinary" | "onTitle" | "onBell" | "onClipboardWrite" | "onResize"> {
     theme?: string;
     className?: string;
     onData?: (data: string) => void;
     onBinary?: (data: Uint8Array) => void;
     onTitle?: (title: string) => void;
     onBell?: (count: number) => void;
+    onClipboardWrite?: (text: string) => void;
     onResize?: (cols: number, rows: number) => void;
     onReady?: (wt: WTermType) => void;
     onError?: (error: unknown) => void;
@@ -16,6 +17,7 @@
     onbinary?: (data: Uint8Array) => void;
     ontitle?: (title: string) => void;
     onbell?: (count: number) => void;
+    onclipboardwrite?: (text: string) => void;
     onresize?: (cols: number, rows: number) => void;
     onready?: (wt: WTermType) => void;
     onerror?: (error: unknown) => void;
@@ -55,6 +57,7 @@
   export let onBinary: ((data: Uint8Array) => void) | undefined = undefined;
   export let onTitle: ((title: string) => void) | undefined = undefined;
   export let onBell: ((count: number) => void) | undefined = undefined;
+  export let onClipboardWrite: ((text: string) => void) | undefined = undefined;
   export let onResize: ((cols: number, rows: number) => void) | undefined =
     undefined;
   export let onReady: ((wt: WTerm) => void) | undefined = undefined;
@@ -63,6 +66,7 @@
   export let onbinary: ((data: Uint8Array) => void) | undefined = undefined;
   export let ontitle: ((title: string) => void) | undefined = undefined;
   export let onbell: ((count: number) => void) | undefined = undefined;
+  export let onclipboardwrite: ((text: string) => void) | undefined = undefined;
   export let onresize: ((cols: number, rows: number) => void) | undefined =
     undefined;
   export let onready: ((wt: WTerm) => void) | undefined = undefined;
@@ -99,6 +103,11 @@
   function handleTitle(title: string): void {
     onTitle?.(title);
     ontitle?.(title);
+  }
+
+  function handleClipboardWrite(text: string): void {
+    onClipboardWrite?.(text);
+    onclipboardwrite?.(text);
   }
 
   function handleBell(count: number): void {
@@ -149,6 +158,7 @@
       onBinary: hasBinaryHandler() ? handleBinary : undefined,
       onTitle: handleTitle,
       onBell: handleBell,
+      onClipboardWrite: handleClipboardWrite,
       onResize: handleResize,
     });
 

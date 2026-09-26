@@ -257,6 +257,12 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
       <td>Called as output is written with the number of pending BEL controls. The host decides whether to play sound or show a visual alert.</td>
     </tr>
     <tr>
+      <td><code>onClipboardWrite</code></td>
+      <td><code>(text: string) =&gt; void</code></td>
+      <td>—</td>
+      <td>Application clipboard-write request from Ghostty. No clipboard access is automatic; see <a href="/configuration#clipboard-requests">Clipboard requests</a>.</td>
+    </tr>
+    <tr>
       <td><code>onResize</code></td>
       <td><code>(cols: number, rows: number) =&gt; void</code></td>
       <td>—</td>
@@ -349,6 +355,11 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
       <td>Emitted as output is written with the number of pending BEL controls.</td>
     </tr>
     <tr>
+      <td><code>clipboardWrite</code></td>
+      <td><code>(text: string)</code></td>
+      <td>Application clipboard-write request from Ghostty. No clipboard access is automatic; see <a href="/configuration#clipboard-requests">Clipboard requests</a>.</td>
+    </tr>
+    <tr>
       <td><code>resize</code></td>
       <td><code>(cols: number, rows: number)</code></td>
       <td>Emitted after the terminal is resized.</td>
@@ -405,6 +416,11 @@ attributes such as `class`, `style`, `id`, and ARIA attributes to its root
       <td><code>onBell</code></td>
       <td><code>(count: number) =&gt; void</code></td>
       <td>Called with the pending BEL count as output is written.</td>
+    </tr>
+    <tr>
+      <td><code>onClipboardWrite</code></td>
+      <td><code>(text: string) =&gt; void</code></td>
+      <td>Application clipboard-write request from Ghostty. No clipboard access is automatic; see <a href="/configuration#clipboard-requests">Clipboard requests</a>.</td>
     </tr>
     <tr>
       <td><code>onResize</code></td>
@@ -1080,6 +1096,10 @@ When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string 
     <tr>
       <td><code>getBellCount?(): number</code></td>
       <td>Read and clear pending BEL controls. Optional for custom cores; the built-in and Ghostty cores return <code>0</code> when none are pending.</td>
+    </tr>
+    <tr>
+      <td><code>getClipboardWrite?(): string | null</code></td>
+      <td>Consume the latest application clipboard-write request. Empty text requests a clear; null means none. Ghostty only; the host owns acceptance.</td>
     </tr>
     <tr>
       <td><code>getResponse(): string | null</code></td>

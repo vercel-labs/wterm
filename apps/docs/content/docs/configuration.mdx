@@ -5,7 +5,7 @@ navTitle: "Configuration"
 
 ## Options
 
-The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, and `onResize` (exposed as `@data`, `@title`, `@bell`, and `@resize` events in Vue).
+The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, `onClipboardWrite`, and `onResize` (exposed as `@data`, `@title`, `@bell`, `@clipboard-write`, and `@resize` events in Vue).
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
 
@@ -53,6 +53,27 @@ output is written, even if synchronized output is holding a paint. Several
 bells in one write chunk arrive as one count. WTerm leaves sound and visual
 alerts to the host application.
 
+### Clipboard requests
+
+With Ghostty, `onClipboardWrite(text)` receives application OSC 52 clipboard
+writes. WTerm never reads or writes the browser clipboard automatically. A
+missing handler discards requests; installing one later does not replay them.
+React and Svelte use the callback prop; Vue uses `@clipboard-write`. Svelte also
+accepts `onclipboardwrite`.
+
+The host must apply its policy, for example by displaying a stable text preview
+and calling `navigator.clipboard.writeText(text)` from an explicit Copy button.
+Handle browser permission failures. The local Ghostty workspace provides
+**Review clipboard request**, **Copy**, and **Dismiss** controls.
+
+Ghostty accepts valid base64-encoded UTF-8 up to 65,536 decoded bytes for the
+default selector or `c`. Empty text requests a clear. Clipboard reads, other
+selectors, invalid text, and oversized writes are ignored. Only the latest
+valid pending write in a parsed chunk is retained. Delivery continues while
+painting is paused or synchronized. The optional `getClipboardWrite()` core
+method is absent from the built-in core; older Ghostty binaries produce no
+requests. Update any manually served WASM asset when upgrading.
+
 ### Cursor appearance
 
 Both cores honor application requests for block, bar, and underline cursors
@@ -98,7 +119,7 @@ See [Vue-Only Props](/api-reference#vue-only-props) and [Vue Events](/api-refere
 
 The Svelte `Terminal` component adds the `theme` prop and forwards standard
 `<div>` attributes such as `class`, `style`, `id`, and ARIA attributes. Svelte 5
-applications can use the `onData`, `onTitle`, `onBell`, `onResize`, `onReady`, and
+applications can use the `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onResize`, `onReady`, and
 `onError` callback props.
 
 See [Svelte-only Props](/api-reference#svelte-only-props) for details.

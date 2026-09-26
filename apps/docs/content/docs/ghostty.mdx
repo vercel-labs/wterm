@@ -342,6 +342,16 @@ Kitty keyboard query and negotiation operate on Ghostty's native active-screen s
 
 The bundled binary includes upstream's [WASM page-initialization fix](https://github.com/ghostty-org/ghostty/commit/420de124f04aa322bf250098cc62d7195db94bfd). New and replacement terminal pages are cleared before use, including release builds where the allocator may return memory used by earlier terminal state. If you serve the binary from a public directory, copy the updated package asset when upgrading.
 
+## Application clipboard requests
+
+Ghostty exposes OSC 52 writes through `getClipboardWrite()` and WTerm's
+`onClipboardWrite(text)` callback. The host chooses whether to accept the text;
+no browser clipboard access is automatic. Reads are unsupported. Requests are
+limited to 65,536 decoded UTF-8 bytes, with bounded encoded accumulation and
+only one pending write. See [Clipboard requests](/configuration#clipboard-requests)
+for selectors, delivery behavior, and browser permission handling. Serve the
+updated bundled WASM to enable this optional effect.
+
 ## Rebuilding the WASM
 
 Only needed by maintainers. Requires [Zig 0.15.2](https://ziglang.org/download/),

@@ -50,7 +50,7 @@ function onData(data: string) {
 `onBinary` receives raw X10 mouse bytes. Forward its `Uint8Array` unchanged
 when the terminal input transport accepts binary data.
 
-The other callback props are `onTitle`, `onBell`, `onResize`, `onReady`, and `onError`.
+The other callback props are `onTitle`, `onBell`, `onClipboardWrite`, `onResize`, `onReady`, and `onError`.
 `onReady` receives the underlying `WTerm` instance.
 
 ## Props
@@ -147,3 +147,5 @@ effects continue, and resuming paints the latest state without restarting.
 In vanilla code, call `term.setRenderingPaused(paused)`; framework props are
 reactive. Browser document visibility also pauses painting. See
 [Inactive panes](/configuration#inactive-panes) for focus and capture behavior.
+
+Application clipboard writes require an explicit host policy; see [Clipboard requests](/configuration#clipboard-requests).

@@ -40,6 +40,7 @@ export interface TerminalProps extends Omit<
   onBinary?: (data: Uint8Array) => void;
   onTitle?: (title: string) => void;
   onBell?: (count: number) => void;
+  onClipboardWrite?: (text: string) => void;
   onResize?: (cols: number, rows: number) => void;
   onReady?: (wt: WTerm) => void;
   onError?: (error: unknown) => void;
@@ -70,6 +71,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     onBinary,
     onTitle,
     onBell,
+    onClipboardWrite,
     onResize,
     onReady,
     onError,
@@ -85,6 +87,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     onBinary,
     onTitle,
     onBell,
+    onClipboardWrite,
     onResize,
     onReady,
     onError,
@@ -99,6 +102,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     onBinary,
     onTitle,
     onBell,
+    onClipboardWrite,
     onResize,
     onReady,
     onError,
@@ -147,6 +151,8 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
           : undefined,
         onTitle: (title: string) => callbacksRef.current.onTitle?.(title),
         onBell: (count: number) => callbacksRef.current.onBell?.(count),
+        onClipboardWrite: (text: string) =>
+          callbacksRef.current.onClipboardWrite?.(text),
         onResize: (c: number, r: number) =>
           callbacksRef.current.onResize?.(c, r),
       });

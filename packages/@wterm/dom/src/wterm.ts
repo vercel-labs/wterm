@@ -47,6 +47,8 @@ export interface WTermOptions {
   onTitle?: (title: string) => void;
   /** Called with the number of BEL controls since the last delivery. */
   onBell?: (count: number) => void;
+  /** Application request only: the host must apply its clipboard policy. No browser clipboard access is automatic. */
+  onClipboardWrite?: (text: string) => void;
   onResize?: (cols: number, rows: number) => void;
   onSearchChange?: (state: SearchState) => void;
 }
@@ -99,6 +101,7 @@ export class WTerm {
   onBinary: ((data: Uint8Array) => void) | null;
   onTitle: ((title: string) => void) | null;
   onBell: ((count: number) => void) | null;
+  onClipboardWrite: ((text: string) => void) | null;
   onResize: ((cols: number, rows: number) => void) | null;
   onSearchChange: ((state: SearchState) => void) | null;
 
@@ -120,6 +123,7 @@ export class WTerm {
     this.onBinary = options.onBinary || null;
     this.onTitle = options.onTitle || null;
     this.onBell = options.onBell || null;
+    this.onClipboardWrite = options.onClipboardWrite || null;
     this.onResize = options.onResize || null;
     this.onSearchChange = options.onSearchChange || null;
     this._search = new SearchController((reveal) => {
@@ -465,6 +469,12 @@ export class WTerm {
       // Titles, like replies and bells, must reach the host even without paint.
       try {
         this._deliverTitle();
+      } catch (error) {
+        recordDeliveryError(error);
+      }
+      try {
+        const text = this.bridge?.getClipboardWrite?.() ?? null;
+        if (text !== null && !this._destroyed) this.onClipboardWrite?.(text);
       } catch (error) {
         recordDeliveryError(error);
       }

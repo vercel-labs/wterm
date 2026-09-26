@@ -54,6 +54,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Application colors** — Ghostty foreground, background, and cursor overrides with theme-preserving resets; inverse cells use the actual defaults
 - **Application-controlled cursors** — block, bar, and underline shapes with terminal-requested blinking and a host override
 - **Window titles** — OSC 0/2 title changes reach `onTitle` with either the built-in or Ghostty core
+- **Application clipboard requests** — Ghostty OSC 52 writes reach an opt-in host callback; the local workspace offers text review and explicit Copy
 - **Bell events** — BEL reaches `onBell(count)` through either core, leaving sound or visual alerts to the host app
 - **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window; overlapping history rows reuse their DOM as you scroll
 - **Full-history Find** — time-sliced plain-text search, match counts, highlights, and next/previous navigation across retained output; Ghostty searches across soft wraps

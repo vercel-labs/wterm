@@ -73,6 +73,7 @@ Input callbacks are exposed as Vue events rather than `onXxx` props:
   @data="onData"
   @title="onTitle"
   @bell="onBell"
+  @clipboard-write="onClipboardWrite"
   @resize="onResize"
   @ready="onReady"
   @error="onError"
@@ -170,3 +171,5 @@ effects continue, and resuming paints the latest state without restarting.
 In vanilla code, call `term.setRenderingPaused(paused)`; framework props are
 reactive. Browser document visibility also pauses painting. See
 [Inactive panes](/configuration#inactive-panes) for focus and capture behavior.
+
+Application clipboard writes require an explicit host policy; see [Clipboard requests](/configuration#clipboard-requests).

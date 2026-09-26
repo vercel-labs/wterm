@@ -192,6 +192,8 @@ export interface TerminalCore {
   getTitle(): string | null;
   /** Read and clear the number of pending BEL controls. Optional for custom cores. */
   getBellCount?(): number;
+  /** Consume the latest application clipboard-write request. Empty text means clear; null means none. Hosts choose whether to accept it. */
+  getClipboardWrite?(): string | null;
   getResponse(): string | null;
   getResourceState?(): TerminalResourceState;
 

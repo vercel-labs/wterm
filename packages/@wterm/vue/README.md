@@ -75,6 +75,7 @@ preserving their aspect ratio. Image canvases are decorative and
 | `binary` | `(data: Uint8Array)` | Emitted for raw X10 mouse reports. Send the bytes unchanged to a binary-capable transport; without a listener, only ASCII-safe reports reach `data`. |
 | `title` | `(title: string)` | Emitted when the terminal title changes via an escape sequence. |
 | `bell` | `(count: number)` | Emitted with the pending BEL count as output is written; the host controls any alert. |
+| `clipboardWrite` | `(text: string)` | Application clipboard-write request; use `@clipboard-write` and apply a host policy. |
 | `resize` | `(cols: number, rows: number)` | Emitted after the terminal is resized. |
 | `ready` | `(wt: WTerm)` | Emitted once after `WTerm.init()` resolves, carrying the underlying `WTerm` instance. |
 | `error` | `(err: unknown)` | Emitted if WASM loading or initialization fails. |
@@ -166,6 +167,9 @@ while painting stops. Resuming schedules the latest state on the next eligible
 frame. Hidden browser documents also pause painting. Hosts still control pane
 visibility, focus, `inert`, and `aria-hidden`; CSS visibility alone does not set
 this option. New searches, `readText()`, and Select All wait for painting to resume.
+
+
+Ghostty clipboard writes are requests only: review the text and handle browser permissions before copying. No clipboard access occurs automatically. See [Application clipboard requests](../dom/README.md#application-clipboard-requests).
 
 ## License
 
