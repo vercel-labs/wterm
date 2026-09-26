@@ -54,6 +54,7 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 | `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels; images scale down proportionally |
 | `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
 | `announceOutput` | `boolean` | `false` | Politely announce bounded terminal text changes while input has focus; updates without restarting |
+| `renderingPaused` | `boolean` | `false` | Suspend painting for an inactive pane while parsing and terminal effects continue; mutable without restarting |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the underlying `WTerm` instance for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onBinary` | `(data: Uint8Array) => void` | — | Called with raw X10 mouse reports for a binary-capable transport. Without it, only ASCII-safe X10 reports reach `onData`. |
@@ -143,6 +144,15 @@ while terminal input has focus. It defaults to `false` and can be toggled withou
 replacing the terminal. Announcements summarize changed text, are batched and
 bounded, and stop when focus leaves input. See the [DOM announcement contract](../dom/README.md#output-announcements)
 for pause/resume behavior, capture bounds, and redraw semantics.
+
+## Inactive panes
+
+Set the reactive `renderingPaused` prop for inactive panes. Toggling it keeps
+the same terminal and core: output, history, replies, titles, and bells continue
+while painting stops. Resuming schedules the latest state on the next eligible
+frame. Hidden browser documents also pause painting. Hosts still control pane
+visibility, focus, `inert`, and `aria-hidden`; CSS visibility alone does not set
+this option. New searches, `readText()`, and Select All wait for painting to resume.
 
 ## License
 

@@ -26,6 +26,7 @@ vi.mock("@wterm/dom", () => {
     this.resize = vi.fn();
     this.focus = vi.fn();
     this.setOutputAnnouncements = vi.fn();
+    this.setRenderingPaused = vi.fn();
     this.destroy = vi.fn();
     this.init = vi.fn().mockImplementation(async () => {
       this.bridge = {};
@@ -76,6 +77,18 @@ describe("Terminal component", () => {
     expect(lastWTermInstance).toBe(instance);
     expect(instance.destroy).not.toHaveBeenCalled();
     expect(instance.element.hasAttribute("announceOutput")).toBe(false);
+  });
+
+  it("pauses painting without replacing the terminal or leaking a DOM attribute", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const { rerender } = render(<Terminal renderingPaused />);
+    const instance = lastWTermInstance;
+    expect(instance.setRenderingPaused).toHaveBeenLastCalledWith(true);
+    rerender(<Terminal renderingPaused={false} />);
+    expect(instance.setRenderingPaused).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
+    expect(instance.element.hasAttribute("renderingPaused")).toBe(false);
   });
 
   it("updates host input labels and tab order without restarting the terminal", async () => {
@@ -189,6 +202,7 @@ describe("Terminal component", () => {
       this.focus = vi.fn();
       this.destroy = vi.fn();
       this.setOutputAnnouncements = vi.fn();
+      this.setRenderingPaused = vi.fn();
       this.init = vi.fn().mockRejectedValue(new Error("WASM failed"));
       lastWTermInstance = this;
     });

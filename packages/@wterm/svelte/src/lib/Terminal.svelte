@@ -47,6 +47,8 @@
   export let maxImageHeight: number | undefined = undefined;
   export let cursorBlink: boolean | undefined = undefined;
   export let announceOutput = false;
+  /** Suspend painting for an inactive pane; parsing and terminal effects continue. */
+  export let renderingPaused = false;
   export let debug = false;
   export let className = "";
   export let onData: ((data: string) => void) | undefined = undefined;
@@ -141,6 +143,7 @@
       maxImageHeight,
       cursorBlink,
       announceOutput,
+      renderingPaused,
       debug,
       onData: hasDataHandler() ? handleData : undefined,
       onBinary: hasBinaryHandler() ? handleBinary : undefined,
@@ -182,6 +185,10 @@
     }
     instance.onData = dataHandler ? handleData : null;
     instance.onBinary = hasBinaryHandler() ? handleBinary : null;
+  }
+
+  $: if (instance) {
+    instance.setRenderingPaused(renderingPaused);
   }
 </script>
 

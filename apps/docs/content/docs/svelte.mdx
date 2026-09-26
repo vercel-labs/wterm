@@ -56,7 +56,7 @@ The other callback props are `onTitle`, `onBell`, `onResize`, `onReady`, and `on
 ## Props
 
 The component accepts the shared terminal options `cols`, `rows`, `core`,
-`wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, and
+`wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, and
 `debug`, plus the `theme` prop. Standard `<div>` attributes such as `class`,
 `style`, `id`, and ARIA attributes are forwarded to the root element.
 
@@ -137,3 +137,11 @@ without restarting the terminal, and vanilla callers use
 when focus leaves input. Bursts are bounded to avoid overwhelming the speech
 queue. See [Output announcements](/api-reference#output-announcements) for
 capture limits, pause/resume behavior, and redraw semantics.
+
+## Inactive panes
+
+Use `renderingPaused` for panes that are not visible. Parsing and terminal
+effects continue, and resuming paints the latest state without restarting.
+In vanilla code, call `term.setRenderingPaused(paused)`; framework props are
+reactive. Browser document visibility also pauses painting. See
+[Inactive panes](/configuration#inactive-panes) for focus and capture behavior.

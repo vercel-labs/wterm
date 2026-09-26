@@ -24,6 +24,7 @@ vi.mock("@wterm/dom", () => {
     this.resize = vi.fn();
     this.focus = vi.fn();
     this.setOutputAnnouncements = vi.fn();
+    this.setRenderingPaused = vi.fn();
     this.destroy = vi.fn();
     this.init = vi.fn().mockImplementation(async () => {
       this.bridge = {};
@@ -76,6 +77,19 @@ describe("Terminal component", () => {
     expect(instance.setOutputAnnouncements).toHaveBeenLastCalledWith(false);
     expect(lastWTermInstance).toBe(instance);
     expect(wrapper.attributes("announceoutput")).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it("pauses painting without replacing the terminal or leaking an attribute", async () => {
+    const wrapper = await mountTerminal({ renderingPaused: true });
+    const instance = lastWTermInstance;
+    const { WTerm } = await import("@wterm/dom");
+    expect(vi.mocked(WTerm).mock.calls[0][1]?.renderingPaused).toBe(true);
+    await wrapper.setProps({ renderingPaused: false });
+    expect(instance.setRenderingPaused).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
+    expect(wrapper.attributes("renderingpaused")).toBeUndefined();
     wrapper.unmount();
   });
 

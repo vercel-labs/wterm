@@ -244,6 +244,7 @@ export type HarnessAPI = {
   selectLine: WTerm["selectLine"];
   readText: WTerm["readText"];
   setOutputAnnouncements: WTerm["setOutputAnnouncements"];
+  setRenderingPaused: WTerm["setRenderingPaused"];
 };
 declare global {
   interface Window {
@@ -301,6 +302,7 @@ async function init() {
     readText: (options) => terminal.readText(options),
     setOutputAnnouncements: (enabled) =>
       terminal.setOutputAnnouncements(enabled),
+    setRenderingPaused: (paused) => terminal.setRenderingPaused(paused),
     frame: () =>
       new Promise((resolve) => requestAnimationFrame(() => resolve())),
   };

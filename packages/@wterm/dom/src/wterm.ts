@@ -39,6 +39,8 @@ export interface WTermOptions {
   cursorBlink?: boolean;
   /** Announce changed terminal text politely while input has focus. Off by default. */
   announceOutput?: boolean;
+  /** Suspend painting for an inactive pane while continuing to parse output. */
+  renderingPaused?: boolean;
   debug?: boolean;
   onData?: (data: string) => void;
   /** Raw input bytes, used by X10 mouse reports. */
@@ -66,6 +68,8 @@ export class WTerm {
   private renderer: Renderer | null = null;
   private input: InputHandler | null = null;
   private rafId: number | null = null;
+  private _renderingPaused: boolean;
+  private _onVisibilityChange: () => void;
   private _synchronizedOutputTimer: ReturnType<typeof setTimeout> | null = null;
   private _synchronizedOutputState: "idle" | "held" | "passthrough" = "idle";
   private _synchronizedOutputGeneration = 0;
@@ -110,6 +114,7 @@ export class WTerm {
     this.rows = options.rows || 24;
     this.autoResize = options.autoResize !== false;
     this._debugEnabled = options.debug ?? false;
+    this._renderingPaused = options.renderingPaused ?? false;
 
     this.onData = options.onData || null;
     this.onBinary = options.onBinary || null;
@@ -142,9 +147,23 @@ export class WTerm {
     this._outputAnnouncements = new OutputAnnouncements(
       this.element,
       () => this.bridge,
-      () => this.rafId === null && this._synchronizedOutputState !== "held",
+      () =>
+        this._canRender() &&
+        this.rafId === null &&
+        this._synchronizedOutputState !== "held",
     );
     this._outputAnnouncements.setEnabled(options.announceOutput ?? false);
+    this._onVisibilityChange = () => {
+      if (this._canRender()) this._scheduleRender();
+      else {
+        this._cancelScheduledRender();
+        this._outputAnnouncements.invalidate();
+      }
+    };
+    this.element.ownerDocument.addEventListener(
+      "visibilitychange",
+      this._onVisibilityChange,
+    );
     this.element.classList.toggle("cursor-blink", options.cursorBlink === true);
     this.element.classList.toggle(
       "cursor-steady",
@@ -396,6 +415,12 @@ export class WTerm {
           recordDeliveryError(error);
         }
       }
+      // Titles, like replies and bells, must reach the host even without paint.
+      try {
+        this._deliverTitle();
+      } catch (error) {
+        recordDeliveryError(error);
+      }
     };
     if (typeof data === "string") {
       this.bridge.writeString(data, drain);
@@ -467,6 +492,21 @@ export class WTerm {
   /** Enable or stop polite announcements without changing terminal focus. */
   setOutputAnnouncements(enabled: boolean): void {
     if (!this._destroyed) this._outputAnnouncements.setEnabled(enabled);
+  }
+
+  /** Pause pane painting without buffering output or stopping terminal effects. */
+  setRenderingPaused(paused: boolean): void {
+    if (this._destroyed || paused === this._renderingPaused) return;
+    this._renderingPaused = paused;
+    this._onVisibilityChange();
+  }
+
+  private _canRender(): boolean {
+    return (
+      !this._destroyed &&
+      !this._renderingPaused &&
+      this.element.ownerDocument.visibilityState !== "hidden"
+    );
   }
 
   /** Capture retained history and the active screen without changing selection. */
@@ -548,7 +588,7 @@ export class WTerm {
   }
 
   private _paintSearch(): void {
-    if (!this.renderer || !this.bridge) return;
+    if (!this.renderer || !this.bridge || !this._canRender()) return;
     const fragment = document.createDocumentFragment();
     const matches = this._search.matches;
     if (!matches.length) {
@@ -627,7 +667,12 @@ export class WTerm {
   }
 
   private _scheduleRender(): void {
-    if (this._destroyed || this.rafId != null) return;
+    if (
+      !this._canRender() ||
+      this._synchronizedOutputState === "held" ||
+      this.rafId != null
+    )
+      return;
     this.rafId = requestAnimationFrame(() => {
       this.rafId = null;
       this._doRender();
@@ -716,6 +761,7 @@ export class WTerm {
 
   private _doRender(): void {
     if (
+      !this._canRender() ||
       !this.bridge ||
       !this.renderer ||
       this._synchronizedOutputState === "held"
@@ -811,12 +857,14 @@ export class WTerm {
     this._textCapture.resume(this.bridge);
     this._outputAnnouncements.rendered();
 
-    const title = this.bridge.getTitle();
-    if (title !== null && this.onTitle) {
-      this.onTitle(title);
-    }
+    this._deliverTitle();
 
     this._drainResponses();
+  }
+
+  private _deliverTitle(): void {
+    const title = this.bridge?.getTitle() ?? null;
+    if (title !== null) this.onTitle?.(title);
   }
 
   private _drainResponses(): { hasError: boolean; error?: unknown } {
@@ -1024,6 +1072,10 @@ export class WTerm {
     this.element.removeEventListener("click", this._onMouseSelect);
     this.element.removeEventListener("scroll", this._onScroll);
     this.element.ownerDocument.removeEventListener("copy", this._onCopy);
+    this.element.ownerDocument.removeEventListener(
+      "visibilitychange",
+      this._onVisibilityChange,
+    );
     this.element.ownerDocument.removeEventListener(
       "keydown",
       this._onModifierChange,
