@@ -28,6 +28,8 @@ export interface GhosttyExports {
 
   // Render state
   update(ptr: number): void;
+  /** 0 = foreground, 1 = background, 2 = cursor; -1 when unset. */
+  get_color_override?(ptr: number, target: number): number;
   get_viewport(ptr: number, buf_ptr: number): number;
   /** 20-byte cells with underline style/color. Optional for older binaries. */
   get_viewport_v2?(ptr: number, buf_ptr: number): number;

@@ -1,4 +1,9 @@
 .wterm {
+  /* Application overrides are owned by the renderer; each terminal is isolated. */
+  --term-app-fg: initial;
+  --term-app-bg: initial;
+  --term-app-cursor: initial;
+
   --term-fg: #d4d4d4;
   --term-bg: #1e1e1e;
   --term-cursor: #aeafad;
@@ -27,8 +32,8 @@
   --term-row-height: 17px;
 
   position: relative;
-  background: var(--term-bg);
-  color: var(--term-fg);
+  background: var(--term-app-bg, var(--term-bg));
+  color: var(--term-app-fg, var(--term-fg));
   font-family: var(--term-font-family);
   font-size: var(--term-font-size);
   font-kerning: none;
@@ -136,8 +141,8 @@
   width: fit-content;
   max-width: 100%;
   white-space: normal;
-  background: var(--term-bg);
-  color: var(--term-fg);
+  background: var(--term-app-bg, var(--term-bg));
+  color: var(--term-app-fg, var(--term-fg));
   user-select: none;
   pointer-events: none;
   z-index: 4;
@@ -283,13 +288,13 @@
 .term-cursor {
   color: var(--term-cell-fg, inherit);
   background: var(--term-cell-bg, transparent);
-  outline: 1px solid var(--term-cursor);
+  outline: 1px solid var(--term-app-cursor, var(--term-cursor));
   outline-offset: -1px;
 }
 
 .wterm.focused .term-cursor {
-  background: var(--term-cursor);
-  color: var(--term-bg);
+  background: var(--term-app-cursor, var(--term-cursor));
+  color: var(--term-app-bg, var(--term-bg));
   outline: none;
 }
 
@@ -302,11 +307,12 @@
 }
 
 .term-grid[data-cursor-shape="bar"] .term-cursor {
-  --term-cursor-shadow: inset 2px 0 0 var(--term-cursor);
+  --term-cursor-shadow: inset 2px 0 0 var(--term-app-cursor, var(--term-cursor));
 }
 
 .term-grid[data-cursor-shape="underline"] .term-cursor {
-  --term-cursor-shadow: inset 0 -2px 0 var(--term-cursor);
+  --term-cursor-shadow: inset 0 -2px 0
+    var(--term-app-cursor, var(--term-cursor));
 }
 
 .wterm.focused.cursor-blink .term-cursor,
@@ -319,8 +325,8 @@
 @keyframes cursor-blink {
   0%,
   100% {
-    background: var(--term-cursor);
-    color: var(--term-bg);
+    background: var(--term-app-cursor, var(--term-cursor));
+    color: var(--term-app-bg, var(--term-bg));
   }
   50% {
     background: var(--term-cell-bg, transparent);

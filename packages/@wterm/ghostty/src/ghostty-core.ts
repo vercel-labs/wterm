@@ -1,6 +1,7 @@
 import type {
   CellData,
   CursorState,
+  TerminalColorOverrides,
   UnhandledSequence,
   TerminalCore,
   TerminalGraphicsState,
@@ -222,6 +223,19 @@ export class GhosttyCore implements TerminalCore {
   }
 
   // -- I/O --
+
+  getColorOverrides(): TerminalColorOverrides {
+    const read = this.wasm.exports.get_color_override;
+    const colors: TerminalColorOverrides = {};
+    if (this._disposed || this.termPtr === 0 || !read) return colors;
+    for (const [index, key] of (
+      ["foreground", "background", "cursor"] as const
+    ).entries()) {
+      const value = read(this.termPtr, index);
+      if (value >= 0) colors[key] = value;
+    }
+    return colors;
+  }
 
   writeString(str: string, afterChunk?: () => void): void {
     if (this._disposed || this.termPtr === 0) return;

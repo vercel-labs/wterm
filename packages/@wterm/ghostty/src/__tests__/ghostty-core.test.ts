@@ -69,6 +69,7 @@ const { CELL_BYTES } = await import("../wasm-bindings.js");
 it("reports unknown row metadata when an older WASM binary omits the exports", async () => {
   const core = await GhosttyCore.load();
   core.init(80, 24);
+  expect(core.getColorOverrides()).toEqual({});
   expect(core.getRowMetadata(0)).toBeNull();
   expect(core.getScrollbackRowMetadata(0)).toBeNull();
   core.dispose();

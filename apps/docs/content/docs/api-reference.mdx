@@ -38,6 +38,23 @@ Complete reference for all wterm options, methods, types, and transport APIs.
 
 These fields are optional so custom `TerminalCore` implementations remain source-compatible.
 
+## Application Color Overrides
+
+`TerminalCore.getColorOverrides?()` returns a caller-owned
+`TerminalColorOverrides` snapshot with optional `foreground`, `background`,
+and `cursor` fields, each a 24-bit `0xRRGGBB` value. Zero is black. Omit a field
+to use the host's current CSS theme. These are application overrides, not
+configured theme colors, and reading them does not consume them. A missing
+method is equivalent to an empty snapshot.
+
+Ghostty supplies OSC 10/11/12 overrides and clears each with OSC 110/111/112.
+Its native color state survives resize, screen switches, SGR 0, and RIS;
+reinitialization clears it. Older WASM binaries and uninitialized/disposed
+Ghostty cores return an empty snapshot. The built-in core omits this method.
+
+See [Application color changes](/themes#application-color-changes) for CSS
+themes and rendering behavior.
+
 ## Row Metadata
 
 `TerminalCore` has two optional methods for reading soft-wrap relationships.

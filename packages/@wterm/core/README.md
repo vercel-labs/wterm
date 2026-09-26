@@ -133,6 +133,18 @@ can adopt either optional field; `UnderlineStyle` is exported by `@wterm/core`.
 
 The built-in core supports ASCII (`B`), British (`A`), and DEC Special Graphics (`0`) designations for G0–G3. For example, `\x1b(0lqqk\x1b(B` produces `┌──┐`. SI/SO select G0/G1; `ESC n/o` select G2/G3, and `ESC N/O` select them for one character. Cursor save/restore preserves character-set state. Mapping affects ASCII characters only, so UTF-8 text remains intact.
 
+`TerminalCore.getColorOverrides?()` returns a caller-owned
+`TerminalColorOverrides` snapshot with optional `foreground`, `background`,
+and `cursor` fields, each a 24-bit `0xRRGGBB` value. Zero is black. Omit a field
+to use the host's current CSS theme. These are application overrides, not
+configured theme colors, and reading them does not consume them. A missing
+method is equivalent to an empty snapshot.
+
+Ghostty supplies OSC 10/11/12 overrides and clears each with OSC 110/111/112.
+Its native color state survives resize, screen switches, SGR 0, and RIS;
+reinitialization clears it. Older WASM binaries and uninitialized/disposed
+Ghostty cores return an empty snapshot. The built-in core omits this method.
+
 `CursorState.shape` (`"block"`, `"bar"`, or `"underline"`) and `blinking` are
 optional for custom cores. The built-in and Ghostty cores expose both fields
 from DECSCUSR (`CSI Ps SP q`) and cursor blink mode (`CSI ? 12 h/l`). Missing

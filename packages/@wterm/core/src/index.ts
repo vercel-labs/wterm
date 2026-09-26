@@ -3,6 +3,7 @@ export type {
   UnderlineStyle,
   CursorShape,
   CursorState,
+  TerminalColorOverrides,
   GraphicsResourceState,
   HyperlinkResourceState,
   MouseEncoding,
