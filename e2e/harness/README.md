@@ -12,6 +12,11 @@ Rendering-pause cases verify that inactive panes keep parsing terminal replies,
 titles, bells, history, screen switches, and resizes while their DOM stays
 unchanged. Resuming respects synchronized drawing and paints the latest state.
 
+`scrollback-reuse.spec.ts` checks that scrolling only constructs DOM for entering
+history rows and incoming output leaves unchanged history DOM intact. Both
+cores retain native selections, Unicode copy text, links, and row backgrounds
+across those updates in all three browser engines.
+
 Requires macOS or Linux, Node.js 24+, pnpm 11+, and a C++/Python build toolchain on Linux for `node-pty`. On macOS the package uses prebuilt binaries; the preparation script restores the published spawn helper's executable bit. The workspace allows `node-pty`'s native install scripts so clean Linux installs build the binding.
 
 From the repository root:

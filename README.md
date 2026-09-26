@@ -51,7 +51,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Application-controlled cursors** — block, bar, and underline shapes with terminal-requested blinking and a host override
 - **Window titles** — OSC 0/2 title changes reach `onTitle` with either the built-in or Ghostty core
 - **Bell events** — BEL reaches `onBell(count)` through either core, leaving sound or visual alerts to the host app
-- **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window
+- **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window; overlapping history rows reuse their DOM as you scroll
 - **Full-history Find** — incremental plain-text search, match counts, highlights, and next/previous navigation across retained output; Ghostty searches across soft wraps
 - **Row-wrap metadata** — the Ghostty core exposes soft-wrap relationships in the live screen and retained history, including after reflow
 - **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws and column insertions/deletions aligned

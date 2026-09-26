@@ -30,6 +30,14 @@ their existing cancellation rules still apply. Pending output announcements
 are discarded on pause. Synchronized drawing continues to hold a frame until
 the application ends the update or its recovery timeout expires.
 
+### Scrollback rendering
+
+Scrollback keeps a bounded window of mounted rows. As you scroll, overlapping
+rows reuse their existing elements; unchanged text and links keep their DOM
+nodes when new output arrives. This reduces DOM work while reading history
+without changing selection, copy, or the amount of retained history. The
+behavior is automatic for both cores and all framework bindings.
+
 ### PTY size
 
 After `init()` or `resize()`, read `wt.cols` and `wt.rows` to size a connected

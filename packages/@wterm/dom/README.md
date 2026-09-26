@@ -26,6 +26,15 @@ npm install @wterm/dom
 
 The WASM binary is embedded in the package — no extra setup required. To serve it separately instead, pass `wasmUrl`.
 
+## Scrollback rendering
+
+History uses a bounded window of mounted rows. Scrolling reuses overlapping row
+elements, and unchanged text and links keep their DOM nodes when output arrives.
+The renderer compares generated content before updating the DOM, avoiding
+temporary row construction and HTML parsing for retained rows. History content,
+cell metadata, and backgrounds still refresh when needed; selection and copy
+retain their existing behavior.
+
 ## Input accessibility
 
 The terminal's input is a native multiline textbox named **Terminal** by default. Set `aria-label`, `aria-labelledby`, `aria-describedby`, or `aria-description` on the host element to name or describe that input. Changes stay synchronized; referenced labels and descriptions use the browser's normal ARIA precedence. For example:
