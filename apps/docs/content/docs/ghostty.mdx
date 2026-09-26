@@ -340,6 +340,8 @@ Ghostty also exposes synchronized-output mode (`CSI ? 2026 h/l`) and its generat
 
 Kitty keyboard query and negotiation operate on Ghostty's native active-screen state. Primary and alternate screens have independent flag stacks, DECSTR preserves them, and RIS clears them. The DOM renderer reads those flags directly instead of maintaining a TypeScript shadow state.
 
+The bundled binary includes upstream's [WASM page-initialization fix](https://github.com/ghostty-org/ghostty/commit/420de124f04aa322bf250098cc62d7195db94bfd). New and replacement terminal pages are cleared before use, including release builds where the allocator may return memory used by earlier terminal state. If you serve the binary from a public directory, copy the updated package asset when upgrading.
+
 ## Rebuilding the WASM
 
 Only needed by maintainers. Requires [Zig 0.15.2](https://ziglang.org/download/),

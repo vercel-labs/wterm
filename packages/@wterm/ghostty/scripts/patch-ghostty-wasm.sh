@@ -84,6 +84,32 @@ new_pa = '''inline fn pageAllocator() Allocator {
 if 'wasm_allocator' not in src[src.find('inline fn pageAllocator()'):src.find('inline fn pageAllocator()') + 700]:
     src = src.replace(old_pa, new_pa, 1)
 
+# Backport ghostty-org/ghostty@420de124f04aa322bf250098cc62d7195db94bfd.
+# Native page allocators supply zeroed memory. The WASM allocator can return
+# previously freed slots, so both initial and replacement pages need clearing
+# in release builds as well as runtime-safety builds.
+old_zero = 'if (comptime std.debug.runtime_safety) @memset(page_buf, 0);'
+new_zero = '''if (comptime std.debug.runtime_safety or builtin.os.tag == .freestanding)
+            @memset(page_buf, 0);'''
+if src.count(old_zero) != 2:
+    raise SystemExit('PageList page initialization shape changed')
+src = src.replace(old_zero, new_zero)
+src = src.replace(
+    '''// In runtime safety modes we have to memset because the Zig allocator
+        // interface will always memset to 0xAA for undefined. In non-safe modes
+        // we use a page allocator and the OS guarantees zeroed memory.''',
+    '''// Runtime-safety allocators initialize to undefined, 0xAA. WASM
+        // allocators also reuse freed slots without zeroing them, unlike
+        // native OS page allocators.''',
+    1,
+)
+src = src.replace(
+    '''// Required only with runtime safety because allocators initialize
+    // to undefined, 0xAA.''',
+    '''// Clear both runtime-safety allocations and reused WASM slots.''',
+    1,
+)
+
 if 'discarded_rows: usize' not in src:
     src = src.replace(
         'total_rows: usize,\\n\\n/// The list of tracked pins.',
