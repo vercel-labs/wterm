@@ -7,8 +7,9 @@ const require = createRequire(import.meta.url);
 const args = process.argv.slice(2);
 const load = args[0] === "--load";
 const input = args[0] === "--input";
-if (load || input) args.shift();
-const harness = await createHarnessServer({ load: load || input });
+const search = args[0] === "--search";
+if (load || input || search) args.shift();
+const harness = await createHarnessServer({ load: load || input || search });
 let child;
 let interrupted;
 let killTimer;
@@ -31,11 +32,13 @@ try {
       "--config",
       fileURLToPath(
         new URL(
-          input
-            ? "input.config.ts"
-            : load
-              ? "load.config.ts"
-              : "playwright.config.ts",
+          search
+            ? "search.config.ts"
+            : input
+              ? "input.config.ts"
+              : load
+                ? "load.config.ts"
+                : "playwright.config.ts",
           import.meta.url,
         ),
       ),

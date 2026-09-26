@@ -137,3 +137,14 @@ jobs:
           name: pty-baseline
           path: e2e/test-results/pty/
           if-no-files-found: ignore
+
+      - name: Terminal history search smoke tests
+        run: pnpm bench:search
+
+      - name: Upload terminal history search reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-history-search
+          path: e2e/test-results/search/
+          if-no-files-found: ignore
