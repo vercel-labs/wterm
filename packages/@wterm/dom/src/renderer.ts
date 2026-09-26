@@ -12,6 +12,7 @@ import {
   type RenderedRowText,
 } from "./selection.js";
 import { selectionRange, type SelectionUnit } from "./selection-range.js";
+import { rectangleSelection } from "./rectangle-selection.js";
 import {
   TrackedSelection,
   MAX_TRACKED_SELECTION_ROWS,
@@ -1088,6 +1089,46 @@ export class Renderer {
     native.setBaseAndExtent(...start, ...end);
     this.selection?.capture(core, this.selectionRows());
     return true;
+  }
+
+  rectangle(
+    core: TerminalCore,
+    start: TerminalPosition,
+    end: TerminalPosition,
+    beforeSelect: () => void,
+  ) {
+    if (!this.painted || this.needsSetup) return null;
+    const rectangle = rectangleSelection(core, start, end);
+    if (!rectangle) return null;
+    beforeSelect();
+    return this.painted && !this.needsSetup ? rectangle : null;
+  }
+
+  /** Clamp a drag to the nearest mounted row without mounting extra history. */
+  dragPositionAt(
+    clientX: number,
+    clientY: number,
+    charWidth: number,
+  ): TerminalPosition | null {
+    if (!this.painted || this.needsSetup || charWidth <= 0) return null;
+    let nearest: { row: number; col: number; distance: number } | null = null;
+    for (const { row, element } of this.searchRows()) {
+      const rect = element.getBoundingClientRect();
+      const distance = Math.max(rect.top - clientY, clientY - rect.bottom, 0);
+      if (!nearest || distance < nearest.distance)
+        nearest = {
+          row,
+          distance,
+          col: Math.max(
+            0,
+            Math.min(
+              this.cols - 1,
+              Math.floor((clientX - rect.left) / charWidth),
+            ),
+          ),
+        };
+    }
+    return nearest && { row: nearest.row, col: nearest.col };
   }
 
   requestSetup(): void {

@@ -78,6 +78,8 @@ Ghostty cases also preserve backward Unicode selections through narrower/wider r
 
 `word-line-selection.spec.ts` exercises double/triple clicks, wrapped paths, Unicode cells, unmounted logical lines, reflow, native Copy/Paste, mouse-reporting ownership, and pending frames. The harness exposes `selectWord(position)` and `selectLine(row)` in retained-buffer coordinates.
 
+`rectangle-selection.spec.ts` checks Alt/Option-drag, Unicode edge highlights, native Copy/Paste, unmounted history, bounded edge scrolling, application mouse ownership, and cancellation during output or focus changes. The harness exposes `selectRectangle(start, end)` with inclusive retained-row/cell corners.
+
 `cell-width.spec.ts` checks column positions across ASCII, braille, box drawing,
 wide characters, links, cursors, and scrollback. It also exercises font changes
 and enlarged fallback glyphs without relying on a particular installed font.

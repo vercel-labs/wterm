@@ -121,11 +121,13 @@
   contain: layout style;
 }
 
-.term-select-all .term-row {
+.term-select-all .term-row,
+.term-rectangle-row {
   position: relative;
 }
 
-.term-select-all .term-row::after {
+.term-select-all .term-row::after,
+.term-rectangle-row::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -133,6 +135,12 @@
   pointer-events: none;
   user-select: none;
   z-index: 3;
+}
+
+.term-rectangle-row::after {
+  left: var(--term-selection-left);
+  width: var(--term-selection-width);
+  right: auto;
 }
 
 .term-selection-status {

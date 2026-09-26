@@ -132,6 +132,8 @@ Use `await instance.selectAll()` to select all retained history and the active s
 
 Double-click words or paths and triple-click logical lines. Use `instance.selectWord({ row, col })` or `instance.selectLine(row)` for the same selection from host controls; coordinates start at the oldest retained row. Ghostty joins confirmed soft wraps, including unmounted history. See the linked selection reference for boundaries, limits, and mouse-reporting behavior.
 
+Alt/Option-drag selects rectangular columns; Shift+Alt selects inside mouse-reporting applications. Use `instance.selectRectangle(start, end)` with inclusive retained-row/cell corners, then read `instance.getSelectionText()`. Rectangles preserve selected spaces and physical row breaks, clear on output or resize, and keep scrolling bounded. See [rectangular selection](../dom/README.md#rectangular-selection) for copy shortcuts and limits.
+
 ## Terminal search
 
 Use the underlying `WTerm` instance to call `search(query, { caseSensitive })`, `findNext()`, `findPrevious()`, `getSearchState()`, and `clearSearch()`. Set its `onSearchChange` callback to update your Find controls. Access the instance through `onReady` or `bind:instance`. Search includes unmounted retained history; Ghostty also joins soft wraps. See the [search semantics and limits](../dom/README.md#terminal-search).

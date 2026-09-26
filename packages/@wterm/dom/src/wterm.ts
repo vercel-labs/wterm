@@ -6,6 +6,7 @@ import {
 import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
 import { HistorySelection } from "./history-selection.js";
+import { RectangleDrag } from "./rectangle-drag.js";
 import { TextCapture } from "./text-capture.js";
 import { OutputAnnouncements } from "./output-announcements.js";
 import { DebugAdapter } from "./debug.js";
@@ -83,6 +84,7 @@ export class WTerm {
   private _windowSizeQueryState: 0 | 1 | 2 | 3 | 4 | 6 = 0;
   private _search: SearchController;
   private _historySelection: HistorySelection;
+  private _rectangleDrag: RectangleDrag;
   private _textCapture = new TextCapture();
   private _outputAnnouncements: OutputAnnouncements;
   private _searchReveal = false;
@@ -142,6 +144,44 @@ export class WTerm {
     this.element.appendChild(this._container);
     this.element.classList.add("wterm");
     this._historySelection = new HistorySelection(this.element);
+    this._rectangleDrag = new RectangleDrag(this.element, {
+      start: (event) => {
+        if (
+          !(event.target instanceof Element) ||
+          !this.bridge ||
+          !this._canRender()
+        )
+          return null;
+        const point = this.renderer?.positionAt(
+          event.target,
+          event.clientX,
+          this._charWidth,
+        );
+        if (
+          !point ||
+          (!event.shiftKey &&
+            this.bridge.mouseTracking?.() &&
+            point.row >= this.bridge.getScrollbackCount())
+        )
+          return null;
+        return point;
+      },
+      position: (event) => {
+        const bounds = this.element.getBoundingClientRect();
+        return (
+          this.renderer?.dragPositionAt(
+            event.clientX,
+            Math.max(
+              bounds.top + 1,
+              Math.min(bounds.bottom - 1, event.clientY),
+            ),
+            this._charWidth,
+          ) ?? null
+        );
+      },
+      select: (start, end) => this.selectRectangle(start, end),
+      clear: () => this._historySelection.clear(),
+    });
     this._outputAnnouncements = new OutputAnnouncements(
       this.element,
       () => this.bridge,
@@ -154,6 +194,7 @@ export class WTerm {
     this._onVisibilityChange = () => {
       if (this._canRender()) this._scheduleRender();
       else {
+        this._rectangleDrag.cancel();
         this._cancelScheduledRender();
         this._outputAnnouncements.invalidate();
       }
@@ -169,6 +210,7 @@ export class WTerm {
     );
 
     this._onClickFocus = (event) => {
+      if (event.defaultPrevented || this._historySelection.active) return;
       const target = event.target;
       if (target instanceof Element && target.closest(".term-link")) {
         if (
@@ -330,11 +372,13 @@ export class WTerm {
             ? { charWidth: this._charWidth, rowHeight: this._rowHeight }
             : null,
         () => {
+          this._rectangleDrag.cancel();
           this._historySelection.clear();
           this._scrollToBottom();
         },
         (data) => {
           this._outputAnnouncements.input();
+          this._rectangleDrag.cancel();
           this._historySelection.clear();
           this._scrollToBottom();
           if (this.onBinary) {
@@ -350,7 +394,10 @@ export class WTerm {
             void this.selectAll();
           },
           hasSelection: () => this._historySelection.active,
-          clearSelection: () => this._historySelection.clear(),
+          clearSelection: () => {
+            this._rectangleDrag.cancel();
+            this._historySelection.clear();
+          },
         },
       );
 
@@ -391,6 +438,7 @@ export class WTerm {
   write(data: string | Uint8Array): void {
     if (!this.bridge || this._destroyed) return;
     this._textCapture.cancel();
+    this._rectangleDrag.cancel();
     this._historySelection.invalidate();
     this.renderer?.beforeMutation(this.bridge);
     if (this.debug) this.debug.traceWrite(data);
@@ -448,6 +496,7 @@ export class WTerm {
   resize(cols: number, rows: number): void {
     if (!this.bridge || this._destroyed) return;
     this._textCapture.cancel();
+    this._rectangleDrag.cancel();
     this._historySelection.invalidate();
     this.renderer?.beforeMutation(this.bridge);
     this._shouldScrollToBottom =
@@ -531,6 +580,7 @@ export class WTerm {
   selectAll(): Promise<boolean> {
     if (this._destroyed || !this.renderer || !this.bridge)
       return Promise.resolve(false);
+    this._rectangleDrag.cancel();
     const selected = this._historySelection.select();
     this._scheduleRender();
     return selected;
@@ -546,12 +596,29 @@ export class WTerm {
     return this._selectUnit({ row, col: 0 }, "line");
   }
 
+  /** Select inclusive rectangle corners in retained physical-row coordinates. */
+  selectRectangle(start: TerminalPosition, end: TerminalPosition): boolean {
+    if (this._destroyed || !this.bridge || !this.renderer || !this._canRender())
+      return false;
+    const rectangle = this.renderer.rectangle(this.bridge, start, end, () => {
+      this.input?.focus();
+    });
+    if (!rectangle) return false;
+    this._historySelection.selectRectangle(rectangle);
+    this._historySelection.paintRectangle(
+      this.renderer.searchRows(),
+      this._charWidth,
+    );
+    return true;
+  }
+
   private _selectUnit(
     position: TerminalPosition,
     unit: "word" | "line",
   ): boolean {
     if (this._destroyed || !this.bridge || !this.renderer) return false;
     return this.renderer.select(this.bridge, position, unit, () => {
+      this._rectangleDrag.cancel();
       this._historySelection.clear();
       const active = this.element.ownerDocument.activeElement;
       if (
@@ -563,8 +630,9 @@ export class WTerm {
     });
   }
 
-  /** Cancel Select All and clear a native selection wholly owned by this terminal. */
+  /** Clear custom selection and any native selection wholly owned by this terminal. */
   clearSelection(): void {
+    this._rectangleDrag.cancel();
     this._historySelection.clear();
     const selection = this.element.ownerDocument.getSelection();
     if (!selection || selection.isCollapsed) return;
@@ -853,6 +921,10 @@ export class WTerm {
     this._paintSearch();
     this._search.resume(this.bridge);
     this._historySelection.resume(this.bridge);
+    this._historySelection.paintRectangle(
+      this.renderer.searchRows(),
+      this._charWidth,
+    );
     this._textCapture.resume(this.bridge);
     this._outputAnnouncements.rendered();
 
@@ -1061,6 +1133,7 @@ export class WTerm {
     this._destroyed = true;
     this._textCapture.cancel();
     this._historySelection.destroy();
+    this._rectangleDrag.destroy();
     this._outputAnnouncements.destroy();
     this._search.cancel();
     this.onSearchChange = null;

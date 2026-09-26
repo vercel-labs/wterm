@@ -242,6 +242,7 @@ export type HarnessAPI = {
   clearSelection: WTerm["clearSelection"];
   selectWord: WTerm["selectWord"];
   selectLine: WTerm["selectLine"];
+  selectRectangle: WTerm["selectRectangle"];
   readText: WTerm["readText"];
   setOutputAnnouncements: WTerm["setOutputAnnouncements"];
   setRenderingPaused: WTerm["setRenderingPaused"];
@@ -299,6 +300,7 @@ async function init() {
     clearSelection: () => terminal.clearSelection(),
     selectWord: (position) => terminal.selectWord(position),
     selectLine: (row) => terminal.selectLine(row),
+    selectRectangle: (start, end) => terminal.selectRectangle(start, end),
     readText: (options) => terminal.readText(options),
     setOutputAnnouncements: (enabled) =>
       terminal.setOutputAnnouncements(enabled),
