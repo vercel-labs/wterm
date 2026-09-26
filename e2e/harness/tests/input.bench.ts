@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { inputFixture, INPUT_WORKLOADS } from "../src/input-workloads";
 import { attachReport } from "./report";
+import { collectBrowserErrors } from "./browser-errors";
 
 const profile = process.env.WTERM_INPUT_PROFILE ?? "smoke";
 if (profile !== "smoke" && profile !== "measure")
@@ -47,8 +48,7 @@ for (const core of ["builtin", "ghostty"]) {
           sha256: hash.digest("hex"),
           chunkBytes: chunks.map((chunk) => chunk.length),
         };
-        const pageErrors: string[] = [];
-        page.on("pageerror", (error) => pageErrors.push(error.message));
+        const browserErrors = collectBrowserErrors(page);
         const host = await (await page.request.get("/health")).json();
         try {
           expect(host.activePtys).toBe(0);
@@ -143,7 +143,7 @@ for (const core of ["builtin", "ghostty"]) {
               expect(session.mountedRows).toBeLessThan(200);
             }
           }
-          expect(pageErrors).toEqual([]);
+          expect(browserErrors.errors).toEqual([]);
         } finally {
           if (!page.isClosed()) {
             const measurement = await page.evaluate(() => {
@@ -160,6 +160,8 @@ for (const core of ["builtin", "ghostty"]) {
               source,
               host,
               browser: browser.version(),
+              headless: testInfo.project.use.headless ?? true,
+              browserErrors,
               project: testInfo.project.name,
               repeat: testInfo.repeatEachIndex,
               measurement,

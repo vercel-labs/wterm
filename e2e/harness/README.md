@@ -236,7 +236,14 @@ The runner serves an in-memory production bundle and spawns no PTY for these
 cases. Per-case `input.json` attachments and a combined
 `e2e/test-results/input/input.json` include successes and failures, source commit
 and dirty status, fixture chunk sizes and SHA-256, WASM hashes, host/CPU, browser,
-viewport, font geometry, profile, and repeat index. Failed measurements retain
+viewport, font geometry, headless mode, profile, and repeat index. Reports retain
+the count of the browser's `ResizeObserver loop completed with undelivered
+notifications.` diagnostic separately: it means resize notifications were
+deferred to a later frame. This counts notifications forwarded by Playwright's
+page-error channel, not every native resize deferral. Other page errors fail the
+case, with up to 16 messages
+retained. A native resize-loop test checks this distinction without suppressing
+browser events. Failed measurements retain
 partial counters; failures before initialization have a null measurement.
 Probe correctness tests are included in the report with null measurements.
 CI uploads the directory as `terminal-input-responsiveness`.

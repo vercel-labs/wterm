@@ -1,4 +1,45 @@
 import { expect, test } from "@playwright/test";
+import { collectBrowserErrors } from "./browser-errors";
+
+test("records native resize deferrals without hiding application exceptions", async ({
+  page,
+  browserName,
+}) => {
+  const errors = collectBrowserErrors(page);
+  await page.goto("/input.html?core=builtin");
+  await expect(page.locator("#status")).toHaveText("Ready");
+  const before = errors.resizeObserverNotifications;
+  await page.evaluate(() => {
+    const box = document.createElement("div");
+    box.style.width = "10px";
+    document.body.append(box);
+    let notifications = 0;
+    const observer = new ResizeObserver(() => {
+      if (++notifications <= 2) box.style.width = `${10 + notifications}px`;
+      else {
+        observer.disconnect();
+        box.remove();
+      }
+    });
+    observer.observe(box);
+  });
+  // WebKit forwards this native diagnostic as a Playwright pageerror; the
+  // other backends do not. Application exceptions are checked on every engine.
+  if (browserName === "webkit") {
+    await expect
+      .poll(() => errors.resizeObserverNotifications)
+      .toBeGreaterThan(before);
+  }
+  expect(errors.errors).toEqual([]);
+  await page.evaluate(() => {
+    setTimeout(() => {
+      throw new Error("Application callback failed");
+    }, 0);
+  });
+  await expect
+    .poll(() => errors.errors)
+    .toContain("Application callback failed");
+});
 
 for (const core of ["builtin", "ghostty"]) {
   test(`${core} probe waits for matching DOM before counting a frame`, async ({
