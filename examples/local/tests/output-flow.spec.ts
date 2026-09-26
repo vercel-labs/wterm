@@ -1,3 +1,4 @@
+import { acceptTerminal, terminalReady } from "./terminal-route";
 import { expect, test, type WebSocketRoute } from "@playwright/test";
 import {
   INPUT_LIMIT,
@@ -36,6 +37,7 @@ for (const path of ["/", "/ghostty"]) {
       }
     };
     await page.routeWebSocket("**/api/terminal", (ws) => {
+      acceptTerminal(ws);
       socket = ws;
       ws.onMessage((data) => {
         const message = JSON.parse(data.toString());
@@ -54,6 +56,7 @@ for (const path of ["/", "/ghostty"]) {
     });
     await expect(terminal).toBeFocused();
     await expect.poll(() => !!socket).toBe(true);
+    await terminalReady(socket!);
     pump();
     await page.keyboard.type("echo alive");
     await expect.poll(() => input.join("")).toBe("echo alive");
@@ -74,6 +77,7 @@ test("oversized output closes the connection and reports the failure", async ({
   let socket: WebSocketRoute;
   let closed = false;
   await page.routeWebSocket("**/api/terminal", (ws) => {
+    acceptTerminal(ws);
     socket = ws;
     ws.onClose(() => {
       closed = true;
@@ -84,6 +88,7 @@ test("oversized output closes the connection and reports the failure", async ({
     page.getByRole("textbox", { name: "Terminal 1", exact: true }),
   ).toBeFocused();
   await expect.poll(() => !!socket).toBe(true);
+  await terminalReady(socket!);
   socket!.send(Buffer.alloc(OUTPUT_CHUNK + 1, "x"));
   await expect(
     page.getByRole("status").filter({ hasText: "buffer limit" }),
@@ -97,6 +102,7 @@ test("an oversized paste is rejected visibly and typing can continue", async ({
   const input: string[] = [];
   let connected = false;
   await page.routeWebSocket("**/api/terminal", (ws) => {
+    acceptTerminal(ws);
     ws.onMessage((data) => {
       const message = JSON.parse(data.toString());
       if (message.type === "resize") connected = true;

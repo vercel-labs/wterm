@@ -17,7 +17,8 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 ## How It Works
 
 - `server.ts` starts an HTTP + WebSocket server alongside Next.js
-- On each WebSocket connection, a PTY process is spawned with your default shell
+- A new terminal attaches to a server session and spawns your default shell after its initial dimensions arrive
+- A brief connection interruption resumes that same shell and existing browser terminal; missing output is replayed without repeating parsed bytes
 - The browser sends JSON input, resize, and byte acknowledgment messages over WebSocket; the server relays raw PTY bytes in binary frames and sends working-directory updates as JSON
 - Terminal resizing, including browser pixel dimensions, is forwarded to the PTY via resize messages
 - The server restores PTY pixel dimensions after each resize so Kitty clients such as `kitten icat` can detect image support
@@ -41,6 +42,7 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 |---|---|
 | `server.ts` | Custom server with WebSocket ↔ PTY bridge |
 | `lib/pty-output.ts` | Bounded output window and PTY pause/resume |
+| `lib/terminal-sessions.ts` | Session ownership, attachment tokens, replay, and expiry |
 | `lib/terminal-connection.ts` | Browser parsing tasks, acknowledgments, and bounded input |
 | `lib/terminal-protocol.ts` | Shared message types and buffer limits |
 | `app/page.tsx` | Built-in-core entry point |
@@ -67,9 +69,36 @@ for the final output to be consumed.
 Input messages, including their JSON envelope, must fit within 64 KiB; the
 browser also caps pending input at 64 KiB and reserves room for control
 messages. A busy connection or oversized paste rejects the whole input event
-and displays a message. Input is never retried automatically. Closing a session
-discards pending work and terminates its PTY; reconnecting or refreshing starts
-a new shell.
+and displays a message. Input is never retried automatically.
+
+## Reconnecting
+
+After detecting a connection interruption, the existing page retries for up to
+25 seconds. The workspace shows **Reconnecting…** and rejects input until the
+session returns. The terminal keeps its parser, screens, history, and graphics;
+the server replays only bytes after the terminal's last successfully parsed
+offset, including bytes whose acknowledgments were lost. A replacement socket
+owns input and resizing; callbacks from older sockets cannot affect the session.
+
+Detached sessions pause PTY reads and expire after 30 seconds. Retained sent
+output is limited to the existing 128 KiB/256-frame window; pending output
+remains capped at 256 KiB/1,024 chunks. The server allows at most 32 live or
+detached sessions. A shell that exits while detached can still deliver its final
+output after reattachment within that interval.
+
+Recent input may not have reached the shell when a connection breaks. It is
+never sent again automatically; the workspace reports this after reconnecting
+so you can check before retrying a command. The notice remains until you dismiss
+it, and dismissing returns focus to terminal input. Closing a connected session
+terminates its PTY and cancels pending work. Closing while disconnected cancels
+browser retries, and the server expires the detached PTY within 30 seconds.
+
+Recovery requires the same browser terminal instance. Attachment tokens stay in
+page memory and are never placed in URLs or browser storage. Refreshing or
+recreating a terminal starts a new shell. Server restarts, expired sessions, and
+unavailable output ranges end with a visible status instead of silently
+replacing a shell. This example does not restore sessions across refreshes or
+server restarts.
 
 This protocol is specific to the local example. Its client and server must be
 updated together; a bare `WebSocketTransport` client cannot connect directly.
@@ -78,9 +107,11 @@ updated together; a bare `WebSocketTransport` client cannot connect directly.
 
 Run `pnpm --filter local test` for queue, acknowledgment, input, and teardown
 checks. On macOS or Linux, this also streams 4 MiB through a real PTY and
-WebSocket, stalls consumption, and verifies exact bytes after resuming.
+WebSocket, stalls consumption, and verifies exact bytes after resuming. A second
+real-PTY case disconnects during 2 MiB of output, loses an acknowledgment, then
+verifies exact output, the original process identity, and explicit teardown.
 
-Run `pnpm --filter local build`, then `pnpm --filter local test:e2e` from the repository root. The browser suite starts an isolated production server and uses deterministic WebSocket output without spawning a shell. Chromium, Firefox, and WebKit cover streamed Unicode, synchronized drawing, input during output, buffer overflow, unmounted history, native read-only navigation and Copy, explicit refresh, cancellation, and focus return.
+Run `pnpm --filter local build`, then `pnpm --filter local test:e2e` from the repository root. The browser suite starts an isolated production server and uses deterministic WebSocket output without spawning a shell. Chromium, Firefox, and WebKit cover streamed Unicode, synchronized drawing, input during output, buffer overflow, unmounted history, native read-only navigation and Copy, explicit refresh, cancellation, and focus return. Reconnection cases preserve partial UTF-8, alternate screens, synchronized drawing, terminal replies, and focus, reject disconnected input, and report an unavailable session.
 
 ## Output announcements
 

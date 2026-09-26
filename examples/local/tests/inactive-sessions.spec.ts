@@ -1,3 +1,4 @@
+import { acceptTerminal } from "./terminal-route";
 import { expect, test, type WebSocketRoute } from "@playwright/test";
 
 for (const path of ["/", "/ghostty"]) {
@@ -9,6 +10,7 @@ for (const path of ["/", "/ghostty"]) {
     const consumed: number[] = [];
     const inputs: string[][] = [];
     await page.routeWebSocket("**/api/terminal", (socket) => {
+      acceptTerminal(socket);
       const index = sockets.length;
       sockets.push(socket);
       sent.push(0);

@@ -142,3 +142,39 @@ test("process exit waits for the final byte to be parsed; stop cancels pending w
   assert.equal(other.chunks.length, 0);
   assert.equal(other.output.pendingBytes, 0);
 });
+
+test("detached output pauses and replays only missing bytes before pending output", () => {
+  const { output, chunks, events } = setup();
+  output.push("first");
+  output.acknowledge(2);
+  output.push("second");
+  output.detach();
+  output.push("third");
+  assert.equal(output.pendingBytes, 5);
+  assert.equal(Buffer.concat(chunks).toString(), "firstsecond");
+  assert.equal(output.canResume(1), false);
+  assert.equal(output.canResume(12), false);
+  // The final ACK was lost; the browser proves it parsed all of 'first'.
+  assert.equal(output.attach(5), true);
+  assert.equal(Buffer.concat(chunks).toString(), "firstsecondsecondthird");
+  output.acknowledge(16);
+  assert.equal(output.outstandingBytes, 0);
+  assert.deepEqual(events, ["pause", "resume"]);
+  output.stop();
+});
+
+test("replay respects socket capacity and keeps the original frame bound", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { output, chunks, buffer } = setup();
+  for (let i = 0; i < OUTPUT_FRAMES; i++) output.push("x");
+  output.detach();
+  buffer(OUTPUT_WINDOW);
+  assert.equal(output.attach(0), true);
+  assert.equal(chunks.length, OUTPUT_FRAMES);
+  buffer(0);
+  for (let i = 0; i < 4; i++) t.mock.timers.tick(16);
+  assert.equal(chunks.length, OUTPUT_FRAMES * 2);
+  assert.equal(output.outstandingFrames, OUTPUT_FRAMES);
+  output.acknowledge(OUTPUT_FRAMES);
+  output.stop();
+});
