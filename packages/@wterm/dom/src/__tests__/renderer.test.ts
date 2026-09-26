@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Renderer } from "../renderer.js";
 import type { CellData, CursorState } from "@wterm/core";
 
@@ -619,9 +619,78 @@ describe("Renderer", () => {
 
       renderer.render(bridge as any, viewport);
       const row = container.querySelector(".term-scrollback-row");
+      const observer = new MutationObserver(() => {});
+      observer.observe(row!, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+      });
       renderer.render(bridge as any, viewport);
 
       expect(container.querySelector(".term-scrollback-row")).toBe(row);
+      expect(observer.takeRecords()).toEqual([]);
+      observer.disconnect();
+    });
+
+    it("only creates newly visible history rows when the viewport advances", () => {
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 2;
+      bridge.getScrollbackCell = (offset: number) =>
+        makeCell(String(offset % 10));
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 5000,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 1,
+      };
+      renderer.render(bridge as any, viewport);
+      const before = Array.from(
+        container.querySelectorAll(".term-scrollback-row"),
+      );
+      const textNodes = before
+        .slice(1)
+        .map((row) => row.firstChild!.firstChild);
+      const create = vi.spyOn(document, "createElement");
+      renderer.render(bridge as any, { ...viewport, scrollTop: 5010 });
+      const createdRows = create.mock.results.filter(({ value }) =>
+        value?.classList?.contains("term-scrollback-row"),
+      );
+      create.mockRestore();
+      const after = Array.from(
+        container.querySelectorAll(".term-scrollback-row"),
+      );
+      expect(after.slice(0, 3)).toEqual(before.slice(1));
+      expect(
+        after.slice(0, 3).map((row) => row.firstChild!.firstChild),
+      ).toEqual(textNodes);
+      expect(after.map((row) => row.textContent)).toEqual([
+        "99",
+        "88",
+        "77",
+        "66",
+      ]);
+      expect(createdRows).toHaveLength(1);
+    });
+
+    it("refreshes changed history content and backgrounds in the retained row", () => {
+      let char = "A";
+      let bgRgb: number | undefined = 0xff0000;
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1;
+      bridge.getScrollbackLineLen = () => 2;
+      bridge.getScrollbackCell = () => ({ ...makeCell(char), bgRgb });
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+      const row = container.querySelector<HTMLElement>(".term-scrollback-row")!;
+      expect(row.style.background).toBe("rgb(255, 0, 0)");
+      char = "B";
+      bgRgb = undefined;
+      renderer.render(bridge as any);
+      expect(container.querySelector(".term-scrollback-row")).toBe(row);
+      expect(row.textContent).toBe("BB");
+      expect(row.style.background).toBe("");
     });
 
     it("preserves retained row elements across rollover", () => {

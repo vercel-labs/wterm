@@ -375,6 +375,7 @@ export class Renderer {
   private searchLayer: HTMLDivElement;
   private rowText = new WeakMap<HTMLElement, RenderedRowText>();
   private rowHtml = new WeakMap<HTMLElement, string>();
+  private rowBackground = new WeakMap<HTMLElement, string>();
   private selection: TrackedSelection | null = null;
   private needsSetup = false;
   private painted = false;
@@ -401,6 +402,7 @@ export class Renderer {
     this.container.innerHTML = "";
     this.rowText = new WeakMap();
     this.rowHtml = new WeakMap();
+    this.rowBackground = new WeakMap();
     this.rowEls = [];
     this.prevRowBg = [];
     this._scrollbackRowEls = [];
@@ -761,17 +763,17 @@ export class Renderer {
         rowEl.style.background = bgCss;
         this.prevRowBg[rowIndex] = bgCss;
       }
-    } else {
+    } else if (this.rowBackground.get(rowEl) !== bgCss) {
       rowEl.style.background = bgCss;
+      this.rowBackground.set(rowEl, bgCss);
     }
   }
 
-  private _buildScrollbackRowEl(
+  private _updateScrollbackRow(
     core: TerminalCore,
     sbOffset: number,
-  ): HTMLDivElement {
-    const rowEl = document.createElement("div");
-    rowEl.className = "term-row term-scrollback-row";
+    rowEl: HTMLDivElement,
+  ): void {
     const lineLen = core.getScrollbackLineLen(sbOffset);
 
     this._buildRowContent(
@@ -785,7 +787,6 @@ export class Renderer {
     const metadata = core.getScrollbackRowMetadata?.(sbOffset);
     content.metadata =
       metadata && lineLen <= this.cols ? { ...metadata } : null;
-    return rowEl;
   }
 
   private syncScrollback(core: TerminalCore, viewport?: RenderViewport): void {
@@ -887,24 +888,17 @@ export class Renderer {
       previousIndex = index;
       const key = discardedCount + index;
       const offset = scrollbackCount - 1 - index;
-      const candidate = this._buildScrollbackRowEl(core, offset);
-      const existing = previous.get(key);
-      let rowEl = candidate;
-      let positioned = false;
-
-      if (
-        existing &&
-        existing.innerHTML === candidate.innerHTML &&
-        existing.style.cssText === candidate.style.cssText
-      ) {
-        rowEl = existing;
-        this.rowText.set(existing, this.rowText.get(candidate)!);
-      } else if (existing) {
-        existing.replaceWith(candidate);
-        positioned = true;
+      let rowEl = previous.get(key);
+      if (!rowEl) {
+        rowEl = document.createElement("div");
+        rowEl.className = "term-row term-scrollback-row";
       }
+      // Compare the generated content before touching DOM, as for live rows.
+      // Building a detached candidate would parse and serialize every retained
+      // row even when only one new history row enters the viewport.
+      this._updateScrollbackRow(core, offset, rowEl);
 
-      if (!positioned && rowEl !== nextSibling) {
+      if (rowEl !== nextSibling) {
         this.container.insertBefore(
           rowEl,
           nextSibling ?? this._scrollbackBottomSpacer,
