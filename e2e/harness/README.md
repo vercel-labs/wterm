@@ -169,6 +169,85 @@ multiple repetitions. Keep per-run results rather than pooling samples across
 machines. These reports do not compare wterm with desktop Ghostty or xterm.js,
 measure startup/idle CPU, or certify input latency or multi-terminal behavior.
 
+## Input responsiveness measurements
+
+```bash
+pnpm bench:input
+WTERM_INPUT_PROFILE=measure pnpm bench:input --project chromium --repeat-each 3
+```
+
+This separate suite sends trusted keyboard events through Playwright and echoes
+them synchronously through the terminal's `onData`/`write` path. Both cores run
+idle, ANSI scrolling, and screen redraw workloads with one or eight independent
+80 × 24 terminals in Chromium, Firefox, and WebKit. Only the first terminal is
+visible and focused; the others are inert, CSS-hidden, and rendering-paused while
+continuing to parse output. Row 1 is reserved for echo, with output restricted to
+rows 2–24. The partial scroll region keeps this workload out of retained history;
+use the output-load suite to exercise history growth.
+
+Each non-idle session has an independent zero-delay timer submitting one complete
+chunk of at most 16 KiB per task. The producer cycles over 32 precomputed chunks;
+records never split escape sequences that could consume an interleaved echo.
+Generation, font loading, initialization, a warmup write, and two frame callbacks
+precede measurement. Producer scheduling, instrumentation, and automation pacing
+affect elapsed time and delivered throughput. This is a declared bounded producer
+policy, not a fixed output rate or a saturation benchmark.
+
+A capture-phase `keydown` listener timestamps each trusted lowercase key before
+WTerm handles it. The echo contains a unique sequence marker. A MutationObserver
+records when that exact marker reaches the first live DOM row, then schedules an
+animation callback which verifies the marker is still present before counting a
+completed sample. Arbitrary frame callbacks cannot satisfy a missing DOM echo.
+The first key waits until every producer has submitted output. Probes are serial:
+the driver waits for completion before sending another key.
+Automation round trips and completion time determine the typing rate. The default
+`smoke` profile uses 16 keys per case; `measure` uses 256. Percentiles over 16 keys
+are smoke data only, and even 256 samples offer limited evidence about the tail.
+
+| Field | Boundary |
+| --- | --- |
+| `keyDispatchToDOMMs` | Capture-phase browser key dispatch to observation of the matching echo in DOM |
+| `keyDispatchToFrameMs` | Same dispatch to a subsequent animation callback after that DOM observation |
+| `sessions[].writeMs` | Synchronous background-output writes, excluding echo writes |
+| `sessions[].renderMs` | Renderer calls during measurement, including echo rendering; inactive sessions must have zero calls |
+| `sessions[].deliveredMiBPerSecond` | Actual submitted background bytes per elapsed wall time, separately for every session |
+| `resources` | Before/after WASM capacity, optional JS heap, mounted rows, DOM elements, and retained history counts |
+
+Timings include observer and harness overhead. They exclude OS/driver delivery,
+time waiting in the browser's input queue **before dispatch**, PTY/network delay,
+and physical display presentation. A frame callback is an opportunity to paint;
+it does not establish when pixels were displayed. These measurements cannot
+certify end-to-end key-to-pixel latency or compare with desktop Ghostty.
+Resource snapshots have the same capacity, heap, and sampling limitations as
+the output-load suite. Echo summaries retain all samples (up to 1,024); write and
+render percentiles retain the latest 8,192 samples, with whole-run mean/max/count.
+
+The suite asserts every expected echo, finite timing values, output byte counts,
+final parsed batch markers in every session, bounded mounted rows, and no hidden
+renderer calls. Lost focus, hidden pages, overlapping/unexpected input, missing
+echoes after five seconds, and incomplete runs fail. A 90-second deadline stops
+unattended producer work. Finish/failure removes instrumentation, observers, and
+timers and pauses all rendering. Correctness cases deliberately withhold painting,
+inject visibility changes, and check failure cleanup. No speed thresholds run on
+shared CI; use repeated runs on the same hardware/browser/display configuration
+for comparisons, and compare throughput alongside latency.
+
+The runner serves an in-memory production bundle and spawns no PTY for these
+cases. Per-case `input.json` attachments and a combined
+`e2e/test-results/input/input.json` include successes and failures, source commit
+and dirty status, fixture chunk sizes and SHA-256, WASM hashes, host/CPU, browser,
+viewport, font geometry, headless mode, profile, and repeat index. Reports retain
+the count of the browser's `ResizeObserver loop completed with undelivered
+notifications.` diagnostic separately: it means resize notifications were
+deferred to a later frame. This counts notifications forwarded by Playwright's
+page-error channel, not every native resize deferral. Other page errors fail the
+case, with up to 16 messages
+retained. A native resize-loop test checks this distinction without suppressing
+browser events. Failed measurements retain
+partial counters; failures before initialization have a null measurement.
+Probe correctness tests are included in the report with null measurements.
+CI uploads the directory as `terminal-input-responsiveness`.
+
 ## What the measurements mean
 
 The harness instruments its own call sites and leaves the terminal packages' runtime APIs unchanged. Debug escape-sequence tracing is disabled.
@@ -206,6 +285,9 @@ If a native binding is missing, install the platform build prerequisites and run
 | `load.html`, `src/load-main.ts` | Isolated browser page for automated load measurements |
 | `load.config.ts`, `tests/load.bench.ts` | Separate load runner configuration and correctness assertions |
 | `tests/load-reporter.ts` | Combined load measurements, provenance, and failed-case reports |
+| `input.html`, `src/input-main.ts` | Isolated local-echo page and one/eight session setup |
+| `src/input.ts`, `src/input-workloads.ts`, `src/echo-probe.ts` | Bounded output producers, instrumentation, and matching DOM/frame echo probe |
+| `input.config.ts`, `tests/input*.bench.ts` | Input measurements, probe failure checks, and cleanup assertions |
 | `tests/terminal.spec.ts` | Real browser input, shell output, resize, exit, and report attachments |
 | `tests/replay.spec.ts` | Byte-stream playback and semantic/DOM checkpoint assertions |
 | `tests/baseline-reporter.ts` | Combined measurement and outcome report |
