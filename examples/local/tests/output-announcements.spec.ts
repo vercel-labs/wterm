@@ -22,7 +22,7 @@ test("output announcements can be toggled without reconnecting or disturbing the
   await expect(log).toHaveCount(0);
   await toggle.check();
   await terminal.focus();
-  socket!.send(JSON.stringify({ type: "output", data: "command result\r\n" }));
+  socket!.send(Buffer.from("command result\r\n"));
   await expect(log).toHaveText("command result");
   await page.getByRole("button", { name: "Read output" }).click();
   const reader = page.getByRole("dialog", {
@@ -30,14 +30,14 @@ test("output announcements can be toggled without reconnecting or disturbing the
     exact: true,
   });
   await expect(reader.getByRole("textbox")).toHaveValue(/^command result\n/);
-  socket!.send(JSON.stringify({ type: "output", data: "while reading\r\n" }));
+  socket!.send(Buffer.from("while reading\r\n"));
   await expect(
     page.locator(".term-row").filter({ hasText: "while reading" }),
   ).toHaveCount(1);
   await expect(page.locator(".term-announcements")).toHaveText("");
   await page.keyboard.press("Escape");
   await terminal.focus();
-  socket!.send(JSON.stringify({ type: "output", data: "back in shell" }));
+  socket!.send(Buffer.from("back in shell"));
   await expect(log).toHaveText("back in shell");
   await toggle.uncheck();
   await expect(log).toHaveCount(0);

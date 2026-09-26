@@ -5,6 +5,13 @@ import { parse } from "url";
 import next from "next";
 import { WebSocketServer, WebSocket } from "ws";
 import * as pty from "node-pty";
+import { PtyOutput } from "./lib/pty-output";
+import {
+  CONTROL_RESERVE,
+  INPUT_LIMIT,
+  OUTPUT_WINDOW,
+  isResize,
+} from "./lib/terminal-protocol";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOST || "127.0.0.1";
@@ -66,11 +73,46 @@ function handlePTYConnection(ws: WebSocket) {
   let cwdPoll: ReturnType<typeof setInterval> | null = null;
   let cwdQueryInFlight = false;
   let reportedCwd: string | null = null;
+  let stopped = false;
+  let exited = false;
+  let started = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    output.stop();
+    if (cwdPoll !== null) clearInterval(cwdPoll);
+    cwdPoll = null;
+    if (ptyProcess && !exited) ptyProcess.kill();
+  };
+  const output = new PtyOutput({
+    send: (data) => {
+      if (ws.readyState !== WebSocket.OPEN) throw new Error("Socket closed");
+      ws.send(data);
+    },
+    bufferedAmount: () => ws.bufferedAmount,
+    pause: () => ptyProcess?.pause(),
+    resume: () => ptyProcess?.resume(),
+    finish: () => {
+      stop();
+      ws.close(1000, "Session ended");
+    },
+    fail: () => {
+      stop();
+      ws.close(1013, "Output could not be kept in sync");
+    },
+  });
 
   function sendCwd(cwd: string) {
-    if (cwd === reportedCwd || ws.readyState !== WebSocket.OPEN) return;
+    if (stopped || cwd === reportedCwd || ws.readyState !== WebSocket.OPEN)
+      return;
+    const message = JSON.stringify({ type: "cwd", cwd: displayCwd(cwd) });
+    if (
+      Buffer.byteLength(message) > CONTROL_RESERVE ||
+      ws.bufferedAmount > OUTPUT_WINDOW
+    )
+      return;
     reportedCwd = cwd;
-    ws.send(JSON.stringify({ type: "cwd", cwd: displayCwd(cwd) }));
+    ws.send(message);
   }
 
   function getProcessCwd(pid: number): Promise<string | null> {
@@ -122,18 +164,14 @@ function handlePTYConnection(ws: WebSocket) {
         rows,
         cwd: initialCwd,
         env: cleanEnv(),
+        encoding: null,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`Failed to spawn PTY: ${msg}`);
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            type: "output",
-            data: `\r\n\x1b[31mFailed to spawn shell: ${msg}\x1b[0m\r\n`,
-          }),
-        );
-        ws.close();
+        output.push(`\r\n\x1b[31mFailed to spawn shell: ${msg}\x1b[0m\r\n`);
+        output.end();
       }
       return;
     }
@@ -145,50 +183,50 @@ function handlePTYConnection(ws: WebSocket) {
     void reportCwd();
     cwdPoll = setInterval(() => void reportCwd(), 500);
 
-    ptyProcess.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "output", data }));
-      }
-    });
+    ptyProcess.onData((data) => output.push(data));
 
     ptyProcess.onExit(() => {
-      if (cwdPoll !== null) {
-        clearInterval(cwdPoll);
-        cwdPoll = null;
-      }
-      if (ws.readyState === WebSocket.OPEN) ws.close();
+      exited = true;
+      if (cwdPoll !== null) clearInterval(cwdPoll);
+      cwdPoll = null;
+      output.end();
     });
   }
 
-  ws.on("message", (msg: Buffer | string) => {
-    const input = typeof msg === "string" ? msg : msg.toString("utf-8");
-
-    if (input.startsWith("\x1b[RESIZE:")) {
-      const match = input.match(/\x1b\[RESIZE:(\d+);(\d+)(?:;(\d+);(\d+))?\]/);
-      if (match) {
-        const cols = parseInt(match[1], 10);
-        const rows = parseInt(match[2], 10);
-        const pixelWidth = parseInt(match[3] || "0", 10);
-        const pixelHeight = parseInt(match[4] || "0", 10);
-        if (!ptyProcess) {
-          spawnPTY(cols, rows, pixelWidth, pixelHeight);
-        } else {
+  ws.on("message", (raw) => {
+    if (stopped) return;
+    try {
+      const message = JSON.parse(raw.toString());
+      if (!message || typeof message !== "object") throw new Error();
+      if (isResize(message)) {
+        const { cols, rows, width, height } = message;
+        if (!started) {
+          started = true;
+          spawnPTY(cols, rows, width, height);
+        } else if (ptyProcess && !exited) {
           ptyProcess.resize(cols, rows);
-          if (pixelWidth > 0 && pixelHeight > 0) {
-            setPtyWindowSize(ptyProcess, rows, cols, pixelWidth, pixelHeight);
-          }
+          setPtyWindowSize(ptyProcess, rows, cols, width, height);
         }
-        return;
-      }
+      } else if (message.type === "ack") {
+        output.acknowledge(message.bytes);
+      } else if (
+        message.type === "input" &&
+        typeof message.data === "string" &&
+        Buffer.byteLength(message.data) <= INPUT_LIMIT &&
+        started
+      ) {
+        // Final output can generate terminal replies after the process exits.
+        // Keep draining that output even though there is no process to read input.
+        if (ptyProcess && !exited) ptyProcess.write(message.data);
+      } else throw new Error();
+    } catch {
+      stop();
+      ws.close(1002, "Invalid terminal message");
     }
-
-    if (ptyProcess) ptyProcess.write(input);
   });
 
-  ws.on("close", () => {
-    if (cwdPoll !== null) clearInterval(cwdPoll);
-    if (ptyProcess) ptyProcess.kill();
-  });
+  ws.on("error", stop);
+  ws.on("close", stop);
 }
 
 app.prepare().then(() => {
@@ -197,7 +235,10 @@ app.prepare().then(() => {
     handle(req, res, parsedUrl);
   });
 
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: INPUT_LIMIT + CONTROL_RESERVE,
+  });
 
   server.on("upgrade", (req, socket, head) => {
     const { pathname } = parse(req.url || "/", true);

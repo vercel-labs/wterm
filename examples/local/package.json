@@ -10,7 +10,8 @@
     "start": "next start",
     "lint": "eslint",
     "type-check": "tsc --noEmit",
-    "test:e2e": "node run-e2e.mjs"
+    "test:e2e": "node run-e2e.mjs",
+    "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.2",

@@ -34,6 +34,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Read retained output** — capture a stable text snapshot with `readText()`; the local workspace provides a read-only output dialog with explicit refresh
 - **Optional output announcements** — bounded, polite screen-reader updates for the focused terminal, with a per-session workspace toggle
 - **Bounded WebSocket sends** — byte and message limits, ordered draining, and observable backpressure for slow or disconnected connections
+- **Local PTY flow control** — the local workspace pauses fast output until the browser catches up, preserves bytes across frames, and reports rejected input
 - **Full-history Select All** — Cmd+A or Ctrl+Shift+A selects retained history and the active screen without mounting extra rows
 - **Word and line selection** — double-click paths and words or triple-click logical lines, including confirmed soft wraps and unmounted history
 - **Selection preservation** — Ghostty selections follow scrolling and reflow while their text remains intact; selected history is mounted separately from the viewport

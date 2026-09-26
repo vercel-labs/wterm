@@ -18,8 +18,8 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 
 - `server.ts` starts an HTTP + WebSocket server alongside Next.js
 - On each WebSocket connection, a PTY process is spawned with your default shell
-- The browser sends keystrokes over WebSocket; the server relays PTY output back
-- Terminal resizing, including browser pixel dimensions, is forwarded to the PTY via a custom escape sequence
+- The browser sends JSON input, resize, and byte acknowledgment messages over WebSocket; the server relays raw PTY bytes in binary frames and sends working-directory updates as JSON
+- Terminal resizing, including browser pixel dimensions, is forwarded to the PTY via resize messages
 - The server restores PTY pixel dimensions after each resize so Kitty clients such as `kitten icat` can detect image support
 - Each sidebar tab keeps its terminal and shell session alive while other tabs are active
 - **Read output** opens a stable snapshot of retained history and the active screen in a labelled, read-only text area. Use native keyboard navigation and Copy, **Refresh** to capture newer output, and **Close** or Escape to return to the opener. Output keeps running while the snapshot stays unchanged. A capture interrupted by output or resize can be retried; captures above 16,777,216 UTF-16 units fail without returning partial text. Closing cancels pending capture and releases the snapshot.
@@ -39,15 +39,47 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 | File | Description |
 |---|---|
 | `server.ts` | Custom server with WebSocket ↔ PTY bridge |
+| `lib/pty-output.ts` | Bounded output window and PTY pause/resume |
+| `lib/terminal-connection.ts` | Browser parsing tasks, acknowledgments, and bounded input |
+| `lib/terminal-protocol.ts` | Shared message types and buffer limits |
 | `app/page.tsx` | Built-in-core entry point |
 | `app/ghostty/page.tsx` | Ghostty-core entry point with bounded Kitty image rendering |
 | `app/session-workspace.tsx` | Sidebar, session tabs, Find controls, and terminal/WebSocket lifecycle |
 | `app/output-reader.tsx` | Read-only output snapshots, refresh, cancellation, and dialog focus |
 | `app/layout.tsx` | Root layout with metadata |
 
-## Output reader checks
+## Output flow control
 
-Run `pnpm --filter local build`, then `pnpm --filter local test:e2e` from the repository root. The browser suite starts an isolated production server and uses deterministic WebSocket output without spawning a shell. Chromium, Firefox, and WebKit cover unmounted history, native read-only navigation and Copy, explicit refresh, cancellation, and focus return. `app/output-reader.tsx` owns the dialog; `tests/output-reader.spec.ts` contains the browser cases.
+Fast commands pause when the browser falls behind, then resume as it consumes
+output. Each session allows up to 128 KiB or 256 output frames awaiting
+acknowledgment, with frames no larger than 16 KiB. The server pauses PTY reads
+at the limit and resumes below 32 KiB and 64 frames, after pending output drains.
+Late PTY data is capped at 256 KiB and 1,024 queued chunks. Socket backlog also
+pauses reads; exceeding a queue limit ends the session with a visible status.
+
+The browser parses output in short tasks and acknowledges bytes only after
+`WTerm.write()` returns. Acknowledgment does not wait for painting, so programs
+using synchronized drawing can finish their updates. Binary framing preserves
+UTF-8 and escape sequences split across messages. Normal process exit waits
+for the final output to be consumed.
+
+Input messages, including their JSON envelope, must fit within 64 KiB; the
+browser also caps pending input at 64 KiB and reserves room for control
+messages. A busy connection or oversized paste rejects the whole input event
+and displays a message. Input is never retried automatically. Closing a session
+discards pending work and terminates its PTY; reconnecting or refreshing starts
+a new shell.
+
+This protocol is specific to the local example. Its client and server must be
+updated together; a bare `WebSocketTransport` client cannot connect directly.
+
+## Checks
+
+Run `pnpm --filter local test` for queue, acknowledgment, input, and teardown
+checks. On macOS or Linux, this also streams 4 MiB through a real PTY and
+WebSocket, stalls consumption, and verifies exact bytes after resuming.
+
+Run `pnpm --filter local build`, then `pnpm --filter local test:e2e` from the repository root. The browser suite starts an isolated production server and uses deterministic WebSocket output without spawning a shell. Chromium, Firefox, and WebKit cover streamed Unicode, synchronized drawing, input during output, buffer overflow, unmounted history, native read-only navigation and Copy, explicit refresh, cancellation, and focus return.
 
 ## Output announcements
 

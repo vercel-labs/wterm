@@ -12,6 +12,7 @@ import { ArrowDown, ArrowUp, Plus, Search, X } from "lucide-react";
 import { Terminal as WTermTerminal, useTerminal } from "@wterm/react";
 import type { SearchState, TerminalCore, WTerm } from "@wterm/dom";
 import { OutputReader } from "./output-reader";
+import { TerminalConnection } from "../lib/terminal-connection";
 import "@wterm/react/css";
 
 type SessionStatus = "loading" | "connecting" | "connected" | "closed";
@@ -104,26 +105,6 @@ function cwdLabel(cwd: string | null): string {
   return cwd.replace(/[/\\]+$/, "") || "/";
 }
 
-type ServerMessage =
-  { type: "output"; data: string } | { type: "cwd"; cwd: string };
-
-function parseServerMessage(data: string): ServerMessage | null {
-  try {
-    const message = JSON.parse(data) as Partial<ServerMessage>;
-    if (message.type === "cwd" && typeof message.cwd === "string") {
-      return message as ServerMessage;
-    }
-    if (message.type === "output" && typeof message.data === "string") {
-      return message as ServerMessage;
-    }
-  } catch {
-    // Keep compatibility with the previous raw PTY output protocol while a
-    // dev server is being restarted after this client update.
-    return { type: "output", data };
-  }
-  return null;
-}
-
 function disposeCore(core: TerminalCore): void {
   const disposable = core as TerminalCore & { dispose?: () => void };
   disposable.dispose?.();
@@ -162,11 +143,14 @@ function SessionTerminal({
 }: SessionTerminalProps) {
   const [core, setCore] = useState<TerminalCore | null>(null);
   const { ref, write } = useTerminal();
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsRef = useRef<TerminalConnection | null>(null);
   const terminalRef = useRef<WTerm | null>(null);
   const connectFrameRef = useRef<number | null>(null);
   const disposedRef = useRef(false);
   const [findOpen, setFindOpen] = useState(false);
+  const [connectionMessage, setConnectionMessage] = useState<string | null>(
+    null,
+  );
   const [announceOutput, setAnnounceOutput] = useState(false);
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
@@ -278,50 +262,40 @@ function SessionTerminal({
 
         const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${proto}//${window.location.host}/api/terminal`;
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
         onStatus(session.id, "connecting");
-
-        ws.onopen = () => {
-          const { width, height } = terminalPixelSize(wt);
-          ws.send(`\x1b[RESIZE:${wt.cols};${wt.rows};${width};${height}]`);
-          onStatus(session.id, "connected");
-        };
-
-        ws.onmessage = (event: MessageEvent) => {
-          const message = parseServerMessage(event.data as string);
-          if (!message) return;
-          if (message.type === "cwd") {
-            onCwd(session.id, message.cwd);
-          } else {
-            write(message.data);
-          }
-        };
-
-        ws.onclose = () => {
-          if (disposedRef.current) return;
-          write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
-          wsRef.current = null;
-          onStatus(session.id, "closed");
-        };
+        const connection = new TerminalConnection(new WebSocket(wsUrl), {
+          open: () => {
+            const terminal = terminalRef.current;
+            if (!terminal) return;
+            const { width, height } = terminalPixelSize(terminal);
+            connection.resize(terminal.cols, terminal.rows, width, height);
+            onStatus(session.id, "connected");
+          },
+          write: (data) => write(data),
+          cwd: (path) => onCwd(session.id, path),
+          end: (message) => {
+            if (disposedRef.current || wsRef.current !== connection) return;
+            setConnectionMessage(message);
+            wsRef.current = null;
+            onStatus(session.id, "closed");
+          },
+          inputError: setConnectionMessage,
+        });
+        wsRef.current = connection;
       });
     },
     [onCwd, onStatus, session.id, write],
   );
 
   const handleData = useCallback((data: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(data);
-    }
+    wsRef.current?.input(data);
   }, []);
 
   const handleResize = useCallback((cols: number, rows: number) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const terminal = terminalRef.current;
-      if (!terminal) return;
-      const { width, height } = terminalPixelSize(terminal);
-      wsRef.current.send(`\x1b[RESIZE:${cols};${rows};${width};${height}]`);
-    }
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    const { width, height } = terminalPixelSize(terminal);
+    wsRef.current?.resize(cols, rows, width, height);
   }, []);
 
   if (coreLoader && !core) {
@@ -441,6 +415,11 @@ function SessionTerminal({
           </button>
         )}
       </div>
+      {connectionMessage && (
+        <p role="status" className="shrink-0 px-2 py-1 text-xs text-[#aaa]">
+          {connectionMessage}
+        </p>
+      )}
       <div className="min-h-0 flex-1 pt-2">
         <WTermTerminal
           ref={ref}
