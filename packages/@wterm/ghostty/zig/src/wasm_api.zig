@@ -314,6 +314,20 @@ const ResponseHandler = struct {
                 try self.inner.vt(action, value);
                 var it = value.requests.constIterator(0);
                 while (it.next()) |request| {
+                    // DynamicRGB.reset stores the configured default in override.
+                    // Keep get() identical, but distinguish a reset from an OSC
+                    // set so the browser can return to its current CSS theme.
+                    if (request.* == .reset) {
+                        switch (request.reset) {
+                            .dynamic => |dynamic| switch (dynamic) {
+                                .foreground => self.inner.terminal.colors.foreground.override = null,
+                                .background => self.inner.terminal.colors.background.override = null,
+                                .cursor => self.inner.terminal.colors.cursor.override = null,
+                                else => {},
+                            },
+                            else => {},
+                        }
+                    }
                     const target = switch (request.*) {
                         .query => |target| target,
                         else => continue,
@@ -683,6 +697,18 @@ export fn get_bell_count(ptr: usize) u32 {
 export fn update(ptr: usize) void {
     const state = stateFromPtr(ptr);
     state.render.update(allocator, &state.terminal) catch {};
+}
+
+/// Application default-color overrides. An unset/reset channel follows host CSS.
+export fn get_color_override(ptr: usize, target: u8) i32 {
+    const colors = &stateFromPtr(ptr).terminal.colors;
+    const rgb = (switch (target) {
+        0 => colors.foreground.override,
+        1 => colors.background.override,
+        2 => colors.cursor.override,
+        else => null,
+    }) orelse return -1;
+    return (@as(i32, rgb.r) << 16) | (@as(i32, rgb.g) << 8) | @as(i32, rgb.b);
 }
 
 fn packFlags(style: Style) u8 {

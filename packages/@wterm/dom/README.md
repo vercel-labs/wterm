@@ -402,6 +402,24 @@ element.classList.add("theme-monokai");
 
 All colors use CSS custom properties (`--term-fg`, `--term-bg`, `--term-color-0` through `--term-color-15`, etc.) so you can define your own theme with plain CSS.
 
+Ghostty applications can set the default foreground, background, and cursor
+colors with OSC `10`, `11`, and `12`. OSC `110`, `111`, and `112` reset the
+corresponding color to the current CSS theme, including theme changes made
+while an override was active. Explicit SGR cell colors are unaffected. Inverse
+cells swap the actual foreground/background, including default colors, in both
+cores.
+
+Application overrides are separate from `--term-fg`, `--term-bg`, and
+`--term-cursor`; the renderer never overwrites these host theme properties.
+Updates follow normal rendering, including synchronized output and paused
+panes. Destroying the terminal removes its overrides. The built-in core and
+older Ghostty WASM binaries retain CSS theme defaults.
+
+For direct `Renderer` use, pass `{ colorHost: element }` if the themed host
+differs from the grid container. Otherwise overrides apply to the supplied
+container. `WTerm` supplies its host automatically. Custom cores can expose
+`getColorOverrides()` as described in `@wterm/core`.
+
 Use a monospace font through `--term-font-family`. Cells use its measured width,
 so braille, box drawing, and other fallback glyphs cannot push later columns out
 of alignment. Wide characters occupy two cells, and oversized glyphs are clipped

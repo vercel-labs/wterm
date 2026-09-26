@@ -151,6 +151,42 @@ describe("Renderer", () => {
   });
 
   describe("render", () => {
+    it("paints color-only changes without replacing rows or overwriting host theme tokens", () => {
+      const host = document.createElement("div");
+      host.style.setProperty("--term-fg", "#abcdef");
+      host.appendChild(container);
+      let colors = { foreground: 0x123456, background: 0, cursor: 0xabcdef };
+      const bridge = {
+        ...createMockBridge(4, 2, [[makeCell("a")]]),
+        getColorOverrides: () => colors,
+      };
+      const renderer = new Renderer(container, { colorHost: host });
+      renderer.render(bridge);
+      const cell = container.querySelector(".term-row > span")!;
+      expect(host.style.getPropertyValue("--term-app-fg")).toBe(
+        "rgb(18,52,86)",
+      );
+      expect(host.style.getPropertyValue("--term-app-bg")).toBe("rgb(0,0,0)");
+      expect(host.style.getPropertyValue("--term-fg")).toBe("#abcdef");
+      const set = vi.spyOn(host.style, "setProperty");
+      renderer.render(bridge);
+      expect(set).not.toHaveBeenCalled();
+      colors = { ...colors, foreground: 0x654321 };
+      renderer.render(bridge);
+      expect(container.querySelector(".term-row > span")).toBe(cell);
+      expect(host.style.getPropertyValue("--term-app-fg")).toBe(
+        "rgb(101,67,33)",
+      );
+      renderer.render(createMockBridge(4, 2));
+      expect(host.style.getPropertyValue("--term-app-fg")).toBe("");
+      renderer.render(bridge);
+      renderer.destroy();
+      expect(host.style.getPropertyValue("--term-app-fg")).toBe("");
+      expect(host.style.getPropertyValue("--term-app-bg")).toBe("");
+      expect(host.style.getPropertyValue("--term-app-cursor")).toBe("");
+      expect(host.style.getPropertyValue("--term-fg")).toBe("#abcdef");
+    });
+
     it.each([
       ["red", makeCell(" ", 256, 1)],
       ["reverse", makeCell(" ", 256, 256, 0x20)],

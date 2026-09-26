@@ -191,6 +191,25 @@ Then apply it the same way as a built-in theme:
 
 Colors beyond the 16-color palette (indices 16–255 and true-color RGB) are computed by the renderer and do not use custom properties.
 
+## Application color changes
+
+Ghostty applications can set the default foreground, background, and cursor
+colors with OSC `10`, `11`, and `12`. OSC `110`, `111`, and `112` reset the
+corresponding color to the current CSS theme, including theme changes made
+while an override was active. Explicit SGR cell colors are unaffected. Inverse
+cells swap the actual foreground/background, including default colors, in both
+cores.
+
+Application overrides are separate from `--term-fg`, `--term-bg`, and
+`--term-cursor`; the renderer never overwrites these host theme properties.
+Updates follow normal rendering, including synchronized output and paused
+panes. Destroying the terminal removes its overrides. The built-in core and
+older Ghostty WASM binaries retain CSS theme defaults.
+
+Ghostty color-query responses use its configured `foregroundColor` and
+`backgroundColor` defaults; pass values matching your CSS theme. CSS changes
+do not automatically update those headless defaults. See [Ghostty options](/ghostty).
+
 ## Font and cell alignment
 
 Choose a monospace font with `--term-font-family` and set its size with

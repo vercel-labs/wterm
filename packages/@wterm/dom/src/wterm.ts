@@ -307,6 +307,7 @@ export class WTerm {
       this._measureCharSize();
 
       this.renderer = new Renderer(this._container, {
+        colorHost: this.element,
         maxImageWidth: this.maxImageWidth,
         maxImageHeight: this.maxImageHeight,
       });

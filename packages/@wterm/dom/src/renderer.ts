@@ -1,4 +1,9 @@
-import type { CellData, TerminalCore, TerminalPosition } from "@wterm/core";
+import type {
+  CellData,
+  TerminalCore,
+  TerminalPosition,
+  TerminalColorOverrides,
+} from "@wterm/core";
 import { GraphicsLayer, type GraphicsLayerOptions } from "./graphics-layer.js";
 import {
   getSelectionText,
@@ -13,6 +18,8 @@ import {
 } from "./tracked-selection.js";
 
 const DEFAULT_COLOR = 256;
+const DEFAULT_FG_CSS = "var(--term-app-fg, var(--term-fg))";
+const DEFAULT_BG_CSS = "var(--term-app-bg, var(--term-bg))";
 const FLAG_BOLD = 0x01;
 const FLAG_DIM = 0x02;
 const FLAG_ITALIC = 0x04;
@@ -72,24 +79,11 @@ function buildCellStyle({
   underlineStyle,
   underlineRgb,
 }: CellData): string {
-  let fgIdx = fg,
-    bgIdx = bg,
-    fgR = fgRgb,
-    bgR = bgRgb;
-
+  let fgCSS = cellFgCSS(fg, fgRgb);
+  let bgCSS = cellBgCSS(bg, bgRgb);
   if (flags & FLAG_REVERSE) {
-    const tmpIdx = fgIdx;
-    fgIdx = bgIdx;
-    bgIdx = tmpIdx;
-    const tmpR = fgR;
-    fgR = bgR;
-    bgR = tmpR;
-    if (fgR === undefined && fgIdx === DEFAULT_COLOR) fgIdx = 0;
-    if (bgR === undefined && bgIdx === DEFAULT_COLOR) bgIdx = 7;
+    [fgCSS, bgCSS] = [bgCSS ?? DEFAULT_BG_CSS, fgCSS ?? DEFAULT_FG_CSS];
   }
-
-  const fgCSS = cellFgCSS(fgIdx, fgR);
-  const bgCSS = cellBgCSS(bgIdx, bgR);
 
   let style = "";
   if (fgCSS) style += `color:${fgCSS};`;
@@ -192,21 +186,11 @@ function resolveColors(
   fgRgb?: number,
   bgRgb?: number,
 ): { fg: string; bg: string } {
-  let fgIdx = fg,
-    bgIdx = bg,
-    fgR = fgRgb,
-    bgR = bgRgb;
-
-  if (flags & FLAG_REVERSE) {
-    [fgIdx, bgIdx] = [bgIdx, fgIdx];
-    [fgR, bgR] = [bgR, fgR];
-    if (fgR === undefined && fgIdx === DEFAULT_COLOR) fgIdx = 0;
-    if (bgR === undefined && bgIdx === DEFAULT_COLOR) bgIdx = 7;
-  }
-  return {
-    fg: cellFgCSS(fgIdx, fgR) || "var(--term-fg)",
-    bg: cellBgCSS(bgIdx, bgR) || "var(--term-bg)",
-  };
+  const foreground = cellFgCSS(fg, fgRgb) || DEFAULT_FG_CSS;
+  const background = cellBgCSS(bg, bgRgb) || DEFAULT_BG_CSS;
+  return flags & FLAG_REVERSE
+    ? { fg: background, bg: foreground }
+    : { fg: foreground, bg: background };
 }
 
 // Pixel-snapped vertical gradient stops keyed off `--term-row-height` so that
@@ -413,6 +397,7 @@ export class Renderer {
   private selection: TrackedSelection | null = null;
   private needsSetup = false;
   private painted = false;
+  private colorHost: HTMLElement;
   private viewport: RenderViewport | undefined;
 
   get hasImageFlow(): boolean {
@@ -422,8 +407,12 @@ export class Renderer {
     );
   }
 
-  constructor(container: HTMLElement, options: GraphicsLayerOptions = {}) {
+  constructor(
+    container: HTMLElement,
+    options: GraphicsLayerOptions & { colorHost?: HTMLElement } = {},
+  ) {
     this.container = container;
+    this.colorHost = options.colorHost ?? container;
     this.graphics = new GraphicsLayer(container, options);
     this.searchLayer = document.createElement("div");
     this.searchLayer.className = "term-search-layer";
@@ -753,7 +742,7 @@ export class Renderer {
     this.rowText.set(rowEl, content);
 
     const bgCss =
-      uniformBackground && rowBackground !== "var(--term-bg)"
+      uniformBackground && rowBackground !== DEFAULT_BG_CSS
         ? (rowBackground ?? "")
         : "";
     if (rowIndex >= 0) {
@@ -918,7 +907,22 @@ export class Renderer {
     }
   }
 
+  private syncColorOverrides(colors: TerminalColorOverrides = {}): void {
+    for (const [key, property] of [
+      ["foreground", "--term-app-fg"],
+      ["background", "--term-app-bg"],
+      ["cursor", "--term-app-cursor"],
+    ] as const) {
+      const value = colors[key];
+      const css = value === undefined ? "" : rgbToCSS(value);
+      if (this.colorHost.style.getPropertyValue(property) === css) continue;
+      if (css) this.colorHost.style.setProperty(property, css);
+      else this.colorHost.style.removeProperty(property);
+    }
+  }
+
   render(core: TerminalCore, viewport?: RenderViewport): void {
+    this.syncColorOverrides(core.getColorOverrides?.());
     this.viewport = viewport;
     this.selection ??= new TrackedSelection(
       this.container.parentElement ?? this.container,
@@ -1097,6 +1101,7 @@ export class Renderer {
   }
 
   destroy(): void {
+    this.syncColorOverrides();
     this.painted = false;
     this.selection?.dispose();
     this.graphics.destroy();

@@ -30,6 +30,14 @@ export interface CellData {
 
 export type CursorShape = "block" | "underline" | "bar";
 
+/** Application overrides of host theme defaults, as 24-bit RGB (0xRRGGBB). */
+export interface TerminalColorOverrides {
+  /** Omitted after reset or when unset, allowing the host theme to supply it. */
+  foreground?: number;
+  background?: number;
+  cursor?: number;
+}
+
 /** Soft-wrap relationships for one physical row of the active screen. */
 export interface TerminalRowMetadata {
   /** The following row continues this row without an explicit newline. */
@@ -163,6 +171,8 @@ export interface TerminalCore {
 
   // -- Cursor --
   getCursor(): CursorState;
+  /** Caller-owned snapshot. Missing fields follow the host's current CSS theme. */
+  getColorOverrides?(): TerminalColorOverrides;
 
   // -- Modes --
   cursorKeysApp(): boolean;

@@ -13,6 +13,13 @@ WTerm also uses this metadata when copying native text selections: soft wraps jo
 
 `trackPosition({ row, col })` follows a retained cell through scrolling and reflow. The returned handle has `resolve()` and `dispose()` methods; row zero is the oldest retained row. It resolves to `null` after pruning, reset, screen switching, reinitialization, or disposal. Up to 64 simultaneous handles are supported; invalid coordinates, exhausted capacity, and older binaries return `null`. Release handles when finished. WTerm uses this API to preserve native selections and separately checks for overwritten text. See the [core contract](../core/README.md#tracked-cell-positions).
 
+`getColorOverrides()` exposes application-requested default foreground,
+background, and cursor colors from OSC 10/11/12. The DOM renderer applies them
+to live cells, retained history, the terminal background, and cursor shapes.
+OSC 110/111/112 restores the current CSS theme without rewriting host theme
+variables. Explicit SGR colors remain unchanged. Serve the current WASM binary;
+older binaries return an empty snapshot and retain their CSS defaults.
+
 Ghostty preserves single, double, curly, dotted, and dashed underlines through
 `CellData.underlineStyle`, with resolved colors in `underlineRgb`. The DOM
 renderer displays them in the viewport and scrollback, including after reflow.
