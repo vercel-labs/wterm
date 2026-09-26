@@ -2,6 +2,7 @@ import {
   CONTROL_RESERVE,
   HANDSHAKE_MS,
   INPUT_LIMIT,
+  INPUT_MESSAGES,
   OUTPUT_CHUNK,
   OUTPUT_FRAMES,
   OUTPUT_WINDOW,
@@ -11,7 +12,7 @@ import {
 
 interface ConnectionCallbacks {
   write(data: Uint8Array): void;
-  open(resumed: boolean): void;
+  open(resumed: boolean, inputLost: boolean): void;
   cwd(path: string): void;
   end(message: string): void;
   inputError(message: string | null): void;
@@ -38,6 +39,12 @@ export class TerminalConnection {
   private retries = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
+  private inputSent = 0;
+  private inputAck = 0;
+  // Only wire lengths are retained. Input text is never buffered for replay.
+  private inputSizes: number[] = [];
+  private inputBytes = 0;
+  private rejectedOfflineInput = false;
 
   constructor(
     private createSocket: () => WebSocket,
@@ -121,6 +128,15 @@ export class TerminalConnection {
             (this.session === null || message.session === this.session)
           ) {
             const resumed = this.session !== null;
+            this.acknowledgeInput(message.input);
+            const inputLost =
+              this.inputSizes.length > 0 || this.rejectedOfflineInput;
+            // The old socket is fenced on the server. Abandon its unaccepted
+            // suffix and continue immediately after the confirmed prefix.
+            this.inputSent = this.inputAck;
+            this.inputSizes = [];
+            this.inputBytes = 0;
+            this.rejectedOfflineInput = false;
             this.session = message.session;
             this.ready = true;
             if (this.handshakeTimer !== null) clearTimeout(this.handshakeTimer);
@@ -128,8 +144,10 @@ export class TerminalConnection {
             this.retryDeadline = null;
             this.retries = 0;
             this.ack = this.consumed;
-            this.callbacks.open(resumed);
+            this.callbacks.open(resumed, inputLost);
             this.flushControls();
+          } else if (this.ready && message?.type === "input-ack") {
+            this.acknowledgeInput(message.input);
           } else if (
             this.ready &&
             message?.type === "cwd" &&
@@ -215,6 +233,7 @@ export class TerminalConnection {
 
   input(data: string): void {
     if (!this.connected) {
+      this.rejectedOfflineInput = true;
       this.callbacks.inputError(
         "Input was not sent because the session is disconnected.",
       );
@@ -227,10 +246,20 @@ export class TerminalConnection {
       );
       return;
     }
-    const message = JSON.stringify({ type: "input", data });
+    if (!Number.isSafeInteger(this.inputSent + 1)) {
+      this.fail("Session ended because its input sequence was exhausted.");
+      return;
+    }
+    const message = JSON.stringify({
+      type: "input",
+      id: this.inputSent + 1,
+      data,
+    });
     const bytes = new TextEncoder().encode(message).length;
     if (
       bytes > INPUT_LIMIT ||
+      this.inputBytes + bytes > INPUT_LIMIT ||
+      this.inputSizes.length >= INPUT_MESSAGES ||
       this.socket!.bufferedAmount + bytes > INPUT_LIMIT
     ) {
       this.callbacks.inputError(
@@ -238,12 +267,35 @@ export class TerminalConnection {
       );
       return;
     }
+    this.inputSent++;
+    this.inputSizes.push(bytes);
+    this.inputBytes += bytes;
     try {
       this.socket!.send(message);
       this.callbacks.inputError(null);
     } catch {
       this.interrupt();
     }
+  }
+
+  private acknowledgeInput(input: unknown): void {
+    if (
+      typeof input !== "number" ||
+      !Number.isSafeInteger(input) ||
+      input < this.inputAck ||
+      input > this.inputSent
+    )
+      throw new Error("Invalid input acknowledgment");
+    const count = input - this.inputAck;
+    for (const bytes of this.inputSizes.splice(0, count))
+      this.inputBytes -= bytes;
+    this.inputAck = input;
+  }
+
+  private endMessage(message: string): string {
+    return this.inputSizes.length
+      ? `${message} Recent input could not be confirmed and was not resent.`
+      : message;
   }
 
   resize(cols: number, rows: number, width: number, height: number): void {
@@ -275,6 +327,8 @@ export class TerminalConnection {
     this.clearControlTimer();
     this.queue = [];
     this.queuedBytes = 0;
+    this.inputSizes = [];
+    this.inputBytes = 0;
     this.resizeMessage = null;
     if (this.socket)
       this.socket.onopen =
@@ -287,6 +341,7 @@ export class TerminalConnection {
   }
 
   private fail(message: string): void {
+    message = this.endMessage(message);
     this.close();
     this.callbacks.end(message);
   }
@@ -334,7 +389,7 @@ export class TerminalConnection {
     if (this.queue.length) this.schedule();
     this.flushControls();
     if (this.ended !== null && !this.queue.length) {
-      const message = this.ended;
+      const message = this.endMessage(this.ended);
       this.stop();
       this.callbacks.end(message);
     }

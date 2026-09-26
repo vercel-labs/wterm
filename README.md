@@ -35,7 +35,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Optional output announcements** — bounded, polite screen-reader updates for the focused terminal, with a per-session workspace toggle
 - **Bounded WebSocket sends** — byte and message limits, ordered draining, and observable backpressure for slow or disconnected connections
 - **Local PTY flow control** — the local workspace pauses fast output until the browser catches up, preserves bytes across frames, and reports rejected input
-- **Local session reconnection** — brief connection interruptions resume the same shell and terminal state in the existing page, with bounded output replay and no automatic input retries
+- **Local session reconnection** — brief connection interruptions resume the same shell and terminal state in the existing page, with bounded output replay, input delivery acknowledgments, duplicate suppression, and no automatic input retries
 - **Inactive pane rendering** — skip paints for inactive sessions and hidden browser documents while output and terminal replies continue
 - **Full-history Select All** — Cmd+A or Ctrl+Shift+A selects retained history and the active screen without mounting extra rows
 - **Word and line selection** — double-click paths and words or triple-click logical lines, including confirmed soft wraps and unmounted history

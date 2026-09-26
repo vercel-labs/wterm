@@ -39,6 +39,9 @@ class TerminalSession {
   private cwd: string | null = null;
   private sentCwd: string | null = null;
   private expiry: ReturnType<typeof setTimeout> | null = null;
+  private acceptedInput = 0;
+  private sentInputAck = 0;
+  private inputAckTimer: ReturnType<typeof setTimeout> | null = null;
   private output: PtyOutput;
 
   constructor(
@@ -70,11 +73,13 @@ class TerminalSession {
     // cannot supply input, resize, acknowledgments, or close this session.
     const previous = this.socket;
     this.socket = null;
+    this.clearInputAckTimer();
     this.output.detach();
     previous?.close(4001, "Session reattached");
     if (this.expiry !== null) clearTimeout(this.expiry);
     this.expiry = null;
     this.socket = socket;
+    this.sentInputAck = this.acceptedInput;
     this.sentCwd = null;
     socket.on("message", (raw) => {
       if (this.stopped || this.socket !== socket) return;
@@ -110,11 +115,28 @@ class TerminalSession {
           this.output.acknowledge(message.bytes);
         } else if (
           message.type === "input" &&
+          Number.isSafeInteger(message.id) &&
+          message.id > 0 &&
           typeof message.data === "string" &&
           Buffer.byteLength(message.data) <= INPUT_LIMIT &&
           this.started
         ) {
-          if (!this.exited) this.process?.write(message.data);
+          // Acknowledgments describe the contiguous prefix handed to the PTY,
+          // not command execution. Repeating an accepted ID never writes again.
+          if (message.id > this.acceptedInput) {
+            if (this.exited || !this.process) return;
+            if (message.id !== this.acceptedInput + 1) throw new Error();
+            try {
+              this.process.write(message.data);
+            } catch {
+              // A throwing writer may have accepted part of the input. End
+              // this session without acknowledging or allowing a retry.
+              this.close(1011, "Input delivery failed");
+              return;
+            }
+            this.acceptedInput = message.id;
+          }
+          this.sendInputAck();
         } else if (message.type === "close") {
           this.close(1000, "Session closed");
         } else throw new Error();
@@ -132,10 +154,49 @@ class TerminalSession {
     });
     try {
       socket.send(
-        JSON.stringify({ type: "ready", session: this.token, resumed }),
+        JSON.stringify({
+          type: "ready",
+          session: this.token,
+          resumed,
+          input: this.acceptedInput,
+        }),
       );
       this.sendCwd();
       if (this.socket === socket) this.output.attach(bytes);
+    } catch {
+      this.detach();
+    }
+  }
+
+  private clearInputAckTimer(): void {
+    if (this.inputAckTimer !== null) clearTimeout(this.inputAckTimer);
+    this.inputAckTimer = null;
+  }
+
+  private sendInputAck(): void {
+    const socket = this.socket;
+    if (
+      !socket ||
+      socket.readyState !== WebSocket.OPEN ||
+      this.sentInputAck === this.acceptedInput
+    )
+      return;
+    // Retain only a counter while the socket is busy, not one queued control
+    // per keystroke. Ready reports the same counter if this socket is lost.
+    if (socket.bufferedAmount > OUTPUT_WINDOW) {
+      if (this.inputAckTimer === null)
+        this.inputAckTimer = setTimeout(() => {
+          this.inputAckTimer = null;
+          this.sendInputAck();
+        }, 16);
+      return;
+    }
+    try {
+      socket.send(
+        JSON.stringify({ type: "input-ack", input: this.acceptedInput }),
+      );
+      this.sentInputAck = this.acceptedInput;
+      this.clearInputAckTimer();
     } catch {
       this.detach();
     }
@@ -166,6 +227,7 @@ class TerminalSession {
     if (this.stopped || !this.socket) return;
     const socket = this.socket;
     this.socket = null;
+    this.clearInputAckTimer();
     this.output.detach();
     socket.close(4000, "Connection interrupted");
     this.expiry = setTimeout(
@@ -179,6 +241,7 @@ class TerminalSession {
     this.stopped = true;
     const socket = this.socket;
     this.socket = null;
+    this.clearInputAckTimer();
     if (this.expiry !== null) clearTimeout(this.expiry);
     this.expiry = null;
     this.output.stop();
