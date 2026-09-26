@@ -301,7 +301,7 @@ The binary is also addressable as `@wterm/ghostty/ghostty-vt.wasm`, so a bundler
 
 1. **Zig package dependency**: ghostty v1.3.1 is declared as a URL dependency in `zig/build.zig.zon`. Zig's package manager fetches it automatically.
 2. **WASM compatibility patches**: ghostty's `Terminal` uses `posix.mmap` and Mach VM allocators internally, which don't exist on `wasm32-freestanding`. The build script applies small, targeted patches to replace these with `std.heap.wasm_allocator`, expose discarded scrollback rows, forward the per-screen Kitty image limit, bound and compact Kitty image/placement metadata, release tracked page pins during eviction, and make direct PNG decoding work without POSIX time. The patches touch `Terminal.zig`, `kitty/graphics_image.zig`, `kitty/graphics_storage.zig`, `kitty/graphics_exec.zig`, `kitty/graphics_unicode.zig`, `page.zig`, and `PageList.zig`; they also configure Wuffs with the freestanding compatibility headers and source flags in `zig/build.zig`.
-3. **Thin WASM export layer**: `zig/src/wasm_api.zig` (~300 lines) imports ghostty's `Terminal` and `RenderState` APIs and exports ~20 functions to JavaScript.
+3. **Thin WASM export layer**: `zig/src/wasm_api.zig` imports ghostty's `Terminal` and `RenderState` APIs and exports functions to JavaScript.
 4. **Committed WASM binary**: The built `wasm/ghostty-vt.wasm` is checked into the repo so consumers never need Zig installed.
 5. **TypeScript bindings**: `wasm-bindings.ts` loads the WASM module and provides typed accessors for the exported functions.
 6. **TerminalCore adapter**: `ghostty-core.ts` implements the `TerminalCore` interface by calling the WASM bindings, converting ghostty's pre-resolved 24-bit RGB colors to wterm's `CellData` format via the `fgRgb`/`bgRgb` fields.
@@ -335,17 +335,38 @@ Kitty keyboard query and negotiation operate on Ghostty's native active-screen s
 
 ## Rebuilding the WASM
 
-Only needed by maintainers. Requires [Zig 0.15.x](https://ziglang.org/download/) (ghostty's required Zig version, separate from wterm's Zig 0.16.x):
+Only needed by maintainers. Requires [Zig 0.15.2](https://ziglang.org/download/),
+Bash, and Python 3. This is separate from the built-in core's Zig 0.16 toolchain.
 
 ```bash
 pnpm --filter @wterm/ghostty rebuild-wasm
 ```
 
-Zig 0.15.x cannot link a native build runner on macOS 26, and Zig 0.16 fails inside ghostty's vendored build files. When the host toolchain cannot build, run the same script in a Linux container:
+Each build verifies the exact compiler version and upstream content hash,
+patches a fresh dependency tree, checks patch idempotence, and compiles in
+isolated caches under `/tmp`. Temporary files are removed on exit; the shared
+Zig cache is never read or patched. Set `WTERM_GHOSTTY_ZIG=/path/to/zig` to
+select a compiler explicitly.
+
+Zig 0.15.2 cannot link its native build runner on macOS 26. Use the Linux
+container build when the host toolchain cannot build:
 
 ```bash
 pnpm --filter @wterm/ghostty rebuild-wasm:docker
 ```
+
+Docker and CI download the pinned compiler and verify its SHA-256 before
+extraction. Check the committed artifact without replacing it with:
+
+```bash
+pnpm --filter @wterm/ghostty check-wasm
+# Linux container with a read-only checkout:
+pnpm --filter @wterm/ghostty check-wasm:docker
+```
+
+CI requires a byte-for-byte match on every PR and push to `main`. If it reports
+drift, rebuild and commit `packages/@wterm/ghostty/wasm/ghostty-vt.wasm` alongside
+the source changes. Consumers do not need Zig or Docker.
 
 ## Comparison
 

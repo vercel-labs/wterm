@@ -208,7 +208,7 @@ const core = await GhosttyCore.load({ wasmPath });
 The WASM binary is built from upstream [ghostty-org/ghostty](https://github.com/ghostty-org/ghostty) (v1.3.1) using it as a Zig package dependency — no third-party npm packages or pre-built binaries from other projects.
 
 ```
-ghostty (Zig dep)  →  WASM patches  →  wasm_api.zig (~300 LOC)  →  ghostty-vt.wasm  →  TypeScript bindings
+ghostty (Zig dep)  →  WASM patches  →  wasm_api.zig  →  ghostty-vt.wasm  →  TypeScript bindings
 ```
 
 ghostty's `Terminal` and `Page` types use `posix.mmap` and Mach VM allocators internally, which don't exist on `wasm32-freestanding`. The build script applies small, targeted patches to replace these with `std.heap.wasm_allocator`, expose the discarded-row count from `PageList`, forward the per-screen image limit, bound and compact Kitty image/placement metadata, and make direct PNG decoding work without POSIX time. It also adds the Wuffs freestanding compatibility include/source configuration in `zig/build.zig`. The patches are pinned to ghostty v1.3.1 and touch these upstream files:
@@ -223,25 +223,48 @@ ghostty's `Terminal` and `Page` types use `posix.mmap` and Mach VM allocators in
 
 The Wuffs compatibility headers used by the build are `zig/src/wuffs-compat/{stdbool.h,stddef.h,stdint.h,stdlib.h,string.h}`; Wuffs itself is fetched from the pinned dependency in `zig/build.zig.zon`.
 
-The committed `wasm/ghostty-vt.wasm` binary means consumers never need Zig installed. Only maintainers rebuilding the WASM need Zig 0.15.x.
+The committed `wasm/ghostty-vt.wasm` binary means consumers never need Zig installed. Only maintainers rebuilding the WASM need Zig 0.15.2.
 
 ### Rebuilding the WASM
 
-Requires [Zig 0.15.x](https://ziglang.org/download/) (ghostty's required version):
+Requires [Zig 0.15.2](https://ziglang.org/download/), Bash, and Python 3:
 
 ```bash
 pnpm --filter @wterm/ghostty rebuild-wasm
 ```
 
-This fetches the ghostty source via Zig's package manager, applies WASM compatibility patches, compiles our export layer to `wasm32-freestanding`, and copies the binary to `wasm/`.
+The script checks the exact compiler version, fetches the upstream URL and
+content hash from `zig/build.zig.zon`, and applies the WASM patches inside a
+fresh temporary dependency cache. It verifies that applying the patches twice
+produces identical files, builds `wasm32-freestanding` with `ReleaseSmall`,
+and copies the completed binary to `wasm/ghostty-vt.wasm`. Temporary sources,
+caches, and build output live under `/tmp` and are removed when the build
+exits. Your shared Zig cache is never read or patched.
 
-If the host toolchain cannot build, run the same script in a Linux container:
+The script finds Zig 0.15.2 on `PATH` or in the usual zigup installation.
+To select an executable explicitly, set `WTERM_GHOSTTY_ZIG=/path/to/zig`.
+Zig 0.15.2 cannot link its native build runner on macOS 26; use Docker there:
 
 ```bash
 pnpm --filter @wterm/ghostty rebuild-wasm:docker
 ```
 
-Zig 0.15.x cannot link a native build runner on macOS 26, and Zig 0.16 fails inside ghostty's vendored build files, so neither drives `rebuild-wasm` there. The wasm target itself is unaffected. Container output is byte-identical to a host build.
+The Linux installer used by Docker and CI verifies the compiler archive's
+SHA-256 before extracting it. Version and archive checksums are recorded in
+`scripts/zig-toolchain.sh`; consumers still only need the committed WASM.
+
+To verify the committed binary without replacing it:
+
+```bash
+pnpm --filter @wterm/ghostty check-wasm
+# Or use a Linux container with the checkout mounted read-only:
+pnpm --filter @wterm/ghostty check-wasm:docker
+```
+
+CI runs the Ghostty drift check on every PR and push to `main`, separately from
+the built-in core's Zig 0.16 build. A missing or differing artifact fails the
+check with a rebuild command. Commit the regenerated WASM with changes to the
+adapter, upstream dependency, patches, or toolchain that affect its output.
 
 ### Public API experiment
 

@@ -33,12 +33,9 @@ if [[ ! -f "$PAGE_ZIG" ]]; then
   exit 1
 fi
 
-# Keep a pristine copy of every pinned upstream file and always start from it.
-# The Zig package cache is shared between builds, so patching the current file
-# in place and trying to recognize every transformed shape is fragile: a
-# second invocation must produce the same source as the first one. The .orig
-# files are deliberately adjacent to the cache entries and are not part of the
-# generated WASM artifact.
+# Keep pristine originals inside the build-owned dependency tree so repeated
+# patching is idempotent. build-wasm.sh supplies a fresh isolated cache and
+# verifies the second invocation produces identical files.
 for source in \
   "$PAGE_ZIG" \
   "$PAGELIST_ZIG" \

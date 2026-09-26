@@ -102,6 +102,21 @@ zig build -Doptimize=ReleaseSmall
 
 The built binary is committed at `packages/@wterm/core/wasm/wterm.wasm` and CI fails if it does not match the Zig sources, so rebuild and commit it with any change under `src/`.
 
+### Build and verify Ghostty WASM
+
+The Ghostty adapter uses Zig 0.15.2, Bash, and Python 3. Its build runs in fresh
+caches under `/tmp` and leaves the shared Zig cache untouched. CI rebuilds it
+and requires a byte-for-byte match with the committed artifact on every PR.
+
+```bash
+pnpm --filter @wterm/ghostty rebuild-wasm
+pnpm --filter @wterm/ghostty check-wasm
+```
+
+On macOS 26, use `rebuild-wasm:docker` or `check-wasm:docker`; Docker and CI
+verify the pinned Linux compiler archive's SHA-256. Check mode leaves the
+committed binary unchanged. See the [Ghostty build instructions](packages/@wterm/ghostty/README.md#rebuilding-the-wasm).
+
 ### Regenerate the Unicode width table
 
 `src/unicode_width_table.zig` holds the East Asian Width ranges the core uses to decide cell width. It is generated, not hand-edited. Run this when Unicode publishes a new version, after bumping `UNICODE_VERSION` in the script:

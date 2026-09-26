@@ -20,10 +20,12 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "pnpm build",
-    "test": "vitest run",
+    "test": "node --test scripts/build-wasm.test.mjs && vitest run",
     "type-check": "tsc --noEmit",
     "rebuild-wasm": "bash scripts/build-wasm.sh",
-    "rebuild-wasm:docker": "bash scripts/build-wasm-docker.sh"
+    "rebuild-wasm:docker": "bash scripts/build-wasm-docker.sh",
+    "check-wasm": "bash scripts/build-wasm.sh --check",
+    "check-wasm:docker": "bash scripts/build-wasm-docker.sh --check"
   },
   "dependencies": {
     "@wterm/core": "workspace:*"
