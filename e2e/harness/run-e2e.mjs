@@ -6,8 +6,9 @@ import { createHarnessServer } from "./server.mjs";
 const require = createRequire(import.meta.url);
 const args = process.argv.slice(2);
 const load = args[0] === "--load";
-if (load) args.shift();
-const harness = await createHarnessServer({ load });
+const input = args[0] === "--input";
+if (load || input) args.shift();
+const harness = await createHarnessServer({ load: load || input });
 let child;
 let interrupted;
 let killTimer;
@@ -30,7 +31,11 @@ try {
       "--config",
       fileURLToPath(
         new URL(
-          load ? "load.config.ts" : "playwright.config.ts",
+          input
+            ? "input.config.ts"
+            : load
+              ? "load.config.ts"
+              : "playwright.config.ts",
           import.meta.url,
         ),
       ),

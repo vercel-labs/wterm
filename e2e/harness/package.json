@@ -12,6 +12,8 @@
     "test:e2e": "node run-e2e.mjs",
     "prebench": "node prepare-pty.mjs",
     "bench": "node run-e2e.mjs --load",
+    "prebench:input": "node prepare-pty.mjs",
+    "bench:input": "node run-e2e.mjs --input",
     "record": "node record-apps.mjs",
     "type-check": "tsc --noEmit"
   },

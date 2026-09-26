@@ -105,6 +105,17 @@ jobs:
           path: e2e/test-results/load/
           if-no-files-found: ignore
 
+      - name: Terminal input responsiveness smoke tests
+        run: pnpm bench:input
+
+      - name: Upload terminal input responsiveness reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-input-responsiveness
+          path: e2e/test-results/input/
+          if-no-files-found: ignore
+
       - name: Upload PTY baseline reports and failure traces
         if: always()
         uses: actions/upload-artifact@v4

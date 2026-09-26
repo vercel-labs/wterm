@@ -223,7 +223,9 @@ export async function createHarnessServer({
         logLevel: "warn",
         build: {
           write: false,
-          rollupOptions: { input: join(root, "load.html") },
+          rollupOptions: {
+            input: [join(root, "load.html"), join(root, "input.html")],
+          },
         },
       });
       const types = {

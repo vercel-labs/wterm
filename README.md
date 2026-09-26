@@ -257,6 +257,24 @@ chunk schedule, not native-terminal throughput or physical display latency.
 See the [harness documentation](e2e/harness/README.md#output-load-measurements)
 for measurement boundaries and comparison guidance.
 
+### Measure input responsiveness
+
+Measure native browser keyboard input with synchronous local echo while one or
+eight sessions receive ANSI scrolling or screen redraws, alongside an idle case:
+
+```bash
+pnpm bench:input
+WTERM_INPUT_PROFILE=measure pnpm bench:input --project chromium --repeat-each 3
+```
+
+The smoke profile checks 16 echoes per case; `measure` collects 256. Reports in
+`e2e/test-results/input/` contain dispatch-to-DOM and dispatch-to-frame timings,
+per-session output throughput and render counts, resource snapshots, and source
+metadata. CI checks echo completion and inactive-pane rendering without hardware
+timing thresholds. These local-echo measurements exclude input delivery before
+browser dispatch, network/PTY latency, and physical presentation. See the
+[harness documentation](e2e/harness/README.md#input-responsiveness-measurements).
+
 ### Use the interactive harness
 
 For interactive checks, run `pnpm --filter @internal/pty-harness dev` after the

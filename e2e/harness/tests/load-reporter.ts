@@ -12,13 +12,17 @@ export default class LoadReporter implements Reporter {
   private directory = "";
   private results: unknown[] = [];
 
+  constructor(
+    private options: { name?: string; measurementNotes?: string } = {},
+  ) {}
+
   onBegin(config: FullConfig) {
     this.directory = config.projects[0].outputDir;
   }
 
   onTestEnd(test: TestCase, result: TestResult) {
     const attachment = result.attachments.find(
-      ({ name }) => name === "load.json",
+      ({ name }) => name === (this.options.name ?? "load.json"),
     );
     this.results.push({
       test: test.title,
@@ -36,13 +40,14 @@ export default class LoadReporter implements Reporter {
   onEnd(result: FullResult) {
     mkdirSync(this.directory, { recursive: true });
     writeFileSync(
-      join(this.directory, "load.json"),
+      join(this.directory, this.options.name ?? "load.json"),
       JSON.stringify(
         {
           schemaVersion: 1,
           status: result.status,
           generatedAt: new Date().toISOString(),
           measurementNotes:
+            this.options.measurementNotes ??
             "Synthetic output with one 16 KiB write per timer task. Instrumented browser timings include harness overhead; frame intervals and task delays are scheduling proxies, not key-to-pixel latency or a native-terminal comparison. No performance thresholds are applied.",
           results: this.results,
         },
