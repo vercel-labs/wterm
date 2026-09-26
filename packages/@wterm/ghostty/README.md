@@ -228,6 +228,8 @@ ghostty's `Terminal` and `Page` types use `posix.mmap` and Mach VM allocators in
 - `src/terminal/page.zig`
 - `src/terminal/PageList.zig`
 
+Page allocation also includes upstream's [WASM initialization fix](https://github.com/ghostty-org/ghostty/commit/420de124f04aa322bf250098cc62d7195db94bfd): initial and replacement terminal pages are cleared before use in release builds. Unlike native OS page allocation, the WASM allocator can return previously used memory. This keeps new page state independent of earlier terminal contents.
+
 The Wuffs compatibility headers used by the build are `zig/src/wuffs-compat/{stdbool.h,stddef.h,stdint.h,stdlib.h,string.h}`; Wuffs itself is fetched from the pinned dependency in `zig/build.zig.zon`.
 
 The committed `wasm/ghostty-vt.wasm` binary means consumers never need Zig installed. Only maintainers rebuilding the WASM need Zig 0.15.2.

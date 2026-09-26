@@ -109,6 +109,8 @@ The built binary is committed at `packages/@wterm/core/wasm/wterm.wasm` and CI f
 The Ghostty adapter uses Zig 0.15.2, Bash, and Python 3. Its build runs in fresh
 caches under `/tmp` and leaves the shared Zig cache untouched. CI rebuilds it
 and requires a byte-for-byte match with the committed artifact on every PR.
+The adapter includes the upstream fix that zero-initializes new terminal
+pages when the WASM allocator reuses memory.
 
 ```bash
 pnpm --filter @wterm/ghostty rebuild-wasm
