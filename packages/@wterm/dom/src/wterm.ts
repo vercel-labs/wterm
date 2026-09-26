@@ -19,8 +19,6 @@ import {
 const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
 const PROGRAMMATIC_SCROLL_TOLERANCE = 1;
 
-const WINDOW_SIZE_QUERIES = ["\x1b[14t", "\x1b[16t"] as const;
-
 export interface WTermOptions {
   cols?: number;
   rows?: number;
@@ -82,7 +80,7 @@ export class WTerm {
   private _pendingResizeScrollTop: number | null = null;
   private _rowHeight = 0;
   private _charWidth = 0;
-  private _windowSizeQueryBuffer = "";
+  private _windowSizeQueryState: 0 | 1 | 2 | 3 | 4 | 6 = 0;
   private _search: SearchController;
   private _historySelection: HistorySelection;
   private _textCapture = new TextCapture();
@@ -891,41 +889,45 @@ export class WTerm {
    * viewport, so these two queries are answered at the DOM boundary.
    */
   private _collectWindowSizeQueries(data: string | Uint8Array): (14 | 16)[] {
-    const text =
-      typeof data === "string" ? data : new TextDecoder().decode(data);
-    const input = this._windowSizeQueryBuffer + text;
-    this._windowSizeQueryBuffer = "";
-
     const queries: (14 | 16)[] = [];
+    let state = this._windowSizeQueryState;
     let index = 0;
-    while (index < input.length) {
-      const query = WINDOW_SIZE_QUERIES.find((candidate) =>
-        input.startsWith(candidate, index),
-      );
-      if (query) {
-        queries.push(query === "\x1b[14t" ? 14 : 16);
-        index += query.length;
-      } else {
+    while (index < data.length) {
+      if (state === 0) {
+        // Skip ordinary output in bulk. ASCII queries can be recognized in
+        // raw bytes without allocating or decoding a copy of every write.
+        index =
+          typeof data === "string"
+            ? data.indexOf("\x1b", index)
+            : data.indexOf(0x1b, index);
+        if (index < 0) break;
+        state = 1;
         index++;
+        continue;
+      }
+      const code =
+        typeof data === "string" ? data.charCodeAt(index) : data[index];
+      index++;
+      const restart = code === 0x1b ? 1 : 0;
+      switch (state) {
+        case 1: // ESC
+          state = code === 0x5b ? 2 : restart;
+          break;
+        case 2: // ESC [
+          state = code === 0x31 ? 3 : restart;
+          break;
+        case 3: // ESC [ 1
+          state = code === 0x34 ? 4 : code === 0x36 ? 6 : restart;
+          break;
+        case 4:
+        case 6:
+          if (code === 0x74) queries.push(state === 4 ? 14 : 16);
+          state = restart;
+          break;
       }
     }
-
-    // Keep only a possible prefix of a query so an escape sequence split
-    // across WebSocket/WASM writes is recognized on the next write.
-    for (
-      let start = Math.max(0, input.length - 4);
-      start < input.length;
-      start++
-    ) {
-      const suffix = input.slice(start);
-      if (
-        suffix.length < 5 &&
-        WINDOW_SIZE_QUERIES.some((candidate) => candidate.startsWith(suffix))
-      ) {
-        this._windowSizeQueryBuffer = suffix;
-        break;
-      }
-    }
+    // Only the matched ASCII prefix survives, including across mixed writes.
+    this._windowSizeQueryState = state;
     return queries;
   }
 
@@ -1061,7 +1063,7 @@ export class WTerm {
     this._outputAnnouncements.destroy();
     this._search.cancel();
     this.onSearchChange = null;
-    this._windowSizeQueryBuffer = "";
+    this._windowSizeQueryState = 0;
     this._cancelScheduledRender();
     this._cancelSynchronizedOutputFallback();
     if (this.resizeObserver) this.resizeObserver.disconnect();

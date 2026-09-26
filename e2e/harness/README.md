@@ -12,6 +12,9 @@ Rendering-pause cases verify that inactive panes keep parsing terminal replies,
 titles, bells, history, screen switches, and resizes while their DOM stays
 unchanged. Resuming respects synchronized drawing and paints the latest state.
 
+Pixel-query cases check viewport and cell-size replies split across byte writes,
+alongside fragmented Unicode and ANSI output, including while painting is paused.
+
 `scrollback-reuse.spec.ts` checks that scrolling only constructs DOM for entering
 history rows and incoming output leaves unchanged history DOM intact. Both
 cores retain native selections, Unicode copy text, links, and row backgrounds
