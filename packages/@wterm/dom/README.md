@@ -249,6 +249,9 @@ While hovering an anchor, holding Command on macOS or Control on Windows and Lin
 
 WTerm answers xterm/Kitty pixel geometry queries (`CSI 14 t` and `CSI 16 t`) from the rendered terminal element and forwards the reports through `onData`, so Kitty graphics clients can size and place images in the browser.
 
+Queries can span text and byte writes, including while rendering is paused.
+Ordinary byte output is scanned directly without creating a decoded string copy.
+
 Scrollback normally keeps only the visible rows plus overscan mounted in the DOM. Up to 1,000 selected history rows can also stay mounted, separately from a distant viewport. Gaps remain virtualized. Native browser find and accessibility inspect mounted rows, not every retained history row. Scrolling updates the window, while new output follows the exact bottom only when the terminal was already there.
 
 WTerm owns scrollback anchoring when old history is discarded. The package stylesheet disables browser-native scroll anchoring on the terminal scroller so rollover produces one deterministic adjustment across browsers.

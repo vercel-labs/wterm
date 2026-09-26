@@ -31,8 +31,8 @@
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@vitest/coverage-v8": "^5.0.1",
-    "prettier": "^3.9.8",
-    "turbo": "^2.11.2",
+    "prettier": "^3.9.9",
+    "turbo": "^2.11.3",
     "vitest": "^5.0.1"
   },
   "packageManager": "pnpm@11.1.3"

@@ -409,6 +409,81 @@ describe("WTerm", () => {
       term.write("x");
       expect(onData).toHaveBeenCalledTimes(1);
     });
+
+    it.each(["text", "bytes", "mixed"] as const)(
+      "preserves pixel query order at every pair of %s chunk boundaries",
+      async (kind) => {
+        const onData = vi.fn();
+        const term = new WTerm(element, { autoResize: false, onData });
+        await term.init();
+        const encoder = new TextEncoder();
+        // Restart at a second ESC, reject near matches, and recognize repeated
+        // queries. Every pair includes empty writes and splits inside queries.
+        const input = "\x1b\x1b[14t\x1b[16m\x1b[16t\x1b[14t";
+        const expected = [14, 16, 14];
+        const responses: number[] = [];
+        onData.mockImplementation((data: string) => {
+          responses.push(data.startsWith("\x1b[4;") ? 14 : 16);
+        });
+        try {
+          for (let first = 0; first <= input.length; first++) {
+            for (let second = first; second <= input.length; second++) {
+              responses.length = 0;
+              const chunks = [
+                input.slice(0, first),
+                input.slice(first, second),
+                input.slice(second),
+              ];
+              chunks.forEach((chunk, i) =>
+                term.write(
+                  kind === "bytes" || (kind === "mixed" && i % 2 === 0)
+                    ? encoder.encode(chunk)
+                    : chunk,
+                ),
+              );
+              expect(responses, `${first}, ${second}`).toEqual(expected);
+            }
+          }
+        } finally {
+          term.destroy();
+        }
+      },
+    );
+
+    it("keeps raw byte views intact without decoding ordinary output", async () => {
+      const onData = vi.fn();
+      const term = new WTerm(element, { autoResize: false, onData });
+      await term.init();
+      const storage = new TextEncoder().encode(
+        "\x1b[14t" + "🙂色".repeat(8192) + "\x1b[16t",
+      );
+      const view = storage.subarray(5, storage.length - 5);
+      const original = storage.slice();
+      const decode = vi.spyOn(TextDecoder.prototype, "decode");
+      try {
+        term.write(view);
+        expect(onData).not.toHaveBeenCalled();
+        expect(mockBridge.writeRaw).toHaveBeenCalledWith(
+          view,
+          expect.any(Function),
+        );
+        expect(storage).toEqual(original);
+        expect(decode).not.toHaveBeenCalled();
+
+        // UTF-8 fragments must neither erase a later query nor join a stale
+        // prefix to ASCII after an intervening byte.
+        term.write("\x1b[");
+        term.write(new Uint8Array([0xf0, 0x9f]));
+        term.write(new Uint8Array([0x99, 0x82, 0x31, 0x34, 0x74]));
+        expect(onData).not.toHaveBeenCalled();
+        term.write(new TextEncoder().encode("色\x1b[1"));
+        term.write("6t");
+        expect(onData).toHaveBeenCalledTimes(1);
+        expect(onData.mock.calls[0][0]).toMatch(/^\x1b\[6;/);
+      } finally {
+        term.destroy();
+      }
+    });
   });
 
   describe("resize", () => {

@@ -190,6 +190,8 @@ iTerm2, animation, and virtual placements are not loaded.
 Kitty graphics clients can use the Ghostty example's browser terminal
 directly; `WTerm` reports the viewport and cell pixel sizes required by
 commands such as `kitten icat --transfer-mode=stream image.png`.
+Pixel-size queries can span text and byte writes; ordinary byte output does not
+need a decoded string copy for query detection.
 The local shell example also forwards the browser viewport dimensions to its
 PTY, which lets `kitten icat --detect-support` work from that embedded shell.
 

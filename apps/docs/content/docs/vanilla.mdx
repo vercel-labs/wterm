@@ -138,6 +138,8 @@ and only scale images down.
 The DOM wrapper answers Kitty pixel geometry queries (`CSI 14 t` and
 `CSI 16 t`) from the rendered terminal element, allowing Kitty graphics clients
 such as `kitten icat --transfer-mode=stream image.png` to negotiate image size.
+Queries can span text and byte writes, including while rendering is paused.
+Ordinary byte output is scanned directly without creating a decoded string copy.
 
 ## Themes
 
