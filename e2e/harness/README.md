@@ -48,6 +48,11 @@ Fixtures live in [`e2e/fixtures/`](../fixtures/README.md). The application captu
 
 Replay opens `?mode=replay&core=builtin` or `?mode=replay&core=ghostty`, without starting a PTY. The browser receives raw byte arrays through `WTerm.write`: application output in chunks of at most seven bytes, protocol output one byte at a time. Captured timestamps document event order; CI skips the delays. Recorded inputs describe the original session and are never executed during replay. Each checkpoint compares explicit expected state with core cells and rendered DOM rows; selected styles are checked through computed CSS.
 
+`underline.spec.ts` checks Ghostty's five underline variants, independent
+underline colors and strikethrough, SGR resets, Unicode cell geometry, links,
+selection, history, and resize. It also covers flag-based single underlines
+with the built-in core.
+
 `cursor.spec.ts` checks application-controlled cursor shape, blink-off colors,
 focus/visibility changes, and the host blink override. Add `cursorBlink=true`
 or `cursorBlink=false` to the harness URL to exercise that override manually.

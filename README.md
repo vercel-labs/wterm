@@ -49,6 +49,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Cell backgrounds** — colored and reversed cells stay within their columns; uniformly colored rows fill the available width
 - **Aligned terminal borders** — fallback glyphs stay in their cells and common box-drawing strokes connect across rows and columns
 - **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly
+- **Underline styles and colors** — Ghostty preserves single, double, curly, dotted, and dashed underlines in the viewport and scrollback
 - **Application-controlled cursors** — block, bar, and underline shapes with terminal-requested blinking and a host override
 - **Window titles** — OSC 0/2 title changes reach `onTitle` with either the built-in or Ghostty core
 - **Bell events** — BEL reaches `onBell(count)` through either core, leaving sound or visual alerts to the host app

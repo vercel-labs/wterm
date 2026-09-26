@@ -6,6 +6,8 @@
  * This module handles WASM loading, memory management, and cell parsing.
  */
 
+import type { UnderlineStyle } from "@wterm/core";
+
 export interface GhosttyExports {
   memory: WebAssembly.Memory;
 
@@ -27,6 +29,8 @@ export interface GhosttyExports {
   // Render state
   update(ptr: number): void;
   get_viewport(ptr: number, buf_ptr: number): number;
+  /** 20-byte cells with underline style/color. Optional for older binaries. */
+  get_viewport_v2?(ptr: number, buf_ptr: number): number;
   get_viewport_grapheme(
     ptr: number,
     row: number,
@@ -108,6 +112,12 @@ export interface GhosttyExports {
     buf_ptr: number,
     max_cols: number,
   ): number;
+  get_scrollback_line_v2?(
+    ptr: number,
+    offset: number,
+    buf_ptr: number,
+    max_cols: number,
+  ): number;
   get_scrollback_grapheme(
     ptr: number,
     offset: number,
@@ -142,6 +152,15 @@ export interface GhosttyWasm {
 }
 
 const CELL_BYTES = 16;
+export const CELL_BYTES_V2 = 20;
+const UNDERLINE_STYLES: readonly UnderlineStyle[] = [
+  "none",
+  "single",
+  "double",
+  "curly",
+  "dotted",
+  "dashed",
+];
 
 const REMEDY =
   "Serve the binary from your app and pass its URL: " +
@@ -237,8 +256,10 @@ export interface WasmCellData {
   bgB: number;
   flags: number;
   width: number;
-  /** Bit 0: has explicit fg color, Bit 1: has explicit bg color */
+  /** Bit 0: explicit fg, bit 1: explicit bg, bit 2 (v2): explicit underline */
   colorFlags: number;
+  underlineStyle?: UnderlineStyle;
+  underlineRgb?: number;
   hasGrapheme: boolean;
   hasHyperlink: boolean;
   spacerHead: boolean;
@@ -246,9 +267,13 @@ export interface WasmCellData {
 
 /**
  * Parse a single cell from the viewport buffer at the given byte offset.
- * The buffer layout matches the 16-byte struct from wasm_api.zig.
+ * The buffer layout matches the selected cell export from wasm_api.zig.
  */
-export function parseCell(view: DataView, byteOffset: number): WasmCellData {
+export function parseCell(
+  view: DataView,
+  byteOffset: number,
+  cellBytes = CELL_BYTES,
+): WasmCellData {
   return {
     codepoint: view.getUint32(byteOffset, true),
     fgR: view.getUint8(byteOffset + 4),
@@ -263,6 +288,17 @@ export function parseCell(view: DataView, byteOffset: number): WasmCellData {
     hasGrapheme: (view.getUint8(byteOffset + 13) & 1) !== 0,
     hasHyperlink: (view.getUint8(byteOffset + 13) & 2) !== 0,
     spacerHead: (view.getUint8(byteOffset + 13) & 4) !== 0,
+    ...(cellBytes === CELL_BYTES_V2
+      ? {
+          underlineStyle: UNDERLINE_STYLES[view.getUint8(byteOffset + 16)],
+          underlineRgb:
+            view.getUint8(byteOffset + 12) & 4
+              ? (view.getUint8(byteOffset + 17) << 16) |
+                (view.getUint8(byteOffset + 18) << 8) |
+                view.getUint8(byteOffset + 19)
+              : undefined,
+        }
+      : {}),
   };
 }
 

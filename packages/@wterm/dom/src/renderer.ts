@@ -63,13 +63,15 @@ function cellBgCSS(bg: number, bgRgb: number | undefined): string | null {
   return colorToCSS(bg);
 }
 
-function buildCellStyle(
-  fg: number,
-  bg: number,
-  flags: number,
-  fgRgb?: number,
-  bgRgb?: number,
-): string {
+function buildCellStyle({
+  fg,
+  bg,
+  flags,
+  fgRgb,
+  bgRgb,
+  underlineStyle,
+  underlineRgb,
+}: CellData): string {
   let fgIdx = fg,
     bgIdx = bg,
     fgR = fgRgb,
@@ -97,9 +99,24 @@ function buildCellStyle(
   if (flags & FLAG_ITALIC) style += "font-style:italic;";
 
   const decorations: string[] = [];
-  if (flags & FLAG_UNDERLINE) decorations.push("underline");
+  const underline =
+    underlineStyle ?? (flags & FLAG_UNDERLINE ? "single" : "none");
+  if (underline !== "none") decorations.push("underline");
   if (flags & FLAG_STRIKETHROUGH) decorations.push("line-through");
   if (decorations.length) style += `text-decoration:${decorations.join(" ")};`;
+  if (underline !== "none") {
+    const cssStyle =
+      underline === "curly"
+        ? "wavy"
+        : underline === "double" ||
+            underline === "dotted" ||
+            underline === "dashed"
+          ? underline
+          : "solid";
+    style += `text-decoration-style:${cssStyle};text-decoration-skip-ink:none;`;
+    if (underlineRgb !== undefined)
+      style += `text-decoration-color:${rgbToCSS(underlineRgb)};`;
+  }
 
   if (flags & FLAG_INVISIBLE) style += "visibility:hidden;";
   return style;
@@ -132,6 +149,23 @@ function escapeHTML(text: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// CSS applies one decoration style/color to every line on an element. Keep
+// the strike on its own inline element so colored/curly underlines do not
+// change it. The cell span still owns geometry and the text appears only once.
+function cellSpanHTML(className: string, style: string, text: string): string {
+  let content = escapeHTML(text);
+  if (style.includes("text-decoration:underline line-through;")) {
+    style = style.replace(
+      "text-decoration:underline line-through;",
+      "text-decoration:underline;",
+    );
+    content = `<span style="text-decoration:line-through solid currentColor;">${content}</span>`;
+  }
+  const classAttr = className ? ` class="${className}"` : "";
+  const styleAttr = style ? ` style="${style}"` : "";
+  return `<span${classAttr}${styleAttr}>${content}</span>`;
 }
 
 function safeLinkHref(uri: string | undefined): string | undefined {
@@ -489,7 +523,6 @@ export class Renderer {
 
     const flushRun = (endCol: number) => {
       if (!runText) return;
-      const escaped = escapeHTML(runText);
       let content = "";
 
       if (cursorCol >= runStart && cursorCol < endCol) {
@@ -500,25 +533,17 @@ export class Renderer {
 
         if (before) {
           const style = columnStyle(offset) + runStyle;
-          content += style
-            ? `<span style="${style}">${escapeHTML(before)}</span>`
-            : `<span>${escapeHTML(before)}</span>`;
+          content += cellSpanHTML("", style, before);
         }
         const cursorStyle = cursorCellStyle(runStyle);
-        content += cursorStyle
-          ? `<span class="term-cursor" style="${cursorStyle}">${escapeHTML(cursorChar)}</span>`
-          : `<span class="term-cursor">${escapeHTML(cursorChar)}</span>`;
+        content += cellSpanHTML("term-cursor", cursorStyle, cursorChar);
         if (after) {
           const style = columnStyle(runCells.length - offset - 1) + runStyle;
-          content += style
-            ? `<span style="${style}">${escapeHTML(after)}</span>`
-            : `<span>${escapeHTML(after)}</span>`;
+          content += cellSpanHTML("", style, after);
         }
       } else {
         const style = columnStyle(runCells.length) + runStyle;
-        content += style
-          ? `<span style="${style}">${escaped}</span>`
-          : `<span>${escaped}</span>`;
+        content += cellSpanHTML("", style, runText);
       }
       appendContent(content, runLinkKey, runLinkUri);
       runText = "";
@@ -532,13 +557,7 @@ export class Renderer {
       linkKey: string,
       linkUri?: string,
     ) => {
-      const classAttr = className ? ` class="${className}"` : "";
-      const styleAttr = style ? ` style="${style}"` : "";
-      appendContent(
-        `<span${classAttr}${styleAttr}>${escapeHTML(text)}</span>`,
-        linkKey,
-        linkUri,
-      );
+      appendContent(cellSpanHTML(className, style, text), linkKey, linkUri);
     };
 
     for (let col = 0; col < this.cols; col++) {
@@ -583,13 +602,7 @@ export class Renderer {
         // would shorten the row.
         if (!continuesWide) {
           recordText(" ", col);
-          const style = buildCellStyle(
-            cell.fg,
-            cell.bg,
-            cell.flags,
-            cell.fgRgb,
-            cell.bgRgb,
-          );
+          const style = buildCellStyle(cell);
           const cursor = col === cursorCol;
           appendStyledSpan(
             cursor ? "term-cursor" : "",
@@ -617,13 +630,7 @@ export class Renderer {
         // a second column past the row.
         if (col + 1 >= this.cols) {
           recordText(" ", col);
-          const style = buildCellStyle(
-            cell.fg,
-            cell.bg,
-            cell.flags,
-            cell.fgRgb,
-            cell.bgRgb,
-          );
+          const style = buildCellStyle(cell);
           const cursor = col === cursorCol;
           appendStyledSpan(
             cursor ? "term-cursor" : "",
@@ -643,13 +650,7 @@ export class Renderer {
 
         const ch = cell.chars ?? (cp >= 32 ? String.fromCodePoint(cp) : " ");
         recordText(ch, col, 2);
-        const style = buildCellStyle(
-          cell.fg,
-          cell.bg,
-          cell.flags,
-          cell.fgRgb,
-          cell.bgRgb,
-        );
+        const style = buildCellStyle(cell);
         const cursor = cursorCol >= col && cursorCol < col + 2;
         const cls = cursor ? "term-wide term-cursor" : "term-wide";
         appendStyledSpan(
@@ -683,13 +684,12 @@ export class Renderer {
         );
         const cls = col === cursorCol ? "term-block term-cursor" : "term-block";
         const bg = getBlockBackground(cp, colors.fg, colors.bg);
-        const dim = cell.flags & FLAG_DIM ? "opacity:0.5;" : "";
-        const blockStyle =
-          col === cursorCol
-            ? `--term-cell-bg:${bg};${dim}`
-            : `background:${bg};${dim}`;
-        appendContent(
-          `<span class="${cls}" style="${blockStyle}">${escapeHTML(ch)}</span>`,
+        const style =
+          buildCellStyle(cell) + `color:${colors.fg};background:${bg};`;
+        appendStyledSpan(
+          cls,
+          col === cursorCol ? cursorCellStyle(style) : style,
+          ch,
           cellLinkKey,
           cellLinkUri,
         );
@@ -704,9 +704,7 @@ export class Renderer {
         const ch =
           cell.chars ?? (inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ");
         recordText(ch, col, 1, cell.spacerHead === true);
-        const style = inBounds
-          ? buildCellStyle(cell.fg, cell.bg, cell.flags, cell.fgRgb, cell.bgRgb)
-          : "";
+        const style = inBounds ? buildCellStyle(cell) : "";
 
         // Font fallback can give a narrow Unicode glyph a different advance
         // from ASCII. Bound each such cell (including complete graphemes) so

@@ -19,6 +19,7 @@ import {
   allocBuffer,
   freeBuffer,
   CELL_BYTES,
+  CELL_BYTES_V2,
   GRAPHICS_IMAGE_BYTES,
   GRAPHICS_PLACEMENT_BYTES,
   readGraphicsImages,
@@ -127,6 +128,7 @@ function cloneGraphicsState(
 export class GhosttyCore implements TerminalCore {
   private wasm: GhosttyWasm;
   private termPtr = 0;
+  private readonly _cellBytes: number;
   private _options: GhosttyOptions;
   private _foregroundRgb: number;
   private _backgroundRgb: number;
@@ -157,6 +159,10 @@ export class GhosttyCore implements TerminalCore {
 
   private constructor(wasm: GhosttyWasm, options: GhosttyOptions) {
     this.wasm = wasm;
+    this._cellBytes =
+      wasm.exports.get_viewport_v2 && wasm.exports.get_scrollback_line_v2
+        ? CELL_BYTES_V2
+        : CELL_BYTES;
     this._options = options;
     this._foregroundRgb = parseColor(
       options.foregroundColor ?? DEFAULT_FOREGROUND,
@@ -280,10 +286,10 @@ export class GhosttyCore implements TerminalCore {
     if (!view) return BLANK_CELL;
 
     const idx = row * this._cols + col;
-    const byteOffset = idx * CELL_BYTES;
-    if (byteOffset + CELL_BYTES > this._viewportBufSize) return BLANK_CELL;
+    const byteOffset = idx * this._cellBytes;
+    if (byteOffset + this._cellBytes > this._viewportBufSize) return BLANK_CELL;
 
-    const cell = parseCell(view, byteOffset);
+    const cell = parseCell(view, byteOffset, this._cellBytes);
     // A continuation cell carries no content of its own, so the blank test
     // matches it. Returning BLANK_CELL would hide the width the renderer
     // needs to skip it.
@@ -304,6 +310,10 @@ export class GhosttyCore implements TerminalCore {
       flags: cell.flags,
       width: cell.width,
     };
+    if (cell.underlineStyle !== undefined)
+      result.underlineStyle = cell.underlineStyle;
+    if (cell.underlineRgb !== undefined)
+      result.underlineRgb = cell.underlineRgb;
     if (cell.hasGrapheme) result.chars = this._readGrapheme(row, col);
     if (cell.spacerHead) result.spacerHead = true;
     if (cell.hasHyperlink)
@@ -677,7 +687,7 @@ export class GhosttyCore implements TerminalCore {
     const view = this._scrollbackView;
     if (!view || col >= len) return BLANK_CELL;
 
-    const cell = parseCell(view, col * CELL_BYTES);
+    const cell = parseCell(view, col * this._cellBytes, this._cellBytes);
     const result: CellData = {
       char: cell.codepoint || 32,
       fg: DEFAULT_COLOR,
@@ -685,6 +695,10 @@ export class GhosttyCore implements TerminalCore {
       flags: cell.flags,
       width: cell.width,
     };
+    if (cell.underlineStyle !== undefined)
+      result.underlineStyle = cell.underlineStyle;
+    if (cell.underlineRgb !== undefined)
+      result.underlineRgb = cell.underlineRgb;
     if (cell.hasGrapheme)
       result.chars = this._readScrollbackGrapheme(offset, col);
     if (cell.spacerHead) result.spacerHead = true;
@@ -878,7 +892,7 @@ export class GhosttyCore implements TerminalCore {
     if (this._viewportBufPtr !== 0) {
       freeBuffer(this.wasm, this._viewportBufPtr, this._viewportBufSize);
     }
-    this._viewportBufSize = this._cols * this._rows * CELL_BYTES;
+    this._viewportBufSize = this._cols * this._rows * this._cellBytes;
     this._viewportBufPtr = allocBuffer(this.wasm, this._viewportBufSize);
     this._viewportView = null;
     this._viewportStale = true;
@@ -886,7 +900,7 @@ export class GhosttyCore implements TerminalCore {
     if (this._scrollbackBufPtr !== 0) {
       freeBuffer(this.wasm, this._scrollbackBufPtr, this._scrollbackBufSize);
     }
-    this._scrollbackBufSize = this._cols * CELL_BYTES;
+    this._scrollbackBufSize = this._cols * this._cellBytes;
     this._scrollbackBufPtr = allocBuffer(this.wasm, this._scrollbackBufSize);
     this._scrollbackView = null;
     this._scrollbackOffset = -1;
@@ -901,7 +915,11 @@ export class GhosttyCore implements TerminalCore {
     if (this._scrollbackBufPtr === 0) return 0;
 
     if (this._scrollbackOffset !== offset) {
-      this._scrollbackLen = this.wasm.exports.get_scrollback_line(
+      const read =
+        this._cellBytes === CELL_BYTES_V2
+          ? this.wasm.exports.get_scrollback_line_v2!
+          : this.wasm.exports.get_scrollback_line;
+      this._scrollbackLen = read(
         this.termPtr,
         offset,
         this._scrollbackBufPtr,
@@ -925,7 +943,11 @@ export class GhosttyCore implements TerminalCore {
   private _ensureViewport(): void {
     if (this._viewportStale) {
       this.wasm.exports.update(this.termPtr);
-      this.wasm.exports.get_viewport(this.termPtr, this._viewportBufPtr);
+      const read =
+        this._cellBytes === CELL_BYTES_V2
+          ? this.wasm.exports.get_viewport_v2!
+          : this.wasm.exports.get_viewport;
+      read(this.termPtr, this._viewportBufPtr);
       this._viewportStale = false;
     }
     if (this._viewportView?.buffer !== this.wasm.exports.memory.buffer) {

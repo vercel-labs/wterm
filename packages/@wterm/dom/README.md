@@ -242,6 +242,14 @@ The built-in and Ghostty cores answer `CSI ?2026$p` with the mode's current set/
 
 Ordinary writes schedule `requestAnimationFrame` directly. Multiple writes before the frame are coalesced into one render.
 
+When a core provides `CellData.underlineStyle`, the renderer paints single,
+double, curly, dotted, or dashed underlines; `"none"` suppresses the underline.
+`underlineRgb` sets its resolved RGB color, otherwise it follows the displayed
+foreground. Strikethrough remains solid in the text color when combined with
+an underline. Decorations preserve text selection, cell widths, links, and
+scrollback. Ghostty provides these fields; cores that omit them retain single
+underlines through the existing `0x08` flag.
+
 When a terminal core supplies `CellData.chars`, the renderer paints that complete grapheme string instead of only the cell's base code point.
 
 When a core supplies OSC 8 metadata through `CellData.linkUri` and `CellData.linkKey`, the renderer groups the covered cells into native anchors. Only absolute HTTP and HTTPS URIs become clickable. Invalid, relative, and executable schemes render as ordinary terminal text.

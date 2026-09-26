@@ -129,9 +129,9 @@ describe("GhosttyCore scrollback readback", () => {
     for (const key of Object.keys(wasm.exports)) {
       exports[key] = wasm.exports[key];
     }
-    const real = wasm.exports.get_scrollback_line;
+    const real = wasm.exports.get_scrollback_line_v2;
     let calls = 0;
-    exports.get_scrollback_line = (...args: unknown[]) => {
+    exports.get_scrollback_line_v2 = (...args: unknown[]) => {
       calls++;
       return real(...args);
     };
