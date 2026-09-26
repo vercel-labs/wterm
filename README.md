@@ -55,7 +55,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Window titles** — OSC 0/2 title changes reach `onTitle` with either the built-in or Ghostty core
 - **Bell events** — BEL reaches `onBell(count)` through either core, leaving sound or visual alerts to the host app
 - **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window; overlapping history rows reuse their DOM as you scroll
-- **Full-history Find** — incremental plain-text search, match counts, highlights, and next/previous navigation across retained output; Ghostty searches across soft wraps
+- **Full-history Find** — time-sliced plain-text search, match counts, highlights, and next/previous navigation across retained output; Ghostty searches across soft wraps
 - **Row-wrap metadata** — the Ghostty core exposes soft-wrap relationships in the live screen and retained history, including after reflow
 - **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws and column insertions/deletions aligned
 - **DEC line drawing** — character-set switches used by tmux and other TUIs produce borders and symbols instead of literal letters
@@ -294,6 +294,22 @@ metadata. CI checks echo completion and inactive-pane rendering without hardware
 timing thresholds. These local-echo measurements exclude input delivery before
 browser dispatch, network/PTY latency, and physical presentation. See the
 [harness documentation](e2e/harness/README.md#input-responsiveness-measurements).
+
+### Measure history search
+
+Search a fully retained Ghostty history with sparse matches and a no-match query:
+
+```bash
+pnpm bench:search
+WTERM_SEARCH_PROFILE=stress pnpm bench:search --project chromium --repeat-each 3
+```
+
+The smoke profile retains 10,000 lines; `stress` retains 100,000. Reports under
+`e2e/test-results/search/` record first results, completion, highlight-frame
+opportunities, frame/task delays, retained history, and source/environment
+metadata. CI checks correctness and cancellation without speed thresholds.
+See the [harness documentation](e2e/harness/README.md#history-search-measurements)
+for the fixed corpus and measurement boundaries.
 
 ### Use the interactive harness
 

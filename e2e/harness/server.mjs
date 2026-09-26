@@ -224,7 +224,11 @@ export async function createHarnessServer({
         build: {
           write: false,
           rollupOptions: {
-            input: [join(root, "load.html"), join(root, "input.html")],
+            input: [
+              join(root, "load.html"),
+              join(root, "input.html"),
+              join(root, "search.html"),
+            ],
           },
         },
       });

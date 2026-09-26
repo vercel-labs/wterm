@@ -30,9 +30,13 @@ export interface SearchMatch {
 }
 
 function fold(text: string, caseSensitive: boolean): string {
-  return caseSensitive
-    ? text
-    : Array.from(text, (char) => char.toLowerCase()).join("");
+  if (caseSensitive) return text;
+  // Most cells contain one ASCII/BMP character. Avoid creating an array for
+  // every cell, while preserving per-code-point (not contextual) lowercase.
+  if (text.length <= 1) return text.toLowerCase();
+  let folded = "";
+  for (const char of text) folded += char.toLowerCase();
+  return folded;
 }
 
 /** Streams cells without materializing history or an arbitrarily long line. */
@@ -135,6 +139,7 @@ export class SearchController {
     limited: false,
   };
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private channel: MessageChannel | null = null;
   private scan: Generator<SearchMatch | null> | null = null;
   private pending = false;
   private revealFirst = false;
@@ -173,10 +178,10 @@ export class SearchController {
       this.state.caseSensitive,
     ));
     const tick = () => {
+      if (this.scan !== scan) return;
       this.timer = null;
       const deadline = performance.now() + 4;
       let done = false;
-      let batches = 0;
       do {
         const next = scan.next();
         if (next.done) {
@@ -190,10 +195,8 @@ export class SearchController {
             break;
           }
           this.matches.push(next.value);
-        } else {
-          batches++;
         }
-      } while (batches < 32 && performance.now() < deadline);
+      } while (performance.now() < deadline);
       this.state.count = this.matches.length;
       const reveal = this.revealFirst && this.matches.length > 0;
       if (this.matches.length && this.state.activeIndex === -1)
@@ -203,12 +206,36 @@ export class SearchController {
       if (done) {
         scan.return(undefined);
         this.scan = null;
+        this.clearTask();
       }
       this.changed(reveal);
       // A host callback can cancel, replace the query, write, or destroy WTerm.
-      if (this.scan === scan) this.timer = setTimeout(tick, 0);
+      if (this.scan === scan) this.schedule(tick);
     };
-    this.timer = setTimeout(tick, 0);
+    this.schedule(tick);
+  }
+
+  private schedule(tick: () => void): void {
+    // A task boundary lets input and painting run between 4 ms slices without
+    // the minimum delay browsers impose on repeatedly nested zero-delay timers.
+    if (typeof MessageChannel === "undefined") {
+      this.timer = setTimeout(tick, 0);
+    } else {
+      const channel = (this.channel ??= new MessageChannel());
+      channel.port1.onmessage = tick;
+      channel.port2.postMessage(null);
+    }
+  }
+
+  private clearTask(): void {
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    if (this.channel) {
+      this.channel.port1.onmessage = null;
+      this.channel.port1.close();
+      this.channel.port2.close();
+      this.channel = null;
+    }
   }
 
   navigate(direction: 1 | -1): boolean {
@@ -222,8 +249,7 @@ export class SearchController {
   }
 
   cancel(): void {
-    if (this.timer !== null) clearTimeout(this.timer);
-    this.timer = null;
+    this.clearTask();
     this.scan?.return(undefined);
     this.scan = null;
     this.pending = false;

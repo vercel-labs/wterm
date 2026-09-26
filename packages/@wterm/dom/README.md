@@ -327,7 +327,7 @@ term.findPrevious();
 term.clearSearch();
 ```
 
-Search reads all retained rows, including unmounted history, in cancellable batches. Matches appear in chronological order; the first result is selected and revealed. `activeIndex` is zero-based, or -1 with no results. Navigation wraps among the matches found so far. Highlights preserve native text nodes and selection. Set `--term-search-match`, `--term-search-active`, and `--term-search-border` to customize their colors.
+Search reads all retained rows, including unmounted history, in cancellable batches. Scanning yields to browser tasks after a soft 4 ms budget so input and rendering can continue. It uses message tasks where available to avoid nested-timer delays during long searches, with a timer fallback. Matches appear in chronological order; the first result is selected and revealed. `activeIndex` is zero-based, or -1 with no results. Navigation wraps among the matches found so far. Highlights preserve native text nodes and selection. Set `--term-search-match`, `--term-search-active`, and `--term-search-border` to customize their colors.
 
 Ghostty joins confirmed soft wraps, including the history/screen boundary. Explicit newlines and unknown row boundaries separate matches; the built-in core currently searches each physical row independently. Search uses cell grapheme strings, omits wide-cell continuations and flagged spacer heads, and highlights the entire cell for partial-grapheme matches. Spaces, including terminal blank-cell padding, are literal; queries do not span hard line breaks. Regular expressions are not interpreted.
 

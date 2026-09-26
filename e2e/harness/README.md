@@ -256,6 +256,47 @@ partial counters; failures before initialization have a null measurement.
 Probe correctness tests are included in the report with null measurements.
 CI uploads the directory as `terminal-input-responsiveness`.
 
+## History search measurements
+
+```bash
+pnpm bench:search
+WTERM_SEARCH_PROFILE=stress pnpm bench:search --project chromium --repeat-each 3
+```
+
+The production bundle searches Ghostty at 80 columns by 24 rows, with a 128 MiB
+history budget. `smoke` writes 10,000 numbered ASCII records; `stress` writes
+100,000. Each record ends in CRLF and contains a fixed sentence plus `Needle`
+at every thousandth record and the final record. The other query,
+`not-in-this-corpus`, scans all rows without finding a match. Both use default
+case-insensitive search. Every record and the final blank row must be retained;
+the suite fails if any history was discarded. Preparation runs with painting
+paused and is excluded from the timings.
+
+| Field | Boundary |
+| --- | --- |
+| `firstResultsMs` | Search request to the first nonzero result-count callback; null for no matches |
+| `completeMs` | Search request to the final callback with `searching: false` |
+| `firstHighlightFrameMs` | Search request to an animation callback observing an active highlight; null for no matches |
+| `frames` / `taskDelay` | Animation-callback intervals and delay beyond a requested 16 ms timer interval during the search |
+
+The measurements include scheduling and harness overhead. A highlight-frame
+callback observes DOM at a frame opportunity; it does not measure physical
+presentation. Frame/task summaries keep at most 16,384 samples; whole-run
+count/mean/max include all samples. A very fast search may finish before the
+first task-delay sample. Hidden pages, explicit cancellation, or a 60-second
+deadline fail the measurement and remove its callbacks/timers. Failure retains
+partial results. Control cases check cancellation cleanup and timer fallback.
+
+The runner spawns no PTY. Per-case attachments and the combined
+`e2e/test-results/search/search.json` record the corpus hash, source commit/dirty
+status, built search script and WASM hashes, browser/headless mode, host/CPU, font geometry, retained rows,
+match counts, bounded mounted rows, and failed cases. Browser resize deferrals
+are counted separately from application errors as in the input suite. Failures
+before initialization and control cases have null measurements. CI uploads the
+directory as `terminal-history-search`; it checks correctness without timing
+thresholds. Use the same hardware, browser, profile, and display configuration
+with repeated runs for performance comparisons.
+
 ## What the measurements mean
 
 The harness instruments its own call sites and leaves the terminal packages' runtime APIs unchanged. Debug escape-sequence tracing is disabled.
@@ -296,6 +337,8 @@ If a native binding is missing, install the platform build prerequisites and run
 | `input.html`, `src/input-main.ts` | Isolated local-echo page and one/eight session setup |
 | `src/input.ts`, `src/input-workloads.ts`, `src/echo-probe.ts` | Bounded output producers, instrumentation, and matching DOM/frame echo probe |
 | `input.config.ts`, `tests/input*.bench.ts` | Input measurements, probe failure checks, and cleanup assertions |
+| `search.html`, `src/search-main.ts`, `src/search-workload.ts` | Retained-history corpus and search timing/cleanup |
+| `search.config.ts`, `tests/search.bench.ts` | Search measurements, correctness assertions, and cancellation controls |
 | `tests/terminal.spec.ts` | Real browser input, shell output, resize, exit, and report attachments |
 | `tests/replay.spec.ts` | Byte-stream playback and semantic/DOM checkpoint assertions |
 | `tests/baseline-reporter.ts` | Combined measurement and outcome report |
