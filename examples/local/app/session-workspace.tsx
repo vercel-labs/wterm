@@ -15,7 +15,8 @@ import { OutputReader } from "./output-reader";
 import { TerminalConnection } from "../lib/terminal-connection";
 import "@wterm/react/css";
 
-type SessionStatus = "loading" | "connecting" | "connected" | "closed";
+type SessionStatus =
+  "loading" | "connecting" | "reconnecting" | "connected" | "closed";
 
 interface Session {
   id: string;
@@ -151,6 +152,7 @@ function SessionTerminal({
   const [connectionMessage, setConnectionMessage] = useState<string | null>(
     null,
   );
+  const [reconnected, setReconnected] = useState(false);
   const [announceOutput, setAnnounceOutput] = useState(false);
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
@@ -247,10 +249,13 @@ function SessionTerminal({
   const handleReady = useCallback(
     (wt: WTerm) => {
       if (disposedRef.current) return;
+      // A new parser cannot resume from the previous parser's byte position.
+      if (terminalRef.current && terminalRef.current !== wt) {
+        wsRef.current?.close();
+        wsRef.current = null;
+      }
       terminalRef.current = wt;
       wt.onSearchChange = setSearchState;
-      // A remounted terminal replaces the reader/search target even while the
-      // session's existing socket remains connected.
       if (wsRef.current) return;
 
       // Let the first ResizeObserver pass settle before spawning the shell.
@@ -263,19 +268,29 @@ function SessionTerminal({
         const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${proto}//${window.location.host}/api/terminal`;
         onStatus(session.id, "connecting");
-        const connection = new TerminalConnection(new WebSocket(wsUrl), {
-          open: () => {
+        const connection = new TerminalConnection(() => new WebSocket(wsUrl), {
+          open: (resumed) => {
             const terminal = terminalRef.current;
             if (!terminal) return;
             const { width, height } = terminalPixelSize(terminal);
-            connection.resize(terminal.cols, terminal.rows, width, height);
+            setConnectionMessage(null);
+            setReconnected(resumed);
             onStatus(session.id, "connected");
+            connection.resize(terminal.cols, terminal.rows, width, height);
+          },
+          reconnecting: () => {
+            setReconnected(false);
+            setConnectionMessage(
+              "Reconnecting… Input is paused until the session returns.",
+            );
+            onStatus(session.id, "reconnecting");
           },
           write: (data) => write(data),
           cwd: (path) => onCwd(session.id, path),
           end: (message) => {
             if (disposedRef.current || wsRef.current !== connection) return;
             setConnectionMessage(message);
+            setReconnected(false);
             wsRef.current = null;
             onStatus(session.id, "closed");
           },
@@ -415,6 +430,28 @@ function SessionTerminal({
           </button>
         )}
       </div>
+      {reconnected && (
+        <div
+          role="status"
+          className="flex items-center gap-3 py-2 text-xs text-[#aaa]"
+        >
+          <span>
+            Reconnected. Recent input may not have reached the shell; it was not
+            resent.
+          </span>
+          <button
+            type="button"
+            className="shrink-0 underline hover:text-white"
+            onClick={() => {
+              setReconnected(false);
+              terminalRef.current?.focus();
+            }}
+            aria-label="Dismiss reconnection notice"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       {connectionMessage && (
         <p role="status" className="shrink-0 px-2 py-1 text-xs text-[#aaa]">
           {connectionMessage}

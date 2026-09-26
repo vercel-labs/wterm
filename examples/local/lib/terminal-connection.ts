@@ -1,18 +1,21 @@
 import {
   CONTROL_RESERVE,
+  HANDSHAKE_MS,
   INPUT_LIMIT,
   OUTPUT_CHUNK,
   OUTPUT_FRAMES,
   OUTPUT_WINDOW,
+  RECONNECT_MS,
   type ClientMessage,
 } from "./terminal-protocol";
 
 interface ConnectionCallbacks {
   write(data: Uint8Array): void;
-  open(): void;
+  open(resumed: boolean): void;
   cwd(path: string): void;
   end(message: string): void;
   inputError(message: string | null): void;
+  reconnecting(): void;
 }
 
 /** The browser acknowledges only complete chunks accepted by the terminal core. */
@@ -28,18 +31,68 @@ export class TerminalConnection {
   private controlTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
   private ended: string | null = null;
+  private socket: WebSocket | null = null;
+  private session: string | null = null;
+  private ready = false;
+  private retryDeadline: number | null = null;
+  private retries = 0;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
-    private socket: WebSocket,
+    private createSocket: () => WebSocket,
     private callbacks: ConnectionCallbacks,
   ) {
+    this.connect();
+  }
+
+  private connect(): void {
+    if (this.stopped) return;
+    if (this.retryDeadline !== null && Date.now() >= this.retryDeadline) {
+      this.fail("Session ended because it could not reconnect in time.");
+      return;
+    }
+    let socket: WebSocket;
+    try {
+      socket = this.createSocket();
+    } catch {
+      this.interrupt();
+      return;
+    }
+    this.socket = socket;
+    this.ready = false;
+    this.handshakeTimer = setTimeout(
+      () => this.interrupt(),
+      Math.min(
+        HANDSHAKE_MS,
+        this.retryDeadline === null
+          ? HANDSHAKE_MS
+          : this.retryDeadline - Date.now(),
+      ),
+    );
+    const current = () => !this.stopped && this.socket === socket;
     socket.binaryType = "arraybuffer";
     socket.onopen = () => {
-      if (!this.stopped) callbacks.open();
+      if (!current()) return;
+      try {
+        socket.send(
+          JSON.stringify({
+            type: "attach",
+            session: this.session,
+            bytes: this.consumed,
+          }),
+        );
+      } catch {
+        this.interrupt();
+      }
     };
     socket.onmessage = (event) => {
-      if (this.stopped || this.ended !== null) return;
+      if (!current() || this.ended !== null) return;
       if (event.data instanceof ArrayBuffer) {
+        if (!this.ready) {
+          this.fail("Session ended because its connection was incompatible.");
+          return;
+        }
         const data = new Uint8Array(event.data);
         if (
           !data.length ||
@@ -59,9 +112,31 @@ export class TerminalConnection {
         try {
           if (event.data.length > CONTROL_RESERVE) throw new Error();
           const message = JSON.parse(event.data);
-          if (message?.type !== "cwd" || typeof message.cwd !== "string")
-            throw new Error();
-          callbacks.cwd(message.cwd);
+          if (
+            !this.ready &&
+            message?.type === "ready" &&
+            typeof message.session === "string" &&
+            /^[a-f0-9]{64}$/.test(message.session) &&
+            message.resumed === (this.session !== null) &&
+            (this.session === null || message.session === this.session)
+          ) {
+            const resumed = this.session !== null;
+            this.session = message.session;
+            this.ready = true;
+            if (this.handshakeTimer !== null) clearTimeout(this.handshakeTimer);
+            this.handshakeTimer = null;
+            this.retryDeadline = null;
+            this.retries = 0;
+            this.ack = this.consumed;
+            this.callbacks.open(resumed);
+            this.flushControls();
+          } else if (
+            this.ready &&
+            message?.type === "cwd" &&
+            typeof message.cwd === "string"
+          ) {
+            this.callbacks.cwd(message.cwd);
+          } else throw new Error();
         } catch {
           this.fail("Session ended because its connection was incompatible.");
         }
@@ -69,22 +144,73 @@ export class TerminalConnection {
         this.fail("Session ended because its connection was incompatible.");
     };
     socket.onclose = (event) => {
-      if (this.stopped) return;
+      if (!current()) return;
+      if ([1001, 1005, 1006, 1011, 1012, 4000].includes(event.code)) {
+        this.interrupt();
+        return;
+      }
       this.ended =
         event.code === 1000
           ? "Session ended."
-          : "Session ended because the connection was interrupted.";
+          : event.code === 4404
+            ? "Session ended because it is no longer available."
+            : event.code === 4409
+              ? "Session ended because its output could not be restored."
+              : "Session ended because the connection was interrupted.";
+      this.ready = false;
+      if (this.handshakeTimer !== null) clearTimeout(this.handshakeTimer);
+      this.handshakeTimer = null;
       this.clearControlTimer();
       // A close event can arrive before the scheduled parser task.
       this.schedule();
     };
     socket.onerror = () => {
-      if (!this.stopped) socket.close();
+      if (current()) this.interrupt();
     };
   }
 
   get connected(): boolean {
-    return !this.stopped && this.ended === null && this.socket.readyState === 1;
+    return (
+      !this.stopped &&
+      this.ended === null &&
+      this.ready &&
+      this.socket?.readyState === 1
+    );
+  }
+
+  private releaseSocket(): void {
+    const socket = this.socket;
+    this.socket = null;
+    this.ready = false;
+    if (socket)
+      socket.onopen = socket.onmessage = socket.onclose = socket.onerror = null;
+    if (this.handshakeTimer !== null) clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = null;
+    socket?.close(4000, "Connection interrupted");
+  }
+
+  private interrupt(): void {
+    if (this.stopped || this.ended !== null) return;
+    this.releaseSocket();
+    this.clearControlTimer();
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    // Discard only bytes that have not entered the core. The server retains
+    // them until acknowledgment and will replay from the exact parsed offset.
+    this.queue = [];
+    this.queuedBytes = 0;
+    this.received = this.consumed;
+    this.retryDeadline ??= Date.now() + RECONNECT_MS;
+    this.callbacks.reconnecting();
+    if (this.retryTimer !== null) return;
+    const delay = Math.min(
+      250 * 2 ** Math.min(this.retries++, 3),
+      Math.max(0, this.retryDeadline - Date.now()),
+    );
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      this.connect();
+    }, delay);
   }
 
   input(data: string): void {
@@ -105,7 +231,7 @@ export class TerminalConnection {
     const bytes = new TextEncoder().encode(message).length;
     if (
       bytes > INPUT_LIMIT ||
-      this.socket.bufferedAmount + bytes > INPUT_LIMIT
+      this.socket!.bufferedAmount + bytes > INPUT_LIMIT
     ) {
       this.callbacks.inputError(
         "Input was not sent because the connection is busy or the paste is too large.",
@@ -113,10 +239,10 @@ export class TerminalConnection {
       return;
     }
     try {
-      this.socket.send(message);
+      this.socket!.send(message);
       this.callbacks.inputError(null);
     } catch {
-      this.fail("Session ended because input could not be sent.");
+      this.interrupt();
     }
   }
 
@@ -128,23 +254,36 @@ export class TerminalConnection {
 
   close(): void {
     if (this.stopped) return;
+    const socket = this.socket;
+    if (socket?.readyState === 1) {
+      try {
+        socket.send(JSON.stringify({ type: "close" }));
+      } catch {}
+    }
     this.stop();
-    this.socket.close();
+    socket?.close(1000, "Session closed");
   }
 
   private stop(): void {
     this.stopped = true;
+    if (this.retryTimer !== null) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    if (this.handshakeTimer !== null) clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = null;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     this.clearControlTimer();
     this.queue = [];
     this.queuedBytes = 0;
     this.resizeMessage = null;
-    this.socket.onopen =
-      this.socket.onmessage =
-      this.socket.onclose =
-      this.socket.onerror =
-        null;
+    if (this.socket)
+      this.socket.onopen =
+        this.socket.onmessage =
+        this.socket.onclose =
+        this.socket.onerror =
+          null;
+    this.socket = null;
+    this.ready = false;
   }
 
   private fail(message: string): void {
@@ -186,6 +325,7 @@ export class TerminalConnection {
       }
       if (this.stopped) return;
       this.consumed += chunk.length;
+      this.received = Math.max(this.received, this.consumed);
       bytes += chunk.length;
       count++;
       if (performance.now() >= deadline) break;
@@ -203,7 +343,7 @@ export class TerminalConnection {
   private flushControls(): void {
     if (!this.connected) return;
     if (!this.resizeMessage && this.consumed <= this.ack) return;
-    if (this.socket.bufferedAmount > INPUT_LIMIT) {
+    if (this.socket!.bufferedAmount > INPUT_LIMIT) {
       if (this.controlTimer === null)
         this.controlTimer = setTimeout(() => {
           this.controlTimer = null;
@@ -213,15 +353,17 @@ export class TerminalConnection {
     }
     try {
       if (this.resizeMessage) {
-        this.socket.send(JSON.stringify(this.resizeMessage));
+        this.socket!.send(JSON.stringify(this.resizeMessage));
         this.resizeMessage = null;
       }
       if (this.consumed > this.ack) {
-        this.socket.send(JSON.stringify({ type: "ack", bytes: this.consumed }));
+        this.socket!.send(
+          JSON.stringify({ type: "ack", bytes: this.consumed }),
+        );
         this.ack = this.consumed;
       }
     } catch {
-      this.fail("Session ended because its connection was interrupted.");
+      this.interrupt();
     }
   }
 }

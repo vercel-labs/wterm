@@ -7,8 +7,14 @@ export const OUTPUT_PENDING_LIMIT = 256 * 1024;
 export const OUTPUT_PENDING_FRAMES = 1024;
 export const INPUT_LIMIT = 64 * 1024;
 export const CONTROL_RESERVE = 4096;
+export const SESSION_GRACE_MS = 30_000;
+export const RECONNECT_MS = 25_000;
+export const HANDSHAKE_MS = 5_000;
+export const SESSION_LIMIT = 32;
 
 export type ClientMessage =
+  | { type: "attach"; session: string | null; bytes: number }
+  | { type: "close" }
   | { type: "input"; data: string }
   | { type: "ack"; bytes: number }
   | {

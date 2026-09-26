@@ -6,6 +6,7 @@ import {
   OUTPUT_CHUNK,
   OUTPUT_FRAMES,
   OUTPUT_WINDOW,
+  RECONNECT_MS,
 } from "../lib/terminal-protocol";
 
 class Socket {
@@ -20,9 +21,14 @@ class Socket {
   send(data: string) {
     this.sent.push(data);
   }
-  close() {
+  close(code = 1000) {
     this.readyState = 3;
-    this.onclose?.({ code: 1000 });
+    this.onclose?.({ code });
+  }
+  ready(session = "a".repeat(64), resumed = false) {
+    this.onmessage?.({
+      data: JSON.stringify({ type: "ready", session, resumed }),
+    });
   }
   output(data: Uint8Array) {
     this.onmessage?.({ data: new Uint8Array(data).buffer });
@@ -34,20 +40,30 @@ function setup(write?: (data: Uint8Array) => void) {
   const received: Buffer[] = [];
   const ends: string[] = [];
   const errors: (string | null)[] = [];
-  const connection = new TerminalConnection(socket as unknown as WebSocket, {
-    write: write ?? ((data) => received.push(Buffer.from(data))),
-    open: () => {},
-    cwd: () => {},
-    end: (message) => ends.push(message),
-    inputError: (message) => errors.push(message),
-  });
+  const connection = new TerminalConnection(
+    () => socket as unknown as WebSocket,
+    {
+      write: write ?? ((data) => received.push(Buffer.from(data))),
+      open: () => {},
+      cwd: () => {},
+      end: (message) => ends.push(message),
+      inputError: (message) => errors.push(message),
+      reconnecting: () => {},
+    },
+  );
+  socket.onopen?.();
+  socket.ready();
+  socket.sent.length = 0;
   return {
     socket,
     connection,
     received,
     ends,
     errors,
-    messages: () => socket.sent.map((text) => JSON.parse(text)),
+    messages: () =>
+      socket.sent
+        .map((text) => JSON.parse(text))
+        .filter((message) => message.type !== "close"),
   };
 }
 
@@ -121,7 +137,7 @@ test("explicit close cancels parser tasks and ignores late callbacks", (t) => {
   t.mock.timers.runAll();
   assert.deepEqual(received, []);
   assert.deepEqual(ends, []);
-  assert.deepEqual(socket.sent, []);
+  assert.deepEqual(socket.sent, [JSON.stringify({ type: "close" })]);
 });
 
 test("oversized and over-window output closes rather than growing a queue", (t) => {
@@ -166,5 +182,103 @@ test("input JSON cannot masquerade as ACKs and rejected pastes are atomic", () =
   connection.input("x");
   assert.equal(socket.sent.length, 1);
   assert.match(errors.at(-1)!, /busy/);
+  connection.close();
+});
+
+test("reconnect uses parsed bytes, drops unparsed frames, and never repeats input", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const sockets: Socket[] = [];
+  const received: Buffer[] = [];
+  const notices: string[] = [];
+  const opens: boolean[] = [];
+  let reconnects = 0;
+  const connection = new TerminalConnection(
+    () => {
+      const socket = new Socket();
+      sockets.push(socket);
+      return socket as unknown as WebSocket;
+    },
+    {
+      write: (data) => received.push(Buffer.from(data)),
+      open: (resumed) => opens.push(resumed),
+      cwd: () => {},
+      end: (message) => notices.push(message),
+      inputError: (message) => {
+        if (message) notices.push(message);
+      },
+      reconnecting: () => reconnects++,
+    },
+  );
+  const first = sockets[0];
+  first.onopen?.();
+  first.ready();
+  // The core has consumed a UTF-8 prefix; the rest is only queued.
+  first.output(new Uint8Array([0xf0, 0x9f]));
+  t.mock.timers.tick(0);
+  first.output(new Uint8Array([0x99, 0x82]));
+  connection.input("command\r");
+  const lateMessage = first.onmessage;
+  const lateClose = first.onclose;
+  first.close(1006);
+  connection.input("offline");
+  connection.resize(90, 30, 900, 600);
+  t.mock.timers.tick(250);
+  const next = sockets[1];
+  next.onopen?.();
+  assert.deepEqual(JSON.parse(next.sent[0]), {
+    type: "attach",
+    session: "a".repeat(64),
+    bytes: 2,
+  });
+  assert.equal(connection.connected, false);
+  next.ready("a".repeat(64), true);
+  lateMessage?.({ data: new Uint8Array([0xff]).buffer });
+  lateClose?.({ code: 1000 });
+  next.output(new Uint8Array([0x99, 0x82]));
+  t.mock.timers.tick(0);
+  assert.equal(Buffer.concat(received).toString(), "🙂");
+  assert.equal(reconnects, 1);
+  const messages = next.sent.map((message) => JSON.parse(message));
+  assert.equal(
+    messages.filter((message) => message.type === "input").length,
+    0,
+  );
+  assert.deepEqual(
+    messages.find((message) => message.type === "resize"),
+    { type: "resize", cols: 90, rows: 30, width: 900, height: 600 },
+  );
+  assert.deepEqual(messages.at(-1), { type: "ack", bytes: 4 });
+  assert.deepEqual(opens, [false, true]);
+  assert.equal(connection.connected, true);
+  connection.close();
+  t.mock.timers.tick(RECONNECT_MS);
+  assert.equal(sockets.length, 2);
+});
+
+test("unanswered handshakes and socket creation failures stop retrying at the deadline", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const ends: string[] = [];
+  let created = 0;
+  const connection = new TerminalConnection(
+    () => {
+      created++;
+      if (created > 1) throw new Error("offline");
+      return new Socket() as unknown as WebSocket;
+    },
+    {
+      write: () => {},
+      open: () => {},
+      cwd: () => {},
+      inputError: () => {},
+      reconnecting: () => {},
+      end: (message) => ends.push(message),
+    },
+  );
+  for (let i = 0; i < 40; i++) t.mock.timers.tick(1000);
+  assert.equal(ends.length, 1);
+  assert.match(ends[0], /reconnect in time/);
+  const stoppedAt = created;
+  t.mock.timers.tick(RECONNECT_MS);
+  assert.equal(created, stoppedAt);
   connection.close();
 });

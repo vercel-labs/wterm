@@ -214,6 +214,23 @@ producers and catch `RangeError` to report input that exceeded a limit. Explicit
 the browser. See [Buffering and delivery](/api-reference#buffering-and-delivery)
 for thresholds, lifecycle behavior, and delivery limits.
 
+### Local workspace recovery
+
+The [local example](https://github.com/vercel-labs/wterm/tree/main/examples/local)
+uses a paired client/server protocol to resume the same shell after a brief
+connection interruption. It preserves the existing page's terminal state and
+replays only output the terminal has not parsed. Detached PTYs pause, retained
+output stays bounded, and the server expires detached sessions after 30 seconds.
+The browser retries for up to 25 seconds after detecting an interruption.
+
+Input during reconnection is rejected visibly. Input already sent is never
+retried, and the workspace reports that recent input may not have reached the
+shell. Check the shell state before retrying a command. An expired session or an
+unavailable output range ends with a visible status rather than creating a
+replacement shell. Reloading the page, recreating the terminal, or restarting the
+server starts a new session; recovery requires the existing parser and history.
+This behavior belongs to the local example, not `WebSocketTransport` alone.
+
 ## Output announcements
 
 Opt in with `announceOutput` to announce terminal text changes politely while

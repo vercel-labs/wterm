@@ -1,3 +1,4 @@
+import { acceptTerminal, terminalReady } from "./terminal-route";
 import { expect, test, type WebSocketRoute } from "@playwright/test";
 
 test("output announcements can be toggled without reconnecting or disturbing the reader", async ({
@@ -6,6 +7,7 @@ test("output announcements can be toggled without reconnecting or disturbing the
   let socket: WebSocketRoute;
   let connections = 0;
   await page.routeWebSocket("**/api/terminal", (ws) => {
+    acceptTerminal(ws);
     socket = ws;
     connections++;
   });
@@ -16,6 +18,7 @@ test("output announcements can be toggled without reconnecting or disturbing the
   });
   await expect(terminal).toBeFocused();
   await expect.poll(() => !!socket).toBe(true);
+  await terminalReady(socket!);
   const toggle = page.getByRole("checkbox", { name: "Announce output" });
   const log = page.getByRole("log", { name: "Terminal output" });
   await expect(toggle).not.toBeChecked();

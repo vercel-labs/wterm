@@ -1,3 +1,4 @@
+import { acceptTerminal, terminalReady } from "./terminal-route";
 import { expect, test, type WebSocketRoute } from "@playwright/test";
 
 for (const path of ["/", "/ghostty"]) {
@@ -7,6 +8,7 @@ for (const path of ["/", "/ghostty"]) {
     let socket: WebSocketRoute;
     const input: string[] = [];
     await page.routeWebSocket("**/api/terminal", (ws) => {
+      acceptTerminal(ws);
       socket = ws;
       ws.onMessage((message) => {
         const parsed = JSON.parse(message.toString());
@@ -20,6 +22,7 @@ for (const path of ["/", "/ghostty"]) {
     });
     await expect(terminal).toBeFocused();
     await expect.poll(() => !!socket).toBe(true);
+    await terminalReady(socket!);
     const lines = Array.from(
       { length: 500 },
       (_, i) => `output ${String(i).padStart(3, "0")} 語 e\u0301 😀`,
@@ -110,6 +113,7 @@ test("closing a pending capture cancels it and the reader can reopen", async ({
 }) => {
   let socket: WebSocketRoute;
   await page.routeWebSocket("**/api/terminal", (ws) => {
+    acceptTerminal(ws);
     socket = ws;
   });
   await page.goto("/ghostty");
@@ -117,6 +121,7 @@ test("closing a pending capture cancels it and the reader can reopen", async ({
     page.getByRole("textbox", { name: "Terminal 1", exact: true }),
   ).toBeFocused();
   await expect.poll(() => !!socket).toBe(true);
+  await terminalReady(socket!);
   socket!.send(Buffer.from("\x1b[?2026h\x1b[Hheld"));
   const opener = page.getByRole("button", { name: "Read output" });
   await opener.click();
@@ -138,6 +143,7 @@ test("failed refresh retains the previous snapshot and can be retried", async ({
 }) => {
   let socket: WebSocketRoute;
   await page.routeWebSocket("**/api/terminal", (ws) => {
+    acceptTerminal(ws);
     socket = ws;
   });
   await page.goto("/ghostty");
@@ -145,6 +151,7 @@ test("failed refresh retains the previous snapshot and can be retried", async ({
     page.getByRole("textbox", { name: "Terminal 1", exact: true }),
   ).toBeFocused();
   await expect.poll(() => !!socket).toBe(true);
+  await terminalReady(socket!);
   socket!.send(Buffer.from("old output"));
   await page.getByRole("button", { name: "Read output" }).click();
   const dialog = page.getByRole("dialog", {
