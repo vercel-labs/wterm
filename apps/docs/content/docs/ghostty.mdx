@@ -19,8 +19,9 @@ can switch between block, bar, and underline cursors; the wrapper's optional
 Shells and applications can set the window title with OSC 0 or OSC 2. The
 Ghostty core forwards the latest complete title to `WTerm`'s `onTitle`
 callback, including an empty title that clears it. As with the built-in core,
-multiple changes before a render deliver the latest title. Ghostty ignores
-titles longer than 255 bytes.
+the callback runs as output is written, including while painting is paused.
+Several changes within a parsed chunk may coalesce to the latest complete
+title. Ghostty ignores titles longer than 255 bytes.
 
 BEL controls reach the shared `onBell(count)` callback as output is written.
 The BEL that terminates an OSC title does not count as a bell.

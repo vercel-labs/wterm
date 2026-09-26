@@ -20,8 +20,9 @@ blinking. Omitting the option follows the application, initially steady.
 
 OSC 0 and OSC 2 window-title changes reach `getTitle()` and the terminal
 wrapper's `onTitle` callback, including an empty title that clears the current
-name. When several changes arrive before a render, the latest complete title
-is delivered. Titles longer than Ghostty's 255-byte limit are ignored.
+name. The callback runs as output is written, including while painting is
+paused. Several changes within a parsed chunk may coalesce to the latest
+complete title. Titles longer than Ghostty's 255-byte limit are ignored.
 
 `getBellCount()` reads and clears Ghostty's pending BEL count. `WTerm` forwards
 it through `onBell(count)` as output is written, even when synchronized output
