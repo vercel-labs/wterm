@@ -69,6 +69,10 @@ const JS = struct {
 //      14     2  reserved
 // ---------------------------------------------------------------
 const CELL_BYTES = 16;
+// v2 preserves the first 16 bytes, adds color_flags bit 2 for underline color,
+// then byte 16: underline (none/single/double/curly/dotted/dashed = 0..5),
+// bytes 17..19: resolved underline RGB. Legacy exports keep their 16-byte stride.
+const CELL_BYTES_V2 = 20;
 
 // -- Responses --------------------------------------------------
 //
@@ -715,17 +719,13 @@ fn cellWidth(cell: vt.Cell) u8 {
     };
 }
 
-/// Encode one cell into the 16-byte layout described above.
-///
-/// This mirrors the packing get_viewport does inline. The two are kept
-/// separate because get_viewport reads RenderState, which only covers the
-/// active area, while scrollback reads page memory directly. Changes to the
-/// cell contract belong in both.
+/// Encode a viewport or history cell in the requested versioned layout.
 fn encodeCell(
+    comptime cell_bytes: usize,
     raw: *const vt.Cell,
     style: Style,
     palette: *const color.Palette,
-    out: *[CELL_BYTES]u8,
+    out: *[cell_bytes]u8,
 ) void {
     const cp: u32 = switch (raw.content_tag) {
         .codepoint, .codepoint_grapheme => raw.content.codepoint,
@@ -762,11 +762,35 @@ fn encodeCell(
         (if (raw.wide == .spacer_head) @as(u8, 4) else 0);
     out[14] = 0;
     out[15] = 0;
+    if (cell_bytes == CELL_BYTES_V2) {
+        out[16] = switch (style.flags.underline) {
+            .none => 0,
+            .single => 1,
+            .double => 2,
+            .curly => 3,
+            .dotted => 4,
+            .dashed => 5,
+        };
+        const underline = style.underlineColor(palette);
+        if (underline != null) out[12] |= 4;
+        const rgb = underline orelse color.RGB{};
+        out[17] = rgb.r;
+        out[18] = rgb.g;
+        out[19] = rgb.b;
+    }
 }
 
 /// Write the entire viewport into a JS-provided flat buffer.
 /// Returns the number of cells written (rows * cols).
 export fn get_viewport(ptr: usize, buf_ptr: [*]u8) u32 {
+    return getViewport(CELL_BYTES, ptr, buf_ptr);
+}
+
+export fn get_viewport_v2(ptr: usize, buf_ptr: [*]u8) u32 {
+    return getViewport(CELL_BYTES_V2, ptr, buf_ptr);
+}
+
+fn getViewport(comptime cell_bytes: usize, ptr: usize, buf_ptr: [*]u8) u32 {
     const state = stateFromPtr(ptr);
     const rs = &state.render;
     const rows = rs.rows;
@@ -779,7 +803,7 @@ export fn get_viewport(ptr: usize, buf_ptr: [*]u8) u32 {
     for (0..rows) |y| {
         if (y >= row_cells_slice.len) {
             // Pad remaining rows with blank cells
-            const remaining = (@as(usize, rows) - y) * @as(usize, cols) * CELL_BYTES;
+            const remaining = (@as(usize, rows) - y) * @as(usize, cols) * cell_bytes;
             @memset(buf_ptr[offset .. offset + remaining], 0);
             break;
         }
@@ -789,8 +813,8 @@ export fn get_viewport(ptr: usize, buf_ptr: [*]u8) u32 {
 
         for (0..cols) |x| {
             if (x >= raw_cells.len) {
-                @memset(buf_ptr[offset .. offset + CELL_BYTES], 0);
-                offset += CELL_BYTES;
+                @memset(buf_ptr[offset .. offset + cell_bytes], 0);
+                offset += cell_bytes;
                 continue;
             }
             const raw = raw_cells[x];
@@ -800,47 +824,8 @@ export fn get_viewport(ptr: usize, buf_ptr: [*]u8) u32 {
             // whatever occupied this cell before, including a different screen.
             const style: Style = if (raw.style_id != 0) style_cells[x] else .{};
 
-            const cp: u32 = switch (raw.content_tag) {
-                .codepoint, .codepoint_grapheme => raw.content.codepoint,
-                else => 0,
-            };
-
-            const has_fg = style.fg_color != .none;
-            const has_bg_style = style.bg_color != .none;
-            const has_bg_cell = raw.content_tag == .bg_color_palette or raw.content_tag == .bg_color_rgb;
-            const has_bg = has_bg_style or has_bg_cell;
-
-            const fg = if (has_fg) resolveRgb(style.fg_color, palette) else color.RGB{};
-            const bg = if (has_bg_cell) switch (raw.content_tag) {
-                .bg_color_palette => palette[raw.content.color_palette],
-                .bg_color_rgb => blk: {
-                    const c = raw.content.color_rgb;
-                    break :blk color.RGB{ .r = c.r, .g = c.g, .b = c.b };
-                },
-                else => unreachable,
-            } else if (has_bg_style) resolveRgb(style.bg_color, palette) else color.RGB{};
-
-            const flags = packFlags(style);
-            const width = cellWidth(raw);
-            const color_flags: u8 = (if (has_fg) @as(u8, 1) else 0) | (if (has_bg) @as(u8, 2) else 0);
-
-            std.mem.writeInt(u32, buf_ptr[offset..][0..4], cp, .little);
-            buf_ptr[offset + 4] = fg.r;
-            buf_ptr[offset + 5] = fg.g;
-            buf_ptr[offset + 6] = fg.b;
-            buf_ptr[offset + 7] = bg.r;
-            buf_ptr[offset + 8] = bg.g;
-            buf_ptr[offset + 9] = bg.b;
-            buf_ptr[offset + 10] = flags;
-            buf_ptr[offset + 11] = width;
-            buf_ptr[offset + 12] = color_flags;
-            buf_ptr[offset + 13] =
-                (if (raw.content_tag == .codepoint_grapheme) @as(u8, 1) else 0) |
-                (if (raw.hyperlink) @as(u8, 2) else 0) |
-                (if (raw.wide == .spacer_head) @as(u8, 4) else 0);
-            buf_ptr[offset + 14] = 0;
-            buf_ptr[offset + 15] = 0;
-            offset += CELL_BYTES;
+            encodeCell(cell_bytes, &raw, style, palette, buf_ptr[offset..][0..cell_bytes]);
+            offset += cell_bytes;
         }
     }
 
@@ -1254,6 +1239,14 @@ export fn get_scrollback_discarded_count(ptr: usize) u32 {
 /// at max_cols, or 0 when the offset is out of range. This reads the page list
 /// rather than RenderState, which only covers the active area.
 export fn get_scrollback_line(ptr: usize, offset: u32, buf_ptr: [*]u8, max_cols: u32) u32 {
+    return getScrollbackLine(CELL_BYTES, ptr, offset, buf_ptr, max_cols);
+}
+
+export fn get_scrollback_line_v2(ptr: usize, offset: u32, buf_ptr: [*]u8, max_cols: u32) u32 {
+    return getScrollbackLine(CELL_BYTES_V2, ptr, offset, buf_ptr, max_cols);
+}
+
+fn getScrollbackLine(comptime cell_bytes: usize, ptr: usize, offset: u32, buf_ptr: [*]u8, max_cols: u32) u32 {
     const state = stateFromPtr(ptr);
     const screen: *Screen = state.terminal.screens.active;
 
@@ -1272,8 +1265,8 @@ export fn get_scrollback_line(ptr: usize, offset: u32, buf_ptr: [*]u8, max_cols:
     for (cells[0..count]) |*raw| {
         // Pin.style applies the same style_id gating get_viewport relies on.
         const style = pin.style(raw);
-        encodeCell(raw, style, palette, buf_ptr[buf_offset..][0..CELL_BYTES]);
-        buf_offset += CELL_BYTES;
+        encodeCell(cell_bytes, raw, style, palette, buf_ptr[buf_offset..][0..cell_bytes]);
+        buf_offset += cell_bytes;
     }
 
     return @intCast(count);

@@ -60,6 +60,96 @@ describe("Renderer", () => {
     });
   });
 
+  describe("underline decorations", () => {
+    it.each([
+      ["single", "solid"],
+      ["double", "double"],
+      ["curly", "wavy"],
+      ["dotted", "dotted"],
+      ["dashed", "dashed"],
+    ] as const)(
+      "renders %s with an independent color and solid strike",
+      (underlineStyle, cssStyle) => {
+        const cell = {
+          ...makeCell("x", 256, 256, 0x88),
+          underlineStyle,
+          underlineRgb: 0x123456,
+        };
+        const bridge = createMockBridge(2, 1, [[cell, cell]]);
+        const renderer = new Renderer(container);
+        renderer.render(bridge);
+        const cursor = container.querySelector<HTMLElement>(".term-cursor")!;
+        expect(cursor.style.textDecoration).toBe("underline");
+        expect(cursor.style.textDecorationStyle).toBe(cssStyle);
+        expect(cursor.style.textDecorationColor).toBe("rgb(18, 52, 86)");
+        expect(
+          (cursor.firstElementChild as HTMLElement).style.textDecoration,
+        ).toBe("line-through solid currentColor");
+        expect(container.textContent).toBe("xx");
+      },
+    );
+
+    it("supports flag-only cores, explicit none, and decoration-only redraws", () => {
+      const grid = [[makeCell("x", 256, 256, 8), makeCell("x", 256, 256, 8)]];
+      const bridge = createMockBridge(2, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector<HTMLElement>(".term-row")!;
+      expect(row.children).toHaveLength(1);
+      expect((row.firstElementChild as HTMLElement).style.textDecoration).toBe(
+        "underline",
+      );
+      const unchanged = row.firstChild;
+      bridge.isDirtyRow = () => true;
+      renderer.render(bridge);
+      expect(row.firstChild).toBe(unchanged);
+      grid[0][0] = { ...grid[0][0], underlineStyle: "dotted", underlineRgb: 0 };
+      grid[0][1] = { ...grid[0][1], underlineStyle: "none" };
+      renderer.render(bridge);
+      expect(row.children).toHaveLength(2);
+      expect(
+        (row.firstElementChild as HTMLElement).style.textDecorationStyle,
+      ).toBe("dotted");
+      expect(
+        (row.firstElementChild as HTMLElement).style.textDecorationColor,
+      ).toBe("rgb(0, 0, 0)");
+      expect((row.lastElementChild as HTMLElement).style.textDecoration).toBe(
+        "",
+      );
+    });
+
+    it("decorates wide, block, box, and history cells without changing text or columns", () => {
+      const cells = [
+        makeCell("界", 256, 256, 0, 2),
+        makeCell(" ", 256, 256, 0, 0),
+        makeCell("█"),
+        makeCell("╭"),
+      ].map((cell) => ({
+        ...cell,
+        underlineStyle: "curly" as const,
+        underlineRgb: 0x123456,
+      }));
+      const bridge = createMockBridge(4, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.getScrollbackCount = () => 1;
+      bridge.getScrollbackLineLen = () => 4;
+      bridge.getScrollbackCell = (_offset, col) => cells[col];
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      for (const row of container.querySelectorAll(".term-row")) {
+        expect(row.textContent).toBe("界█╭");
+        expect(row.children).toHaveLength(3);
+        for (const span of row.children) {
+          expect((span as HTMLElement).style.textDecorationStyle).toBe("wavy");
+          expect((span as HTMLElement).style.textDecorationColor).toBe(
+            "rgb(18, 52, 86)",
+          );
+        }
+      }
+    });
+  });
+
   describe("render", () => {
     it.each([
       ["red", makeCell(" ", 256, 1)],

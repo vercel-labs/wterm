@@ -1,3 +1,6 @@
+export type UnderlineStyle =
+  "none" | "single" | "double" | "curly" | "dotted" | "dashed";
+
 export interface CellData {
   char: number;
   /** Full grapheme cluster. Present when the cell contains more than one code point. */
@@ -13,6 +16,10 @@ export interface CellData {
   fgRgb?: number;
   /** Resolved 24-bit background color (0xRRGGBB). Present when the core provides true color. */
   bgRgb?: number;
+  /** Underline variant. When omitted, flags bit 0x08 selects a single underline. */
+  underlineStyle?: UnderlineStyle;
+  /** Resolved underline color (0xRRGGBB). Omitted to follow the displayed foreground. */
+  underlineRgb?: number;
   /** Resolved OSC 8 URI for this cell. */
   linkUri?: string;
   /** Explicit OSC 8 `id=` parameter, when provided. */

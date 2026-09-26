@@ -120,6 +120,15 @@ OSC 8 hyperlink metadata is optional so third-party `TerminalCore` implementatio
 
 Wide CJK, fullwidth, and emoji codepoints occupy a leading cell with `width: 2` and a continuation with `width: 0`. Character insertion (`ICH`) and deletion (`DCH`) shift the requested number of columns from the cursor, replacing split wide characters with background-colored spaces. With automatic wrapping disabled, a wide character that cannot fit at the right edge leaves the row unchanged. A one-column terminal consumes wide characters as spaces.
 
+`CellData.underlineStyle` optionally selects `"none"`, `"single"`, `"double"`,
+`"curly"`, `"dotted"`, or `"dashed"`. It takes precedence over the underline flag
+(`0x08`); when omitted, that flag selects a single underline. `underlineRgb`
+is an optional resolved `0xRRGGBB` color, including `0` for black. Without it,
+the underline follows the displayed foreground, including reverse video.
+Ghostty supplies both fields for viewport and scrollback cells. The built-in
+core and older Ghostty binaries keep flag-based single underlines. Custom cores
+can adopt either optional field; `UnderlineStyle` is exported by `@wterm/core`.
+
 `CellData.spacerHead` optionally identifies an empty right-edge cell left when a wide glyph wraps to the next row. Ghostty supplies it in live rows and history. Text extraction should omit these cells and width-zero continuations while preserving real spaces; an absent flag does not identify a spacer.
 
 The built-in core supports ASCII (`B`), British (`A`), and DEC Special Graphics (`0`) designations for G0–G3. For example, `\x1b(0lqqk\x1b(B` produces `┌──┐`. SI/SO select G0/G1; `ESC n/o` select G2/G3, and `ESC N/O` select them for one character. Cursor save/restore preserves character-set state. Mapping affects ASCII characters only, so UTF-8 text remains intact.

@@ -13,6 +13,16 @@ WTerm also uses this metadata when copying native text selections: soft wraps jo
 
 `trackPosition({ row, col })` follows a retained cell through scrolling and reflow. The returned handle has `resolve()` and `dispose()` methods; row zero is the oldest retained row. It resolves to `null` after pruning, reset, screen switching, reinitialization, or disposal. Up to 64 simultaneous handles are supported; invalid coordinates, exhausted capacity, and older binaries return `null`. Release handles when finished. WTerm uses this API to preserve native selections and separately checks for overwritten text. See the [core contract](../core/README.md#tracked-cell-positions).
 
+Ghostty preserves single, double, curly, dotted, and dashed underlines through
+`CellData.underlineStyle`, with resolved colors in `underlineRgb`. The DOM
+renderer displays them in the viewport and scrollback, including after reflow.
+SGR `4:1` through `4:5` select the styles; `4` selects single and `21` selects
+double. SGR `58` sets an indexed or RGB underline color, `59` restores the
+foreground color, and `24` or `4:0` removes the underline. SGR `0` resets both.
+Strikethrough stays solid and follows the text color. Apps serving an older
+WASM file retain single underlines; serve the binary shipped with the package
+to enable the additional styles and colors.
+
 `getCursor()` exposes Ghostty's block, bar, or underline `shape` and `blinking`
 state. The DOM renderer follows application requests (DECSCUSR and mode 12);
 an explicit `cursorBlink: true` or `false` on the terminal wrapper overrides

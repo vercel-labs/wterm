@@ -23,6 +23,14 @@ vi.mock("../wasm-bindings.js", async () => {
     memory: state.memory,
     init: () => 1,
     resize: () => {},
+    update: () => {},
+    get_viewport: (_ptr: number, bufPtr: number) => {
+      if (state.line)
+        new Uint8Array(state.memory.buffer, bufPtr, state.line.length).set(
+          state.line,
+        );
+      return state.lineLen;
+    },
     // 0 is treated as an allocation failure by ghostty-core.ts, so the
     // fake pointer must be nonzero.
     alloc_buffer: () => 64,
@@ -97,6 +105,19 @@ describe("GhosttyCore.getScrollbackCell", () => {
   beforeEach(() => {
     state.line = null;
     state.lineLen = 0;
+  });
+
+  it("retains legacy single underlines when older WASM omits v2 exports", async () => {
+    state.line = buildCellBytes({ codepoint: 65, colorFlags: 0, flags: 8 });
+    state.lineLen = 1;
+    const core = await GhosttyCore.load();
+    core.init(80, 24);
+    const cell = core.getScrollbackCell(0, 0);
+    expect(cell.flags & 8).toBe(8);
+    expect(cell.underlineStyle).toBeUndefined();
+    expect(cell.underlineRgb).toBeUndefined();
+    expect(core.getCell(0, 0)).toEqual(cell);
+    core.dispose();
   });
 
   it("does not set fgRgb/bgRgb when colorFlags === 0 (falls back to defaults)", async () => {
