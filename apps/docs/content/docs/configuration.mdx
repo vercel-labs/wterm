@@ -223,10 +223,15 @@ replays only output the terminal has not parsed. Detached PTYs pause, retained
 output stays bounded, and the server expires detached sessions after 30 seconds.
 The browser retries for up to 25 seconds after detecting an interruption.
 
-Input during reconnection is rejected visibly. Input already sent is never
-retried, and the workspace reports that recent input may not have reached the
-shell. Check the shell state before retrying a command. An expired session or an
-unavailable output range ends with a visible status rather than creating a
+Input during reconnection is rejected visibly. Sequenced input is acknowledged
+after the server hands it to the PTY; duplicate accepted messages are ignored.
+The browser limits unacknowledged input to 64 KiB and 1,024 messages, and keeps
+only message lengths for tracking. Reattachment confirms the accepted prefix
+even if an acknowledgment was lost. If any input was not delivered, the workspace
+reports it and asks you to check the command line before continuing. If recovery
+fails, unconfirmed delivery remains visible. Input is never retried automatically.
+An acknowledgment confirms PTY acceptance, not command execution or completion.
+An expired session or an unavailable output range ends with a visible status rather than creating a
 replacement shell. Reloading the page, recreating the terminal, or restarting the
 server starts a new session; recovery requires the existing parser and history.
 This behavior belongs to the local example, not `WebSocketTransport` alone.

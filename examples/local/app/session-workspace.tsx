@@ -153,6 +153,7 @@ function SessionTerminal({
     null,
   );
   const [reconnected, setReconnected] = useState(false);
+  const [lostInput, setLostInput] = useState(false);
   const [announceOutput, setAnnounceOutput] = useState(false);
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
@@ -269,12 +270,13 @@ function SessionTerminal({
         const wsUrl = `${proto}//${window.location.host}/api/terminal`;
         onStatus(session.id, "connecting");
         const connection = new TerminalConnection(() => new WebSocket(wsUrl), {
-          open: (resumed) => {
+          open: (resumed, inputLost) => {
             const terminal = terminalRef.current;
             if (!terminal) return;
             const { width, height } = terminalPixelSize(terminal);
             setConnectionMessage(null);
             setReconnected(resumed);
+            setLostInput((previous) => inputLost || (resumed && previous));
             onStatus(session.id, "connected");
             connection.resize(terminal.cols, terminal.rows, width, height);
           },
@@ -430,20 +432,22 @@ function SessionTerminal({
           </button>
         )}
       </div>
-      {reconnected && (
+      {(reconnected || lostInput) && (
         <div
           role="status"
           className="flex items-center gap-3 py-2 text-xs text-[#aaa]"
         >
           <span>
-            Reconnected. Recent input may not have reached the shell; it was not
-            resent.
+            {reconnected && "Reconnected."}
+            {lostInput &&
+              " Some input did not reach the shell and was not resent. Check the command line before continuing."}
           </span>
           <button
             type="button"
             className="shrink-0 underline hover:text-white"
             onClick={() => {
               setReconnected(false);
+              setLostInput(false);
               terminalRef.current?.focus();
             }}
             aria-label="Dismiss reconnection notice"

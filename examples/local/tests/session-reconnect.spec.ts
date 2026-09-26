@@ -17,6 +17,7 @@ for (const path of ["/", "/ghostty"]) {
     const sockets: WebSocketRoute[] = [];
     const attachments: { session: string | null; bytes: number }[] = [];
     const input: string[] = [];
+    let acceptedInput = 0;
     let acknowledged = 0;
     let seeded = false;
     await page.routeWebSocket("**/api/terminal", (socket) => {
@@ -28,13 +29,24 @@ for (const path of ["/", "/ghostty"]) {
           attachments.push({ session: message.session, bytes: message.bytes });
           if (index === 0)
             socket.send(
-              JSON.stringify({ type: "ready", session: token, resumed: false }),
+              JSON.stringify({
+                type: "ready",
+                session: token,
+                resumed: false,
+                input: 0,
+              }),
             );
         } else if (message.type === "resize" && index === 0 && !seeded) {
           seeded = true;
           socket.send(prefix);
         } else if (message.type === "ack") acknowledged = message.bytes;
-        else if (message.type === "input") input.push(message.data);
+        else if (message.type === "input") {
+          input.push(message.data);
+          acceptedInput = message.id;
+          socket.send(
+            JSON.stringify({ type: "input-ack", input: acceptedInput }),
+          );
+        }
       });
     });
     await page.goto(path);
@@ -59,7 +71,12 @@ for (const path of ["/", "/ghostty"]) {
     ]);
     expect(input.join("")).toBe("once");
     sockets[1].send(
-      JSON.stringify({ type: "ready", session: token, resumed: true }),
+      JSON.stringify({
+        type: "ready",
+        session: token,
+        resumed: true,
+        input: acceptedInput,
+      }),
     );
     sockets[1].send(suffix);
     await expect.poll(() => acknowledged).toBe(prefix.length + suffix.length);
@@ -108,6 +125,7 @@ test("an unavailable session reports the loss without starting another shell", a
               type: "ready",
               session: "c".repeat(64),
               resumed: false,
+              input: 0,
             }),
           );
         else socket.close({ code: 4404, reason: "Session unavailable" });
@@ -120,3 +138,102 @@ test("an unavailable session reports the loss without starting another shell", a
   ).toBeVisible();
   expect(attachments).toEqual([null, "c".repeat(64)]);
 });
+
+for (const path of ["/", "/ghostty"]) {
+  for (const loseInput of [false, true]) {
+    test(`${path}: reconnect distinguishes ${loseInput ? "missing input" : "a lost input acknowledgment"}`, async ({
+      page,
+    }) => {
+      const token = "d".repeat(64);
+      const sockets: WebSocketRoute[] = [];
+      const accepted: string[] = [];
+      const observed: string[] = [];
+      let input = 0;
+      let dropInput = false;
+      let sized = false;
+      await page.routeWebSocket("**/api/terminal", (socket) => {
+        const initial = sockets.length === 0;
+        sockets.push(socket);
+        socket.onMessage((raw) => {
+          const message = JSON.parse(raw.toString());
+          if (message.type === "attach") {
+            socket.send(
+              JSON.stringify({
+                type: "ready",
+                session: token,
+                resumed: !initial,
+                input,
+              }),
+            );
+          } else if (message.type === "resize") {
+            sized = true;
+          } else if (message.type === "input") {
+            observed.push(message.data);
+            if (initial && dropInput) return;
+            expect(message.id).toBe(input + 1);
+            input = message.id;
+            accepted.push(message.data);
+            // Withhold all receipts on the first socket, then confirm the
+            // accepted prefix in the replacement attachment's ready message.
+            if (!initial)
+              socket.send(JSON.stringify({ type: "input-ack", input }));
+          }
+        });
+      });
+      await page.goto(path);
+      const terminal = page.getByRole("textbox", {
+        name: "Terminal 1",
+        exact: true,
+      });
+      await expect(terminal).toBeFocused();
+      await expect.poll(() => sized).toBe(true);
+      await page.keyboard.type("once");
+      await expect.poll(() => accepted.join("")).toBe("once");
+      if (loseInput) {
+        dropInput = true;
+        await page.keyboard.type("lost");
+        await expect.poll(() => observed.join("")).toBe("oncelost");
+      }
+      sockets[0].close({ code: 4000 });
+      const notice = page
+        .getByRole("status")
+        .filter({ hasText: "Reconnected." });
+      await expect(notice).toBeVisible();
+      if (loseInput)
+        await expect(notice).toContainText(
+          "did not reach the shell and was not resent",
+        );
+      else {
+        await expect(notice).toContainText("Reconnected.");
+        await expect(notice).not.toContainText("input");
+      }
+      // Automatic replies must not clear the specific loss notice.
+      sockets[1].send(Buffer.from("\x1b[6n"));
+      await expect
+        .poll(() => accepted.some((value) => /^\x1b\[\d+;\d+R$/.test(value)))
+        .toBe(true);
+      await expect(notice).toBeVisible();
+      await expect(terminal).toBeFocused();
+      await page.keyboard.type("after");
+      await expect
+        .poll(() =>
+          accepted.filter((value) => !value.startsWith("\x1b[")).join(""),
+        )
+        .toBe("onceafter");
+      sockets[1].close({ code: 4000 });
+      await expect.poll(() => sockets.length).toBe(3);
+      await expect(notice).toBeVisible();
+      if (loseInput)
+        await expect(notice).toContainText("did not reach the shell");
+      await page
+        .getByRole("button", { name: "Dismiss reconnection notice" })
+        .click();
+      await expect(terminal).toBeFocused();
+      await expect(notice).toHaveCount(0);
+      sockets[2].close({ code: 4000 });
+      await expect.poll(() => sockets.length).toBe(4);
+      await expect(notice).toBeVisible();
+      await expect(notice).not.toContainText("input");
+    });
+  }
+}

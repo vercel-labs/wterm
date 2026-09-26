@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { TerminalConnection } from "../lib/terminal-connection";
 import {
   INPUT_LIMIT,
+  INPUT_MESSAGES,
   OUTPUT_CHUNK,
   OUTPUT_FRAMES,
   OUTPUT_WINDOW,
@@ -25,10 +26,13 @@ class Socket {
     this.readyState = 3;
     this.onclose?.({ code });
   }
-  ready(session = "a".repeat(64), resumed = false) {
+  ready(session = "a".repeat(64), resumed = false, input = 0) {
     this.onmessage?.({
-      data: JSON.stringify({ type: "ready", session, resumed }),
+      data: JSON.stringify({ type: "ready", session, resumed, input }),
     });
+  }
+  acknowledge(input: unknown) {
+    this.onmessage?.({ data: JSON.stringify({ type: "input-ack", input }) });
   }
   output(data: Uint8Array) {
     this.onmessage?.({ data: new Uint8Array(data).buffer });
@@ -172,7 +176,7 @@ test("input JSON cannot masquerade as ACKs and rejected pastes are atomic", () =
   const { socket, connection, messages, errors } = setup();
   connection.input('{"type":"ack","bytes":999}');
   assert.deepEqual(messages(), [
-    { type: "input", data: '{"type":"ack","bytes":999}' },
+    { type: "input", id: 1, data: '{"type":"ack","bytes":999}' },
   ]);
   connection.input("😀".repeat(INPUT_LIMIT / 2));
   connection.input("\x00".repeat(INPUT_LIMIT / 2));
@@ -281,4 +285,179 @@ test("unanswered handshakes and socket creation failures stop retrying at the de
   t.mock.timers.tick(RECONNECT_MS);
   assert.equal(created, stoppedAt);
   connection.close();
+});
+
+test("unacknowledged input has byte and message limits even when the socket buffer is empty", () => {
+  const small = setup();
+  for (let i = 0; i < INPUT_MESSAGES; i++) small.connection.input("");
+  small.connection.input("blocked");
+  assert.equal(small.messages().length, INPUT_MESSAGES);
+  assert.match(small.errors.at(-1)!, /busy/);
+  small.socket.acknowledge(INPUT_MESSAGES - 1);
+  small.socket.acknowledge(INPUT_MESSAGES - 1);
+  small.connection.input("available");
+  assert.deepEqual(small.messages().at(-1), {
+    type: "input",
+    id: INPUT_MESSAGES + 1,
+    data: "available",
+  });
+  small.connection.close();
+
+  const large = setup();
+  large.connection.input("x".repeat(INPUT_LIMIT / 2));
+  large.connection.input("y".repeat(INPUT_LIMIT / 2));
+  assert.equal(large.messages().length, 1);
+  assert.match(large.errors.at(-1)!, /busy/);
+  large.socket.acknowledge(1);
+  large.connection.input("z".repeat(INPUT_LIMIT / 2));
+  assert.equal(large.messages().length, 2);
+  assert.equal(large.messages()[1].id, 2);
+  large.connection.close();
+});
+
+for (const accepted of [0, 1, 2]) {
+  test(`reconnect confirms ${accepted} inputs, abandons only the missing suffix, and never replays text`, (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+    const sockets: Socket[] = [];
+    const opens: [boolean, boolean][] = [];
+    const ends: string[] = [];
+    const connection = new TerminalConnection(
+      () => {
+        const socket = new Socket();
+        sockets.push(socket);
+        return socket as unknown as WebSocket;
+      },
+      {
+        write: () => {},
+        cwd: () => {},
+        inputError: () => {},
+        reconnecting: () => {},
+        open: (resumed, lost) => opens.push([resumed, lost]),
+        end: (message) => ends.push(message),
+      },
+    );
+    const first = sockets[0];
+    first.onopen?.();
+    first.ready();
+    connection.input("first");
+    connection.input("second");
+    const staleAck = first.onmessage;
+    first.close(1006);
+    t.mock.timers.tick(250);
+    const next = sockets[1];
+    next.onopen?.();
+    next.ready("a".repeat(64), true, accepted);
+    assert.deepEqual(opens, [
+      [false, false],
+      [true, accepted < 2],
+    ]);
+    assert.equal(next.sent.length, 1, "reattachment never resends input");
+    staleAck?.({ data: JSON.stringify({ type: "input-ack", input: 999 }) });
+    connection.input("new input");
+    assert.deepEqual(JSON.parse(next.sent.at(-1)!), {
+      type: "input",
+      id: accepted + 1,
+      data: "new input",
+    });
+    next.acknowledge(accepted + 1);
+    next.close();
+    t.mock.timers.tick(0);
+    assert.deepEqual(ends, ["Session ended."]);
+  });
+}
+
+test("send failures remain uncertain until reconnect confirms acceptance", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const sockets: Socket[] = [];
+  const opens: [boolean, boolean][] = [];
+  const connection = new TerminalConnection(
+    () => {
+      const socket = new Socket();
+      sockets.push(socket);
+      return socket as unknown as WebSocket;
+    },
+    {
+      write: () => {},
+      cwd: () => {},
+      inputError: () => {},
+      reconnecting: () => {},
+      end: () => {},
+      open: (resumed, lost) => opens.push([resumed, lost]),
+    },
+  );
+  const first = sockets[0];
+  first.onopen?.();
+  first.ready();
+  first.send = () => {
+    throw new Error("unknown send outcome");
+  };
+  connection.input("command\r");
+  t.mock.timers.tick(250);
+  const next = sockets[1];
+  next.onopen?.();
+  next.ready("a".repeat(64), true, 1);
+  assert.deepEqual(opens, [
+    [false, false],
+    [true, false],
+  ]);
+  assert.equal(next.sent.length, 1);
+  connection.close();
+});
+
+test("invalid or regressing input acknowledgments end the connection without hiding uncertainty", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  for (const value of [
+    undefined,
+    -1,
+    0.5,
+    "1",
+    2,
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
+    const h = setup();
+    h.connection.input("unconfirmed");
+    h.socket.acknowledge(value);
+    assert.match(h.ends[0], /incompatible/);
+    assert.match(h.ends[0], /could not be confirmed/);
+    assert.equal(h.connection.connected, false);
+  }
+  const regression = setup();
+  regression.connection.input("accepted");
+  regression.socket.acknowledge(1);
+  regression.socket.acknowledge(0);
+  assert.match(regression.ends[0], /incompatible/);
+  assert.doesNotMatch(regression.ends[0], /could not be confirmed/);
+});
+
+test("an unresolved disconnect retains the input uncertainty notice after retry expiry", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const socket = new Socket();
+  const ends: string[] = [];
+  let attempt = 0;
+  const connection = new TerminalConnection(
+    () => {
+      if (attempt++) throw new Error("offline");
+      return socket as unknown as WebSocket;
+    },
+    {
+      write: () => {},
+      cwd: () => {},
+      inputError: () => {},
+      reconnecting: () => {},
+      open: () => {},
+      end: (message) => ends.push(message),
+    },
+  );
+  socket.onopen?.();
+  socket.ready();
+  connection.input("command\r");
+  socket.close(1006);
+  for (let i = 0; i < 30; i++) t.mock.timers.tick(1000);
+  assert.equal(ends.length, 1);
+  assert.match(ends[0], /could not reconnect in time/);
+  assert.match(ends[0], /could not be confirmed and was not resent/);
+  assert.equal(
+    socket.sent.filter((raw) => JSON.parse(raw).type === "input").length,
+    1,
+  );
 });

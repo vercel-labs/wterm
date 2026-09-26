@@ -75,6 +75,7 @@ test(
       socket.on("message", (raw, binary) => {
         if (!binary) {
           const message = JSON.parse(raw.toString());
+          if (message.type === "input-ack") return;
           assert.equal(message.type, "ready");
           assert.equal(message.resumed, resume);
           if (token) assert.equal(message.session, token);
@@ -123,7 +124,7 @@ test(
     const expected = Buffer.alloc(total);
     for (let i = 0; i < total; i++) expected[i] = i % 256;
     assert.deepEqual(Buffer.concat(output), expected);
-    next.send(JSON.stringify({ type: "input", data: "x" }));
+    next.send(JSON.stringify({ type: "input", id: 1, data: "x" }));
     const marker = Buffer.from(`alive:${originalPid}`);
     while (consumed < total + marker.length && Date.now() < deadline)
       await delay(10);

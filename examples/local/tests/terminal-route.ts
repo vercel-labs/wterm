@@ -24,10 +24,15 @@ export function acceptTerminal(socket: WebSocketRoute): void {
             type: "ready",
             session: message.session ?? "a".repeat(64),
             resumed: message.session !== null,
+            input: 0,
           }),
         );
         ready();
-      } else callback(data);
+      } else {
+        if (message.type === "input")
+          socket.send(JSON.stringify({ type: "input-ack", input: message.id }));
+        callback(data);
+      }
     });
   socket.onMessage(() => {});
 }
