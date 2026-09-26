@@ -1,6 +1,7 @@
 import type { TerminalCore } from "@wterm/core";
 
 import { scanText } from "./text-capture.js";
+import type { RectangleSelection } from "./rectangle-selection.js";
 
 const owners = new WeakMap<Document, HistorySelection>();
 
@@ -11,6 +12,8 @@ export class HistorySelection {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private resolve: ((selected: boolean) => void) | null = null;
   private status: HTMLDivElement;
+  private rectangle: RectangleSelection | null = null;
+  private decorated = new Set<HTMLElement>();
 
   constructor(private element: HTMLElement) {
     this.status = element.ownerDocument.createElement("div");
@@ -37,6 +40,52 @@ export class HistorySelection {
   }
 
   select(): Promise<boolean> {
+    this.claim();
+    this.status.textContent = "Selecting terminal text…";
+    return new Promise((resolve) => {
+      this.resolve = resolve;
+    });
+  }
+
+  selectRectangle(rectangle: RectangleSelection): void {
+    this.claim();
+    this.rectangle = rectangle;
+    this.text = rectangle.text;
+  }
+
+  paintRectangle(
+    rows: Iterable<{ row: number; element: HTMLElement }>,
+    charWidth: number,
+  ): void {
+    this.clearDecorations();
+    if (!this.rectangle || charWidth <= 0) return;
+    const first = this.rectangle.rows[0].row;
+    for (const { row, element } of rows) {
+      const range = this.rectangle.rows[row - first];
+      if (!range) continue;
+      element.classList.add("term-rectangle-row");
+      element.style.setProperty(
+        "--term-selection-left",
+        `${range.left * charWidth}px`,
+      );
+      element.style.setProperty(
+        "--term-selection-width",
+        `${(range.right - range.left) * charWidth}px`,
+      );
+      this.decorated.add(element);
+    }
+  }
+
+  private clearDecorations(): void {
+    for (const element of this.decorated) {
+      element.classList.remove("term-rectangle-row");
+      element.style.removeProperty("--term-selection-left");
+      element.style.removeProperty("--term-selection-width");
+    }
+    this.decorated.clear();
+  }
+
+  private claim(): void {
     const doc = this.element.ownerDocument;
     owners.get(doc)?.clear();
     this.clear();
@@ -45,10 +94,6 @@ export class HistorySelection {
     // view on the next key event, overriding the terminal's scroll position.
     const native = doc.getSelection();
     if (native && !native.isCollapsed) native.removeAllRanges();
-    this.status.textContent = "Selecting terminal text…";
-    return new Promise((resolve) => {
-      this.resolve = resolve;
-    });
   }
 
   /** WTerm calls this only once its current frame has painted. */
@@ -90,6 +135,8 @@ export class HistorySelection {
     this.scan?.return("");
     this.scan = null;
     this.text = null;
+    this.rectangle = null;
+    this.clearDecorations();
     this.element.classList.remove("term-select-all");
     this.status.textContent = message;
     if (owners.get(this.element.ownerDocument) === this)

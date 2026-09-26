@@ -171,12 +171,13 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `search(query, { caseSensitive? })` | Start plain-text search over retained history and the active screen |
 | `findNext()` / `findPrevious()` | Select and reveal a match, wrapping at either end; return false if there are none |
 | `getSearchState()` | Get query, caseSensitive, count, activeIndex, searching, and limited |
-| `getSelectionText(): string \| null` | Read the native selection with terminal line and cell semantics; returns null when unavailable |
+| `getSelectionText(): string \| null` | Read selected text with terminal line and cell semantics; returns null when unavailable |
 | `selectWord({ row, col }): boolean` | Select a word at a retained-buffer cell, including confirmed soft wraps |
 | `selectLine(row): boolean` | Select the complete logical line containing a retained-buffer row |
+| `selectRectangle(start, end): boolean` | Select inclusive column and row bounds, preserving spaces and physical line breaks |
 | `readText(options?): Promise<string>` | Capture retained output without changing selection; accepts an optional `signal` |
 | `selectAll(): Promise<boolean>` | Select all retained history and the active screen |
-| `clearSelection()` | Cancel Select All and clear this terminal's native selection |
+| `clearSelection()` | Clear custom selection and this terminal's native selection |
 | `clearSearch()` | Cancel search and remove highlights |
 | `destroy()` | Clean up event listeners and DOM |
 
@@ -298,6 +299,22 @@ console.log(term.getSelectionText());
 Both methods return `true` when a native selection is created. They return `false` for invalid coordinates, an unavailable or pending frame, or a range beyond 1,000 physical rows or 1,048,576 UTF-16 units. Mouse gestures fall back to browser selection in those cases. Route writes and resizes through WTerm and select after painting. Successful selection replaces Select All and releases terminal input focus so normal Copy works across browsers. Framework users access these methods through their WTerm instance.
 
 Words use Ghostty's default boundary characters: spaces, tabs, quotes, backticks, vertical bars (including `│`), colons, semicolons, commas, parentheses, square/curly/angle brackets, and dollar signs. Adjacent boundary characters form their own run. Slashes, dots, hyphens, underscores, and Unicode text remain together. Either half of a wide glyph selects its complete grapheme. Line selection preserves indentation, trims trailing hard-line padding on copy, and excludes the next explicit newline. Unknown wrap boundaries, including the built-in core's, stop expansion at the physical row. These native selections use the preservation behavior described above.
+
+#### Rectangular selection
+
+Hold Alt (Option on macOS) and drag to copy columns from tables or logs. Hold Shift+Alt in the live screen of a mouse-reporting application. Drag beyond the top or bottom edge to scroll through history.
+
+```ts
+term.selectRectangle({ row: 10, col: 4 }, { row: 14, col: 12 });
+const text = term.getSelectionText();
+term.clearSelection();
+```
+
+Corners are inclusive and may be supplied in either direction. Row zero is the oldest retained physical row; columns are terminal cells. Each selected row becomes a separate line, even across soft wraps. Selected spaces, including trailing padding, remain intact. Wide glyphs intersecting either edge expand to the complete grapheme, and highlights follow that expansion.
+
+`selectRectangle(start, end)` focuses terminal input and returns `true` when the complete snapshot is ready. Copy with Cmd+C, Ctrl+C, or Ctrl+Shift+C; Escape clears it. The method returns `false` for invalid coordinates, an unavailable or pending frame, or an oversized rectangle. A rejected request leaves the previous selection intact unless focus handling changes the terminal. Bounds are 1,000 rows, 1,048,576 UTF-16 units, and `rowCount * (selectedWidth + 1) <= 65,536`. No truncated prefix is exposed.
+
+The snapshot includes unmounted history without mounting extra rows. Only mounted rows are highlighted, using `--term-selection-bg`. Scrolling preserves it; any WTerm write or resize, new input, pointer selection, focus outside the terminal, replacement selection, or destruction clears it. Route core mutations through WTerm and select after painting. Framework users access this method through their WTerm instance.
 
 #### Select All
 

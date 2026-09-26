@@ -113,6 +113,8 @@ Use `await wt.selectAll()` on the WTerm instance to select all retained history 
 
 Double-click words or paths, or triple-click logical lines. The WTerm methods `selectWord({ row, col })` and `selectLine(row)` create the same native selection, including confirmed Ghostty soft wraps and unmounted history. See [Words and Logical Lines](/api-reference#words-and-logical-lines) for coordinates, boundaries, and limits.
 
+Alt/Option-drag selects rectangular columns; Shift+Alt selects inside mouse-reporting applications. Call `selectRectangle(start, end)` on the WTerm instance with inclusive retained-row/cell corners. Rectangles preserve selected spaces and physical row breaks and clear on output or resize. See [Rectangular Selection](/api-reference#rectangular-selection) for copy shortcuts, coordinates, and limits.
+
 ### Terminal images
 
 When the supplied core exposes the optional graphics methods, `WTerm` renders

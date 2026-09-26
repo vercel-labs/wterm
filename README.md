@@ -39,7 +39,8 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Inactive pane rendering** — skip paints for inactive sessions and hidden browser documents while output and terminal replies continue
 - **Full-history Select All** — Cmd+A or Ctrl+Shift+A selects retained history and the active screen without mounting extra rows
 - **Word and line selection** — double-click paths and words or triple-click logical lines, including confirmed soft wraps and unmounted history
-- **Selection preservation** — Ghostty selections follow scrolling and reflow while their text remains intact; selected history is mounted separately from the viewport
+- **Rectangular selection** — Alt/Option-drag copies columns from logs and tables, preserving selected spaces and complete Unicode cells
+- **Selection preservation** — Ghostty native selections follow scrolling and reflow while their text remains intact; selected history is mounted separately from the viewport
 - **Native hyperlinks** — OSC 8 links remain attached to their exact cells through viewport and scrollback, with safe HTTP(S) anchors
 - **Dirty-row tracking** — only touched rows are re-rendered each frame via `requestAnimationFrame`
 - **Frame-direct scheduling** — writes queue their render on the next animation frame without an extra timer hop
