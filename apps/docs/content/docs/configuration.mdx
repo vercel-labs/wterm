@@ -53,8 +53,8 @@ AltGr. Assigned keys are consumed even at pane limits and do not repeat while
 held. Close current session terminates that shell. Escape cancels recording
 before closing the dialog. Storage failures leave changes active for the current
 page with a visible status. These controls belong to the local workspace; they
-do not change the terminal libraries' keyboard bindings or restore sessions
-after refresh.
+do not change the terminal libraries' keyboard bindings. Session recovery is
+described below.
 
 ### Scrollback rendering
 
@@ -383,9 +383,21 @@ even if an acknowledgment was lost. If any input was not delivered, the workspac
 reports it and asks you to check the command line before continuing. If recovery
 fails, unconfirmed delivery remains visible. Input is never retried automatically.
 An acknowledgment confirms PTY acceptance, not command execution or completion.
-An expired session or an unavailable output range ends with a visible status rather than creating a
-replacement shell. Reloading the page, recreating the terminal, or restarting the
-server starts a new session; recovery requires the existing parser and history.
+Reloading the page can restore saved terminal tabs and reconnect to their same
+shells. The workspace stores exact output, resize and theme events, attachment
+credentials, and input sequence counters in tab-scoped `sessionStorage`, separately
+for each engine route. A fresh terminal replays that complete prefix before
+reattaching; historical replies and clipboard requests are suppressed. Saved
+output may contain sensitive text and echoed commands. Closing a session removes
+its records, and closing the browser tab removes its session storage.
+
+Replay records are capped at 1 MiB of output and 4,096 events per session, subject
+to browser storage quotas. A limit or storage failure disables refresh recovery
+with a visible status while the live terminal continues. Invalid or incomplete
+records, an expired session, an unavailable output range, or a server restart
+produce an explicit failure without starting a replacement shell. Reload must
+reattach within the 30-second server grace period. Split layout and Find queries
+are not restored; normal navigation and duplicated tabs start independently.
 This behavior belongs to the local example, not `WebSocketTransport` alone.
 
 ## Output announcements

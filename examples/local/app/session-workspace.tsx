@@ -7,6 +7,7 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
 } from "react";
 import {
@@ -33,10 +34,14 @@ import {
   type ClipboardWriteRequest,
 } from "./clipboard-request";
 import { TerminalConnection } from "../lib/terminal-connection";
+import {
+  SessionRecovery,
+  RECOVERY_KEY,
+  decodeOutput,
+} from "../lib/session-recovery";
 import "@wterm/react/css";
 
 import {
-  INITIAL_STATE,
   MAX_PANES,
   adjacentPane,
   measureLayout,
@@ -77,6 +82,7 @@ function terminalPixelSize(terminal: WTerm): { width: number; height: number } {
 }
 
 interface SessionTerminalProps {
+  recovery: SessionRecovery;
   shortcuts: Shortcuts;
   registerFind: (id: string, open: () => void) => () => void;
   registerPrompt: (
@@ -99,6 +105,7 @@ interface SessionTerminalProps {
 }
 
 function SessionTerminal({
+  recovery,
   shortcuts,
   registerFind,
   registerPrompt,
@@ -117,6 +124,11 @@ function SessionTerminal({
   onShell,
 }: SessionTerminalProps) {
   const [ready, setReady] = useState(false);
+  const replaying = useRef(false);
+  const attached = useRef(false);
+  const leaving = useRef(false);
+  const [log] = useState(() => recovery.get(session.id));
+  const [recoveryFailed, setRecoveryFailed] = useState(log.failed);
   const themeRef = useRef(theme);
   useLayoutEffect(() => {
     themeRef.current = theme;
@@ -141,7 +153,11 @@ function SessionTerminal({
   const findInputRef = useRef<HTMLInputElement>(null);
 
   useLayoutEffect(() => {
+    if (replaying.current) return;
     terminalRef.current?.setThemeColors(TERMINAL_COLORS[theme]);
+    log.append({ type: "theme", theme });
+    log.checkpoint();
+    setRecoveryFailed(log.failed);
   }, [theme, ready]);
 
   const openFind = useCallback(() => {
@@ -175,7 +191,13 @@ function SessionTerminal({
 
   useEffect(() => {
     disposedRef.current = false;
+    const pagehide = () => {
+      leaving.current = true;
+      wsRef.current?.detach();
+    };
+    window.addEventListener("pagehide", pagehide);
     return () => {
+      window.removeEventListener("pagehide", pagehide);
       disposedRef.current = true;
       if (connectFrameRef.current !== null) {
         cancelAnimationFrame(connectFrameRef.current);
@@ -185,7 +207,7 @@ function SessionTerminal({
       wsRef.current = null;
       terminalRef.current = null;
     };
-  }, []);
+  }, [recovery, session.id]);
 
   useEffect(() => {
     if (!coreLoader) return;
@@ -232,15 +254,80 @@ function SessionTerminal({
   }, [findOpen]);
 
   const handleReady = useCallback(
-    (wt: WTerm) => {
+    async (wt: WTerm) => {
       if (disposedRef.current) return;
+      setReady(false);
       // A new parser cannot resume from the previous parser's byte position.
       if (terminalRef.current && terminalRef.current !== wt) {
-        wsRef.current?.close();
+        if (connectFrameRef.current !== null) {
+          cancelAnimationFrame(connectFrameRef.current);
+          connectFrameRef.current = null;
+        }
+        // Strict Mode can replace the core even after its first attachment.
+        wsRef.current?.detach();
         wsRef.current = null;
       }
       terminalRef.current = wt;
+      const replay = log;
+      const head = replay.saved;
+      const saved = head?.session ? head : null;
+      if ((log.restore || attached.current) && !saved) {
+        setConnectionMessage(
+          "This session could not be restored. Open a new terminal to start another shell.",
+        );
+        onStatus(session.id, "closed");
+        return;
+      }
+      if (saved) {
+        replaying.current = true;
+        wt.autoResize = false;
+        wt.setRenderingPaused(true);
+        wt.resize(saved.cols, saved.rows);
+        wt.setThemeColors(TERMINAL_COLORS[saved.theme]);
+        let bytes = 0;
+        try {
+          for (const event of replay.replay) {
+            if (
+              disposedRef.current ||
+              leaving.current ||
+              terminalRef.current !== wt
+            )
+              return;
+            if (event.type === "output") {
+              const data = decodeOutput(event.data);
+              wt.write(data);
+              bytes += data.length;
+            } else if (event.type === "resize")
+              wt.resize(event.cols, event.rows);
+            else wt.setThemeColors(TERMINAL_COLORS[event.theme]);
+            if (bytes >= 32 * 1024) {
+              bytes = 0;
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+          }
+        } catch {
+          replay.invalidate();
+          setRecoveryFailed(true);
+          setConnectionMessage(
+            "This session could not be restored. Open a new terminal to start another shell.",
+          );
+          onStatus(session.id, "closed");
+          return;
+        } finally {
+          if (terminalRef.current === wt) replaying.current = false;
+          wt.autoResize = true;
+        }
+        if (
+          disposedRef.current ||
+          leaving.current ||
+          terminalRef.current !== wt
+        )
+          return;
+        wt.fit();
+      } else replay.start(wt.cols, wt.rows, themeRef.current);
       wt.setThemeColors(TERMINAL_COLORS[themeRef.current]);
+      replay.append({ type: "theme", theme: themeRef.current });
+      replay.checkpoint();
       setReady(true);
       wt.onSearchChange = setSearchState;
       if (wsRef.current) return;
@@ -255,35 +342,50 @@ function SessionTerminal({
         const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${proto}//${window.location.host}/api/terminal`;
         onStatus(session.id, "connecting");
-        const connection = new TerminalConnection(() => new WebSocket(wsUrl), {
-          open: (resumed, inputLost) => {
-            const terminal = terminalRef.current;
-            if (!terminal) return;
-            const { width, height } = terminalPixelSize(terminal);
-            setConnectionMessage(null);
-            setReconnected(resumed);
-            setLostInput((previous) => inputLost || (resumed && previous));
-            onStatus(session.id, "connected");
-            connection.resize(terminal.cols, terminal.rows, width, height);
+        let restoredConnection = !!saved;
+        const connection = new TerminalConnection(
+          () => new WebSocket(wsUrl),
+          {
+            open: (resumed, inputLost) => {
+              attached.current = true;
+              const terminal = terminalRef.current;
+              if (!terminal) return;
+              const { width, height } = terminalPixelSize(terminal);
+              setConnectionMessage(null);
+              setReconnected(resumed && !restoredConnection);
+              restoredConnection = false;
+              setLostInput((previous) => inputLost || (resumed && previous));
+              onStatus(session.id, "connected");
+              connection.resize(terminal.cols, terminal.rows, width, height);
+            },
+            reconnecting: () => {
+              setReconnected(false);
+              setConnectionMessage(
+                "Reconnecting… Input is paused until the session returns.",
+              );
+              onStatus(session.id, "reconnecting");
+            },
+            write: (data) => {
+              write(data);
+              replay.write(data);
+            },
+            cwd: (path) => onCwd(session.id, path),
+            end: (message) => {
+              if (disposedRef.current || wsRef.current !== connection) return;
+              replay.invalidate();
+              setConnectionMessage(message);
+              setReconnected(false);
+              wsRef.current = null;
+              onStatus(session.id, "closed");
+            },
+            inputError: setConnectionMessage,
+            checkpoint: (state) => {
+              replay.checkpoint(state);
+              setRecoveryFailed(replay.failed);
+            },
           },
-          reconnecting: () => {
-            setReconnected(false);
-            setConnectionMessage(
-              "Reconnecting… Input is paused until the session returns.",
-            );
-            onStatus(session.id, "reconnecting");
-          },
-          write: (data) => write(data),
-          cwd: (path) => onCwd(session.id, path),
-          end: (message) => {
-            if (disposedRef.current || wsRef.current !== connection) return;
-            setConnectionMessage(message);
-            setReconnected(false);
-            wsRef.current = null;
-            onStatus(session.id, "closed");
-          },
-          inputError: setConnectionMessage,
-        });
+          saved ?? undefined,
+        );
         wsRef.current = connection;
       });
     },
@@ -297,12 +399,16 @@ function SessionTerminal({
   const [clipboardRequest, setClipboardRequest] =
     useState<ClipboardWriteRequest | null>(null);
   const handleClipboardWrite = useCallback((text: string) => {
+    if (replaying.current) return;
     setClipboardRequest({ text });
   }, []);
 
   const handleResize = useCallback((cols: number, rows: number) => {
+    if (replaying.current) return;
     const terminal = terminalRef.current;
     if (!terminal) return;
+    log.append({ type: "resize", cols, rows });
+    log.checkpoint();
     const { width, height } = terminalPixelSize(terminal);
     wsRef.current?.resize(cols, rows, width, height);
   }, []);
@@ -317,6 +423,12 @@ function SessionTerminal({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {recoveryFailed && session.status !== "closed" && (
+        <p role="status" className="pb-2 text-xs text-[var(--workspace-muted)]">
+          Refresh recovery is unavailable for this session. Keep this page open
+          to continue using it.
+        </p>
+      )}
       <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-[var(--workspace-border)] pb-2 text-xs">
         <OutputReader
           terminal={terminalRef}
@@ -500,7 +612,7 @@ function SessionTerminal({
       <div className="min-h-0 flex-1 pt-2" inert={!ready}>
         <WTermTerminal
           ref={ref}
-          renderingPaused={!visible}
+          renderingPaused={!visible || !ready}
           announceOutput={active && announceOutput}
           cols={80}
           rows={24}
@@ -540,13 +652,51 @@ interface SessionWorkspaceProps {
   coreLoader?: () => Promise<TerminalCore>;
 }
 
-export function SessionWorkspace({
+const subscribeRecovery = () => () => {};
+const serverRecovery = () => null;
+export function SessionWorkspace(props: SessionWorkspaceProps) {
+  const [getRecovery] = useState(() => {
+    let recovery: SessionRecovery | null = null;
+    return () => {
+      if (!recovery) {
+        let storage: Storage | null = null;
+        try {
+          storage = window.sessionStorage;
+        } catch {}
+        const navigation = performance.getEntriesByType("navigation")[0] as
+          PerformanceNavigationTiming | undefined;
+        recovery = new SessionRecovery(
+          storage,
+          `${RECOVERY_KEY}:${location.pathname}`,
+          navigation?.type === "reload" || navigation?.type === "back_forward",
+        );
+      }
+      return recovery;
+    };
+  });
+  const recovery = useSyncExternalStore(
+    subscribeRecovery,
+    getRecovery,
+    serverRecovery,
+  );
+  useEffect(() => {
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) location.reload();
+    };
+    window.addEventListener("pageshow", restored);
+    return () => window.removeEventListener("pageshow", restored);
+  }, []);
+  return recovery ? <ReadyWorkspace {...props} recovery={recovery} /> : null;
+}
+
+function ReadyWorkspace({
+  recovery,
   wasmUrl,
   maxImageWidth,
   maxImageHeight,
   coreLoader,
-}: SessionWorkspaceProps) {
-  const [workspace, dispatch] = useReducer(workspaceReducer, INITIAL_STATE);
+}: SessionWorkspaceProps & { recovery: SessionRecovery }) {
+  const [workspace, dispatch] = useReducer(workspaceReducer, recovery.initial);
   const {
     shortcuts,
     saved: shortcutsSaved,
@@ -692,6 +842,7 @@ export function SessionWorkspace({
             dispatch({ type: "add" });
             break;
           case "close":
+            recovery.remove(id!);
             dispatch({ type: "close", id: id! });
             break;
           case "splitRight":
@@ -797,7 +948,10 @@ export function SessionWorkspace({
                 )}
                 <button
                   type="button"
-                  onClick={() => dispatch({ type: "close", id: session.id })}
+                  onClick={() => {
+                    recovery.remove(session.id);
+                    dispatch({ type: "close", id: session.id });
+                  }}
                   className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--workspace-muted)] opacity-0 transition-opacity hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)] group-hover:opacity-100 focus-visible:opacity-100"
                   aria-label={`Close ${session.name}`}
                   title={
@@ -975,6 +1129,7 @@ export function SessionWorkspace({
                   <div className="min-h-0 flex-1 px-2 pb-2">
                     {appearanceReady && (
                       <SessionTerminal
+                        recovery={recovery}
                         shortcuts={shortcuts}
                         registerFind={registerFind}
                         registerPrompt={registerPrompt}

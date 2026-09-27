@@ -19,6 +19,7 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 - `server.ts` starts an HTTP + WebSocket server alongside Next.js
 - A new terminal attaches to a server session and spawns your default shell after its initial dimensions arrive
 - A brief connection interruption resumes that same shell and existing browser terminal; missing output is replayed without repeating parsed bytes
+- Reloading the page restores saved terminal tabs and resumes their shells while complete recovery records and server sessions remain available
 - The browser sends sequenced JSON input, resize, and byte acknowledgment messages over WebSocket; the server acknowledges input handed to the PTY, relays raw PTY bytes in binary frames, and sends working-directory updates as JSON
 - Terminal resizing, including browser pixel dimensions, is forwarded to the PTY via resize messages
 - The server restores PTY pixel dimensions after each resize so Kitty clients such as `kitten icat` can detect image support
@@ -45,6 +46,7 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 | `server.ts` | Custom server with WebSocket ↔ PTY bridge |
 | `lib/pty-output.ts` | Bounded output window and PTY pause/resume |
 | `lib/terminal-sessions.ts` | Session ownership, attachment tokens, replay, and expiry |
+| `lib/session-recovery.ts` | Bounded tab-scoped output, resize, and theme replay records |
 | `lib/terminal-connection.ts` | Browser parsing tasks, acknowledgments, and bounded input |
 | `lib/terminal-protocol.ts` | Shared message types and buffer limits |
 | `app/page.tsx` | Built-in-core entry point |
@@ -82,7 +84,8 @@ keeping its previous shell open. **Zoom pane** temporarily shows one pane;
 session using its sidebar close button; its neighbor fills the freed space,
 and other shells keep running. Layout changes preserve terminal instances,
 history, Find queries, and connections. Layout is kept only in the current
-page; refreshing still starts a new shell.
+page. Reloading restores saved sessions as sidebar tabs, with the first selected;
+split geometry and Find queries are not restored.
 
 ## Shell command indicators
 
@@ -137,7 +140,7 @@ Settings apply immediately, persist across reloads, and synchronize between tabs
 and both engine routes on the same origin. Invalid or conflicting saved settings
 fall back to defaults. If storage is unavailable, changes remain usable for the
 current page and the dialog reports that they could not be saved. These are
-workspace preferences; they do not restore sessions after a refresh.
+workspace preferences, separate from the session recovery records described below.
 
 ## Appearance
 
@@ -217,12 +220,28 @@ Closing a connected session terminates its PTY and cancels pending work.
 Closing while disconnected cancels
 browser retries, and the server expires the detached PTY within 30 seconds.
 
-Recovery requires the same browser terminal instance. Attachment tokens stay in
-page memory and are never placed in URLs or browser storage. Refreshing or
-recreating a terminal starts a new shell. Server restarts, expired sessions, and
-unavailable output ranges end with a visible status instead of silently
-replacing a shell. This example does not restore sessions across refreshes or
-server restarts.
+Reload recovery stores output bytes, every applied resize and host theme change,
+attachment credentials, and input sequence counters in this tab's
+`sessionStorage`, separately for each engine route. Credentials are never placed
+in URLs. Terminal output can contain sensitive information, including echoed
+commands. Closing a session removes its records; closing the browser tab removes
+the tab's storage. A normal navigation or duplicated tab starts independently.
+
+A new terminal replays the complete saved prefix from its initial dimensions,
+preserving modes, both screens, history, graphics, and unfinished parser input.
+Historical terminal replies and clipboard requests are not sent again. The
+connection then resumes the same PTY from the saved byte offset, with existing
+input acknowledgment and deduplication behavior. Output is saved before its
+acknowledgment permits the server to discard it. Input text is never retried.
+
+Records are limited to 1 MiB of output and 4,096 events per session, and browser
+storage quotas also apply. Reaching a limit or a storage failure disables refresh
+recovery for that session and shows a status while the live terminal continues.
+Incomplete or invalid records, expired sessions, unavailable output ranges, and
+server restarts produce an explicit failure instead of starting a replacement
+shell. Reload must reattach within the existing 30-second server grace period.
+This is bounded replay from session start, not an unlimited terminal checkpoint
+or PTY survival across server restarts.
 
 This protocol is specific to the local example. Its client and server must be
 updated together; a bare `WebSocketTransport` client cannot connect directly.

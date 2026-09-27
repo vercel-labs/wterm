@@ -100,26 +100,22 @@ for (const path of ["/", "/ghostty"]) {
     await expect(
       page.getByRole("textbox", { name: "Terminal 1", exact: true }),
     ).toBeFocused();
-    await expect(page.locator(".local-terminal")).toHaveCSS(
-      "font-size",
-      "20px",
-    );
-    await expect(page.locator(".local-terminal")).toHaveCSS(
-      "background-color",
-      "rgb(250, 250, 250)",
-    );
+    await expect(page.locator(".local-terminal")).toHaveCount(2);
+    for (const terminal of await page.locator(".local-terminal").all()) {
+      await expect(terminal).toHaveCSS("font-size", "20px");
+      await expect(terminal).toHaveCSS(
+        "background-color",
+        "rgb(250, 250, 250)",
+      );
+    }
     await settings(page);
     await appearanceDialog(page)
       .getByRole("button", { name: "Reset defaults" })
       .click();
-    await expect(page.locator(".local-terminal")).toHaveCSS(
-      "font-size",
-      "14px",
-    );
-    await expect(page.locator(".local-terminal")).toHaveCSS(
-      "background-color",
-      "rgb(0, 0, 0)",
-    );
+    for (const terminal of await page.locator(".local-terminal").all()) {
+      await expect(terminal).toHaveCSS("font-size", "14px");
+      await expect(terminal).toHaveCSS("background-color", "rgb(0, 0, 0)");
+    }
   });
 }
 

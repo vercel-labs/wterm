@@ -9,6 +9,7 @@ import {
   RECONNECT_MS,
   type ClientMessage,
 } from "./terminal-protocol";
+import type { ConnectionState } from "./session-recovery";
 
 interface ConnectionCallbacks {
   write(data: Uint8Array): void;
@@ -17,6 +18,7 @@ interface ConnectionCallbacks {
   end(message: string): void;
   inputError(message: string | null): void;
   reconnecting(): void;
+  checkpoint?(state: ConnectionState): void;
 }
 
 /** The browser acknowledges only complete chunks accepted by the terminal core. */
@@ -49,8 +51,26 @@ export class TerminalConnection {
   constructor(
     private createSocket: () => WebSocket,
     private callbacks: ConnectionCallbacks,
+    restore?: ConnectionState,
   ) {
+    if (restore) {
+      this.session = restore.session;
+      this.consumed = this.received = this.ack = restore.bytes;
+      this.inputSent = restore.inputSent;
+      this.inputAck = restore.inputAck;
+      this.inputSizes = Array(restore.inputSent - restore.inputAck).fill(0);
+    }
     this.connect();
+  }
+
+  private checkpoint(): void {
+    if (this.session)
+      this.callbacks.checkpoint?.({
+        session: this.session,
+        bytes: this.consumed,
+        inputSent: this.inputSent,
+        inputAck: this.inputAck,
+      });
   }
 
   private connect(): void {
@@ -144,6 +164,7 @@ export class TerminalConnection {
             this.retryDeadline = null;
             this.retries = 0;
             this.ack = this.consumed;
+            this.checkpoint();
             this.callbacks.open(resumed, inputLost);
             this.flushControls();
           } else if (this.ready && message?.type === "input-ack") {
@@ -270,6 +291,8 @@ export class TerminalConnection {
     this.inputSent++;
     this.inputSizes.push(bytes);
     this.inputBytes += bytes;
+    // Save the attempted sequence before transmission, never the input text.
+    this.checkpoint();
     try {
       this.socket!.send(message);
       this.callbacks.inputError(null);
@@ -290,6 +313,7 @@ export class TerminalConnection {
     for (const bytes of this.inputSizes.splice(0, count))
       this.inputBytes -= bytes;
     this.inputAck = input;
+    this.checkpoint();
   }
 
   private endMessage(message: string): string {
@@ -301,7 +325,16 @@ export class TerminalConnection {
   resize(cols: number, rows: number, width: number, height: number): void {
     if (this.stopped || this.ended !== null) return;
     this.resizeMessage = { type: "resize", cols, rows, width, height };
+    this.checkpoint();
     this.flushControls();
+  }
+
+  /** Leave the PTY available during a page reload; do not send an explicit close. */
+  detach(): void {
+    if (this.stopped) return;
+    this.checkpoint();
+    this.releaseSocket();
+    this.stop();
   }
 
   close(): void {
@@ -387,6 +420,8 @@ export class TerminalConnection {
     }
     if (this.stopped) return;
     if (this.queue.length) this.schedule();
+    // The saved replay prefix must be committed before granting server credit.
+    this.checkpoint();
     this.flushControls();
     if (this.ended !== null && !this.queue.length) {
       const message = this.endMessage(this.ended);

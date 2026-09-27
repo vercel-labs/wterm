@@ -251,7 +251,7 @@ class TerminalSession {
   }
 }
 
-/** Tokens live only in the existing page; a new page starts a new terminal. */
+/** Session identity outlives sockets; clients must retain a complete replay prefix. */
 export class TerminalSessions {
   private sessions = new Map<string, TerminalSession>();
   constructor(private spawn: SpawnPty) {}

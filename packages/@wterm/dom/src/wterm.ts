@@ -557,6 +557,44 @@ export class WTerm {
     if (hasDeliveryError) throw deliveryError;
   }
 
+  /** Fit the grid to the current element and font metrics. */
+  fit(): void {
+    if (!this.bridge || this._destroyed) return;
+    const measured = this._measureCharSize();
+    if (!measured) return;
+    const style = getComputedStyle(this.element);
+    const rect = this.element.getBoundingClientRect();
+    const pixels = (value: string) => parseFloat(value) || 0;
+    const bordersX =
+      pixels(style.borderLeftWidth) + pixels(style.borderRightWidth);
+    const bordersY =
+      pixels(style.borderTopWidth) + pixels(style.borderBottomWidth);
+    const scrollbarWidth = Math.max(
+      0,
+      this.element.offsetWidth - this.element.clientWidth - bordersX,
+    );
+    const scrollbarHeight = Math.max(
+      0,
+      this.element.offsetHeight - this.element.clientHeight - bordersY,
+    );
+    const width =
+      rect.width -
+      pixels(style.paddingLeft) -
+      pixels(style.paddingRight) -
+      bordersX -
+      scrollbarWidth;
+    const height =
+      rect.height -
+      pixels(style.paddingTop) -
+      pixels(style.paddingBottom) -
+      bordersY -
+      scrollbarHeight;
+    if (width <= 0 || height <= 0) return;
+    const cols = Math.max(1, Math.floor(width / measured.charWidth));
+    const rows = Math.max(1, Math.floor(height / measured.rowHeight));
+    if (cols !== this.cols || rows !== this.rows) this.resize(cols, rows);
+  }
+
   resize(cols: number, rows: number): void {
     if (!this.bridge || this._destroyed) return;
     this._textCapture.cancel();

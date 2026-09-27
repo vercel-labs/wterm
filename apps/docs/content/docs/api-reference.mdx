@@ -587,6 +587,10 @@ Outside synchronized output, writes request the next animation frame directly. W
       <td>Reveal a match with wraparound; return false if there are no matches</td>
     </tr>
     <tr>
+      <td><code>fit(): void</code></td>
+      <td>Resize the grid to the current element content box and font metrics. Hidden or uninitialized terminals stay unchanged. Uses the usual resize callback.</td>
+    </tr>
+    <tr>
       <td><code>scrollToPrompt(direction: -1 | 1): boolean</code></td>
       <td>Scroll from the viewport top to the previous or next shell prompt without wrapping. Returns whether scrolling moved. Requires Ghostty with OSC 133; see <a href="/configuration#shell-integration">Shell integration</a> for limits and inactive states.</td>
     </tr>

@@ -551,6 +551,55 @@ describe("WTerm", () => {
   });
 
   describe("resize", () => {
+    it("fits the content box using current fractional font metrics and ignores hidden or destroyed elements", async () => {
+      const term = new WTerm(element, { autoResize: false });
+      const resize = vi.spyOn(term, "resize");
+      term.fit();
+      expect(resize).not.toHaveBeenCalled();
+      await term.init();
+      const style = getComputedStyle(element);
+      vi.spyOn(globalThis, "getComputedStyle").mockReturnValue({
+        ...style,
+        paddingTop: "5px",
+        paddingBottom: "5px",
+        paddingLeft: "10px",
+        paddingRight: "10px",
+        borderTopWidth: "2px",
+        borderBottomWidth: "2px",
+        borderLeftWidth: "2px",
+        borderRightWidth: "2px",
+      } as CSSStyleDeclaration);
+      element.style.padding = "5px 10px";
+      element.style.border = "2px solid";
+      const bounds = vi
+        .spyOn(element, "getBoundingClientRect")
+        .mockReturnValue({ width: 824, height: 414 } as DOMRect);
+      vi.spyOn(
+        HTMLElement.prototype,
+        "getBoundingClientRect",
+      ).mockImplementation(function (this: HTMLElement) {
+        return {
+          width: this.tagName === "SPAN" ? 8.25 : 0,
+          height: 17.5,
+        } as DOMRect;
+      });
+      term.fit();
+      expect(resize).toHaveBeenLastCalledWith(96, 22);
+      term.fit();
+      expect(resize).toHaveBeenCalledTimes(1);
+      Object.defineProperty(element, "offsetWidth", { value: 824 });
+      Object.defineProperty(element, "clientWidth", { value: 805 });
+      term.fit();
+      expect(resize).toHaveBeenLastCalledWith(95, 22);
+      bounds.mockReturnValue({ width: 0, height: 0 } as DOMRect);
+      term.fit();
+      expect(resize).toHaveBeenCalledTimes(2);
+      bounds.mockReturnValue({ width: 924, height: 514 } as DOMRect);
+      term.destroy();
+      term.fit();
+      expect(resize).toHaveBeenCalledTimes(2);
+    });
+
     it("uses the core's applied dimensions after initialization", async () => {
       vi.mocked(mockBridge.init).mockImplementation(() => {
         vi.mocked(mockBridge.getCols).mockReturnValue(256);

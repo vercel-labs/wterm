@@ -170,6 +170,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `focus()` | Focus the terminal element |
 | `setOutputAnnouncements(enabled)` | Enable or stop polite output announcements without moving focus |
 | `setRenderingPaused(paused)` | Pause pane painting while parsing and terminal effects continue; resuming schedules the latest state |
+| `fit()` | Resize the grid to the element's current content box and font metrics; hidden or uninitialized terminals stay unchanged |
 | `search(query, { caseSensitive? })` | Start plain-text search over retained history and the active screen |
 | `findNext()` / `findPrevious()` | Select and reveal a match, wrapping at either end; return false if there are none |
 | `scrollToPrompt(-1 \| 1)` | Scroll to the previous/next shell prompt from the viewport top; returns whether scrolling moved |
