@@ -177,6 +177,10 @@ See [Shell integration](https://wterm.dev/configuration#shell-integration).
 
 Svelte also accepts the lowercase `onshellintegration` callback.
 
+Call `scrollToPrompt(-1)` or `scrollToPrompt(1)` on the underlying `WTerm`
+instance to navigate retained prompts without changing focus or sending input.
+See [prompt navigation](../dom/README.md#shell-integration) for behavior and limits.
+
 ## License
 
 Apache-2.0

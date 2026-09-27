@@ -99,11 +99,20 @@ state. The workspace does not install or overwrite shell configuration. Enable
 OSC 133 in your shell integration; see [Shell integration](https://wterm.dev/configuration#shell-integration)
 for the marker contract and a minimal zsh setup.
 
+Participating sessions also show **Previous prompt** and **Next prompt** controls.
+They jump from the top of the viewport through retained command prompts,
+including unmounted history and multiline prompts. Navigation stops at either
+end and is inactive in full-screen alternate-screen applications. It preserves
+selection. Assign the two commands in **Keyboard shortcuts**; both start
+unassigned to preserve existing bindings. Assigned navigation keys are consumed
+by the workspace. Applications requesting physical modifier-key reports still
+receive those reports without scrolling the viewport back to the bottom.
+
 ## Keyboard shortcuts
 
 Open **Keyboard shortcuts** at the bottom of the sidebar to inspect or customize
 bindings for new/close session, split right/down, zoom/restore, directional pane
-focus, and Find. **Change** records one combination and replaces that command's
+focus, Find, and previous/next prompt. **Change** records one combination and replaces that command's
 existing bindings. Use Control or Command with a letter, number, navigation key,
 or function key. Bindings use physical key positions. Escape cancels recording;
 press Escape again or **Close** to close the dialog and return to its opener.

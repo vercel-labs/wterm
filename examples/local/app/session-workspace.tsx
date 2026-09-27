@@ -79,6 +79,10 @@ function terminalPixelSize(terminal: WTerm): { width: number; height: number } {
 interface SessionTerminalProps {
   shortcuts: Shortcuts;
   registerFind: (id: string, open: () => void) => () => void;
+  registerPrompt: (
+    id: string,
+    navigate: (direction: -1 | 1) => void,
+  ) => () => void;
   theme: "dark" | "light";
   fontSize: number;
   session: Session;
@@ -97,6 +101,7 @@ interface SessionTerminalProps {
 function SessionTerminal({
   shortcuts,
   registerFind,
+  registerPrompt,
   theme,
   fontSize,
   session,
@@ -154,6 +159,14 @@ function SessionTerminal({
   useLayoutEffect(
     () => registerFind(session.id, openFind),
     [registerFind, session.id, openFind],
+  );
+
+  const navigatePrompt = useCallback((direction: -1 | 1) => {
+    terminalRef.current?.scrollToPrompt(direction);
+  }, []);
+  useLayoutEffect(
+    () => registerPrompt(session.id, navigatePrompt),
+    [registerPrompt, session.id, navigatePrompt],
   );
 
   useEffect(() => {
@@ -310,6 +323,35 @@ function SessionTerminal({
           name={session.name}
           active={visible}
         />
+        {session.shell && session.shell.phase !== "unknown" && (
+          <div
+            className="flex items-center gap-1"
+            role="group"
+            aria-label="Prompt navigation"
+          >
+            {([-1, 1] as const).map((direction) => {
+              const command = direction < 0 ? "previousPrompt" : "nextPrompt";
+              const label = direction < 0 ? "Previous prompt" : "Next prompt";
+              const Icon = direction < 0 ? ArrowUp : ArrowDown;
+              return (
+                <button
+                  key={direction}
+                  type="button"
+                  aria-label={label}
+                  title={shortcutTitle(shortcuts, command, label)}
+                  aria-keyshortcuts={
+                    active ? ariaShortcuts(shortcuts, command) : undefined
+                  }
+                  disabled={!ready}
+                  className="rounded p-1 hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)] disabled:opacity-30"
+                  onClick={() => navigatePrompt(direction)}
+                >
+                  <Icon size={14} aria-hidden="true" />
+                </button>
+              );
+            })}
+          </div>
+        )}
         <label className="flex items-center gap-2 px-2 py-1 text-[var(--workspace-muted)]">
           <input
             type="checkbox"
@@ -517,6 +559,16 @@ export function SessionWorkspace({
       findHandlers.current.delete(id);
     };
   }, []);
+  const promptHandlers = useRef(new Map<string, (direction: -1 | 1) => void>());
+  const registerPrompt = useCallback(
+    (id: string, navigate: (direction: -1 | 1) => void) => {
+      promptHandlers.current.set(id, navigate);
+      return () => {
+        promptHandlers.current.delete(id);
+      };
+    },
+    [],
+  );
   const composing = useRef(false);
   const consumedKeys = useRef(new Set<string>());
   const newSessionButton = useRef<HTMLButtonElement>(null);
@@ -655,6 +707,12 @@ export function SessionWorkspace({
             break;
           case "find":
             findHandlers.current.get(id!)?.();
+            break;
+          case "previousPrompt":
+          case "nextPrompt":
+            promptHandlers.current.get(id!)?.(
+              command === "previousPrompt" ? -1 : 1,
+            );
             break;
           default: {
             const direction = {
@@ -919,6 +977,7 @@ export function SessionWorkspace({
                       <SessionTerminal
                         shortcuts={shortcuts}
                         registerFind={registerFind}
+                        registerPrompt={registerPrompt}
                         theme={theme}
                         fontSize={appearance.fontSize}
                         session={session}

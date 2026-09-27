@@ -148,6 +148,7 @@ export interface GhosttyExports {
   get_clipboard_write_ptr?(ptr: number): number;
   get_shell_phase?(ptr: number): number;
   get_shell_exit_code?(ptr: number): number;
+  find_prompt?(ptr: number, row: number, direction: number): number;
 
   // Memory
   alloc_buffer(len: number): number;

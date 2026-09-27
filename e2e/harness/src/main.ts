@@ -236,6 +236,7 @@ export type HarnessAPI = {
   searchState: WTerm["getSearchState"];
   findNext: WTerm["findNext"];
   findPrevious: WTerm["findPrevious"];
+  scrollToPrompt: WTerm["scrollToPrompt"];
   clearSearch: WTerm["clearSearch"];
   selectionText: WTerm["getSelectionText"];
   selectAll: WTerm["selectAll"];
@@ -294,6 +295,7 @@ async function init() {
     searchState: () => terminal.getSearchState(),
     findNext: () => terminal.findNext(),
     findPrevious: () => terminal.findPrevious(),
+    scrollToPrompt: (direction) => terminal.scrollToPrompt(direction),
     clearSearch: () => terminal.clearSearch(),
     selectionText: () => terminal.getSelectionText(),
     selectAll: () => terminal.selectAll(),

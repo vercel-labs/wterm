@@ -172,6 +172,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `setRenderingPaused(paused)` | Pause pane painting while parsing and terminal effects continue; resuming schedules the latest state |
 | `search(query, { caseSensitive? })` | Start plain-text search over retained history and the active screen |
 | `findNext()` / `findPrevious()` | Select and reveal a match, wrapping at either end; return false if there are none |
+| `scrollToPrompt(-1 \| 1)` | Scroll to the previous/next shell prompt from the viewport top; returns whether scrolling moved |
 | `getSearchState()` | Get query, caseSensitive, count, activeIndex, searching, and limited |
 | `getSelectionText(): string \| null` | Read selected text with terminal line and cell semantics; returns null when unavailable |
 | `selectWord({ row, col }): boolean` | Select a word at a retained-buffer cell, including confirmed soft wraps |
@@ -524,6 +525,16 @@ coalesce into one current-state snapshot, so this callback is not a command log.
 The built-in core, custom cores without the optional hook, and older Ghostty
 binaries do not report shell state. Shell configuration is owned by the host.
 See [Shell integration](https://wterm.dev/configuration#shell-integration).
+
+Call `term.scrollToPrompt(-1)` for the previous prompt or `term.scrollToPrompt(1)`
+for the next. Navigation starts at the viewport's top row and stops at either
+end without wrapping. It uses retained OSC 133 metadata, including unmounted
+history, groups multiline prompts, and follows Ghostty reflow and pruning.
+Prompts in the live screen scroll to the bottom as far as the viewport permits.
+It preserves focus, selection, and the Find query, and sends no shell input.
+The method returns `false` when no scrolling occurs, including unsupported cores
+or older WASM, the alternate screen, hidden/paused terminals, and synchronized
+output that is holding a paint. The library installs no navigation shortcuts.
 
 ## License
 

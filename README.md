@@ -38,6 +38,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Local session reconnection** — brief connection interruptions resume the same shell and terminal state in the existing page, with bounded output replay, input delivery acknowledgments, duplicate suppression, and no automatic input retries
 - **Local appearance settings** — persistent light/dark/system appearance and font size across panes, with live updates that preserve shells
 - **Shell command state** — Ghostty forwards OSC 133 prompt, running, and completion state to hosts and per-session workspace indicators
+- **Prompt navigation** — jump between shell prompts in retained Ghostty history, including after reflow, with workspace controls and configurable shortcuts
 - **Workspace keyboard shortcuts** — discover and customize session, split, focus, zoom, and Find bindings, with persistent settings and conflict checks
 - **Live host colors** — `setThemeColors()` synchronizes CSS and supported core defaults while preserving application color overrides
 - **Local split panes** — view up to four shells side by side or stacked, with adjustable dividers, directional focus, and reversible pane zoom

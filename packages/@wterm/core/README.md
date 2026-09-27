@@ -241,6 +241,13 @@ command start or terminal reset. This is bounded current state, not a command
 history. Returned snapshots belong to the caller. Cores that omit the hook
 remain compatible; WTerm forwards new snapshots through `onShellIntegration`.
 
+The optional `findPrompt(row, direction)` returns the preceding (`-1`) or
+following (`1`) prompt's retained row, or `null` when none is available. Row zero
+is the oldest retained row. The origin must be in the retained buffer; forward
+navigation skips the current prompt's continuation rows. Ghostty uses its
+retained OSC 133 metadata, follows reflow and pruning, and returns no prompt on
+the alternate screen. The hook neither moves the cursor nor consumes shell state.
+
 ## License
 
 Apache-2.0

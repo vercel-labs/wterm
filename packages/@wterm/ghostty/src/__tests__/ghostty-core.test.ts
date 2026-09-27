@@ -71,6 +71,7 @@ it("reports unknown row metadata when an older WASM binary omits the exports", a
   core.init(80, 24);
   expect(core.getColorOverrides()).toEqual({});
   expect(core.getShellIntegrationState()).toBeNull();
+  expect(core.findPrompt(0, -1)).toBeNull();
   expect(core.getRowMetadata(0)).toBeNull();
   expect(core.getScrollbackRowMetadata(0)).toBeNull();
   core.dispose();

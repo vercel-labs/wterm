@@ -369,9 +369,11 @@ export class WTerm {
 
       this.input = new InputHandler(
         this.element,
-        (data) => {
-          this._outputAnnouncements.input();
-          this._scrollToBottom();
+        (data, preserveScroll = false) => {
+          if (!preserveScroll) {
+            this._outputAnnouncements.input();
+            this._scrollToBottom();
+          }
           if (this.onData) {
             this.onData(data);
           } else {
@@ -597,6 +599,62 @@ export class WTerm {
   }
   getSearchState(): SearchState {
     return this._search.snapshot();
+  }
+
+  /** Scroll to the previous (-1) or next (1) shell prompt from the viewport top. */
+  scrollToPrompt(direction: -1 | 1): boolean {
+    if (
+      !this._canRender() ||
+      !this.bridge?.findPrompt ||
+      !this.renderer ||
+      this._synchronizedOutputState === "held" ||
+      this.bridge.usingAltScreen() ||
+      (direction !== -1 && direction !== 1)
+    )
+      return false;
+    // Resolve against the current parsed buffer and mounted viewport, including
+    // any output, resize or user scroll that has not painted yet.
+    this._cancelScheduledRender();
+    this._doRender();
+    if (direction === 1 && this._isScrolledToBottom()) return false;
+    const bounds = this.element.getBoundingClientRect();
+    const origin = this.renderer.dragPositionAt(
+      bounds.left,
+      bounds.top + this.element.clientTop + 1,
+      this._charWidth,
+    );
+    if (!origin) return false;
+    const target = this.bridge.findPrompt(origin.row, direction);
+    if (
+      target === null ||
+      !Number.isInteger(target) ||
+      target < 0 ||
+      target >= this.bridge.getScrollbackCount() + this.rows ||
+      (direction < 0 ? target >= origin.row : target <= origin.row)
+    )
+      return false;
+    const before = this.element.scrollTop;
+    this._shouldScrollToBottom = false;
+    this._searchReveal = false;
+    this._pendingResizeScrollTop = target * this._rowHeight;
+    this._doRender();
+    // The initial estimate mounts distant history. Use actual row geometry for
+    // padding, fractional line heights and inline image layout.
+    const mounted = Array.from(this.renderer.searchRows()).find(
+      ({ row }) => row === target,
+    );
+    if (mounted) {
+      this._setScrollTop(
+        this.element.scrollTop +
+          mounted.element.getBoundingClientRect().top -
+          bounds.top -
+          this.element.clientTop,
+      );
+    }
+    this._scheduleRender();
+    return (
+      Math.abs(this.element.scrollTop - before) > PROGRAMMATIC_SCROLL_TOLERANCE
+    );
   }
 
   /** Enable or stop polite announcements without changing terminal focus. */

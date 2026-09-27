@@ -587,6 +587,10 @@ Outside synchronized output, writes request the next animation frame directly. W
       <td>Reveal a match with wraparound; return false if there are no matches</td>
     </tr>
     <tr>
+      <td><code>scrollToPrompt(direction: -1 | 1): boolean</code></td>
+      <td>Scroll from the viewport top to the previous or next shell prompt without wrapping. Returns whether scrolling moved. Requires Ghostty with OSC 133; see <a href="/configuration#shell-integration">Shell integration</a> for limits and inactive states.</td>
+    </tr>
+    <tr>
       <td><code>getSearchState()</code> / <code>clearSearch()</code></td>
       <td>Read a state snapshot, or cancel search and remove highlights</td>
     </tr>
@@ -1120,6 +1124,10 @@ When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string 
     <tr>
       <td><code>getShellIntegrationState?(): ShellIntegrationState | null</code></td>
       <td>Consume the latest shell-reported state change. The caller-owned snapshot has phase and exitCode; null means unchanged or unsupported. See <a href="/configuration#shell-integration">Shell integration</a>.</td>
+    </tr>
+    <tr>
+      <td><code>findPrompt?(row: number, direction: -1 | 1): number | null</code></td>
+      <td>Optional Ghostty lookup for the previous/next prompt start. Row zero is the oldest retained row; the origin must be in range. Skips continuation rows when moving forwards and returns null for unsupported cores, alternate screens, invalid inputs, or missing prompts. Does not move the cursor or consume shell state.</td>
     </tr>
     <tr>
       <td><code>getClipboardWrite?(): string | null</code></td>

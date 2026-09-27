@@ -690,6 +690,22 @@ export class GhosttyCore implements TerminalCore {
     );
   }
 
+  findPrompt(row: number, direction: -1 | 1): number | null {
+    const find = this.wasm.exports.find_prompt;
+    if (
+      this._disposed ||
+      this.termPtr === 0 ||
+      !find ||
+      !Number.isInteger(row) ||
+      row < 0 ||
+      row > MAX_WASM_U32 ||
+      (direction !== -1 && direction !== 1)
+    )
+      return null;
+    const result = find(this.termPtr, row, direction);
+    return Number.isInteger(result) && result >= 0 ? result : null;
+  }
+
   getShellIntegrationState(): ShellIntegrationState | null {
     if (this._disposed || this.termPtr === 0) return null;
     const { get_shell_phase, get_shell_exit_code } = this.wasm.exports;

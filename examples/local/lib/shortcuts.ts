@@ -10,6 +10,8 @@ export const COMMANDS = [
   { id: "up", label: "Focus pane above" },
   { id: "down", label: "Focus pane below" },
   { id: "find", label: "Find in terminal" },
+  { id: "previousPrompt", label: "Previous prompt" },
+  { id: "nextPrompt", label: "Next prompt" },
 ] as const;
 export type Command = (typeof COMMANDS)[number]["id"];
 export type Shortcuts = Record<Command, readonly string[]>;
@@ -24,6 +26,8 @@ export const DEFAULT_SHORTCUTS: Shortcuts = {
   up: ["Meta+Alt+ArrowUp", "Control+Alt+ArrowUp"],
   down: ["Meta+Alt+ArrowDown", "Control+Alt+ArrowDown"],
   find: ["Meta+KeyF", "Control+Shift+KeyF"],
+  previousPrompt: [],
+  nextPrompt: [],
 };
 const MODIFIERS = ["Control", "Meta", "Alt", "Shift"] as const;
 const KEY =

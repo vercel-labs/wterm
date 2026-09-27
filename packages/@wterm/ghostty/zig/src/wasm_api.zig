@@ -1288,6 +1288,46 @@ export fn get_rows(ptr: usize) u32 {
 
 // -- Scrollback -------------------------------------------------
 
+// Use Ghostty's own prompt iterator so reflow, erasure and history pruning
+// have the same semantics as the terminal. No additional prompt index is kept.
+export fn find_prompt(ptr: usize, row: u32, direction: i32) f64 {
+    const state = stateFromPtr(ptr);
+    if (state.terminal.screens.active_key != .primary or
+        (direction != -1 and direction != 1)) return -1;
+    const pages = &state.terminal.screens.active.pages;
+    const origin = pages.pin(.{ .screen = .{ .y = row, .x = 0 } }) orelse return -1;
+    const start = if (direction < 0)
+        origin.up(1) orelse return -1
+    else next: {
+        var pin = origin.down(1) orelse return -1;
+        // Do not treat the remainder of the current multi-line prompt as
+        // another prompt when moving forwards.
+        if (origin.rowAndCell().row.semantic_prompt != .none) {
+            while (promptContinues(pin)) {
+                pin = pin.down(1) orelse return -1;
+            }
+        }
+        break :next pin;
+    };
+    var it = start.promptIterator(if (direction < 0) .left_up else .right_down, null);
+    var prompt = it.next() orelse return -1;
+    // Reflow in the pinned upstream can copy .prompt to wrapped rows rather
+    // than .prompt_continuation. Resolve those to the retained logical start.
+    while (promptContinues(prompt)) {
+        const prior = prompt.up(1) orelse break;
+        if (prior.rowAndCell().row.semantic_prompt == .none) break;
+        prompt = prior;
+    }
+    const point = pages.pointFromPin(.screen, prompt) orelse return -1;
+    return @floatFromInt(point.screen.y);
+}
+
+fn promptContinues(pin: vt.Pin) bool {
+    const row = pin.rowAndCell().row;
+    return row.semantic_prompt == .prompt_continuation or
+        (row.semantic_prompt != .none and row.wrap_continuation);
+}
+
 export fn track_position(ptr: usize, row: u32, col: u32) u32 {
     const state = stateFromPtr(ptr);
     const tracker = &state.positions;

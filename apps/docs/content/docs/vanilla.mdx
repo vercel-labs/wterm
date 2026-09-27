@@ -217,3 +217,8 @@ latest prompt, input, running, or completion state and the last reported exit
 code. Delivery continues while painting is paused; markers in one parser chunk
 coalesce into current state. See [Shell integration](/configuration#shell-integration)
 for the contract, shell setup, and workspace indicators.
+
+Use the underlying `WTerm` instance’s `scrollToPrompt(-1)` and
+`scrollToPrompt(1)` methods to navigate previous and next prompts in retained
+history. See [Shell integration](/configuration#shell-integration) for viewport
+behavior, unsupported cores, and inactive states.

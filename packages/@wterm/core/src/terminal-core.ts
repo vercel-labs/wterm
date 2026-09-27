@@ -229,6 +229,8 @@ export interface TerminalCore {
   getScrollbackLineLen(offset: number): number;
   /** Offset zero is the newest history row. Null means unavailable or out of range. */
   getScrollbackRowMetadata?(offset: number): TerminalRowMetadata | null;
+  /** Find the preceding/following prompt start from a retained row. Null if unavailable. */
+  findPrompt?(row: number, direction: -1 | 1): number | null;
 
   // -- Debug --
   getUnhandledSequences(): UnhandledSequence[];

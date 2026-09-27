@@ -105,7 +105,7 @@ function isAltGraphTextInput(
 export class InputHandler {
   private element: HTMLElement;
   private textarea: HTMLTextAreaElement;
-  private onData: (data: string) => void;
+  private onData: (data: string, preserveScroll?: boolean) => void;
   private onBinary: ((data: Uint8Array) => void) | undefined;
   private getBridge: () => TerminalCore | null;
   private getCellSize: () => {
@@ -151,7 +151,7 @@ export class InputHandler {
 
   constructor(
     element: HTMLElement,
-    onData: (data: string) => void,
+    onData: (data: string, preserveScroll?: boolean) => void,
     getBridge: () => TerminalCore | null,
     getCellSize: () => { charWidth: number; rowHeight: number } | null = () =>
       null,
@@ -472,7 +472,7 @@ export class InputHandler {
         else e.preventDefault();
         e.stopPropagation();
         this.deliveredKeys.add(keyId);
-        this.onData(seq);
+        this.onData(seq, physicalModifier);
       }
       return;
     }
@@ -506,7 +506,8 @@ export class InputHandler {
     );
     if (!seq) return;
     e.preventDefault();
-    this.onData(seq);
+    // Releasing an application key must not undo host history navigation.
+    this.onData(seq, true);
   }
 
   private handlePaste(e: ClipboardEvent): void {

@@ -35,7 +35,7 @@ the application ends the update or its recovery timeout expires.
 
 The [local shell workspace](https://github.com/vercel-labs/wterm/tree/main/examples/local)
 includes **Keyboard shortcuts** in its sidebar. Customize bindings for sessions,
-splits, directional pane focus, zoom/restore, and Find. **Change** records one
+splits, directional pane focus, zoom/restore, Find, and prompt navigation. **Change** records one
 combination; **Clear** disables a binding and **Reset defaults** restores the
 defaults. Conflicts are reported before settings change. Preferences persist in
 the browser and synchronize between tabs and engine routes.
@@ -111,6 +111,31 @@ The local `/ghostty` workspace displays **Ready**, **Running**, **Done**, or
 **Exit N** for each participating session, including background sessions. It
 hides the indicator when disconnected or reset. These labels are separate from
 connection and PTY exit status.
+
+The workspace also provides **Previous prompt** and **Next prompt** controls for
+participating sessions. Assign either command in **Keyboard shortcuts**; both
+start unassigned. Navigation starts at the viewport's top row, skips continuation
+rows of multiline prompts, and stops at either end without wrapping. It can
+reach unmounted history and follows reflow and pruning. Full-screen applications
+on the alternate screen keep control of the terminal.
+
+Assigned navigation keys are consumed by the workspace. Applications requesting
+physical modifier-key reports still receive those reports without scrolling
+the viewport back to the bottom.
+
+In an embed, use the underlying `WTerm` instance:
+
+```ts
+term.scrollToPrompt(-1); // previous prompt
+term.scrollToPrompt(1);  // next prompt
+```
+
+The boolean result reports whether the viewport moved. Focus, selection, and
+the Find query are preserved, and no input is sent to the shell. Unsupported
+cores and older WASM assets return `false`, as do missing prompts, hidden/paused
+terminals, and synchronized output that is holding a paint. Navigation into
+the live screen stops at the bottom of the scrollable viewport. No shortcuts
+are installed by the terminal library.
 
 The shell must emit OSC 133. WTerm does not modify shell startup files. Enable
 markers in your existing shell integration, or try these minimal zsh hooks in a

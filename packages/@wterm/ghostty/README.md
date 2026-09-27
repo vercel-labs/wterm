@@ -345,6 +345,14 @@ command log. Older WASM assets return `null`. The shell must emit OSC 133;
 loading the core does not install shell hooks. See
 [Shell integration](https://wterm.dev/configuration#shell-integration).
 
+`findPrompt(row, -1 | 1)` looks up the previous or next prompt start using native
+retained metadata. Row zero is the oldest retained row. Continuation and
+reflowed rows belong to one prompt; pruned history is unavailable. The origin
+must be an integer within the retained buffer. Invalid inputs, alternate-screen
+queries, older WASM assets, and missing prompts return `null`. Lookup does not
+move the terminal cursor or consume shell-state changes. WTerm exposes viewport
+navigation as `scrollToPrompt(direction)`.
+
 ## License
 
 Apache-2.0

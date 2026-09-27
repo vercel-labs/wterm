@@ -174,6 +174,10 @@ The built-in core, custom cores without the optional hook, and older Ghostty
 binaries do not report shell state. Shell configuration is owned by the host.
 See [Shell integration](https://wterm.dev/configuration#shell-integration).
 
+Call `scrollToPrompt(-1)` or `scrollToPrompt(1)` on the underlying `WTerm`
+instance to navigate retained prompts without changing focus or sending input.
+See [prompt navigation](../dom/README.md#shell-integration) for behavior and limits.
+
 ## License
 
 Apache-2.0

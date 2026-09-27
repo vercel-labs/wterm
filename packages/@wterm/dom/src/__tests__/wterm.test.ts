@@ -1054,6 +1054,108 @@ describe("WTerm", () => {
     });
   });
 
+  describe("prompt navigation", () => {
+    it("keeps the viewport on Kitty modifier reports and key releases while delivering their bytes", async () => {
+      Object.assign(mockBridge, { kittyKeyboardFlags: () => 11 });
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 10000,
+      });
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 300,
+      });
+      const received: string[] = [];
+      const term = new WTerm(element, {
+        autoResize: false,
+        onData: (data) => received.push(data),
+      });
+      await term.init();
+      const input = element.querySelector("textarea")!;
+      element.scrollTop = 500;
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Control",
+          code: "ControlLeft",
+          ctrlKey: true,
+          bubbles: true,
+        }),
+      );
+      input.dispatchEvent(
+        new KeyboardEvent("keyup", {
+          key: "Control",
+          code: "ControlLeft",
+          bubbles: true,
+        }),
+      );
+      expect(element.scrollTop).toBe(500);
+      expect(received).toEqual(["\x1b[57442;5u", "\x1b[57442;1:3u"]);
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "a", code: "KeyA", bubbles: true }),
+      );
+      expect(element.scrollTop).toBe(10000);
+      element.scrollTop = 500;
+      input.dispatchEvent(
+        new KeyboardEvent("keyup", { key: "a", code: "KeyA", bubbles: true }),
+      );
+      expect(element.scrollTop).toBe(500);
+      expect(received.slice(-2)).toEqual(["\x1b[97u", "\x1b[97;1:3u"]);
+      term.destroy();
+    });
+
+    it("uses the visible retained row without sending input, changing focus, or clearing selection", async () => {
+      Object.defineProperty(element, "scrollHeight", {
+        configurable: true,
+        value: 10000,
+      });
+      Object.defineProperty(element, "clientHeight", {
+        configurable: true,
+        value: 300,
+      });
+      element.scrollTop = 1000;
+      const findPrompt = vi.fn().mockReturnValue(10);
+      Object.assign(mockBridge, { findPrompt });
+      vi.mocked(mockBridge.getScrollbackCount).mockReturnValue(100);
+      const term = new WTerm(element, { autoResize: false, onData: vi.fn() });
+      await term.init();
+      vi.spyOn(Renderer.prototype, "dragPositionAt").mockReturnValue({
+        row: 50,
+        col: 0,
+      });
+      const selection = vi.spyOn(term, "clearSelection");
+      const focused = document.activeElement;
+      expect(term.scrollToPrompt(-1)).toBe(true);
+      expect(findPrompt).toHaveBeenCalledExactlyOnceWith(50, -1);
+      expect(document.activeElement).toBe(focused);
+      expect(term.onData).not.toHaveBeenCalled();
+      expect(mockBridge.writeString).not.toHaveBeenCalled();
+      expect(selection).not.toHaveBeenCalled();
+      term.destroy();
+    });
+
+    it("leaves unsupported, hidden, synchronized, alternate and destroyed terminals alone", async () => {
+      const term = new WTerm(element, { autoResize: false });
+      expect(term.scrollToPrompt(-1)).toBe(false);
+      await term.init();
+      expect(term.scrollToPrompt(-1)).toBe(false);
+      const findPrompt = vi.fn().mockReturnValue(1);
+      Object.assign(mockBridge, { findPrompt });
+      term.setRenderingPaused(true);
+      expect(term.scrollToPrompt(-1)).toBe(false);
+      term.setRenderingPaused(false);
+      vi.mocked(mockBridge.usingAltScreen).mockReturnValue(true);
+      expect(term.scrollToPrompt(-1)).toBe(false);
+      vi.mocked(mockBridge.usingAltScreen).mockReturnValue(false);
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      term.write("held");
+      expect(term.scrollToPrompt(-1)).toBe(false);
+      expect(term.scrollToPrompt(0 as 1)).toBe(false);
+      term.destroy();
+      expect(term.scrollToPrompt(-1)).toBe(false);
+      expect(findPrompt).not.toHaveBeenCalled();
+    });
+  });
+
   describe("shell integration", () => {
     it("consumes state without a listener and delivers changes while painting is paused or synchronized", async () => {
       const getShellIntegrationState = vi.fn().mockReturnValue(null);
