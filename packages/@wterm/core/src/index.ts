@@ -4,6 +4,7 @@ export type {
   CursorShape,
   CursorState,
   TerminalColorOverrides,
+  TerminalThemeColors,
   GraphicsResourceState,
   HyperlinkResourceState,
   MouseEncoding,

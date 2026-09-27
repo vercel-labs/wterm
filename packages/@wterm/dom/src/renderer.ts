@@ -397,6 +397,7 @@ export class Renderer {
   private rowBackground = new WeakMap<HTMLElement, string>();
   private selection: TrackedSelection | null = null;
   private needsSetup = false;
+  private colorsChanged = false;
   private painted = false;
   private colorHost: HTMLElement;
   private viewport: RenderViewport | undefined;
@@ -838,6 +839,7 @@ export class Renderer {
     const ordered = Array.from(indices).sort((a, b) => a - b);
     const keys = ordered.map((index) => discardedCount + index);
     if (
+      !this.colorsChanged &&
       hasDiscardedCount &&
       scrollbackCount === this._renderedScrollbackCount &&
       discardedCount === this._renderedDiscardedCount &&
@@ -965,7 +967,7 @@ export class Renderer {
       cursorVisible !== this.prevCursorVisible;
 
     for (let r = 0; r < this.rows; r++) {
-      const isDirty = resized || core.isDirtyRow(r);
+      const isDirty = this.colorsChanged || resized || core.isDirtyRow(r);
       const hadCursor = r === this.prevCursorRow && needsCursorUpdate;
       const hasCursor = r === cursor.row;
 
@@ -991,6 +993,7 @@ export class Renderer {
     this.prevCursorVisible = cursorVisible;
 
     core.clearDirty();
+    this.colorsChanged = false;
     this.selection.afterRender(this.selectionRows(), positions);
     this.painted = true;
     this.graphics.reconcile(core, {
@@ -1133,6 +1136,11 @@ export class Renderer {
 
   requestSetup(): void {
     this.needsSetup = true;
+  }
+
+  /** Re-read indexed colors in live and retained rows without rebuilding the grid. */
+  invalidateColors(): void {
+    this.colorsChanged = true;
   }
 
   /** Replaces decorations only, preserving native text selection. */

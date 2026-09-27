@@ -2,6 +2,7 @@ import {
   WasmBridge,
   type TerminalCore,
   type TerminalPosition,
+  type TerminalThemeColors,
 } from "@wterm/core";
 import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
@@ -62,6 +63,7 @@ export class WTerm {
   debug: DebugAdapter | null = null;
 
   private _coreOption: TerminalCore | undefined;
+  private _themeColors: TerminalThemeColors | null = null;
   private wasmUrl: string | undefined;
   private maxImageWidth: number | undefined;
   private maxImageHeight: number | undefined;
@@ -340,6 +342,7 @@ export class WTerm {
       }
       if (this._destroyed) return this;
       this.bridge.init(this.cols, this.rows);
+      if (this._themeColors) this.bridge.setThemeColors?.(this._themeColors);
       this.cols = this.bridge.getCols();
       this.rows = this.bridge.getRows();
 
@@ -437,6 +440,43 @@ export class WTerm {
     const after = this.element.scrollTop;
     if (after === before) return;
     this._programmaticScrollTop = after;
+  }
+
+  /** Apply host colors without writing terminal input or restarting the session. */
+  setThemeColors(colors: TerminalThemeColors): void {
+    const values = [
+      colors.foreground,
+      colors.background,
+      colors.cursor,
+      ...colors.palette,
+    ];
+    if (
+      colors.palette.length !== 16 ||
+      values.some(
+        (value) => !Number.isInteger(value) || value < 0 || value > 0xffffff,
+      )
+    )
+      throw new RangeError(
+        "Theme colors must be 24-bit RGB values with exactly 16 palette entries",
+      );
+    if (this._destroyed) return;
+    const copy = { ...colors, palette: [...colors.palette] };
+    this.bridge?.setThemeColors?.(copy);
+    this._themeColors = copy;
+    const properties = [
+      "--term-fg",
+      "--term-bg",
+      "--term-cursor",
+      ...colors.palette.map((_, index) => `--term-color-${index}`),
+    ];
+    values.forEach((value, index) =>
+      this.element.style.setProperty(
+        properties[index],
+        `#${value.toString(16).padStart(6, "0")}`,
+      ),
+    );
+    this.renderer?.invalidateColors();
+    this._scheduleRender();
   }
 
   write(data: string | Uint8Array): void {

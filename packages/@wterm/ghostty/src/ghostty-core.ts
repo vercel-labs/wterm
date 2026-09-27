@@ -2,6 +2,7 @@ import type {
   CellData,
   CursorState,
   TerminalColorOverrides,
+  TerminalThemeColors,
   UnhandledSequence,
   TerminalCore,
   TerminalGraphicsState,
@@ -133,6 +134,7 @@ export class GhosttyCore implements TerminalCore {
   private _options: GhosttyOptions;
   private _foregroundRgb: number;
   private _backgroundRgb: number;
+  private _themeColors: TerminalThemeColors | null = null;
 
   private _viewportBufPtr = 0;
   private _viewportBufSize = 0;
@@ -201,6 +203,7 @@ export class GhosttyCore implements TerminalCore {
       imageStorageLimit(this._options),
     );
     if (this.termPtr === 0) return;
+    if (this._themeColors) this.setThemeColors(this._themeColors);
     if (this._graphemeBufPtr !== 0)
       freeBuffer(this.wasm, this._graphemeBufPtr, this._graphemeBufSize);
     this._graphemeBufPtr = allocBuffer(this.wasm, GRAPHEME_BUFFER_BYTES);
@@ -776,6 +779,41 @@ export class GhosttyCore implements TerminalCore {
       wrapsToNext: (flags & 1) !== 0,
       continuesPrevious: (flags & 2) !== 0,
     };
+  }
+
+  /** Update host defaults while preserving application overrides and parser state. */
+  setThemeColors(colors: TerminalThemeColors): void {
+    const values = [
+      colors.foreground,
+      colors.background,
+      colors.cursor,
+      ...colors.palette,
+    ];
+    if (
+      colors.palette.length !== 16 ||
+      values.some(
+        (value) => !Number.isInteger(value) || value < 0 || value > 0xffffff,
+      )
+    )
+      throw new RangeError(
+        "Theme colors must be 24-bit RGB values with exactly 16 palette entries",
+      );
+    if (this._disposed) return;
+    this._themeColors = { ...colors, palette: [...colors.palette] };
+    this._foregroundRgb = colors.foreground;
+    this._backgroundRgb = colors.background;
+    const apply = this.wasm.exports.set_theme_colors;
+    if (!this.termPtr || !apply) return;
+    const bytes = values.length * 4;
+    const ptr = allocBuffer(this.wasm, bytes);
+    try {
+      const view = new DataView(this.wasm.exports.memory.buffer, ptr, bytes);
+      values.forEach((value, index) => view.setUint32(index * 4, value, true));
+      apply(this.termPtr, ptr);
+      this._invalidate();
+    } finally {
+      freeBuffer(this.wasm, ptr, bytes);
+    }
   }
 
   private _invalidate(): void {

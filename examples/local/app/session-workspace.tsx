@@ -42,6 +42,8 @@ import {
   type SessionStatus,
 } from "../lib/workspace-layout";
 import { PaneDivider } from "./pane-divider";
+import { AppearanceSettings, useAppearance } from "./appearance-settings";
+import { TERMINAL_COLORS } from "../lib/appearance";
 
 function cwdLabel(cwd: string | null): string {
   if (!cwd) return "Starting…";
@@ -62,6 +64,8 @@ function terminalPixelSize(terminal: WTerm): { width: number; height: number } {
 }
 
 interface SessionTerminalProps {
+  theme: "dark" | "light";
+  fontSize: number;
   session: Session;
   active: boolean;
   visible: boolean;
@@ -75,6 +79,8 @@ interface SessionTerminalProps {
 }
 
 function SessionTerminal({
+  theme,
+  fontSize,
   session,
   active,
   visible,
@@ -87,6 +93,10 @@ function SessionTerminal({
   onCwd,
 }: SessionTerminalProps) {
   const [ready, setReady] = useState(false);
+  const themeRef = useRef(theme);
+  useLayoutEffect(() => {
+    themeRef.current = theme;
+  }, [theme]);
   const focusedRequest = useRef(0);
   const [core, setCore] = useState<TerminalCore | null>(null);
   const { ref, write } = useTerminal();
@@ -105,6 +115,10 @@ function SessionTerminal({
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [searchState, setSearchState] = useState<SearchState | null>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
+
+  useLayoutEffect(() => {
+    terminalRef.current?.setThemeColors(TERMINAL_COLORS[theme]);
+  }, [theme, ready]);
 
   const openFind = useCallback(() => {
     setFindOpen(true);
@@ -212,6 +226,7 @@ function SessionTerminal({
         wsRef.current = null;
       }
       terminalRef.current = wt;
+      wt.setThemeColors(TERMINAL_COLORS[themeRef.current]);
       setReady(true);
       wt.onSearchChange = setSearchState;
       if (wsRef.current) return;
@@ -280,7 +295,7 @@ function SessionTerminal({
 
   if (coreLoader && !core) {
     return (
-      <div className="flex h-full items-center justify-center bg-black text-xs text-white/35">
+      <div className="flex h-full items-center justify-center bg-[var(--workspace-bg)] text-xs text-[var(--workspace-muted)]">
         Loading terminal…
       </div>
     );
@@ -288,13 +303,13 @@ function SessionTerminal({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-[#1f1f1f] pb-2 text-xs">
+      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-[var(--workspace-border)] pb-2 text-xs">
         <OutputReader
           terminal={terminalRef}
           name={session.name}
           active={visible}
         />
-        <label className="flex items-center gap-2 px-2 py-1 text-[#aaa]">
+        <label className="flex items-center gap-2 px-2 py-1 text-[var(--workspace-muted)]">
           <input
             type="checkbox"
             checked={announceOutput}
@@ -328,10 +343,10 @@ function SessionTerminal({
               maxLength={1024}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              className="min-w-0 flex-1 rounded border border-[#444] bg-[#161616] px-2 py-1 outline-none focus:border-[#999]"
+              className="min-w-0 flex-1 rounded border border-[var(--workspace-border)] bg-[var(--workspace-bg)] px-2 py-1 outline-none focus:border-[var(--workspace-focus)]"
             />
             <span
-              className="whitespace-nowrap text-[#aaa]"
+              className="whitespace-nowrap text-[var(--workspace-muted)]"
               role="status"
               aria-live="polite"
             >
@@ -349,7 +364,7 @@ function SessionTerminal({
               aria-pressed={caseSensitive}
               title="Match case"
               onClick={() => setCaseSensitive((value) => !value)}
-              className={`rounded px-2 py-1 ${caseSensitive ? "bg-[#444] text-white" : "text-[#aaa] hover:bg-[#222]"}`}
+              className={`rounded px-2 py-1 ${caseSensitive ? "bg-[var(--workspace-selected)] text-[var(--workspace-fg)]" : "text-[var(--workspace-muted)] hover:bg-[var(--workspace-hover)]"}`}
             >
               Aa
             </button>
@@ -358,7 +373,7 @@ function SessionTerminal({
               aria-label="Previous match"
               title="Previous match (Shift+Enter)"
               disabled={!searchState?.count}
-              className="rounded p-1 hover:bg-[#222] disabled:opacity-30"
+              className="rounded p-1 hover:bg-[var(--workspace-hover)] disabled:opacity-30"
               onClick={() => terminalRef.current?.findPrevious()}
             >
               <ArrowUp size={16} />
@@ -368,7 +383,7 @@ function SessionTerminal({
               aria-label="Next match"
               title="Next match (Enter)"
               disabled={!searchState?.count}
-              className="rounded p-1 hover:bg-[#222] disabled:opacity-30"
+              className="rounded p-1 hover:bg-[var(--workspace-hover)] disabled:opacity-30"
               onClick={() => terminalRef.current?.findNext()}
             >
               <ArrowDown size={16} />
@@ -377,7 +392,7 @@ function SessionTerminal({
               type="button"
               aria-label="Close find"
               title="Close find (Escape)"
-              className="rounded p-1 hover:bg-[#222]"
+              className="rounded p-1 hover:bg-[var(--workspace-hover)]"
               onClick={closeFind}
             >
               <X size={16} />
@@ -388,7 +403,7 @@ function SessionTerminal({
             type="button"
             onClick={openFind}
             title="Find in terminal (⌘F / Ctrl+Shift+F)"
-            className="ml-auto flex items-center gap-2 rounded px-2 py-1 text-[#aaa] hover:bg-[#222] hover:text-white"
+            className="ml-auto flex items-center gap-2 rounded px-2 py-1 text-[var(--workspace-muted)] hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)]"
           >
             <Search size={14} />
             Find
@@ -398,7 +413,7 @@ function SessionTerminal({
       {(reconnected || lostInput) && (
         <div
           role="status"
-          className="flex items-center gap-3 py-2 text-xs text-[#aaa]"
+          className="flex items-center gap-3 py-2 text-xs text-[var(--workspace-muted)]"
         >
           <span>
             {reconnected && "Reconnected."}
@@ -407,7 +422,7 @@ function SessionTerminal({
           </span>
           <button
             type="button"
-            className="shrink-0 underline hover:text-white"
+            className="shrink-0 underline hover:text-[var(--workspace-fg)]"
             onClick={() => {
               setReconnected(false);
               setLostInput(false);
@@ -420,7 +435,10 @@ function SessionTerminal({
         </div>
       )}
       {connectionMessage && (
-        <p role="status" className="shrink-0 px-2 py-1 text-xs text-[#aaa]">
+        <p
+          role="status"
+          className="shrink-0 px-2 py-1 text-xs text-[var(--workspace-muted)]"
+        >
           {connectionMessage}
         </p>
       )}
@@ -460,8 +478,8 @@ function SessionTerminal({
               borderRadius: 0,
               boxShadow: "none",
               padding: 0,
-              backgroundColor: "#000",
-              "--term-bg": "#000",
+              "--term-font-size": `${fontSize}px`,
+              "--term-row-height": `${Math.ceil(fontSize * 1.2)}px`,
             } as CSSProperties
           }
         />
@@ -484,6 +502,13 @@ export function SessionWorkspace({
   coreLoader,
 }: SessionWorkspaceProps) {
   const [workspace, dispatch] = useReducer(workspaceReducer, INITIAL_STATE);
+  const {
+    appearance,
+    theme,
+    ready: appearanceReady,
+    saved,
+    update,
+  } = useAppearance();
   const [debugEnabled] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -528,16 +553,19 @@ export function SessionWorkspace({
   }, []);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-black text-[#ededed]">
-      <aside className="flex h-full w-60 shrink-0 flex-col border-r border-[#1f1f1f] bg-[#0a0a0a]">
-        <div className="flex h-14 shrink-0 items-center border-b border-[#1f1f1f] px-3">
-          <span className="text-sm font-medium tracking-tight text-[#ededed]">
+    <div
+      data-theme={appearanceReady ? theme : "system"}
+      className="workspace flex h-screen w-screen overflow-hidden bg-[var(--workspace-bg)] text-[var(--workspace-fg)]"
+    >
+      <aside className="flex h-full w-60 shrink-0 flex-col border-r border-[var(--workspace-border)] bg-[var(--workspace-sidebar)]">
+        <div className="flex h-14 shrink-0 items-center border-b border-[var(--workspace-border)] px-3">
+          <span className="text-sm font-medium tracking-tight text-[var(--workspace-fg)]">
             Local Shell
           </span>
           <button
             type="button"
             onClick={() => dispatch({ type: "add" })}
-            className="ml-auto flex h-8 w-8 items-center justify-center rounded-md p-0 text-[#888] transition-colors hover:bg-[#1f1f1f] hover:text-white"
+            className="ml-auto flex h-8 w-8 items-center justify-center rounded-md p-0 text-[var(--workspace-muted)] transition-colors hover:bg-[var(--workspace-border)] hover:text-[var(--workspace-fg)]"
             aria-label="New terminal session"
             title="New terminal session"
           >
@@ -549,7 +577,9 @@ export function SessionWorkspace({
           className="min-h-0 flex-1 overflow-y-auto px-2 py-4"
           aria-label="Terminal sessions"
         >
-          <div className="px-2 pb-2 text-xs text-[#888]">Sessions</div>
+          <div className="px-2 pb-2 text-xs text-[var(--workspace-muted)]">
+            Sessions
+          </div>
 
           {workspace.sessions.map((session) => {
             const selected = session.id === workspace.activeId;
@@ -557,7 +587,9 @@ export function SessionWorkspace({
               <div
                 key={session.id}
                 className={`group mb-0.5 flex h-8 items-center rounded-md transition-colors ${
-                  selected ? "bg-[#2e2e2e]" : "hover:bg-[#242424]"
+                  selected
+                    ? "bg-[var(--workspace-selected)]"
+                    : "hover:bg-[var(--workspace-hover)]"
                 }`}
               >
                 <button
@@ -569,10 +601,10 @@ export function SessionWorkspace({
                   <span
                     className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                       session.status === "connected"
-                        ? "bg-emerald-400"
+                        ? "bg-[var(--workspace-connected)]"
                         : session.status === "closed"
                           ? "bg-[#666]"
-                          : "bg-[#f5a623]"
+                          : "bg-[var(--workspace-pending)]"
                     }`}
                     aria-hidden="true"
                   />
@@ -586,7 +618,7 @@ export function SessionWorkspace({
                 <button
                   type="button"
                   onClick={() => dispatch({ type: "close", id: session.id })}
-                  className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-[#666] opacity-0 transition-opacity hover:bg-[#3a3a3a] hover:text-white group-hover:opacity-100 focus-visible:opacity-100"
+                  className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--workspace-muted)] opacity-0 transition-opacity hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)] group-hover:opacity-100 focus-visible:opacity-100"
                   aria-label={`Close ${session.name}`}
                   title={`Close ${session.name}`}
                 >
@@ -597,17 +629,24 @@ export function SessionWorkspace({
           })}
 
           {workspace.sessions.length === 0 && (
-            <div className="px-2 py-4 text-xs leading-relaxed text-[#666]">
+            <div className="px-2 py-4 text-xs leading-relaxed text-[var(--workspace-muted)]">
               No sessions open.
               <br />
               Use + to start one.
             </div>
           )}
         </div>
+        <div className="shrink-0 border-t border-[var(--workspace-border)] p-2">
+          <AppearanceSettings
+            appearance={appearance}
+            saved={saved}
+            update={update}
+          />
+        </div>
       </aside>
 
       <main
-        className="min-h-0 min-w-0 flex-1 bg-black p-4"
+        className="min-h-0 min-w-0 flex-1 bg-[var(--workspace-bg)] p-4"
         onKeyDownCapture={(event) => {
           if (
             event.nativeEvent.isComposing ||
@@ -644,7 +683,7 @@ export function SessionWorkspace({
                 <div
                   key={session.id}
                   id={`pane-${session.id}`}
-                  className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden rounded border ${paneCount > 1 ? (active ? "border-[#888]" : "border-[#333]") : "border-transparent"}`}
+                  className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden rounded border ${paneCount > 1 ? (active ? "border-[var(--workspace-focus)]" : "border-[var(--workspace-border)]") : "border-transparent"}`}
                   style={{
                     ...(rect ?? { left: 0, top: 0, width, height }),
                     visibility: visible ? "visible" : "hidden",
@@ -660,10 +699,10 @@ export function SessionWorkspace({
                     dispatch({ type: "focus", id: session.id })
                   }
                 >
-                  <div className="flex h-8 shrink-0 items-center gap-1 px-2 text-xs text-[#aaa]">
+                  <div className="flex h-8 shrink-0 items-center gap-1 px-2 text-xs text-[var(--workspace-muted)]">
                     <button
                       type="button"
-                      className="min-w-0 truncate text-left hover:text-white"
+                      className="min-w-0 truncate text-left hover:text-[var(--workspace-fg)]"
                       onClick={() =>
                         dispatch({ type: "select", id: session.id })
                       }
@@ -682,7 +721,7 @@ export function SessionWorkspace({
                           : "Split right"
                       }
                       disabled={layoutPaneCount >= MAX_PANES}
-                      className="rounded p-1 hover:bg-[#222] hover:text-white disabled:opacity-30"
+                      className="rounded p-1 hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)] disabled:opacity-30"
                       onClick={() =>
                         dispatch({
                           type: "split",
@@ -702,7 +741,7 @@ export function SessionWorkspace({
                           : "Split down"
                       }
                       disabled={layoutPaneCount >= MAX_PANES}
-                      className="rounded p-1 hover:bg-[#222] hover:text-white disabled:opacity-30"
+                      className="rounded p-1 hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)] disabled:opacity-30"
                       onClick={() =>
                         dispatch({
                           type: "split",
@@ -724,7 +763,7 @@ export function SessionWorkspace({
                             ? "Restore panes"
                             : "Zoom pane; other sessions stay open"
                         }
-                        className="rounded p-1 hover:bg-[#222] hover:text-white"
+                        className="rounded p-1 hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)]"
                         onClick={() =>
                           dispatch({ type: "zoom", id: session.id })
                         }
@@ -738,18 +777,22 @@ export function SessionWorkspace({
                     )}
                   </div>
                   <div className="min-h-0 flex-1 px-2 pb-2">
-                    <SessionTerminal
-                      session={session}
-                      active={active}
-                      visible={visible}
-                      debugEnabled={debugEnabled}
-                      wasmUrl={wasmUrl}
-                      maxImageWidth={maxImageWidth}
-                      maxImageHeight={maxImageHeight}
-                      coreLoader={coreLoader}
-                      onStatus={handleStatus}
-                      onCwd={handleCwd}
-                    />
+                    {appearanceReady && (
+                      <SessionTerminal
+                        theme={theme}
+                        fontSize={appearance.fontSize}
+                        session={session}
+                        active={active}
+                        visible={visible}
+                        debugEnabled={debugEnabled}
+                        wasmUrl={wasmUrl}
+                        maxImageWidth={maxImageWidth}
+                        maxImageHeight={maxImageHeight}
+                        coreLoader={coreLoader}
+                        onStatus={handleStatus}
+                        onCwd={handleCwd}
+                      />
+                    )}
                   </div>
                 </div>
               );
@@ -765,11 +808,11 @@ export function SessionWorkspace({
             ))}
 
             {workspace.sessions.length === 0 && (
-              <div className="flex h-full items-center justify-center text-sm text-white/35">
+              <div className="flex h-full items-center justify-center text-sm text-[var(--workspace-muted)]">
                 <button
                   type="button"
                   onClick={() => dispatch({ type: "add" })}
-                  className="rounded-md border border-[#2e2e2e] px-3 py-2 text-xs text-[#a1a1a1] hover:bg-[#1c1c1c] hover:text-white"
+                  className="rounded-md border border-[var(--workspace-border)] px-3 py-2 text-xs text-[var(--workspace-muted)] hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)]"
                 >
                   New terminal session
                 </button>

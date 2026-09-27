@@ -68,7 +68,7 @@ export function OutputReader({
       <button
         type="button"
         aria-haspopup="dialog"
-        className="flex items-center gap-2 rounded px-2 py-1 text-[#aaa] hover:bg-[#222] hover:text-white"
+        className="flex items-center gap-2 rounded px-2 py-1 text-[var(--workspace-muted)] hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)]"
         onClick={() => {
           dialog.current?.showModal();
           heading.current?.focus();
@@ -82,7 +82,7 @@ export function OutputReader({
         ref={dialog}
         aria-labelledby={titleId}
         aria-describedby={helpId}
-        className="m-auto w-[min(56rem,calc(100vw-2rem))] max-h-[calc(100vh-2rem)] overflow-auto rounded-lg border border-[#444] bg-[#111] p-5 text-[#ededed] backdrop:bg-black/70"
+        className="m-auto w-[min(56rem,calc(100vw-2rem))] max-h-[calc(100vh-2rem)] overflow-auto rounded-lg border border-[var(--workspace-border)] bg-[var(--workspace-panel)] p-5 text-[var(--workspace-fg)] backdrop:bg-black/70"
         onClose={() => {
           if (dialog.current?.open) return;
           capture.current?.abort();
@@ -100,11 +100,17 @@ export function OutputReader({
         >
           {name} output
         </h2>
-        <p id={helpId} className="mt-2 text-sm leading-relaxed text-[#aaa]">
+        <p
+          id={helpId}
+          className="mt-2 text-sm leading-relaxed text-[var(--workspace-muted)]"
+        >
           Read and copy a snapshot of retained terminal output. New output
           appears only after Refresh. Close this view to return to the terminal.
         </p>
-        <p role="status" className="my-3 min-h-5 text-sm text-[#aaa]">
+        <p
+          role="status"
+          className="my-3 min-h-5 text-sm text-[var(--workspace-muted)]"
+        >
           {status}
         </p>
         <textarea
@@ -115,21 +121,21 @@ export function OutputReader({
           spellCheck={false}
           wrap="off"
           value={text ?? ""}
-          className="block h-[min(55vh,32rem)] w-full resize-none rounded border border-[#444] bg-black p-3 font-mono text-sm leading-relaxed outline-none focus-visible:border-white"
+          className="block h-[min(55vh,32rem)] w-full resize-none rounded border border-[var(--workspace-border)] bg-[var(--workspace-bg)] p-3 font-mono text-sm leading-relaxed outline-none focus-visible:border-[var(--workspace-focus)]"
         />
         <div className="mt-4 flex justify-end gap-3 text-sm">
           <button
             type="button"
             disabled={busy}
             onClick={() => void refresh()}
-            className="rounded border border-[#555] px-3 py-2 hover:bg-[#222] disabled:opacity-40"
+            className="rounded border border-[var(--workspace-border)] px-3 py-2 hover:bg-[var(--workspace-hover)] disabled:opacity-40"
           >
             Refresh
           </button>
           <button
             type="button"
             onClick={() => dialog.current?.close()}
-            className="rounded border border-[#555] px-3 py-2 hover:bg-[#222]"
+            className="rounded border border-[var(--workspace-border)] px-3 py-2 hover:bg-[var(--workspace-hover)]"
           >
             Close
           </button>

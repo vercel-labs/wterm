@@ -28,6 +28,8 @@ export interface GhosttyExports {
 
   // Render state
   update(ptr: number): void;
+  /** Host foreground/background/cursor and 16 palette entries as 19 little-endian u32s. */
+  set_theme_colors?(ptr: number, colors_ptr: number): void;
   /** 0 = foreground, 1 = background, 2 = cursor; -1 when unset. */
   get_color_override?(ptr: number, target: number): number;
   get_viewport(ptr: number, buf_ptr: number): number;

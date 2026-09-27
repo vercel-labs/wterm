@@ -62,7 +62,7 @@ export function ClipboardRequest({
   return (
     <>
       {request && (
-        <div className="flex shrink-0 flex-wrap items-center gap-3 py-2 text-xs text-[#aaa]">
+        <div className="flex shrink-0 flex-wrap items-center gap-3 py-2 text-xs text-[var(--workspace-muted)]">
           <span role="status">
             An application wants to{" "}
             {request.text ? "copy text" : "clear the clipboard"}.
@@ -70,7 +70,7 @@ export function ClipboardRequest({
           <button
             type="button"
             aria-haspopup="dialog"
-            className="shrink-0 underline hover:text-white"
+            className="shrink-0 underline hover:text-[var(--workspace-fg)]"
             onClick={() => {
               attempt.current++;
               setBusy(false);
@@ -84,7 +84,7 @@ export function ClipboardRequest({
           </button>
           <button
             type="button"
-            className="shrink-0 underline hover:text-white"
+            className="shrink-0 underline hover:text-[var(--workspace-fg)]"
             onClick={() => {
               dismiss(request);
               terminal.current?.focus();
@@ -99,7 +99,7 @@ export function ClipboardRequest({
         ref={dialog}
         aria-labelledby={titleId}
         aria-describedby={helpId}
-        className="m-auto w-[min(48rem,calc(100vw-2rem))] max-h-[calc(100vh-2rem)] overflow-auto rounded-lg border border-[#444] bg-[#111] p-5 text-[#ededed] backdrop:bg-black/70"
+        className="m-auto w-[min(48rem,calc(100vw-2rem))] max-h-[calc(100vh-2rem)] overflow-auto rounded-lg border border-[var(--workspace-border)] bg-[var(--workspace-panel)] p-5 text-[var(--workspace-fg)] backdrop:bg-black/70"
         onClose={() => {
           if (dialog.current?.open) return;
           attempt.current++;
@@ -118,7 +118,10 @@ export function ClipboardRequest({
         >
           {name} clipboard request
         </h2>
-        <p id={helpId} className="mt-2 text-sm leading-relaxed text-[#aaa]">
+        <p
+          id={helpId}
+          className="mt-2 text-sm leading-relaxed text-[var(--workspace-muted)]"
+        >
           {snapshot?.text
             ? "Review the application’s text before replacing your clipboard. New requests do not change this preview."
             : "The application wants to replace your clipboard with empty text."}
@@ -129,9 +132,12 @@ export function ClipboardRequest({
           spellCheck={false}
           wrap="off"
           value={snapshot?.text ?? ""}
-          className="mt-3 block h-[min(40vh,20rem)] w-full resize-none rounded border border-[#444] bg-black p-3 font-mono text-sm leading-relaxed outline-none focus-visible:border-white"
+          className="mt-3 block h-[min(40vh,20rem)] w-full resize-none rounded border border-[var(--workspace-border)] bg-[var(--workspace-bg)] p-3 font-mono text-sm leading-relaxed outline-none focus-visible:border-[var(--workspace-focus)]"
         />
-        <p role="status" className="my-3 min-h-5 text-sm text-[#aaa]">
+        <p
+          role="status"
+          className="my-3 min-h-5 text-sm text-[var(--workspace-muted)]"
+        >
           {status}
         </p>
         <div className="mt-4 flex justify-end gap-3 text-sm">
@@ -139,14 +145,14 @@ export function ClipboardRequest({
             type="button"
             disabled={busy || !snapshot}
             onClick={() => void copy()}
-            className="rounded border border-[#555] px-3 py-2 hover:bg-[#222] disabled:opacity-40"
+            className="rounded border border-[var(--workspace-border)] px-3 py-2 hover:bg-[var(--workspace-hover)] disabled:opacity-40"
           >
             {snapshot?.text ? "Copy" : "Clear clipboard"}
           </button>
           <button
             type="button"
             onClick={() => dialog.current?.close()}
-            className="rounded border border-[#555] px-3 py-2 hover:bg-[#222]"
+            className="rounded border border-[var(--workspace-border)] px-3 py-2 hover:bg-[var(--workspace-hover)]"
           >
             Close
           </button>

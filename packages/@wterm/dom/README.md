@@ -455,6 +455,43 @@ background extends that color to the container's right edge, so full-width
 status bars stay filled. Mixed, dim, or hidden cells do not change the background
 behind neighboring cells or other rows.
 
+## Updating host colors
+
+Use `wt.setThemeColors(colors)` to update a running terminal's foreground,
+background, cursor, and 16 ANSI colors together. The method sets the corresponding
+CSS custom properties and forwards the defaults to a supporting core. It repaints
+live and retained rows without writing escape sequences, restarting the parser,
+or clearing application color overrides. Painting still respects synchronized
+output, hidden pages, and paused panes.
+
+```ts
+wt.setThemeColors({
+  foreground: 0x383a42,
+  background: 0xfafafa,
+  cursor: 0x526fff,
+  palette: [
+    0x383a42, 0xe45649, 0x50a14f, 0xc18401,
+    0x4078f2, 0xa626a4, 0x0184bc, 0xa0a1a7,
+    0x4f525e, 0xe45649, 0x50a14f, 0xc18401,
+    0x4078f2, 0xa626a4, 0x0184bc, 0xffffff,
+  ],
+});
+```
+
+`TerminalThemeColors` uses opaque integer RGB values from `0` to `0xffffff`
+and exactly 16 palette entries; invalid values throw `RangeError` before changes
+are applied. Values are copied and can be set before `init()`. Indices 16–255 and
+explicit RGB cell colors are unchanged. Application overrides take precedence;
+OSC resets return to the latest host defaults. The inline properties set by this
+method take precedence over theme classes; call it again to change those colors.
+
+With Ghostty, use the updated bundled WASM asset to synchronize indexed colors
+and foreground/background query replies. Older WASM assets retain their existing
+engine defaults. Custom cores may implement the optional
+`TerminalCore.setThemeColors()` hook; without it only the CSS defaults update.
+Framework users can call the same method on the WTerm instance from `onReady`
+or their imperative handle's `instance`.
+
 ## Application clipboard requests
 
 With Ghostty, `onClipboardWrite(text)` receives OSC 52 writes as output is

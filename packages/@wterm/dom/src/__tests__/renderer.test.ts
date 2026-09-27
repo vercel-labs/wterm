@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Renderer } from "../renderer.js";
-import type { CellData, CursorState } from "@wterm/core";
+import type { CellData, CursorState, TerminalPosition } from "@wterm/core";
 
 function createMockBridge(cols: number, rows: number, grid: CellData[][] = []) {
   const dirtyRows = new Set<number>();
@@ -151,6 +151,59 @@ describe("Renderer", () => {
   });
 
   describe("render", () => {
+    it("keeps selection coordinates stable until a theme repaint and recolors unchanged history", () => {
+      let fgRgb = 0x123456;
+      const bridge = {
+        ...createMockBridge(2, 1),
+        trackPosition: (position: TerminalPosition) => ({
+          resolve: () => position,
+          dispose() {},
+        }),
+      };
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.getCell = () => ({ ...makeCell("L", 1), fgRgb });
+      bridge.getScrollbackCount = () => 2;
+      bridge.getScrollbackLineLen = () => 2;
+      bridge.getScrollbackCell = () => ({ ...makeCell("H", 1), fgRgb });
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 0,
+        clientHeight: 30,
+        rowHeight: 10,
+        scrollbackDiscardedCount: 7,
+      };
+      renderer.render(bridge, viewport);
+      const mounted = Array.from(renderer.searchRows());
+      const live = mounted[2].element;
+      const native = document.getSelection()!;
+      native.setBaseAndExtent(
+        live.firstChild!.firstChild!,
+        0,
+        live.firstChild!.firstChild!,
+        2,
+      );
+      expect(renderer.getSelectionText()).toBe("LL");
+
+      fgRgb = 0xabcdef;
+      renderer.invalidateColors();
+      expect(Array.from(renderer.searchRows())).toEqual(mounted);
+      expect(renderer.positionAt(live, 5, 10)).toEqual({ row: 2, col: 0 });
+      expect(renderer.getSelectionText()).toBe("LL");
+      expect((live.firstChild as HTMLElement).style.color).toBe(
+        "rgb(18, 52, 86)",
+      );
+
+      renderer.render(bridge, viewport);
+      expect(Array.from(renderer.searchRows())).toEqual(mounted);
+      for (const { element } of mounted)
+        expect((element.firstChild as HTMLElement).style.color).toBe(
+          "rgb(171, 205, 239)",
+        );
+      expect(renderer.getSelectionText()).toBe("LL");
+      native.removeAllRanges();
+      renderer.destroy();
+    });
+
     it("paints color-only changes without replacing rows or overwriting host theme tokens", () => {
       const host = document.createElement("div");
       host.style.setProperty("--term-fg", "#abcdef");

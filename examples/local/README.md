@@ -50,6 +50,8 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 | `app/page.tsx` | Built-in-core entry point |
 | `app/ghostty/page.tsx` | Ghostty-core entry point with bounded Kitty image rendering |
 | `app/session-workspace.tsx` | Sidebar, split panes, Find controls, and terminal/WebSocket lifecycle |
+| `app/appearance-settings.tsx` | Appearance dialog, OS changes, and browser persistence |
+| `lib/appearance.ts` | Validated preferences and terminal colors |
 | `app/pane-divider.tsx` | Pointer and keyboard pane resizing |
 | `lib/workspace-layout.ts` | Session selection, split geometry, and directional focus |
 | `app/clipboard-request.tsx` | Application clipboard request review and explicit Copy |
@@ -79,6 +81,26 @@ session using its sidebar close button; its neighbor fills the freed space,
 and other shells keep running. Layout changes preserve terminal instances,
 history, Find queries, and connections. Layout is kept only in the current
 page; refreshing still starts a new shell.
+
+## Appearance
+
+Open **Appearance** at the bottom of the sidebar to choose **System**, **Dark**,
+or **Light**, and a terminal font size from 10 to 32 px. Changes apply to existing,
+hidden, and new panes without restarting shells or clearing output. Font changes
+resize the terminal grid and report its new dimensions to the PTY. **System**
+follows OS appearance changes; **Reset defaults** restores System and 14 px.
+Closing the dialog or pressing Escape returns focus to its opener.
+
+Appearance is saved in browser local storage and shared by both engine routes
+and other tabs on the same origin. Invalid saved values fall back to defaults.
+If browser storage is unavailable, changes still work for the current page and
+the dialog reports that they could not be saved. Only theme and font size are
+stored; terminal output, session credentials, and layout are not preferences.
+Refreshing still starts a new shell.
+
+Ghostty uses `WTerm.setThemeColors()` to update engine defaults and CSS together.
+Theme changes do not inject bytes into the output stream or reset application
+color overrides. Existing indexed-color output is repainted, including history.
 
 ## Output flow control
 

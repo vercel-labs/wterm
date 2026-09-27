@@ -36,6 +36,8 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Bounded WebSocket sends** — byte and message limits, ordered draining, and observable backpressure for slow or disconnected connections
 - **Local PTY flow control** — the local workspace pauses fast output until the browser catches up, preserves bytes across frames, and reports rejected input
 - **Local session reconnection** — brief connection interruptions resume the same shell and terminal state in the existing page, with bounded output replay, input delivery acknowledgments, duplicate suppression, and no automatic input retries
+- **Local appearance settings** — persistent light/dark/system appearance and font size across panes, with live updates that preserve shells
+- **Live host colors** — `setThemeColors()` synchronizes CSS and supported core defaults while preserving application color overrides
 - **Local split panes** — view up to four shells side by side or stacked, with adjustable dividers, directional focus, and reversible pane zoom
 - **Inactive pane rendering** — skip paints for hidden sessions and hidden browser documents while output and terminal replies continue
 - **Full-history Select All** — Cmd+A or Ctrl+Shift+A selects retained history and the active screen without mounting extra rows

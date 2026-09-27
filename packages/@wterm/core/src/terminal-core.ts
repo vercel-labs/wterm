@@ -143,6 +143,14 @@ export interface TerminalResourceState {
   graphics?: GraphicsResourceState;
 }
 
+/** Host theme defaults: opaque 24-bit RGB values and exactly 16 ANSI colors. */
+export interface TerminalThemeColors {
+  foreground: number;
+  background: number;
+  cursor: number;
+  palette: readonly number[];
+}
+
 /**
  * Abstract terminal emulation core. Both the built-in Zig WASM core
  * (`WasmBridge`) and alternative backends (e.g. `@wterm/ghostty`) implement
@@ -152,6 +160,8 @@ export interface TerminalCore {
   // -- Lifecycle --
   init(cols: number, rows: number): void;
   resize(cols: number, rows: number): void;
+  /** Update host defaults without parsing input or replacing application overrides. */
+  setThemeColors?(colors: TerminalThemeColors): void;
 
   // -- I/O --
   writeString(str: string, afterChunk?: () => void): void;

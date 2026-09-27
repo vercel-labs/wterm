@@ -16,7 +16,49 @@
   }
 }
 
-.local-terminal {
-  --term-bg: #000 !important;
-  background-color: #000;
+.workspace {
+  color-scheme: dark;
+  --workspace-bg: #000;
+  --workspace-fg: #ededed;
+  --workspace-sidebar: #0a0a0a;
+  --workspace-panel: #111;
+  --workspace-muted: #aaa;
+  --workspace-border: #333;
+  --workspace-hover: #242424;
+  --workspace-selected: #363636;
+  --workspace-focus: #aaa;
+  --workspace-connected: #34d399;
+  --workspace-pending: #f5a623;
+}
+
+.workspace[data-theme="light"] {
+  color-scheme: light;
+  --workspace-bg: #fafafa;
+  --workspace-fg: #171717;
+  --workspace-sidebar: #f3f3f3;
+  --workspace-panel: #fff;
+  --workspace-muted: #595959;
+  --workspace-border: #c8c8c8;
+  --workspace-hover: #e8e8e8;
+  --workspace-selected: #dcdcdc;
+  --workspace-focus: #525252;
+  --workspace-connected: #087f5b;
+  --workspace-pending: #946000;
+}
+
+@media (prefers-color-scheme: light) {
+  .workspace[data-theme="system"] {
+    color-scheme: light;
+    --workspace-bg: #fafafa;
+    --workspace-fg: #171717;
+    --workspace-sidebar: #f3f3f3;
+    --workspace-panel: #fff;
+    --workspace-muted: #595959;
+    --workspace-border: #c8c8c8;
+    --workspace-hover: #e8e8e8;
+    --workspace-selected: #dcdcdc;
+    --workspace-focus: #525252;
+    --workspace-connected: #087f5b;
+    --workspace-pending: #946000;
+  }
 }

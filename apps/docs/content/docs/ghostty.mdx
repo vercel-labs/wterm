@@ -253,6 +253,14 @@ The DOM overlay independently caps visible canvas backing stores at 32 MiB and
 bounds each destination canvas to the terminal pixel area; placements that
 exceed those browser limits are skipped.
 
+## Updating a running theme
+
+Use [`wt.setThemeColors(colors)`](/themes#updating-host-colors) to update browser
+colors and Ghostty defaults together without restarting the terminal. Headless
+hosts can call `core.setThemeColors(colors)` with the same `TerminalThemeColors`
+object. Application overrides and partial parser input are preserved; resets
+use the latest host defaults. Use the updated bundled WASM asset for this API.
+
 ## Bundlers
 
 The WASM binary is fetched at runtime rather than inlined, so the default has to resolve to a URL your app serves. `GhosttyCore.load()` resolves it with `new URL("../wasm/ghostty-vt.wasm", import.meta.url)`. Bundlers that implement that asset pattern emit the binary and rewrite the URL. Ones that do not leave `import.meta.url` pointing at the machine that built the bundle, and `load()` throws an error saying so.

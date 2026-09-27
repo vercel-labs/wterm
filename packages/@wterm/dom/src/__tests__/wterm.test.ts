@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import type { WasmBridge } from "@wterm/core";
+import type {
+  WasmBridge,
+  TerminalCore,
+  TerminalThemeColors,
+} from "@wterm/core";
 
 function createMockBridge(): WasmBridge {
   let cols = 80;
@@ -63,6 +67,66 @@ describe("WTerm", () => {
   afterEach(() => {
     element.remove();
     vi.restoreAllMocks();
+  });
+
+  describe("host theme colors", () => {
+    const theme = (): TerminalThemeColors => ({
+      foreground: 0x112233,
+      background: 0xfafafa,
+      cursor: 0x345678,
+      palette: Array.from({ length: 16 }, (_, i) => i),
+    });
+
+    it("copies pre-init defaults and updates CSS without writing input or rebuilding the grid", async () => {
+      const apply = vi.fn();
+      (mockBridge as TerminalCore).setThemeColors = apply;
+      const term = new WTerm(element, { autoResize: false });
+      const colors = theme();
+      term.setThemeColors(colors);
+      (colors.palette as number[])[0] = 0xffffff;
+      await term.init();
+      expect(apply).toHaveBeenLastCalledWith(theme());
+      const grid = element.querySelector(".term-grid");
+      term.setThemeColors({ ...theme(), background: 0 });
+      expect(element.style.getPropertyValue("--term-bg")).toBe("#000000");
+      expect(element.style.getPropertyValue("--term-color-15")).toBe("#00000f");
+      expect(element.querySelector(".term-grid")).toBe(grid);
+      expect(mockBridge.writeString).not.toHaveBeenCalled();
+      expect(mockBridge.writeRaw).not.toHaveBeenCalled();
+      expect(mockBridge.resize).not.toHaveBeenCalled();
+      term.destroy();
+    });
+
+    it("supports cores without theme hooks and rejects invalid values before changing CSS", async () => {
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      term.setThemeColors(theme());
+      expect(element.style.getPropertyValue("--term-fg")).toBe("#112233");
+      for (const colors of [
+        { ...theme(), foreground: -1 },
+        { ...theme(), background: NaN },
+        { ...theme(), palette: [0] },
+      ])
+        expect(() => term.setThemeColors(colors)).toThrow(RangeError);
+      expect(element.style.getPropertyValue("--term-fg")).toBe("#112233");
+      term.destroy();
+    });
+
+    it("defers a theme repaint while a pane is paused", async () => {
+      const term = new WTerm(element, {
+        autoResize: false,
+        renderingPaused: true,
+      });
+      await term.init();
+      const render = vi.spyOn(Renderer.prototype, "render");
+      term.setThemeColors(theme());
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect(render).not.toHaveBeenCalled();
+      term.setRenderingPaused(false);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect(render).toHaveBeenCalled();
+      term.destroy();
+    });
   });
 
   describe("constructor", () => {

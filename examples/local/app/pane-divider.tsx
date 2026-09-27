@@ -27,7 +27,7 @@ export function PaneDivider({
       aria-valuemax={Math.round(divider.max * 100)}
       aria-valuenow={Math.round(divider.ratio * 100)}
       title="Drag to resize. Arrow keys adjust; Enter centers."
-      className={`absolute z-10 touch-none rounded bg-[#1f1f1f] hover:bg-[#555] focus-visible:bg-[#888] focus-visible:outline-2 focus-visible:outline-white ${horizontal ? "cursor-col-resize" : "cursor-row-resize"}`}
+      className={`absolute z-10 touch-none rounded bg-[var(--workspace-border)] hover:bg-[var(--workspace-focus)] focus-visible:bg-[var(--workspace-focus)] focus-visible:outline-2 focus-visible:outline-[var(--workspace-focus)] ${horizontal ? "cursor-col-resize" : "cursor-row-resize"}`}
       style={{
         left: divider.left,
         top: divider.top,

@@ -619,6 +619,23 @@ fn graphicsPlacements(state: *State, buf: [*]u8, max_records: u32) u32 {
 
 // -- Lifecycle --------------------------------------------------
 
+fn themeRgb(value: u32) color.RGB {
+    return .{ .r = @truncate(value >> 16), .g = @truncate(value >> 8), .b = @truncate(value) };
+}
+
+// Host configuration is separate from OSC application overrides and stream parsing.
+export fn set_theme_colors(ptr: usize, values: [*]const u32) void {
+    const state = stateFromPtr(ptr);
+    const colors = &state.terminal.colors;
+    colors.foreground.default = themeRgb(values[0]);
+    colors.background.default = themeRgb(values[1]);
+    colors.cursor.default = themeRgb(values[2]);
+    var palette = colors.palette.original;
+    for (0..16) |index| palette[index] = themeRgb(values[index + 3]);
+    colors.palette.changeDefault(palette);
+    state.terminal.flags.dirty.palette = true;
+}
+
 export fn init(
     cols: u16,
     rows: u16,
