@@ -6,6 +6,7 @@ import {
   OUTPUT_PENDING_LIMIT,
   OUTPUT_WINDOW,
 } from "./terminal-protocol";
+import { PtyOutputQueue } from "./pty-output-queue.mts";
 
 interface OutputSink {
   send(data: Uint8Array): void;
@@ -19,8 +20,12 @@ interface OutputSink {
 
 /** Credit counts bytes parsed by the browser, not bytes handed to TCP. */
 export class PtyOutput {
-  private queue: Uint8Array[] = [];
-  private pending = 0;
+  private queue = new PtyOutputQueue(
+    OUTPUT_PENDING_LIMIT,
+    OUTPUT_PENDING_FRAMES,
+    OUTPUT_CHUNK,
+    () => this.flush(),
+  );
   private sent = 0;
   private acknowledged = 0;
   private frames: { end: number; data: Uint8Array }[] = [];
@@ -34,7 +39,7 @@ export class PtyOutput {
   constructor(private sink: OutputSink) {}
 
   get pendingBytes(): number {
-    return this.pending;
+    return this.queue.pendingBytes;
   }
   get outstandingBytes(): number {
     return this.sent - this.acknowledged;
@@ -55,6 +60,7 @@ export class PtyOutput {
   detach(): void {
     if (this.stopped) return;
     this.attached = false;
+    this.queue.cancel();
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     if (!this.paused && !this.ended) {
@@ -69,28 +75,18 @@ export class PtyOutput {
     this.acknowledge(bytes);
     this.replayCursor = bytes;
     this.attached = true;
+    this.queue.cancel();
     this.flush();
     return true;
   }
 
   push(text: string | Uint8Array): void {
     if (this.stopped || this.ended || !text.length) return;
-    const bytes =
-      typeof text === "string" ? Buffer.byteLength(text) : text.byteLength;
-    if (
-      this.pending + bytes > OUTPUT_PENDING_LIMIT ||
-      this.queue.length + Math.ceil(bytes / OUTPUT_CHUNK) >
-        OUTPUT_PENDING_FRAMES
-    ) {
+    if (!this.queue.push(text)) {
       this.fail("Output exceeded the pending buffer limit");
       return;
     }
-    const data =
-      typeof text === "string" ? Buffer.from(text, "utf8") : Buffer.from(text);
-    for (let i = 0; i < data.length; i += OUTPUT_CHUNK)
-      this.queue.push(data.subarray(i, i + OUTPUT_CHUNK));
-    this.pending += bytes;
-    this.flush();
+    if (this.attached) this.queue.schedule();
   }
 
   acknowledge(bytes: number): boolean {
@@ -111,6 +107,7 @@ export class PtyOutput {
 
   end(): void {
     this.ended = true;
+    this.queue.cancel();
     this.flush();
   }
 
@@ -118,9 +115,8 @@ export class PtyOutput {
     this.stopped = true;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
-    this.queue = [];
+    this.queue.clear();
     this.frames = [];
-    this.pending = 0;
   }
 
   private fail(reason: string): void {
@@ -138,7 +134,7 @@ export class PtyOutput {
   }
 
   private flush(): void {
-    if (this.stopped || !this.attached) return;
+    if (this.stopped || !this.attached || this.queue.batching) return;
     // Retransmitted bytes already count against the credit window. Keep their
     // original frame boundaries so replay cannot multiply queued frame count.
     for (let count = 0; this.replayCursor < this.sent && count < 64; count++) {
@@ -155,22 +151,19 @@ export class PtyOutput {
       }
       this.replayCursor = frame.end;
     }
-    for (let count = 0; this.queue.length && count < 64; count++) {
+    for (let count = 0; this.pendingBytes && count < 64; count++) {
       if (this.replayCursor < this.sent) break;
       const capacity = Math.min(
         OUTPUT_WINDOW - this.outstandingBytes,
         OUTPUT_WINDOW - this.sink.bufferedAmount(),
       );
       if (capacity <= 0 || this.frames.length >= OUTPUT_FRAMES) break;
-      const head = this.queue[0];
-      const size = Math.min(head.length, capacity);
+      const chunk = this.queue.peek(capacity);
+      const size = chunk.length;
       if (!Number.isSafeInteger(this.sent + size)) {
         this.fail("Output byte counter exceeded its limit");
         return;
       }
-      // Retain only the transmitted bytes, not a view pinning a larger PTY
-      // allocation, until the browser acknowledges them.
-      const chunk = Uint8Array.from(head.subarray(0, size));
       try {
         this.sink.send(chunk);
       } catch {
@@ -180,12 +173,10 @@ export class PtyOutput {
       this.sent += size;
       this.frames.push({ end: this.sent, data: chunk });
       this.replayCursor = this.sent;
-      this.pending -= size;
-      if (size === head.length) this.queue.shift();
-      else this.queue[0] = head.subarray(size);
+      this.queue.consume(size);
     }
     const blocked =
-      this.pending > 0 ||
+      this.pendingBytes > 0 ||
       this.outstandingBytes >= OUTPUT_WINDOW ||
       this.frames.length >= OUTPUT_FRAMES ||
       this.sink.bufferedAmount() >= OUTPUT_WINDOW;
@@ -195,7 +186,7 @@ export class PtyOutput {
     } else if (
       this.paused &&
       !this.ended &&
-      !this.pending &&
+      !this.pendingBytes &&
       this.outstandingBytes <= OUTPUT_LOW_WATER &&
       this.frames.length <= OUTPUT_FRAMES / 4 &&
       this.sink.bufferedAmount() <= OUTPUT_LOW_WATER
@@ -203,7 +194,7 @@ export class PtyOutput {
       this.paused = false;
       this.sink.resume();
     }
-    if (this.ended && !this.pending && !this.outstandingBytes) {
+    if (this.ended && !this.pendingBytes && !this.outstandingBytes) {
       this.stop();
       this.sink.finish();
       return;
@@ -214,7 +205,7 @@ export class PtyOutput {
       (this.replayCursor < this.sent ||
         (this.outstandingBytes < OUTPUT_WINDOW &&
           this.frames.length < OUTPUT_FRAMES &&
-          (this.pending ||
+          (this.pendingBytes ||
             (this.paused && this.sink.bufferedAmount() > OUTPUT_LOW_WATER))))
     ) {
       this.timer = setTimeout(() => {

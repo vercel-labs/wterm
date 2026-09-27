@@ -22,6 +22,7 @@ const source = {
     [
       "../pty-input-fixture.mjs",
       "../pty-input-server.mjs",
+      "../../../examples/local/lib/pty-output-queue.mts",
       "../src/pty-input-main.ts",
       "../src/echo-probe.ts",
       "../src/input-workloads.ts",
@@ -111,6 +112,8 @@ for (const sessions of [1, 8])
             acknowledged: session.receivedBytes,
           });
           expect(session.flow!.maxOutstandingBytes).toBeLessThanOrEqual(65536);
+          expect(session.flow!.outputMessages).toBe(session.receivedMessages);
+          expect(session.flow!.ptyReads).toBeGreaterThan(0);
           expect(session.flow!.maxPendingBytes).toBeLessThanOrEqual(
             1024 * 1024,
           );

@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import * as pty from "node-pty";
 import { WebSocket } from "ws";
+import { PtyOutputQueue } from "../../examples/local/lib/pty-output-queue.mts";
 
 export const INPUT_WINDOW = 64 * 1024;
 const PENDING_LIMIT = 1024 * 1024;
@@ -15,13 +16,14 @@ export function attachPtyInput(ws, cwd, sessions) {
   let exit;
   let stopped = false;
   let paused = false;
-  let queue = [];
-  let pending = 0;
+  const queue = new PtyOutputQueue(PENDING_LIMIT, 1024, 16384, flush);
   let sent = 0;
   let acknowledged = 0;
   let maxPendingBytes = 0;
   let maxOutstandingBytes = 0;
   let pauses = 0;
+  let outputMessages = 0;
+  let ptyReads = 0;
   let producing = false;
   let finishing = false;
   let inputs = 0;
@@ -41,8 +43,7 @@ export function attachPtyInput(ws, cwd, sessions) {
       stopped = true;
       clearTimeout(deadline);
       clearTimeout(startDeadline);
-      queue = [];
-      pending = 0;
+      queue.clear();
       if (terminal && !exit) {
         // node-pty delivers exit after draining the read side. A credit-paused
         // reader must resume during teardown even though output is discarded.
@@ -63,40 +64,38 @@ export function attachPtyInput(ws, cwd, sessions) {
     void stop();
   }
   function flush() {
-    if (stopped || ws.readyState !== WebSocket.OPEN) return;
-    while (queue.length && sent - acknowledged < INPUT_WINDOW) {
-      const head = queue[0];
-      const length = Math.min(
-        head.length,
-        16384,
-        INPUT_WINDOW - (sent - acknowledged),
-      );
+    if (stopped || ws.readyState !== WebSocket.OPEN || queue.batching) return;
+    while (queue.pendingBytes && sent - acknowledged < INPUT_WINDOW) {
+      const data = queue.peek(INPUT_WINDOW - (sent - acknowledged));
+      const length = data.length;
       if (ws.bufferedAmount + length > INPUT_WINDOW) {
         fail("Socket output queue exceeded");
         return;
       }
-      ws.send(head.subarray(0, length), { binary: true });
+      ws.send(data, { binary: true });
+      outputMessages++;
       sent += length;
-      pending -= length;
-      if (length === head.length) queue.shift();
-      else queue[0] = head.subarray(length);
+      queue.consume(length);
       maxOutstandingBytes = Math.max(maxOutstandingBytes, sent - acknowledged);
     }
     if (!exit) {
-      if (!paused && (pending || sent - acknowledged >= INPUT_WINDOW)) {
+      if (
+        !paused &&
+        (queue.pendingBytes || sent - acknowledged >= INPUT_WINDOW)
+      ) {
         paused = true;
         pauses++;
         terminal.pause();
       } else if (
         paused &&
-        !pending &&
+        !queue.pendingBytes &&
         sent - acknowledged <= INPUT_WINDOW / 4
       ) {
         paused = false;
         terminal.resume();
       }
     }
-    if (exit && !pending && acknowledged === sent) {
+    if (exit && !queue.pendingBytes && acknowledged === sent) {
       send({
         type: "finished",
         ...exit,
@@ -105,6 +104,8 @@ export function attachPtyInput(ws, cwd, sessions) {
         maxPendingBytes,
         maxOutstandingBytes,
         pauses,
+        outputMessages,
+        ptyReads,
       });
       ws.close(1000, "Measurement finished");
       void stop();
@@ -138,18 +139,17 @@ export function attachPtyInput(ws, cwd, sessions) {
         sessions.add(entry);
         terminal.onData((text) => {
           if (stopped) return;
-          const bytes = Buffer.from(text);
-          if (pending + bytes.length > PENDING_LIMIT || queue.length >= 1024) {
+          ptyReads++;
+          if (!queue.push(text)) {
             fail("Pending PTY output exceeded its limit");
             return;
           }
-          queue.push(bytes);
-          pending += bytes.length;
-          maxPendingBytes = Math.max(maxPendingBytes, pending);
-          flush();
+          maxPendingBytes = Math.max(maxPendingBytes, queue.pendingBytes);
+          queue.schedule();
         });
         terminal.onExit((result) => {
           exit = result;
+          queue.cancel();
           clearTimeout(killTimer);
           sessions.delete(entry);
           resolveExit();

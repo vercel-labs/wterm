@@ -338,6 +338,13 @@ non-idle producer. The partial scroll region reserves row 1 for echo. The child
 reports its final chunk, generated-byte, and probe counts; the suite checks those
 counts against the fixture and every received byte against server accounting.
 
+The server uses the local workspace's `PtyOutputQueue`: adjacent reads collect
+until a four-millisecond timer fires or 16 KiB is available to send.
+ACKs do not flush a collecting partial batch early. Queue limits, byte credit,
+and socket backlog still apply, and process exit flushes the final batch.
+Reports include PTY read and sent/received message counts to distinguish
+reduced message overhead from reduced throughput.
+
 Browser acknowledgments grant credit only after synchronous terminal parsing.
 Each connection allows at most 64 KiB of unacknowledged output. PTY reads pause at
 that limit and resume below 16 KiB; pending server output is capped at 1 MiB and
@@ -354,15 +361,18 @@ Host/Origin checks. It never accepts a command or executable path.
 | `measurement.probes.keyDispatchToFrameMs` | Same browser dispatch to the subsequent animation callback |
 | `measurement.sessions[].receivedMiBPerSecond` | Bytes received after starting the run through final PTY drain, including echo and final summary, per elapsed second |
 | `measurement.sessions[].writeMs` / `renderMs` | Browser terminal writes and renderer calls during that interval; hidden panes must have zero render calls |
-| `measurement.sessions[].flow` | Final sent/acknowledged bytes, peak unacknowledged/pending bytes, pauses, and child exit status |
+| `measurement.sessions[].flow` | Final sent/acknowledged bytes, PTY read and output-message counts, peak unacknowledged/pending bytes, pauses, and child exit status |
+| `measurement.sessions[].receivedMessages` | All binary messages received, checked against the server's output-message count |
 | `measurement.resources` | Before/after WASM capacity, mounted rows, DOM elements and retained history rows |
 
 Driver timings use one clock outside the browser, so they include time waiting
 for browser input dispatch. They also include automation command delivery and
 binding-callback IPC, and are not an isolated measurement of the input queue.
 Browser timings use a separate clock; the suite never subtracts timestamps from
-different clocks. Observer/binding instrumentation affects results. Neither
-measurement captures OS key delivery, physical display presentation, remote
+different clocks. Observer/binding instrumentation affects results. Firefox
+profiling also shows substantial work in Playwright's Juggler WebSocket
+monitoring; automated results must not be treated as ordinary Firefox latency.
+Neither measurement captures OS key delivery, physical display presentation, remote
 network latency, or desktop Ghostty. This synthetic raw-mode workload does not
 certify latency for every terminal application or the local workspace's transport.
 
@@ -389,11 +399,13 @@ queue statistics, and resource snapshots. Initialization failures have a null
 measurement. CI uploads them as `terminal-pty-input`. Compare latency alongside
 throughput using repeated runs on the same hardware and browser configuration.
 
-### Sample PTY measurements
+### Sample PTY measurements before batching
 
 On September 27, 2026, an Apple M1 Max running Darwin 25.6.0 arm64 and Node
 24.20.0 completed three `measure` repeats per workload/configuration: 54 cases
-and 13,824 echoes. The headless viewport was 1280×900 with device scale 1.
+and 13,824 echoes. These measurements predate small-read batching. The actual
+reported headless viewport was 1280×720: device scale 1 for Chromium and Firefox,
+and 2 for WebKit (the project device presets override the shared config).
 The table gives ranges across the three repeats of both busy workloads
 (ANSI and redraw). Throughput is summed across the indicated PTYs; timings are
 `driver.requestToFrameReportMs`, including automation overhead.
@@ -412,6 +424,31 @@ renderer calls, and queues stayed within the declared bounds. Firefox's eight
 busy PTYs had substantially longer latency than its idle and single-PTY cases.
 These are measurements of this fixture and transport, not a physical-display
 comparison or a guarantee for the local workspace or other applications.
+
+### Small-read batching measurements
+
+A follow-up on the same machine, browser versions, viewport, and device scales
+used three 256-key repeats of every configuration with the shared batching queue.
+Other CPU-intensive jobs were running on the host, so these timings are not a
+controlled comparison or a latency guarantee. All busy cases completed; the
+table summarizes their observed ranges. Reads per message is the aggregate
+`ptyReads / outputMessages` ratio, including startup and drain.
+
+| Browser | PTYs | p95 frame report | p99 frame report | Aggregate output | PTY reads per message |
+| --- | --- | --- | --- | --- | --- |
+| Chromium | 1 | 49.9–54.3 ms | 51.2–61.6 ms | 0.74–0.89 MiB/s | 7.2–10.4 |
+| Chromium | 8 | 50.2–71.1 ms | 52.1–154.7 ms | 5.75–6.84 MiB/s | 8.0–12.6 |
+| Firefox | 1 | 33.2–55.8 ms | 46.2–131.3 ms | 0.78–0.86 MiB/s | 6.8–11.1 |
+| Firefox | 8 | 39.2–141.9 ms | 82.3–261.9 ms | 5.50–6.81 MiB/s | 7.9–13.3 |
+| WebKit | 1 | 42.7–54.7 ms | 49.4–75.8 ms | 0.70–0.86 MiB/s | 7.0–10.7 |
+| WebKit | 8 | 39.5–109.0 ms | 49.5–187.3 ms | 5.85–6.75 MiB/s | 8.0–12.3 |
+
+Of the full 54-case matrix, 53 completed and one WebKit eight-PTY idle case
+failed with a socket error after 100 echoes. That partial report is a failure,
+not a successful timing sample. Six subsequent targeted repeats completed
+without reproducing it. Reports now retain the failing session index and socket
+error/close details. Completed cases preserved byte and message accounting,
+stayed within queue bounds, and made zero hidden-pane renderer calls.
 
 ## History search measurements
 

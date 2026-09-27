@@ -97,6 +97,7 @@ test("one PTY survives detach, lost ACK, and takeover with old callbacks fenced"
   first.message(size);
   first.message({ type: "input", id: 1, data: "once" });
   h.data("prefix");
+  t.mock.timers.tick(4);
   first.message({ type: "ack", bytes: 2 });
   h.data("suffix");
   first.close(1006);
@@ -136,6 +137,7 @@ test("expiry and unavailable output never silently create a replacement shell", 
   const token = first.ready().session;
   first.message(size);
   h.data("123456");
+  t.mock.timers.tick(4);
   first.message({ type: "ack", bytes: 4 });
   assert.equal(h.attach(token, 3).code, 4409);
   assert.equal(h.attach(token, 7).code, 4409);
@@ -148,6 +150,30 @@ test("expiry and unavailable output never silently create a replacement shell", 
   assert.equal(h.counts().kills, 1);
   assert.equal(h.attach(token, 4).code, 4404);
   assert.equal(h.counts().spawns, 1);
+});
+
+test("a PTY read burst shares one frame while input stays immediately available", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const h = setup();
+  t.after(() => h.sessions.close());
+  const socket = h.attach();
+  socket.message(size);
+  const bytes = Buffer.from("語😀\x1b[31moutput\x1b[0m\r\n".repeat(20));
+  for (const byte of bytes) h.data(Uint8Array.of(byte));
+  assert.equal(socket.binary().length, 0);
+  socket.message({ type: "input", id: 1, data: "responsive" });
+  assert.deepEqual(h.inputs, ["responsive"]);
+  assert.deepEqual(JSON.parse(socket.sent.at(-1) as string), {
+    type: "input-ack",
+    input: 1,
+  });
+  t.mock.timers.tick(4);
+  assert.deepEqual(socket.binary(), bytes);
+  assert.equal(socket.sent.filter(Buffer.isBuffer).length, 1);
+  h.exit();
+  assert.equal(socket.code, undefined);
+  socket.message({ type: "ack", bytes: bytes.length });
+  assert.equal(socket.code, 1000);
 });
 
 test("detached final output drains after reconnect and overflow releases the PTY", () => {

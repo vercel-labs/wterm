@@ -45,6 +45,7 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 |---|---|
 | `server.ts` | Custom server with WebSocket ↔ PTY bridge |
 | `lib/pty-output.ts` | Bounded output window and PTY pause/resume |
+| `lib/pty-output-queue.mts` | Bounded byte queue and small-read batching shared with the PTY input harness |
 | `lib/terminal-sessions.ts` | Session ownership, attachment tokens, replay, and expiry |
 | `lib/session-recovery.ts` | Bounded tab-scoped output, resize, and theme replay records |
 | `lib/terminal-connection.ts` | Browser parsing tasks, acknowledgments, and bounded input |
@@ -170,6 +171,16 @@ acknowledgment, with frames no larger than 16 KiB. The server pauses PTY reads
 at the limit and resumes below 32 KiB and 64 frames, after pending output drains.
 Late PTY data is capped at 256 KiB and 1,024 queued chunks. Socket backlog also
 pauses reads; exceeding a queue limit ends the session with a visible status.
+
+Adjacent small PTY reads share a frame instead of sending a WebSocket message
+for each read. A full 16 KiB frame is eligible to send immediately; smaller
+batches use a four-millisecond timer from the first read. Later reads and ACKs
+do not extend that timer or flush it early. Event-loop delays or exhausted
+credit can postpone delivery further. This reduces message overhead during
+busy output while adding a small collection delay to isolated output.
+Collecting bytes count toward the same pending limits. Detach retains them
+without a running timer, reattach sends replay before pending bytes, normal
+exit flushes the final batch, and explicit close discards it.
 
 The browser parses output in short tasks and acknowledges bytes only after
 `WTerm.write()` returns. Acknowledgment does not wait for painting, so programs

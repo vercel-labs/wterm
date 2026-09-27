@@ -34,7 +34,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Read retained output** — capture a stable text snapshot with `readText()`; the local workspace provides a read-only output dialog with explicit refresh
 - **Optional output announcements** — bounded, polite screen-reader updates for the focused terminal, with a per-session workspace toggle
 - **Bounded WebSocket sends** — byte and message limits, ordered draining, and observable backpressure for slow or disconnected connections
-- **Local PTY flow control** — the local workspace pauses fast output until the browser catches up, preserves bytes across frames, and reports rejected input
+- **Local PTY flow control** — the local workspace batches small output messages, pauses fast output until the browser catches up, preserves bytes across frames, and reports rejected input
 - **Local session reconnection** — brief connection interruptions resume the same shell and terminal state in the existing page, with bounded output replay, input delivery acknowledgments, duplicate suppression, and no automatic input retries
 - **Local reload recovery** — tab-scoped replay restores saved terminals and resumes their shells within documented storage and session limits
 - **Local appearance settings** — persistent light/dark/system appearance and font size across panes, with live updates that preserve shells

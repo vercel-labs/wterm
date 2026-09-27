@@ -20,6 +20,8 @@ interface FlowReport {
   maxPendingBytes: number;
   maxOutstandingBytes: number;
   pauses: number;
+  outputMessages: number;
+  ptyReads: number;
 }
 interface Session {
   core: GhosttyCore;
@@ -27,9 +29,12 @@ interface Session {
   socket: WebSocket;
   pid: number | null;
   received: number;
+  receivedMessages: number;
   initialReceived: number;
   ready: boolean;
   flow: FlowReport | null;
+  socketError: boolean;
+  closed: { code: number; reason: string; clean: boolean } | null;
   writeMs: Samples;
   renderMs: Samples;
 }
@@ -110,6 +115,7 @@ function report() {
       pid: session.pid,
       active: i === 0,
       receivedBytes: session.received,
+      receivedMessages: session.receivedMessages,
       measuredBytes: session.received - session.initialReceived,
       receivedMiBPerSecond:
         (session.received - session.initialReceived) /
@@ -118,6 +124,8 @@ function report() {
       writeMs: session.writeMs.report(),
       renderMs: session.renderMs.report(),
       flow: session.flow,
+      socketError: session.socketError,
+      closed: session.closed,
       echo: row(session, 0),
       summary: row(session, 1),
     })),
@@ -268,9 +276,12 @@ async function init() {
       socket,
       pid: null,
       received: 0,
+      receivedMessages: 0,
       initialReceived: 0,
       ready: false,
       flow: null,
+      socketError: false,
+      closed: null,
       writeMs: new Samples(8192),
       renderMs: new Samples(8192),
     };
@@ -298,15 +309,27 @@ async function init() {
           terminal.write(bytes);
           if (startedAt) session.writeMs.add(performance.now() - start);
           session.received += bytes.byteLength;
+          session.receivedMessages++;
           socket.send(JSON.stringify({ type: "ack", bytes: session.received }));
         }
       } catch (error) {
         fail(String(error));
       }
     };
-    socket.onerror = () => fail("PTY socket failed");
-    socket.onclose = () => {
-      if (!session.flow && !error) fail("PTY socket closed before completion");
+    socket.onerror = () => {
+      session.socketError = true;
+      fail(`PTY ${i + 1} socket failed`);
+    };
+    socket.onclose = (event) => {
+      session.closed = {
+        code: event.code,
+        reason: event.reason,
+        clean: event.wasClean,
+      };
+      if (!session.flow && !error)
+        fail(
+          `PTY ${i + 1} socket closed before completion (${event.code}: ${event.reason})`,
+        );
     };
   }
   await until(() =>
