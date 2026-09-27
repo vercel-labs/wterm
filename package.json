@@ -32,10 +32,10 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
-    "@vitest/coverage-v8": "^5.0.1",
+    "@vitest/coverage-v8": "^5.0.2",
     "prettier": "^3.9.9",
     "turbo": "^2.11.4",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.2"
   },
   "packageManager": "pnpm@11.1.3"
 }

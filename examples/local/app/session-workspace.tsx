@@ -44,6 +44,13 @@ import {
 import { PaneDivider } from "./pane-divider";
 import { AppearanceSettings, useAppearance } from "./appearance-settings";
 import { TERMINAL_COLORS } from "../lib/appearance";
+import { ShortcutSettings, useShortcuts } from "./shortcut-settings";
+import {
+  ariaShortcuts,
+  matchCommand,
+  shortcutTitle,
+  type Shortcuts,
+} from "../lib/shortcuts";
 
 function cwdLabel(cwd: string | null): string {
   if (!cwd) return "Starting…";
@@ -64,6 +71,8 @@ function terminalPixelSize(terminal: WTerm): { width: number; height: number } {
 }
 
 interface SessionTerminalProps {
+  shortcuts: Shortcuts;
+  registerFind: (id: string, open: () => void) => () => void;
   theme: "dark" | "light";
   fontSize: number;
   session: Session;
@@ -79,6 +88,8 @@ interface SessionTerminalProps {
 }
 
 function SessionTerminal({
+  shortcuts,
+  registerFind,
   theme,
   fontSize,
   session,
@@ -132,28 +143,10 @@ function SessionTerminal({
     terminalRef.current?.focus();
   };
 
-  useEffect(() => {
-    if (!active) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.target instanceof Element &&
-        event.target.closest("dialog[open]")
-      )
-        return;
-      if (
-        event.key.toLowerCase() === "f" &&
-        !event.altKey &&
-        ((event.metaKey && !event.ctrlKey) ||
-          (event.ctrlKey && event.shiftKey && !event.metaKey))
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-        openFind();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [active, openFind]);
+  useLayoutEffect(
+    () => registerFind(session.id, openFind),
+    [registerFind, session.id, openFind],
+  );
 
   useEffect(() => {
     if (findOpen) terminalRef.current?.search(query, { caseSensitive });
@@ -402,7 +395,8 @@ function SessionTerminal({
           <button
             type="button"
             onClick={openFind}
-            title="Find in terminal (⌘F / Ctrl+Shift+F)"
+            title={shortcutTitle(shortcuts, "find", "Find in terminal")}
+            aria-keyshortcuts={ariaShortcuts(shortcuts, "find")}
             className="ml-auto flex items-center gap-2 rounded px-2 py-1 text-[var(--workspace-muted)] hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)]"
           >
             <Search size={14} />
@@ -503,6 +497,32 @@ export function SessionWorkspace({
 }: SessionWorkspaceProps) {
   const [workspace, dispatch] = useReducer(workspaceReducer, INITIAL_STATE);
   const {
+    shortcuts,
+    saved: shortcutsSaved,
+    update: updateShortcuts,
+  } = useShortcuts();
+  const findHandlers = useRef(new Map<string, () => void>());
+  const registerFind = useCallback((id: string, open: () => void) => {
+    findHandlers.current.set(id, open);
+    return () => {
+      findHandlers.current.delete(id);
+    };
+  }, []);
+  const composing = useRef(false);
+  const consumedKeys = useRef(new Set<string>());
+  const newSessionButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const blur = () => {
+      composing.current = false;
+      consumedKeys.current.clear();
+    };
+    window.addEventListener("blur", blur);
+    return () => window.removeEventListener("blur", blur);
+  }, []);
+  useEffect(() => {
+    if (!workspace.sessions.length) newSessionButton.current?.focus();
+  }, [workspace.sessions.length]);
+  const {
     appearance,
     theme,
     ready: appearanceReady,
@@ -556,6 +576,82 @@ export function SessionWorkspace({
     <div
       data-theme={appearanceReady ? theme : "system"}
       className="workspace flex h-screen w-screen overflow-hidden bg-[var(--workspace-bg)] text-[var(--workspace-fg)]"
+      onCompositionStartCapture={() => {
+        composing.current = true;
+      }}
+      onCompositionEndCapture={() => {
+        composing.current = false;
+      }}
+      onKeyUpCapture={(event) => {
+        if (consumedKeys.current.delete(event.code)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
+      onKeyDownCapture={(event) => {
+        if (event.repeat && consumedKeys.current.has(event.code)) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        if (!event.repeat) consumedKeys.current.delete(event.code);
+        if (
+          event.repeat ||
+          composing.current ||
+          event.defaultPrevented ||
+          !(event.target instanceof Element) ||
+          document.querySelector("dialog[open]")
+        )
+          return;
+        const command = matchCommand(shortcuts, event.nativeEvent);
+        if (!command) return;
+        const terminalInput = !!event.target.closest(".local-terminal");
+        const editing = !!event.target.closest(
+          'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
+        );
+        if (
+          !terminalInput &&
+          (editing || (command !== "find" && command !== "new"))
+        )
+          return;
+        const id = workspace.activeId;
+        if (command !== "new" && !id) return;
+        event.preventDefault();
+        event.stopPropagation();
+        consumedKeys.current.add(event.code);
+        switch (command) {
+          case "new":
+            dispatch({ type: "add" });
+            break;
+          case "close":
+            dispatch({ type: "close", id: id! });
+            break;
+          case "splitRight":
+          case "splitDown":
+            dispatch({
+              type: "split",
+              id: id!,
+              direction: command === "splitRight" ? "right" : "down",
+            });
+            break;
+          case "zoom":
+            if (layoutPaneCount > 1) dispatch({ type: "zoom", id: id! });
+            break;
+          case "find":
+            findHandlers.current.get(id!)?.();
+            break;
+          default: {
+            const direction = {
+              left: "ArrowLeft",
+              right: "ArrowRight",
+              up: "ArrowUp",
+              down: "ArrowDown",
+            } as const;
+            const next = adjacentPane(panes, id!, direction[command]);
+            if (next) dispatch({ type: "select", id: next });
+          }
+        }
+      }}
     >
       <aside className="flex h-full w-60 shrink-0 flex-col border-r border-[var(--workspace-border)] bg-[var(--workspace-sidebar)]">
         <div className="flex h-14 shrink-0 items-center border-b border-[var(--workspace-border)] px-3">
@@ -567,7 +663,9 @@ export function SessionWorkspace({
             onClick={() => dispatch({ type: "add" })}
             className="ml-auto flex h-8 w-8 items-center justify-center rounded-md p-0 text-[var(--workspace-muted)] transition-colors hover:bg-[var(--workspace-border)] hover:text-[var(--workspace-fg)]"
             aria-label="New terminal session"
-            title="New terminal session"
+            ref={newSessionButton}
+            title={shortcutTitle(shortcuts, "new", "New terminal session")}
+            aria-keyshortcuts={ariaShortcuts(shortcuts, "new")}
           >
             <Plus size={16} strokeWidth={2} aria-hidden="true" />
           </button>
@@ -620,7 +718,18 @@ export function SessionWorkspace({
                   onClick={() => dispatch({ type: "close", id: session.id })}
                   className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--workspace-muted)] opacity-0 transition-opacity hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)] group-hover:opacity-100 focus-visible:opacity-100"
                   aria-label={`Close ${session.name}`}
-                  title={`Close ${session.name}`}
+                  title={
+                    selected
+                      ? shortcutTitle(
+                          shortcuts,
+                          "close",
+                          `Close ${session.name}`,
+                        )
+                      : `Close ${session.name}`
+                  }
+                  aria-keyshortcuts={
+                    selected ? ariaShortcuts(shortcuts, "close") : undefined
+                  }
                 >
                   <X size={14} strokeWidth={2} aria-hidden="true" />
                 </button>
@@ -637,6 +746,11 @@ export function SessionWorkspace({
           )}
         </div>
         <div className="shrink-0 border-t border-[var(--workspace-border)] p-2">
+          <ShortcutSettings
+            shortcuts={shortcuts}
+            saved={shortcutsSaved}
+            update={updateShortcuts}
+          />
           <AppearanceSettings
             appearance={appearance}
             saved={saved}
@@ -645,34 +759,7 @@ export function SessionWorkspace({
         </div>
       </aside>
 
-      <main
-        className="min-h-0 min-w-0 flex-1 bg-[var(--workspace-bg)] p-4"
-        onKeyDownCapture={(event) => {
-          if (
-            event.nativeEvent.isComposing ||
-            event.nativeEvent.getModifierState("AltGraph") ||
-            !event.altKey ||
-            event.shiftKey ||
-            event.ctrlKey === event.metaKey ||
-            !(event.target instanceof Element) ||
-            !event.target.closest(".local-terminal") ||
-            !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
-              event.key,
-            ) ||
-            !workspace.activeId ||
-            paneCount < 2
-          )
-            return;
-          event.preventDefault();
-          event.stopPropagation();
-          const next = adjacentPane(
-            panes,
-            workspace.activeId,
-            event.key as "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown",
-          );
-          if (next) dispatch({ type: "select", id: next });
-        }}
-      >
+      <main className="min-h-0 min-w-0 flex-1 bg-[var(--workspace-bg)] p-4">
         <div ref={viewportRef} className="h-full w-full overflow-auto">
           <div className="relative" style={{ width, height }}>
             {workspace.sessions.map((session) => {
@@ -707,7 +794,7 @@ export function SessionWorkspace({
                         dispatch({ type: "select", id: session.id })
                       }
                       aria-label={`Focus ${session.name}`}
-                      title="Focus pane (⌘⌥ arrows / Ctrl+Alt+arrows in terminal input)"
+                      title="Focus pane"
                     >
                       {session.name}
                     </button>
@@ -718,7 +805,16 @@ export function SessionWorkspace({
                       title={
                         layoutPaneCount >= MAX_PANES
                           ? "This layout already has four panes"
-                          : "Split right"
+                          : shortcutTitle(
+                              shortcuts,
+                              "splitRight",
+                              "Split right",
+                            )
+                      }
+                      aria-keyshortcuts={
+                        active
+                          ? ariaShortcuts(shortcuts, "splitRight")
+                          : undefined
                       }
                       disabled={layoutPaneCount >= MAX_PANES}
                       className="rounded p-1 hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)] disabled:opacity-30"
@@ -738,7 +834,12 @@ export function SessionWorkspace({
                       title={
                         layoutPaneCount >= MAX_PANES
                           ? "This layout already has four panes"
-                          : "Split down"
+                          : shortcutTitle(shortcuts, "splitDown", "Split down")
+                      }
+                      aria-keyshortcuts={
+                        active
+                          ? ariaShortcuts(shortcuts, "splitDown")
+                          : undefined
                       }
                       disabled={layoutPaneCount >= MAX_PANES}
                       className="rounded p-1 hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)] disabled:opacity-30"
@@ -758,10 +859,15 @@ export function SessionWorkspace({
                         aria-label={
                           workspace.zoomed ? "Restore panes" : "Zoom pane"
                         }
-                        title={
+                        title={shortcutTitle(
+                          shortcuts,
+                          "zoom",
                           workspace.zoomed
                             ? "Restore panes"
-                            : "Zoom pane; other sessions stay open"
+                            : "Zoom pane; other sessions stay open",
+                        )}
+                        aria-keyshortcuts={
+                          active ? ariaShortcuts(shortcuts, "zoom") : undefined
                         }
                         className="rounded p-1 hover:bg-[var(--workspace-hover)] hover:text-[var(--workspace-fg)]"
                         onClick={() =>
@@ -779,6 +885,8 @@ export function SessionWorkspace({
                   <div className="min-h-0 flex-1 px-2 pb-2">
                     {appearanceReady && (
                       <SessionTerminal
+                        shortcuts={shortcuts}
+                        registerFind={registerFind}
                         theme={theme}
                         fontSize={appearance.fontSize}
                         session={session}

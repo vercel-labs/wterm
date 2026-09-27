@@ -37,6 +37,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Local PTY flow control** — the local workspace pauses fast output until the browser catches up, preserves bytes across frames, and reports rejected input
 - **Local session reconnection** — brief connection interruptions resume the same shell and terminal state in the existing page, with bounded output replay, input delivery acknowledgments, duplicate suppression, and no automatic input retries
 - **Local appearance settings** — persistent light/dark/system appearance and font size across panes, with live updates that preserve shells
+- **Workspace keyboard shortcuts** — discover and customize session, split, focus, zoom, and Find bindings, with persistent settings and conflict checks
 - **Live host colors** — `setThemeColors()` synchronizes CSS and supported core defaults while preserving application color overrides
 - **Local split panes** — view up to four shells side by side or stacked, with adjustable dividers, directional focus, and reversible pane zoom
 - **Inactive pane rendering** — skip paints for hidden sessions and hidden browser documents while output and terminal replies continue

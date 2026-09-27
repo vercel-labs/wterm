@@ -52,6 +52,8 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 | `app/session-workspace.tsx` | Sidebar, split panes, Find controls, and terminal/WebSocket lifecycle |
 | `app/appearance-settings.tsx` | Appearance dialog, OS changes, and browser persistence |
 | `lib/appearance.ts` | Validated preferences and terminal colors |
+| `app/shortcut-settings.tsx` | Shortcut editor, browser persistence, and cross-tab updates |
+| `lib/shortcuts.ts` | Command defaults, binding validation, matching, and labels |
 | `app/pane-divider.tsx` | Pointer and keyboard pane resizing |
 | `lib/workspace-layout.ts` | Session selection, split geometry, and directional focus |
 | `app/clipboard-request.tsx` | Application clipboard request review and explicit Copy |
@@ -81,6 +83,37 @@ session using its sidebar close button; its neighbor fills the freed space,
 and other shells keep running. Layout changes preserve terminal instances,
 history, Find queries, and connections. Layout is kept only in the current
 page; refreshing still starts a new shell.
+
+## Keyboard shortcuts
+
+Open **Keyboard shortcuts** at the bottom of the sidebar to inspect or customize
+bindings for new/close session, split right/down, zoom/restore, directional pane
+focus, and Find. **Change** records one combination and replaces that command's
+existing bindings. Use Control or Command with a letter, number, navigation key,
+or function key. Bindings use physical key positions. Escape cancels recording;
+press Escape again or **Close** to close the dialog and return to its opener.
+Tab leaves recording and moves through the controls normally.
+
+Defaults are Command+F or Control+Shift+F for Find, and Command+Option+arrows or
+Control+Alt+arrows for pane focus. Other commands start unassigned. **Clear**
+disables a command's shortcuts; **Reset defaults** restores the defaults.
+Conflicting assignments are rejected. Common browser navigation, clipboard,
+and shell interruption combinations are reserved; Control+Alt text keys are
+reserved for AltGr. Some OS/browser combinations never reach the page.
+
+Commands work from terminal input. Find and New terminal session also work from
+workspace buttons. Shortcuts leave Find fields, other editable controls, open
+dialogs, composition, and AltGr alone. An assigned shortcut is consumed even
+when a pane limit prevents its action; holding it does not repeat the action or
+send the shortcut key to a shell. Closing the last session focuses the new
+session button. The close command terminates the current shell, just like its
+sidebar close button.
+
+Settings apply immediately, persist across reloads, and synchronize between tabs
+and both engine routes on the same origin. Invalid or conflicting saved settings
+fall back to defaults. If storage is unavailable, changes remain usable for the
+current page and the dialog reports that they could not be saved. These are
+workspace preferences; they do not restore sessions after a refresh.
 
 ## Appearance
 

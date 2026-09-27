@@ -31,6 +31,31 @@ their existing cancellation rules still apply. Pending output announcements
 are discarded on pause. Synchronized drawing continues to hold a frame until
 the application ends the update or its recovery timeout expires.
 
+### Local workspace shortcuts
+
+The [local shell workspace](https://github.com/vercel-labs/wterm/tree/main/examples/local)
+includes **Keyboard shortcuts** in its sidebar. Customize bindings for sessions,
+splits, directional pane focus, zoom/restore, and Find. **Change** records one
+combination; **Clear** disables a binding and **Reset defaults** restores the
+defaults. Conflicts are reported before settings change. Preferences persist in
+the browser and synchronize between tabs and engine routes.
+
+Find defaults to Command+F or Control+Shift+F. Pane focus defaults to
+Command+Option+arrows or Control+Alt+arrows. Other commands start unassigned.
+Custom combinations require Control or Command and use physical key positions.
+Common clipboard/browser commands and shell interruption keys remain reserved;
+Control+Alt text keys are reserved for AltGr. Browser or OS shortcuts may be
+unavailable to the page.
+
+Shortcuts act from terminal input; Find and New terminal session also work from
+workspace buttons. They do not take over Find fields, dialogs, composition, or
+AltGr. Assigned keys are consumed even at pane limits and do not repeat while
+held. Close current session terminates that shell. Escape cancels recording
+before closing the dialog. Storage failures leave changes active for the current
+page with a visible status. These controls belong to the local workspace; they
+do not change the terminal libraries' keyboard bindings or restore sessions
+after refresh.
+
 ### Scrollback rendering
 
 Scrollback keeps a bounded window of mounted rows. As you scroll, overlapping
