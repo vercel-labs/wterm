@@ -113,6 +113,7 @@ export function attachPtyInput(ws, cwd, sessions) {
   ws.on("error", () => ws.terminate());
   ws.on("close", () => void stop());
   ws.on("message", (data, binary) => {
+    if (stopped || ws.readyState !== WebSocket.OPEN) return;
     try {
       if (binary) throw new Error("Expected JSON control message");
       const message = JSON.parse(data.toString());

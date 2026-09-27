@@ -128,3 +128,22 @@ test("PTY input endpoint rejects cross-origin access", unixOnly, async (t) => {
   assert.match((await once(ws, "error"))[0].message, /403/);
   assert.equal(server.activePtys, 0);
 });
+
+test(
+  "a rejected connection cannot start a PTY with a later queued message",
+  unixOnly,
+  async (t) => {
+    const server = await createHarnessServer();
+    t.after(() => server.close());
+    const { ws, state, send } = await connect(server, "invalid");
+    const closed = once(ws, "close");
+    send({ type: "start", workload: "idle" });
+    assert.equal((await closed)[0], 1008);
+    await delay(50);
+    assert.equal(server.activePtys, 0);
+    assert.equal(
+      state.messages.some((message) => message.type === "ready"),
+      false,
+    );
+  },
+);
