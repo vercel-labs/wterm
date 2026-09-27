@@ -50,7 +50,7 @@ await term.init();
 
 ## Options and Methods
 
-The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `onData`, `onBinary`, `onTitle`, `onBell`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
+The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `onData`, `onBinary`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
 
 See [WTerm Methods](/api-reference#wterm-methods) for all instance methods, including [full-history Find](/api-reference#terminal-search): `search`, `findNext`, `findPrevious`, `getSearchState`, and `clearSearch`. Use the `onSearchChange` WTerm option or instance callback for progress and match counts.
 
@@ -209,3 +209,11 @@ effects continue, and resuming paints the latest state without restarting.
 In vanilla code, call `term.setRenderingPaused(paused)`; framework props are
 reactive. Browser document visibility also pauses painting. See
 [Inactive panes](/configuration#inactive-panes) for focus and capture behavior.
+
+## Shell integration
+
+With Ghostty and a shell emitting OSC 133, `onShellIntegration` receives the
+latest prompt, input, running, or completion state and the last reported exit
+code. Delivery continues while painting is paused; markers in one parser chunk
+coalesce into current state. See [Shell integration](/configuration#shell-integration)
+for the contract, shell setup, and workspace indicators.

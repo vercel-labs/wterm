@@ -84,6 +84,21 @@ and other shells keep running. Layout changes preserve terminal instances,
 history, Find queries, and connections. Layout is kept only in the current
 page; refreshing still starts a new shell.
 
+## Shell command indicators
+
+On `/ghostty`, shells that emit OSC 133 show **Ready**, **Running**, **Done**, or
+**Exit N** in their sidebar entry and pane header. A reported result remains
+visible through prompt redraws until the next command starts. Hidden sessions
+keep updating without taking focus. Indicators disappear while disconnected,
+after terminal reset, and for sessions whose shell does not emit markers.
+The built-in `/` route has no shell-state indicator.
+
+These labels use shell-reported state; they are separate from connection or PTY
+exit status. Multiple markers in one parser chunk coalesce into the latest
+state. The workspace does not install or overwrite shell configuration. Enable
+OSC 133 in your shell integration; see [Shell integration](https://wterm.dev/configuration#shell-integration)
+for the marker contract and a minimal zsh setup.
+
 ## Keyboard shortcuts
 
 Open **Keyboard shortcuts** at the bottom of the sidebar to inspect or customize

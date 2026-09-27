@@ -76,6 +76,7 @@ preserving their aspect ratio. Image canvases are decorative and
 | `title` | `(title: string)` | Emitted when the terminal title changes via an escape sequence. |
 | `bell` | `(count: number)` | Emitted with the pending BEL count as output is written; the host controls any alert. |
 | `clipboardWrite` | `(text: string)` | Application clipboard-write request; use `@clipboard-write` and apply a host policy. |
+| `shellIntegration` | `(state: ShellIntegrationState)` | Latest shell state; use `@shell-integration` with Ghostty and OSC 133 markers. |
 | `resize` | `(cols: number, rows: number)` | Emitted after the terminal is resized. |
 | `ready` | `(wt: WTerm)` | Emitted once after `WTerm.init()` resolves, carrying the underlying `WTerm` instance. |
 | `error` | `(err: unknown)` | Emitted if WASM loading or initialization fails. |
@@ -170,6 +171,16 @@ this option. New searches, `readText()`, and Select All wait for painting to res
 
 
 Ghostty clipboard writes are requests only: review the text and handle browser permissions before copying. No clipboard access occurs automatically. See [Application clipboard requests](../dom/README.md#application-clipboard-requests).
+
+## Shell integration
+
+Use `@shell-integration="onShellIntegration"` for the latest `{ phase, exitCode }`
+reported by a shell emitting OSC 133 through Ghostty. States arrive during
+parsing, including when painting is paused. Prompt redraws retain the last exit
+code until a new command starts; reset clears it. Markers within one parser chunk
+coalesce into a current-state snapshot, not a command log. See
+[Shell integration](https://wterm.dev/configuration#shell-integration) for phases,
+unsupported cores, and shell setup.
 
 ## License
 

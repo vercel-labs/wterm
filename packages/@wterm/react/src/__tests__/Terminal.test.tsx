@@ -21,6 +21,7 @@ vi.mock("@wterm/dom", () => {
     this.onTitle = options?.onTitle ?? null;
     this.onBell = options?.onBell ?? null;
     this.onClipboardWrite = options?.onClipboardWrite ?? null;
+    this.onShellIntegration = options?.onShellIntegration ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
@@ -295,6 +296,25 @@ describe("Terminal component", () => {
     instance.onClipboardWrite("ignored");
     expect(first).toHaveBeenCalledExactlyOnceWith("first");
     expect(next).toHaveBeenCalledExactlyOnceWith("");
+    expect(lastWTermInstance).toBe(instance);
+  });
+
+  it("forwards shell state to the current callback without replacing the terminal", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const first = vi.fn(),
+      next = vi.fn();
+    const { rerender } = render(<Terminal onShellIntegration={first} />);
+    await act(async () => {});
+    const instance = lastWTermInstance;
+    const running = { phase: "running", exitCode: null };
+    const complete = { phase: "complete", exitCode: 7 };
+    instance.onShellIntegration(running);
+    rerender(<Terminal onShellIntegration={next} />);
+    instance.onShellIntegration(complete);
+    rerender(<Terminal />);
+    instance.onShellIntegration(running);
+    expect(first).toHaveBeenCalledExactlyOnceWith(running);
+    expect(next).toHaveBeenCalledExactlyOnceWith(complete);
     expect(lastWTermInstance).toBe(instance);
   });
 

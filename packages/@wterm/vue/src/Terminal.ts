@@ -9,7 +9,11 @@ import {
   watch,
   type PropType,
 } from "vue";
-import { WTerm, type TerminalCore } from "@wterm/dom";
+import {
+  WTerm,
+  type TerminalCore,
+  type ShellIntegrationState,
+} from "@wterm/dom";
 
 /**
  * Vue wrapper around {@link WTerm} from `@wterm/dom`. Creates a `WTerm` in
@@ -119,6 +123,8 @@ const Terminal = defineComponent({
     bell: (_count: number) => true,
     /** Application clipboard request; the host decides whether to accept it. */
     clipboardWrite: (_text: string) => true,
+    /** Latest shell-reported OSC 133 state. */
+    shellIntegration: (_state: ShellIntegrationState) => true,
     /**
      * Forwards `WTerm`'s `onResize` callback with the new column and row
      * counts.
@@ -167,6 +173,8 @@ const Terminal = defineComponent({
         onTitle: (title: string) => emit("title", title),
         onBell: (count: number) => emit("bell", count),
         onClipboardWrite: (text: string) => emit("clipboardWrite", text),
+        onShellIntegration: (state: ShellIntegrationState) =>
+          emit("shellIntegration", state),
         onResize: (c: number, r: number) => emit("resize", c, r),
       });
 

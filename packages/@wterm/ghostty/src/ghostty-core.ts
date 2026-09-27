@@ -3,6 +3,7 @@ import type {
   CursorState,
   TerminalColorOverrides,
   TerminalThemeColors,
+  ShellIntegrationState,
   UnhandledSequence,
   TerminalCore,
   TerminalGraphicsState,
@@ -33,6 +34,13 @@ const GRAPHEME_BUFFER_BYTES = 256;
 const HYPERLINK_BUFFER_BYTES = 1024;
 const DEFAULT_FOREGROUND = "#d4d4d4";
 const DEFAULT_BACKGROUND = "#1e1e1e";
+const SHELL_PHASES: readonly ShellIntegrationState["phase"][] = [
+  "unknown",
+  "prompt",
+  "input",
+  "running",
+  "complete",
+];
 /** Maximum decoded bytes accepted for one direct Kitty image. */
 export const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const DEFAULT_IMAGE_STORAGE_LIMIT = MAX_IMAGE_BYTES;
@@ -680,6 +688,20 @@ export class GhosttyCore implements TerminalCore {
     return new TextDecoder("utf-8", { ignoreBOM: true }).decode(
       new Uint8Array(memory.buffer, get_clipboard_write_ptr(this.termPtr), len),
     );
+  }
+
+  getShellIntegrationState(): ShellIntegrationState | null {
+    if (this._disposed || this.termPtr === 0) return null;
+    const { get_shell_phase, get_shell_exit_code } = this.wasm.exports;
+    if (!get_shell_phase || !get_shell_exit_code) return null;
+    const phase = get_shell_phase(this.termPtr);
+    if (!Number.isInteger(phase) || phase < 0 || phase >= SHELL_PHASES.length)
+      return null;
+    const exitCode = get_shell_exit_code(this.termPtr);
+    return {
+      phase: SHELL_PHASES[phase],
+      exitCode: Number.isInteger(exitCode) ? exitCode : null,
+    };
   }
 
   getResponse(): string | null {

@@ -173,3 +173,11 @@ reactive. Browser document visibility also pauses painting. See
 [Inactive panes](/configuration#inactive-panes) for focus and capture behavior.
 
 Application clipboard writes require an explicit host policy; see [Clipboard requests](/configuration#clipboard-requests).
+
+## Shell integration
+
+With Ghostty and a shell emitting OSC 133, `@shell-integration` receives the
+latest prompt, input, running, or completion state and the last reported exit
+code. Delivery continues while painting is paused; markers in one parser chunk
+coalesce into current state. See [Shell integration](/configuration#shell-integration)
+for the contract, shell setup, and workspace indicators.

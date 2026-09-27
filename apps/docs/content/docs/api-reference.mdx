@@ -263,6 +263,12 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
       <td>Application clipboard-write request from Ghostty. No clipboard access is automatic; see <a href="/configuration#clipboard-requests">Clipboard requests</a>.</td>
     </tr>
     <tr>
+      <td><code>onShellIntegration</code></td>
+      <td><code>(state: ShellIntegrationState) =&gt; void</code></td>
+      <td>—</td>
+      <td>Latest shell-reported prompt, input, running, or completion state. Ghostty with OSC 133; see <a href="/configuration#shell-integration">Shell integration</a>.</td>
+    </tr>
+    <tr>
       <td><code>onResize</code></td>
       <td><code>(cols: number, rows: number) =&gt; void</code></td>
       <td>—</td>
@@ -360,6 +366,11 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
       <td>Application clipboard-write request from Ghostty. No clipboard access is automatic; see <a href="/configuration#clipboard-requests">Clipboard requests</a>.</td>
     </tr>
     <tr>
+      <td><code>shellIntegration</code></td>
+      <td><code>(state: ShellIntegrationState)</code></td>
+      <td>Latest shell state from Ghostty. Use <code>@shell-integration</code>; see <a href="/configuration#shell-integration">Shell integration</a>.</td>
+    </tr>
+    <tr>
       <td><code>resize</code></td>
       <td><code>(cols: number, rows: number)</code></td>
       <td>Emitted after the terminal is resized.</td>
@@ -421,6 +432,11 @@ attributes such as `class`, `style`, `id`, and ARIA attributes to its root
       <td><code>onClipboardWrite</code></td>
       <td><code>(text: string) =&gt; void</code></td>
       <td>Application clipboard-write request from Ghostty. No clipboard access is automatic; see <a href="/configuration#clipboard-requests">Clipboard requests</a>.</td>
+    </tr>
+    <tr>
+      <td><code>onShellIntegration</code></td>
+      <td><code>(state: ShellIntegrationState) =&gt; void</code></td>
+      <td>Latest shell-reported prompt, input, running, or completion state. Ghostty with OSC 133; see <a href="/configuration#shell-integration">Shell integration</a>.</td>
     </tr>
     <tr>
       <td><code>onResize</code></td>
@@ -1100,6 +1116,10 @@ When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string 
     <tr>
       <td><code>getBellCount?(): number</code></td>
       <td>Read and clear pending BEL controls. Optional for custom cores; the built-in and Ghostty cores return <code>0</code> when none are pending.</td>
+    </tr>
+    <tr>
+      <td><code>getShellIntegrationState?(): ShellIntegrationState | null</code></td>
+      <td>Consume the latest shell-reported state change. The caller-owned snapshot has phase and exitCode; null means unchanged or unsupported. See <a href="/configuration#shell-integration">Shell integration</a>.</td>
     </tr>
     <tr>
       <td><code>getClipboardWrite?(): string | null</code></td>

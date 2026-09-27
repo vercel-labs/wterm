@@ -1,8 +1,12 @@
 <script context="module" lang="ts">
-  import type { WTerm as WTermType, WTermOptions } from "@wterm/dom";
+  import type {
+    WTerm as WTermType,
+    WTermOptions,
+    ShellIntegrationState,
+  } from "@wterm/dom";
 
   export interface TerminalProps
-    extends Omit<WTermOptions, "onData" | "onBinary" | "onTitle" | "onBell" | "onClipboardWrite" | "onResize"> {
+    extends Omit<WTermOptions, "onData" | "onBinary" | "onTitle" | "onBell" | "onClipboardWrite" | "onShellIntegration" | "onResize"> {
     theme?: string;
     className?: string;
     onData?: (data: string) => void;
@@ -10,6 +14,7 @@
     onTitle?: (title: string) => void;
     onBell?: (count: number) => void;
     onClipboardWrite?: (text: string) => void;
+    onShellIntegration?: (state: ShellIntegrationState) => void;
     onResize?: (cols: number, rows: number) => void;
     onReady?: (wt: WTermType) => void;
     onError?: (error: unknown) => void;
@@ -18,6 +23,7 @@
     ontitle?: (title: string) => void;
     onbell?: (count: number) => void;
     onclipboardwrite?: (text: string) => void;
+    onshellintegration?: (state: ShellIntegrationState) => void;
     onresize?: (cols: number, rows: number) => void;
     onready?: (wt: WTermType) => void;
     onerror?: (error: unknown) => void;
@@ -58,6 +64,9 @@
   export let onTitle: ((title: string) => void) | undefined = undefined;
   export let onBell: ((count: number) => void) | undefined = undefined;
   export let onClipboardWrite: ((text: string) => void) | undefined = undefined;
+  export let onShellIntegration:
+    | ((state: ShellIntegrationState) => void)
+    | undefined = undefined;
   export let onResize: ((cols: number, rows: number) => void) | undefined =
     undefined;
   export let onReady: ((wt: WTerm) => void) | undefined = undefined;
@@ -67,6 +76,9 @@
   export let ontitle: ((title: string) => void) | undefined = undefined;
   export let onbell: ((count: number) => void) | undefined = undefined;
   export let onclipboardwrite: ((text: string) => void) | undefined = undefined;
+  export let onshellintegration:
+    | ((state: ShellIntegrationState) => void)
+    | undefined = undefined;
   export let onresize: ((cols: number, rows: number) => void) | undefined =
     undefined;
   export let onready: ((wt: WTerm) => void) | undefined = undefined;
@@ -108,6 +120,11 @@
   function handleClipboardWrite(text: string): void {
     onClipboardWrite?.(text);
     onclipboardwrite?.(text);
+  }
+
+  function handleShellIntegration(state: ShellIntegrationState): void {
+    onShellIntegration?.(state);
+    onshellintegration?.(state);
   }
 
   function handleBell(count: number): void {
@@ -159,6 +176,7 @@
       onTitle: handleTitle,
       onBell: handleBell,
       onClipboardWrite: handleClipboardWrite,
+      onShellIntegration: handleShellIntegration,
       onResize: handleResize,
     });
 

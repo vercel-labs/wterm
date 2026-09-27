@@ -5,7 +5,7 @@ navTitle: "Configuration"
 
 ## Options
 
-The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, `onClipboardWrite`, and `onResize` (exposed as `@data`, `@title`, `@bell`, `@clipboard-write`, and `@resize` events in Vue).
+The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, and `onResize` (exposed as `@data`, `@title`, `@bell`, `@clipboard-write`, `@shell-integration`, and `@resize` events in Vue).
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
 
@@ -79,6 +79,67 @@ output is written, even if synchronized output is holding a paint. Several
 bells in one write chunk arrive as one count. WTerm leaves sound and visual
 alerts to the host application.
 
+### Shell integration
+
+Ghostty forwards shell-reported OSC 133 state through
+`onShellIntegration({ phase, exitCode })`. React and Svelte use that callback
+prop; Vue uses `@shell-integration`. Svelte also accepts `onshellintegration`.
+The snapshot arrives as output is parsed, including in hidden panes and while
+synchronized output holds a paint. A missing callback discards changes; adding
+one later does not replay them.
+
+<table>
+  <thead><tr><th>Marker</th><th>Phase</th><th>Exit code</th></tr></thead>
+  <tbody>
+    <tr><td>OSC 133 A, N, or P</td><td><code>prompt</code></td><td>Retains the previous result</td></tr>
+    <tr><td>OSC 133 B or I</td><td><code>input</code></td><td>Retains the previous result</td></tr>
+    <tr><td>OSC 133 C</td><td><code>running</code></td><td>Cleared to <code>null</code></td></tr>
+    <tr><td>OSC 133 D</td><td><code>complete</code></td><td>Signed 32-bit code, or <code>null</code> if missing or invalid</td></tr>
+    <tr><td>Terminal reset (RIS)</td><td><code>unknown</code></td><td>Cleared to <code>null</code></td></tr>
+  </tbody>
+</table>
+
+Multiple markers within one parser chunk coalesce into the latest state. For
+example, D with exit code 7 followed by A and B produces `input` with code 7.
+This is a bounded current-state snapshot, not a command history or proof of
+process completion. No command text is retained. Alternate-screen markers do
+not replace the primary shell's state. The built-in core, custom cores without
+`getShellIntegrationState()`, and older Ghostty WASM assets report no state.
+Update a manually served WASM asset when upgrading.
+
+The local `/ghostty` workspace displays **Ready**, **Running**, **Done**, or
+**Exit N** for each participating session, including background sessions. It
+hides the indicator when disconnected or reset. These labels are separate from
+connection and PTY exit status.
+
+The shell must emit OSC 133. WTerm does not modify shell startup files. Enable
+markers in your existing shell integration, or try these minimal zsh hooks in a
+fresh interactive session that does not already emit them:
+
+```zsh
+autoload -Uz add-zsh-hook
+typeset -gi _wterm_command_running=0
+_wterm_command_start() {
+  _wterm_command_running=1
+  printf '\033]133;C\007'
+}
+_wterm_command_done() {
+  local result=$?
+  if (( _wterm_command_running )); then
+    printf '\033]133;D;%s\007' "$result"
+  fi
+  _wterm_command_running=0
+  printf '\033]133;A\007'
+}
+add-zsh-hook preexec _wterm_command_start
+add-zsh-hook precmd _wterm_command_done
+```
+
+These minimal hooks mark prompt start, command start, and completion. They do
+not rewrite the prompt or add an input-start marker. Existing themes or hooks
+can affect their ordering and the exit status they observe. Do not combine them
+with another OSC 133 integration.
+
 ### Clipboard requests
 
 With Ghostty, `onClipboardWrite(text)` receives application OSC 52 clipboard
@@ -145,7 +206,7 @@ See [Vue-Only Props](/api-reference#vue-only-props) and [Vue Events](/api-refere
 
 The Svelte `Terminal` component adds the `theme` prop and forwards standard
 `<div>` attributes such as `class`, `style`, `id`, and ARIA attributes. Svelte 5
-applications can use the `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onResize`, `onReady`, and
+applications can use the `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onResize`, `onReady`, and
 `onError` callback props.
 
 See [Svelte-only Props](/api-reference#svelte-only-props) for details.

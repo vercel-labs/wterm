@@ -1054,6 +1054,62 @@ describe("WTerm", () => {
     });
   });
 
+  describe("shell integration", () => {
+    it("consumes state without a listener and delivers changes while painting is paused or synchronized", async () => {
+      const getShellIntegrationState = vi.fn().mockReturnValue(null);
+      Object.assign(mockBridge, { getShellIntegrationState });
+      const term = new WTerm(element, { renderingPaused: true });
+      await term.init();
+      getShellIntegrationState.mockReturnValueOnce({
+        phase: "prompt",
+        exitCode: null,
+      });
+      term.write("ignored");
+      const callback = vi.fn();
+      term.onShellIntegration = callback;
+      term.write("ordinary output");
+      expect(callback).not.toHaveBeenCalled();
+      const state = { phase: "input", exitCode: 7 };
+      getShellIntegrationState.mockReturnValueOnce(state);
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      term.write("finished command");
+      expect(callback).toHaveBeenCalledExactlyOnceWith(state);
+      term.destroy();
+      getShellIntegrationState.mockReturnValueOnce({
+        phase: "running",
+        exitCode: null,
+      });
+      term.write("late");
+      expect(callback).toHaveBeenCalledTimes(1);
+    });
+
+    it("continues parsing and delivering replies after a shell-state callback throws", async () => {
+      const failure = new Error("host callback failed");
+      const getShellIntegrationState = vi.fn().mockReturnValue(null);
+      Object.assign(mockBridge, { getShellIntegrationState });
+      const onShellIntegration = vi.fn(() => {
+        throw failure;
+      });
+      const onData = vi.fn();
+      const term = new WTerm(element, { onShellIntegration, onData });
+      await term.init();
+      getShellIntegrationState
+        .mockReturnValueOnce({ phase: "running", exitCode: null })
+        .mockReturnValueOnce({ phase: "complete", exitCode: 0 });
+      vi.mocked(mockBridge.writeString).mockImplementation(
+        (_text, afterChunk) => {
+          afterChunk?.();
+          vi.mocked(mockBridge.getResponse).mockReturnValueOnce("reply");
+          afterChunk?.();
+        },
+      );
+      expect(() => term.write("output")).toThrow(failure);
+      expect(onShellIntegration).toHaveBeenCalledTimes(2);
+      expect(onData).toHaveBeenCalledExactlyOnceWith("reply");
+      term.destroy();
+    });
+  });
+
   describe("response forwarding", () => {
     it("forwards every queued bridge response to onData", async () => {
       const onData = vi.fn();

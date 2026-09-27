@@ -7,10 +7,50 @@ import {
   minimumSize,
   visibleSessions,
   workspaceReducer as reduce,
+  shellLabel,
 } from "../lib/workspace-layout";
 
 const split = () =>
   reduce(INITIAL_STATE, { type: "split", id: "session-1", direction: "right" });
+
+test("shell state stays with its session and is hidden while its connection is unavailable", () => {
+  let state = reduce(split(), {
+    type: "status",
+    id: "session-1",
+    status: "connected",
+  });
+  const shell = { phase: "running" as const, exitCode: null };
+  state = reduce(state, { type: "shell", id: "session-1", shell });
+  assert.equal(shellLabel(state.sessions[0]), "Running");
+  assert.equal(shellLabel(state.sessions[1]), null);
+  assert.equal(state.activeId, "session-2");
+  assert.equal(reduce(state, { type: "shell", id: "session-1", shell }), state);
+  assert.equal(reduce(state, { type: "shell", id: "closed", shell }), state);
+  state = reduce(state, {
+    type: "shell",
+    id: "session-1",
+    shell: { phase: "input", exitCode: 7 },
+  });
+  assert.equal(shellLabel(state.sessions[0]), "Exit 7");
+  state = reduce(state, {
+    type: "status",
+    id: "session-1",
+    status: "reconnecting",
+  });
+  assert.equal(shellLabel(state.sessions[0]), null);
+  state = reduce(state, {
+    type: "status",
+    id: "session-1",
+    status: "connected",
+  });
+  assert.equal(shellLabel(state.sessions[0]), "Exit 7");
+  state = reduce(state, {
+    type: "shell",
+    id: "session-1",
+    shell: { phase: "unknown", exitCode: null },
+  });
+  assert.equal(shellLabel(state.sessions[0]), null);
+});
 
 test("splitting and selecting never duplicate a session or replace its metadata", () => {
   let state = reduce(INITIAL_STATE, {

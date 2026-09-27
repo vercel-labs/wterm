@@ -50,7 +50,7 @@ function onData(data: string) {
 `onBinary` receives raw X10 mouse bytes. Forward its `Uint8Array` unchanged
 when the terminal input transport accepts binary data.
 
-The other callback props are `onTitle`, `onBell`, `onClipboardWrite`, `onResize`, `onReady`, and `onError`.
+The other callback props are `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onResize`, `onReady`, and `onError`.
 `onReady` receives the underlying `WTerm` instance.
 
 ## Props
@@ -149,3 +149,11 @@ reactive. Browser document visibility also pauses painting. See
 [Inactive panes](/configuration#inactive-panes) for focus and capture behavior.
 
 Application clipboard writes require an explicit host policy; see [Clipboard requests](/configuration#clipboard-requests).
+
+## Shell integration
+
+With Ghostty and a shell emitting OSC 133, `onShellIntegration` receives the
+latest prompt, input, running, or completion state and the last reported exit
+code. Delivery continues while painting is paused; markers in one parser chunk
+coalesce into current state. See [Shell integration](/configuration#shell-integration)
+for the contract, shell setup, and workspace indicators.

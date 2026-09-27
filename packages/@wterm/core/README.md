@@ -230,6 +230,17 @@ attached browser terminal so CSS and live/retained rendering update together.
 
 `TerminalCore.getClipboardWrite?()` consumes the latest application request. `null` means none and `""` requests a clear. Ghostty implements this optional effect; older/custom and built-in cores may omit it. Hosts own acceptance and browser permissions; there is no clipboard-read API or automatic clipboard access.
 
+## Shell integration state
+
+`ShellIntegrationState` contains `phase` (`unknown`, `prompt`, `input`, `running`,
+or `complete`) and `exitCode` (`number | null`). The optional
+`TerminalCore.getShellIntegrationState()` consumes the latest state change;
+`null` means unchanged or unsupported. Ghostty implements this hook for OSC 133.
+The last valid or absent completion code is retained across prompt redraws until
+command start or terminal reset. This is bounded current state, not a command
+history. Returned snapshots belong to the caller. Cores that omit the hook
+remain compatible; WTerm forwards new snapshots through `onShellIntegration`.
+
 ## License
 
 Apache-2.0

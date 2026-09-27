@@ -3,6 +3,7 @@ import {
   type TerminalCore,
   type TerminalPosition,
   type TerminalThemeColors,
+  type ShellIntegrationState,
 } from "@wterm/core";
 import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
@@ -50,6 +51,8 @@ export interface WTermOptions {
   onBell?: (count: number) => void;
   /** Application request only: the host must apply its clipboard policy. No browser clipboard access is automatic. */
   onClipboardWrite?: (text: string) => void;
+  /** Latest shell-reported state per parser chunk. Requires a supporting core and OSC 133 markers. */
+  onShellIntegration?: (state: ShellIntegrationState) => void;
   onResize?: (cols: number, rows: number) => void;
   onSearchChange?: (state: SearchState) => void;
 }
@@ -103,6 +106,7 @@ export class WTerm {
   onBinary: ((data: Uint8Array) => void) | null;
   onTitle: ((title: string) => void) | null;
   onBell: ((count: number) => void) | null;
+  onShellIntegration: ((state: ShellIntegrationState) => void) | null;
   onClipboardWrite: ((text: string) => void) | null;
   onResize: ((cols: number, rows: number) => void) | null;
   onSearchChange: ((state: SearchState) => void) | null;
@@ -125,6 +129,7 @@ export class WTerm {
     this.onBinary = options.onBinary || null;
     this.onTitle = options.onTitle || null;
     this.onBell = options.onBell || null;
+    this.onShellIntegration = options.onShellIntegration || null;
     this.onClipboardWrite = options.onClipboardWrite || null;
     this.onResize = options.onResize || null;
     this.onSearchChange = options.onSearchChange || null;
@@ -515,6 +520,13 @@ export class WTerm {
       try {
         const text = this.bridge?.getClipboardWrite?.() ?? null;
         if (text !== null && !this._destroyed) this.onClipboardWrite?.(text);
+      } catch (error) {
+        recordDeliveryError(error);
+      }
+      try {
+        const state = this.bridge?.getShellIntegrationState?.() ?? null;
+        if (state !== null && !this._destroyed)
+          this.onShellIntegration?.(state);
       } catch (error) {
         recordDeliveryError(error);
       }

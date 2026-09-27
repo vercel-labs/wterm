@@ -21,7 +21,12 @@ import {
   X,
 } from "lucide-react";
 import { Terminal as WTermTerminal, useTerminal } from "@wterm/react";
-import type { SearchState, TerminalCore, WTerm } from "@wterm/dom";
+import type {
+  SearchState,
+  TerminalCore,
+  WTerm,
+  ShellIntegrationState,
+} from "@wterm/dom";
 import { OutputReader } from "./output-reader";
 import {
   ClipboardRequest,
@@ -38,6 +43,7 @@ import {
   minimumSize,
   workspaceReducer,
   visibleSessions,
+  shellLabel,
   type Session,
   type SessionStatus,
 } from "../lib/workspace-layout";
@@ -85,6 +91,7 @@ interface SessionTerminalProps {
   coreLoader?: () => Promise<TerminalCore>;
   onStatus: (id: string, status: SessionStatus) => void;
   onCwd: (id: string, cwd: string) => void;
+  onShell: (id: string, state: ShellIntegrationState) => void;
 }
 
 function SessionTerminal({
@@ -102,6 +109,7 @@ function SessionTerminal({
   coreLoader,
   onStatus,
   onCwd,
+  onShell,
 }: SessionTerminalProps) {
   const [ready, setReady] = useState(false);
   const themeRef = useRef(theme);
@@ -462,6 +470,7 @@ function SessionTerminal({
           core={core ?? undefined}
           onReady={handleReady}
           onData={handleData}
+          onShellIntegration={(state) => onShell(session.id, state)}
           onClipboardWrite={handleClipboardWrite}
           onResize={handleResize}
           aria-label={session.name}
@@ -571,6 +580,13 @@ export function SessionWorkspace({
   const handleCwd = useCallback((id: string, cwd: string) => {
     dispatch({ type: "cwd", id, cwd });
   }, []);
+
+  const handleShell = useCallback(
+    (id: string, shell: ShellIntegrationState) => {
+      dispatch({ type: "shell", id, shell });
+    },
+    [],
+  );
 
   return (
     <div
@@ -713,6 +729,14 @@ export function SessionWorkspace({
                     {cwdLabel(session.cwd)}
                   </span>
                 </button>
+                {shellLabel(session) && (
+                  <span
+                    className="mr-2 shrink-0 text-[10px] text-[var(--workspace-muted)]"
+                    title={`${session.name}: ${shellLabel(session)}`}
+                  >
+                    {shellLabel(session)}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => dispatch({ type: "close", id: session.id })}
@@ -798,6 +822,14 @@ export function SessionWorkspace({
                     >
                       {session.name}
                     </button>
+                    {shellLabel(session) && (
+                      <span
+                        className="ml-2 shrink-0 rounded bg-[var(--workspace-hover)] px-2 py-0.5"
+                        title="Reported by shell integration"
+                      >
+                        {shellLabel(session)}
+                      </span>
+                    )}
                     <span className="ml-auto" />
                     <button
                       type="button"
@@ -899,6 +931,7 @@ export function SessionWorkspace({
                         coreLoader={coreLoader}
                         onStatus={handleStatus}
                         onCwd={handleCwd}
+                        onShell={handleShell}
                       />
                     )}
                   </div>

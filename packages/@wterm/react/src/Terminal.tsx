@@ -6,7 +6,11 @@ import {
   forwardRef,
   type HTMLAttributes,
 } from "react";
-import { WTerm, type TerminalCore } from "@wterm/dom";
+import {
+  WTerm,
+  type TerminalCore,
+  type ShellIntegrationState,
+} from "@wterm/dom";
 
 // onResize and onError are omitted from HTMLAttributes because we redefine
 // them with different signatures (terminal dimensions / WASM init errors).
@@ -41,6 +45,7 @@ export interface TerminalProps extends Omit<
   onTitle?: (title: string) => void;
   onBell?: (count: number) => void;
   onClipboardWrite?: (text: string) => void;
+  onShellIntegration?: (state: ShellIntegrationState) => void;
   onResize?: (cols: number, rows: number) => void;
   onReady?: (wt: WTerm) => void;
   onError?: (error: unknown) => void;
@@ -72,6 +77,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     onTitle,
     onBell,
     onClipboardWrite,
+    onShellIntegration,
     onResize,
     onReady,
     onError,
@@ -88,6 +94,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     onTitle,
     onBell,
     onClipboardWrite,
+    onShellIntegration,
     onResize,
     onReady,
     onError,
@@ -103,6 +110,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     onTitle,
     onBell,
     onClipboardWrite,
+    onShellIntegration,
     onResize,
     onReady,
     onError,
@@ -153,6 +161,8 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         onBell: (count: number) => callbacksRef.current.onBell?.(count),
         onClipboardWrite: (text: string) =>
           callbacksRef.current.onClipboardWrite?.(text),
+        onShellIntegration: (state: ShellIntegrationState) =>
+          callbacksRef.current.onShellIntegration?.(state),
         onResize: (c: number, r: number) =>
           callbacksRef.current.onResize?.(c, r),
       });

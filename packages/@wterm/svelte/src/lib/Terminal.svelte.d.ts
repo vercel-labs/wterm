@@ -1,9 +1,15 @@
 import type { SvelteComponentTyped } from "svelte";
-import type { WTerm, WTermOptions } from "@wterm/dom";
+import type { WTerm, WTermOptions, ShellIntegrationState } from "@wterm/dom";
 
 export interface TerminalProps extends Omit<
   WTermOptions,
-  "onData" | "onBinary" | "onTitle" | "onBell" | "onClipboardWrite" | "onResize"
+  | "onData"
+  | "onBinary"
+  | "onTitle"
+  | "onBell"
+  | "onClipboardWrite"
+  | "onShellIntegration"
+  | "onResize"
 > {
   theme?: string;
   className?: string;
@@ -12,6 +18,7 @@ export interface TerminalProps extends Omit<
   onTitle?: (title: string) => void;
   onBell?: (count: number) => void;
   onClipboardWrite?: (text: string) => void;
+  onShellIntegration?: (state: ShellIntegrationState) => void;
   onResize?: (cols: number, rows: number) => void;
   onReady?: (wt: WTerm) => void;
   onError?: (error: unknown) => void;
@@ -20,6 +27,7 @@ export interface TerminalProps extends Omit<
   ontitle?: (title: string) => void;
   onbell?: (count: number) => void;
   onclipboardwrite?: (text: string) => void;
+  onshellintegration?: (state: ShellIntegrationState) => void;
   onresize?: (cols: number, rows: number) => void;
   onready?: (wt: WTerm) => void;
   onerror?: (error: unknown) => void;

@@ -328,6 +328,23 @@ verified behavior and remaining compatibility gaps.
 | Dependencies | None | None (WASM built from source) |
 | Setup | Zero-config | Requires `@wterm/ghostty` install |
 
+## Shell command state
+
+`getShellIntegrationState()` consumes the latest OSC 133 state change, forwarded
+by WTerm as `onShellIntegration({ phase, exitCode })`. A/N/P mark `prompt`, B/I
+mark `input`, C marks `running` and clears the previous exit code, and D marks
+`complete` with a signed 32-bit exit code or `null` when missing/invalid. L only
+controls line layout. Unknown commands leave the state unchanged. Markers on
+the alternate screen do not replace the primary shell state.
+
+Prompt redraws retain the previous completion code; RIS reports `unknown` and
+clears it. Init/dispose discard pending state. Multiple unread changes coalesce
+to one caller-owned snapshot, using constant storage and retaining no command
+text. This is shell-reported state, not proof that a process exited or a complete
+command log. Older WASM assets return `null`. The shell must emit OSC 133;
+loading the core does not install shell hooks. See
+[Shell integration](https://wterm.dev/configuration#shell-integration).
+
 ## License
 
 Apache-2.0

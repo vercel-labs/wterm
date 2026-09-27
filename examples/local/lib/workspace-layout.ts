@@ -1,3 +1,5 @@
+import type { ShellIntegrationState } from "@wterm/core";
+
 export type SessionStatus =
   "loading" | "connecting" | "reconnecting" | "connected" | "closed";
 export type SplitDirection = "right" | "down";
@@ -17,6 +19,7 @@ export interface Session {
   status: SessionStatus;
   cwd: string | null;
   focusRequest: number;
+  shell: ShellIntegrationState | null;
 }
 export interface WorkspaceState {
   sessions: Session[];
@@ -31,7 +34,8 @@ export type WorkspaceAction =
   | { type: "select" | "focus" | "close" | "zoom"; id: string }
   | { type: "resize"; id: string; ratio: number }
   | { type: "status"; id: string; status: SessionStatus }
-  | { type: "cwd"; id: string; cwd: string };
+  | { type: "cwd"; id: string; cwd: string }
+  | { type: "shell"; id: string; shell: ShellIntegrationState };
 
 export const MAX_PANES = 4;
 export const DIVIDER_SIZE = 8;
@@ -44,6 +48,7 @@ const session = (number: number): Session => ({
   status: "connecting",
   cwd: null,
   focusRequest: 1,
+  shell: null,
 });
 export const INITIAL_STATE: WorkspaceState = {
   sessions: [session(1)],
@@ -207,7 +212,34 @@ export function workspaceReducer(
           item.id === action.id ? { ...item, cwd: action.cwd } : item,
         ),
       };
+    case "shell": {
+      const current = state.sessions.find((item) => item.id === action.id);
+      if (
+        !current ||
+        (current.shell?.phase === action.shell.phase &&
+          current.shell?.exitCode === action.shell.exitCode)
+      )
+        return state;
+      return {
+        ...state,
+        sessions: state.sessions.map((item) =>
+          item.id === action.id
+            ? { ...item, shell: { ...action.shell } }
+            : item,
+        ),
+      };
+    }
   }
+}
+
+export function shellLabel(session: Session): string | null {
+  const shell = session.shell;
+  if (session.status !== "connected" || !shell || shell.phase === "unknown")
+    return null;
+  if (shell.phase === "running") return "Running";
+  if (shell.exitCode !== null)
+    return shell.exitCode === 0 ? "Done" : `Exit ${shell.exitCode}`;
+  return shell.phase === "complete" ? "Done" : "Ready";
 }
 
 export function minimumSize(layout: Layout | null): {

@@ -20,6 +20,7 @@ vi.mock("@wterm/dom", () => {
     this.onTitle = options?.onTitle ?? null;
     this.onBell = options?.onBell ?? null;
     this.onClipboardWrite = options?.onClipboardWrite ?? null;
+    this.onShellIntegration = options?.onShellIntegration ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
@@ -312,6 +313,17 @@ describe("Terminal component", () => {
     lastWTermInstance.onClipboardWrite("");
     expect(onClipboardWrite.mock.calls).toEqual([["copied"], [""]]);
     expect(onclipboardwrite.mock.calls).toEqual([["copied"], [""]]);
+  });
+
+  it("forwards shell state through both callback styles", async () => {
+    const onShellIntegration = vi.fn(),
+      onshellintegration = vi.fn();
+    render(Terminal, { props: { onShellIntegration, onshellintegration } });
+    await Promise.resolve();
+    const state = { phase: "input", exitCode: 7 };
+    lastWTermInstance.onShellIntegration(state);
+    expect(onShellIntegration).toHaveBeenCalledExactlyOnceWith(state);
+    expect(onshellintegration).toHaveBeenCalledExactlyOnceWith(state);
   });
 
   it("forwards title, bell, and resize callbacks", async () => {

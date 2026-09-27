@@ -86,6 +86,33 @@ const RESPONSE_MAX_BYTES = 64;
 const TITLE_BUFFER_BYTES = 256;
 const CLIPBOARD_MAX_BYTES = 64 * 1024;
 
+// Constant-size current state. Prompt redraws retain the last reported result;
+// starting a command clears it. This deliberately does not retain command text.
+const ShellState = struct {
+    phase: enum(u8) { unknown, prompt, input, running, complete } = .unknown,
+    exit_code: ?i32 = null,
+    changed: bool = false,
+
+    fn marker(self: *ShellState, value: StreamAction.Value(.semantic_prompt)) void {
+        const phase: @TypeOf(self.phase) = switch (value.action) {
+            .fresh_line_new_prompt, .new_command, .prompt_start => .prompt,
+            .end_prompt_start_input, .end_prompt_start_input_terminate_eol => .input,
+            .end_input_start_output => .running,
+            .end_command => .complete,
+            .fresh_line => return,
+        };
+        const exit_code = switch (phase) {
+            .running => null,
+            .complete => value.readOption(.exit_code),
+            else => self.exit_code,
+        };
+        if (self.phase == phase and self.exit_code == exit_code) return;
+        self.phase = phase;
+        self.exit_code = exit_code;
+        self.changed = true;
+    }
+};
+
 // Retain only the latest valid write. Reading the clipboard is never supported.
 const ClipboardState = struct {
     bytes: [CLIPBOARD_MAX_BYTES]u8 = undefined,
@@ -174,6 +201,7 @@ const ResponseHandler = struct {
     queue: *ResponseQueue,
     title: *TitleState,
     clipboard: *ClipboardState,
+    shell: *ShellState,
     bell_count: *u32,
     synchronized_output_generation: *u32,
     rejected_images: *u32,
@@ -188,6 +216,7 @@ const ResponseHandler = struct {
         queue: *ResponseQueue,
         title: *TitleState,
         clipboard: *ClipboardState,
+        shell: *ShellState,
         bell_count: *u32,
         generation: *u32,
         rejected_images: *u32,
@@ -199,6 +228,7 @@ const ResponseHandler = struct {
             .queue = queue,
             .title = title,
             .clipboard = clipboard,
+            .shell = shell,
             .bell_count = bell_count,
             .synchronized_output_generation = generation,
             .rejected_images = rejected_images,
@@ -250,7 +280,10 @@ const ResponseHandler = struct {
         value: StreamAction.Value(action),
     ) !void {
         // Full reset destroys the alternate screen. Release its pins first.
-        if (comptime action == .full_reset) self.positions.clear();
+        if (comptime action == .full_reset) {
+            self.positions.clear();
+            self.shell.* = .{ .changed = true };
+        }
         const screen = self.inner.terminal.screens.active;
         defer if (screen != self.inner.terminal.screens.active) self.positions.clear();
         switch (action) {
@@ -336,6 +369,11 @@ const ResponseHandler = struct {
             },
             .window_title => self.title.set(value.title),
             .clipboard_contents => self.clipboard.set(value.kind, value.data),
+            .semantic_prompt => {
+                try self.inner.vt(action, value);
+                if (self.inner.terminal.screens.active_key == .primary)
+                    self.shell.marker(value);
+            },
             .bell => self.bell_count.* +|= 1,
             .color_operation => {
                 try self.inner.vt(action, value);
@@ -429,6 +467,7 @@ const State = struct {
     responses: ResponseQueue,
     title: TitleState,
     clipboard: ClipboardState,
+    shell: ShellState,
     bell_count: u32,
     synchronized_output_generation: u32,
     graphics_generation: u32,
@@ -672,6 +711,7 @@ export fn init(
     state.responses = .{};
     state.title = .{};
     state.clipboard = .{};
+    state.shell = .{};
     state.bell_count = 0;
     state.synchronized_output_generation = 0;
     state.graphics_generation = 0;
@@ -684,6 +724,7 @@ export fn init(
         &state.responses,
         &state.title,
         &state.clipboard,
+        &state.shell,
         &state.bell_count,
         &state.synchronized_output_generation,
         &state.rejected_images,
@@ -748,6 +789,21 @@ export fn get_clipboard_write_len(ptr: usize) i32 {
 
 export fn get_clipboard_write_ptr(ptr: usize) [*]const u8 {
     return &stateFromPtr(ptr).clipboard.bytes;
+}
+
+// -1 means unchanged; phase 0 explicitly resets the host's shell indicator.
+export fn get_shell_phase(ptr: usize) i32 {
+    const shell = &stateFromPtr(ptr).shell;
+    if (!shell.changed) return -1;
+    shell.changed = false;
+    return @intFromEnum(shell.phase);
+}
+
+export fn get_shell_exit_code(ptr: usize) f64 {
+    return if (stateFromPtr(ptr).shell.exit_code) |code|
+        @floatFromInt(code)
+    else
+        std.math.nan(f64);
 }
 
 // -- Render state -----------------------------------------------

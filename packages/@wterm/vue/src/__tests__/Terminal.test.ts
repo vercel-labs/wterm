@@ -19,6 +19,7 @@ vi.mock("@wterm/dom", () => {
     this.onTitle = options?.onTitle ?? null;
     this.onBell = options?.onBell ?? null;
     this.onClipboardWrite = options?.onClipboardWrite ?? null;
+    this.onShellIntegration = options?.onShellIntegration ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
@@ -300,6 +301,16 @@ describe("Terminal component", () => {
     lastWTermInstance.onClipboardWrite("copied");
     lastWTermInstance.onClipboardWrite("");
     expect(wrapper.emitted("clipboardWrite")).toEqual([["copied"], [""]]);
+  });
+
+  it("emits shell state including resets", async () => {
+    const wrapper = await mountTerminal();
+    await flushPromises();
+    const running = { phase: "running", exitCode: null };
+    const reset = { phase: "unknown", exitCode: null };
+    lastWTermInstance.onShellIntegration(running);
+    lastWTermInstance.onShellIntegration(reset);
+    expect(wrapper.emitted("shellIntegration")).toEqual([[running], [reset]]);
   });
 
   it("emits bell counts when WTerm onBell fires", async () => {

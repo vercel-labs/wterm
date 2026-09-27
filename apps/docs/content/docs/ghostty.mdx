@@ -442,3 +442,11 @@ the source changes. Consumers do not need Zig or Docker.
     </tr>
   </tbody>
 </table>
+
+## Shell integration
+
+With Ghostty and a shell emitting OSC 133, `onShellIntegration` receives the
+latest prompt, input, running, or completion state and the last reported exit
+code. Delivery continues while painting is paused; markers in one parser chunk
+coalesce into current state. See [Shell integration](/configuration#shell-integration)
+for the contract, shell setup, and workspace indicators.

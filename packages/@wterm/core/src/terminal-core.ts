@@ -38,6 +38,13 @@ export interface TerminalColorOverrides {
   cursor?: number;
 }
 
+/** Latest shell-reported OSC 133 state, not a log of command executions. */
+export interface ShellIntegrationState {
+  phase: "unknown" | "prompt" | "input" | "running" | "complete";
+  /** Last OSC 133 D status, cleared by the next C marker or terminal reset. */
+  exitCode: number | null;
+}
+
 /** Soft-wrap relationships for one physical row of the active screen. */
 export interface TerminalRowMetadata {
   /** The following row continues this row without an explicit newline. */
@@ -204,6 +211,8 @@ export interface TerminalCore {
   getBellCount?(): number;
   /** Consume the latest application clipboard-write request. Empty text means clear; null means none. Hosts choose whether to accept it. */
   getClipboardWrite?(): string | null;
+  /** Consume the latest shell-state change. Null means no change or unsupported. */
+  getShellIntegrationState?(): ShellIntegrationState | null;
   getResponse(): string | null;
   getResourceState?(): TerminalResourceState;
 

@@ -156,6 +156,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
 | `onBell` | `(count: number) => void` | — | Called with the number of BEL controls since the last delivery |
 | `onClipboardWrite` | `(text: string) => void` | — | Application clipboard-write request; the host chooses whether to accept it |
+| `onShellIntegration` | `(state: ShellIntegrationState) => void` | — | Latest shell-reported command state; requires OSC 133 and a supporting core |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called with the grid dimensions applied by the core after resize |
 | `onSearchChange` | `(state: SearchState) => void` | — | Receives search progress, count, and active match changes |
 
@@ -510,6 +511,19 @@ selectors, invalid text, and oversized requests are ignored. Several writes
 within one parsed chunk may coalesce to the latest valid request. The built-in
 core, custom cores without `getClipboardWrite()`, and older Ghostty WASM assets
 produce no requests.
+
+## Shell integration
+
+With Ghostty and a shell that emits OSC 133 markers, `onShellIntegration(state)`
+receives the latest `{ phase, exitCode }` as output is parsed, including in hidden
+panes and synchronized output. `phase` is `unknown`, `prompt`, `input`, `running`,
+or `complete`. The last reported exit code survives prompt redraws until the
+next command starts; absent or invalid codes are `null`. A terminal reset
+reports `unknown` and clears the code. Multiple markers in a parser chunk
+coalesce into one current-state snapshot, so this callback is not a command log.
+The built-in core, custom cores without the optional hook, and older Ghostty
+binaries do not report shell state. Shell configuration is owned by the host.
+See [Shell integration](https://wterm.dev/configuration#shell-integration).
 
 ## License
 
