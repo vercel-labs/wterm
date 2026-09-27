@@ -98,7 +98,7 @@ for (const path of ["/", "/ghostty"]) {
     expect(stored).toEqual({ theme: "light", fontSize: 20 });
     await page.reload();
     await expect(
-      page.getByRole("textbox", { name: "Terminal 1", exact: true }),
+      page.getByRole("textbox", { name: "Terminal 2", exact: true }),
     ).toBeFocused();
     await expect(page.locator(".local-terminal")).toHaveCount(2);
     for (const terminal of await page.locator(".local-terminal").all()) {

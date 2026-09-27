@@ -7,6 +7,7 @@ import {
   RECOVERY_EVENTS,
   decodeOutput,
 } from "../lib/session-recovery";
+import { INITIAL_STATE, workspaceReducer } from "../lib/workspace-layout";
 
 class MemoryStorage implements Storage {
   values = new Map<string, string>();
@@ -196,4 +197,149 @@ test("closing a damaged record removes orphan output as well as its credentials"
   storage.setItem("unrelated", "keep");
   new RecoveryLog(storage, "session", true).remove();
   assert.deepEqual([...storage.values], [["unrelated", "keep"]]);
+});
+
+test("layout recovery preserves splits, zoom, focus and numbering without persisting live metadata", () => {
+  const storage = new MemoryStorage();
+  const store = new SessionRecovery(storage, "route", false);
+  let workspace = workspaceReducer(INITIAL_STATE, {
+    type: "split",
+    id: "session-1",
+    direction: "right",
+  });
+  workspace = workspaceReducer(workspace, {
+    type: "split",
+    id: "session-2",
+    direction: "down",
+  });
+  workspace = workspaceReducer(workspace, {
+    type: "resize",
+    id: "split-2",
+    ratio: 0.4,
+  });
+  workspace = workspaceReducer(workspace, { type: "zoom", id: "session-2" });
+  workspace = workspaceReducer(workspace, {
+    type: "cwd",
+    id: "session-2",
+    cwd: "/private-directory",
+  });
+  for (const session of workspace.sessions) {
+    const log = store.get(session.id);
+    log.start(80, 24, "dark");
+    log.checkpoint(state);
+  }
+  assert.equal(store.saveLayout(workspace), true);
+  const restored = new SessionRecovery(storage, "route", true).initial;
+  assert.deepEqual(restored.layout, workspace.layout);
+  assert.equal(restored.activeId, "session-2");
+  assert.equal(restored.zoomed, true);
+  assert.equal(restored.nextNumber, 4);
+  assert.ok(
+    restored.sessions.every(
+      (session) => session.cwd === null && session.status === "connecting",
+    ),
+  );
+  assert.ok(!storage.getItem("route:layout")!.includes("private-directory"));
+  assert.ok(!storage.getItem("route:layout")!.includes(state.session));
+
+  // Keep the counter even after closing the highest-numbered session and then all sessions.
+  for (const id of ["session-3", "session-2", "session-1"]) {
+    store.remove(id);
+    workspace = workspaceReducer(workspace, { type: "close", id });
+    store.saveLayout(workspace);
+    const initial = new SessionRecovery(storage, "route", true).initial;
+    assert.equal(initial.nextNumber, 4);
+    assert.deepEqual(initial.layout, workspace.layout);
+    assert.equal(initial.activeId, workspace.activeId);
+  }
+  const initial = new SessionRecovery(storage, "route", true).initial;
+  assert.equal(
+    workspaceReducer(initial, { type: "add" }).activeId,
+    "session-4",
+  );
+});
+
+test("stale or corrupt layouts cannot reopen closed sessions or damage their surviving replay", () => {
+  const storage = new MemoryStorage();
+  const store = new SessionRecovery(storage, "route", false);
+  const workspace = workspaceReducer(INITIAL_STATE, {
+    type: "split",
+    id: "session-1",
+    direction: "right",
+  });
+  for (const session of workspace.sessions) {
+    const log = store.get(session.id);
+    log.start(80, 24, "dark");
+    log.checkpoint(state);
+  }
+  store.saveLayout(workspace);
+  // Simulate closing a shell just before the layout update could be committed.
+  store.remove("session-2");
+  for (const raw of [
+    storage.getItem("route:layout")!,
+    "broken",
+    " ".repeat(8193),
+  ]) {
+    storage.setItem("route:layout", raw);
+    const restored = new SessionRecovery(storage, "route", true);
+    assert.deepEqual(
+      restored.initial.sessions.map((session) => session.id),
+      ["session-1"],
+    );
+    assert.deepEqual(restored.initial.layout, INITIAL_STATE.layout);
+    assert.equal(restored.get("session-1").saved?.session, state.session);
+  }
+  assert.equal(
+    new SessionRecovery(storage, "other-route", false).initial.layout,
+    INITIAL_STATE.layout,
+  );
+  new SessionRecovery(storage, "route", false);
+  assert.equal(storage.getItem("route:layout"), null);
+});
+
+test("layout writes are deduplicated and failures leave terminal recovery usable", () => {
+  const storage = new MemoryStorage();
+  const store = new SessionRecovery(storage, "route", false);
+  const statuses: boolean[] = [];
+  const unsubscribe = store.subscribeLayoutSaved(() =>
+    statuses.push(store.getLayoutSaved()),
+  );
+  const log = store.get("session-1");
+  log.start(80, 24, "dark");
+  log.checkpoint(state);
+  const original = storage.setItem.bind(storage);
+  let writes = 0;
+  storage.setItem = (key, value) => {
+    writes++;
+    original(key, value);
+  };
+  store.saveLayout(INITIAL_STATE);
+  store.saveLayout(
+    workspaceReducer(INITIAL_STATE, {
+      type: "status",
+      id: "session-1",
+      status: "connected",
+    }),
+  );
+  assert.equal(writes, 1);
+  storage.setItem = (key, value) => {
+    if (key.endsWith(":layout")) throw new Error("Quota exceeded");
+    original(key, value);
+  };
+  const split = workspaceReducer(INITIAL_STATE, {
+    type: "split",
+    id: "session-1",
+    direction: "right",
+  });
+  assert.equal(store.saveLayout(split), false);
+  assert.equal(storage.getItem("route:layout"), null);
+  assert.equal(log.failed, false);
+  assert.equal(
+    new SessionRecovery(storage, "route", true).get("session-1").saved?.session,
+    state.session,
+  );
+  storage.setItem = original;
+  assert.equal(store.saveLayout(INITIAL_STATE), true);
+  assert.deepEqual(statuses, [false, true]);
+  unsubscribe();
 });

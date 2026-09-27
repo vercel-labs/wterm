@@ -36,7 +36,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Bounded WebSocket sends** — byte and message limits, ordered draining, and observable backpressure for slow or disconnected connections
 - **Local PTY flow control** — the local workspace batches small output messages, pauses fast output until the browser catches up, preserves bytes across frames, and reports rejected input
 - **Local session reconnection** — brief connection interruptions resume the same shell and terminal state in the existing page, with bounded output replay, input delivery acknowledgments, duplicate suppression, and no automatic input retries
-- **Local reload recovery** — tab-scoped replay restores saved terminals and resumes their shells within documented storage and session limits
+- **Local reload recovery** — restores split layouts, pane sizes, zoom, and the focused terminal alongside saved shells within documented storage and session limits
 - **Local appearance settings** — persistent light/dark/system appearance and font size across panes, with live updates that preserve shells
 - **Shell command state** — Ghostty forwards OSC 133 prompt, running, and completion state to hosts and per-session workspace indicators
 - **Prompt navigation** — jump between shell prompts in retained Ghostty history, including after reflow, with workspace controls and configurable shortcuts

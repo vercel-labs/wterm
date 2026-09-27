@@ -1,6 +1,7 @@
 import type { WorkspaceState } from "./workspace-layout";
 import { INITIAL_STATE } from "./workspace-layout";
 import { INPUT_MESSAGES, SESSION_LIMIT } from "./terminal-protocol";
+import { restoreLayout, serializeLayout } from "./workspace-persistence";
 
 export const RECOVERY_BYTES = 1024 * 1024;
 export const RECOVERY_EVENTS = 4096;
@@ -204,6 +205,17 @@ export class SessionRecovery {
   readonly initial: WorkspaceState;
   private logs = new Map<string, RecoveryLog>();
   private ids: string[] = [];
+  private savedLayout: string | null = null;
+  private layoutSaved = true;
+  private layoutListeners = new Set<() => void>();
+
+  getLayoutSaved = (): boolean => this.layoutSaved;
+  subscribeLayoutSaved = (listener: () => void): (() => void) => {
+    this.layoutListeners.add(listener);
+    return () => {
+      this.layoutListeners.delete(listener);
+    };
+  };
 
   constructor(
     private storage: Storage | null,
@@ -234,6 +246,9 @@ export class SessionRecovery {
       this.ids = [];
       this.logs.clear();
       this.saveIndex();
+      try {
+        storage?.removeItem(`${key}:layout`);
+      } catch {}
       this.initial = INITIAL_STATE;
     } else if (invalid) {
       // A malformed registry must not turn an attempted restore into a new PTY.
@@ -261,6 +276,36 @@ export class SessionRecovery {
         zoomed: false,
       };
     }
+    if (restore && !invalid) {
+      try {
+        const raw = storage?.getItem(`${key}:layout`) ?? null;
+        const layout = restoreLayout(raw, this.ids);
+        if (layout) this.initial = { ...this.initial, ...layout };
+      } catch {}
+    }
+  }
+
+  /** A layout storage failure must not invalidate terminal replay records. */
+  saveLayout(workspace: WorkspaceState): boolean {
+    const raw = serializeLayout(workspace);
+    if (raw === this.savedLayout) return true;
+    let saved = true;
+    try {
+      if (!this.storage) throw new Error();
+      this.storage.setItem(`${this.key}:layout`, raw);
+      this.savedLayout = raw;
+    } catch {
+      this.savedLayout = null;
+      try {
+        this.storage?.removeItem(`${this.key}:layout`);
+      } catch {}
+      saved = false;
+    }
+    if (saved !== this.layoutSaved) {
+      this.layoutSaved = saved;
+      for (const listener of this.layoutListeners) listener();
+    }
+    return saved;
   }
 
   private saveIndex(): void {

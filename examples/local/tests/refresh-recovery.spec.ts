@@ -307,13 +307,15 @@ test("reload keeps surviving tab identities and never reopens explicitly closed 
   await expect(
     page.getByRole("button", { name: /^Close Terminal/ }),
   ).toHaveCount(2);
-  await expect(terminal(page)).toBeFocused();
-  await expect(page.getByRole("tabpanel").locator(".term-grid")).toContainText(
-    "first shell",
-  );
-  await page.getByTitle("Terminal 2", { exact: true }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Terminal 2", exact: true }),
+  ).toBeFocused();
   await expect(page.getByRole("tabpanel").locator(".term-grid")).toContainText(
     "second shell",
+  );
+  await page.getByTitle("Terminal 1", { exact: true }).click();
+  await expect(page.getByRole("tabpanel").locator(".term-grid")).toContainText(
+    "first shell",
   );
   await page
     .getByRole("button", { name: "Close Terminal 2", exact: true })
@@ -331,6 +333,15 @@ test("reload keeps surviving tab identities and never reopens explicitly closed 
       .first(),
   ).toBeVisible();
   expect(h.attaches).toHaveLength(5);
+  await page
+    .getByRole("button", { name: "New terminal session", exact: true })
+    .first()
+    .click();
+  await expect(
+    page.getByRole("textbox", { name: "Terminal 4", exact: true }),
+  ).toBeFocused();
+  await expect.poll(() => h.attaches.length).toBe(6);
+  expect(h.attaches[5]).toMatchObject({ session: null, bytes: 0 });
 });
 
 test("normal navigation starts independently from saved reload records", async ({

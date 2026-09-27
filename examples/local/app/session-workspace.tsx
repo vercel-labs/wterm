@@ -697,6 +697,14 @@ function ReadyWorkspace({
   coreLoader,
 }: SessionWorkspaceProps & { recovery: SessionRecovery }) {
   const [workspace, dispatch] = useReducer(workspaceReducer, recovery.initial);
+  const layoutSaved = useSyncExternalStore(
+    recovery.subscribeLayoutSaved,
+    recovery.getLayoutSaved,
+    recovery.getLayoutSaved,
+  );
+  useLayoutEffect(() => {
+    recovery.saveLayout(workspace);
+  }, [recovery, workspace]);
   const {
     shortcuts,
     saved: shortcutsSaved,
@@ -982,6 +990,14 @@ function ReadyWorkspace({
           )}
         </div>
         <div className="shrink-0 border-t border-[var(--workspace-border)] p-2">
+          {!layoutSaved && (
+            <p
+              role="status"
+              className="px-2 pb-2 text-xs text-[var(--workspace-muted)]"
+            >
+              Pane layout could not be saved. Keep this page open to retain it.
+            </p>
+          )}
           <ShortcutSettings
             shortcuts={shortcuts}
             saved={shortcutsSaved}

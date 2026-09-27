@@ -19,7 +19,7 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 - `server.ts` starts an HTTP + WebSocket server alongside Next.js
 - A new terminal attaches to a server session and spawns your default shell after its initial dimensions arrive
 - A brief connection interruption resumes that same shell and existing browser terminal; missing output is replayed without repeating parsed bytes
-- Reloading the page restores saved terminal tabs and resumes their shells while complete recovery records and server sessions remain available
+- Reloading restores split layouts, divider positions, zoom, and the focused terminal, and resumes saved shells while complete recovery records and server sessions remain available
 - The browser sends sequenced JSON input, resize, and byte acknowledgment messages over WebSocket; the server acknowledges input handed to the PTY, relays raw PTY bytes in binary frames, and sends working-directory updates as JSON
 - Terminal resizing, including browser pixel dimensions, is forwarded to the PTY via resize messages
 - The server restores PTY pixel dimensions after each resize so Kitty clients such as `kitten icat` can detect image support
@@ -59,6 +59,7 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 | `lib/shortcuts.ts` | Command defaults, binding validation, matching, and labels |
 | `app/pane-divider.tsx` | Pointer and keyboard pane resizing |
 | `lib/workspace-layout.ts` | Session selection, split geometry, and directional focus |
+| `lib/workspace-persistence.ts` | Bounded layout decoding, session-reference checks, and saved arrangement format |
 | `app/clipboard-request.tsx` | Application clipboard request review and explicit Copy |
 | `app/output-reader.tsx` | Read-only output snapshots, refresh, cancellation, and dialog focus |
 | `app/layout.tsx` | Root layout with metadata |
@@ -84,9 +85,19 @@ keeping its previous shell open. **Zoom pane** temporarily shows one pane;
 **Restore panes** brings back the split layout and divider positions. Close a
 session using its sidebar close button; its neighbor fills the freed space,
 and other shells keep running. Layout changes preserve terminal instances,
-history, Find queries, and connections. Layout is kept only in the current
-page. Reloading restores saved sessions as sidebar tabs, with the first selected;
-split geometry and Find queries are not restored.
+history, Find queries, and connections. Reloading restores nested splits,
+divider proportions, the focused terminal, and zoom, including the arrangement
+behind a zoomed pane. Hidden sessions remain in the sidebar. Smaller windows
+keep the same arrangement with minimum pane sizes and workspace scrolling.
+Find queries are not restored.
+
+Layout is saved in this tab's `sessionStorage`, separately for each engine route.
+It is checked against the saved session list: missing, stale, or damaged layouts
+fall back to one pane with the first session selected, leaving the other sessions
+in the sidebar. Closed sessions stay closed. A layout storage failure shows a
+status and leaves live terminals and their replay records available. Ordinary
+navigation or a new tab starts a fresh workspace; layout recovery uses the same
+session limits described below.
 
 ## Shell command indicators
 

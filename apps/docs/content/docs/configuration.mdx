@@ -364,7 +364,10 @@ Selecting a hidden sidebar session replaces the focused pane without closing
 its shell. **Zoom pane** and **Restore panes** temporarily hide and restore
 the other panes. Closing a session collapses its split while other sessions
 keep their terminal state and connections. Layout changes preserve history
-and per-session Find queries. Layout does not survive a page refresh.
+and per-session Find queries. Reloading restores nested splits, divider
+proportions, the focused terminal, and zoom, including the arrangement behind a
+zoomed pane. Smaller windows retain the arrangement with minimum pane sizes and
+workspace scrolling. Hidden sessions remain accessible in the sidebar.
 
 ### Local workspace recovery
 
@@ -391,13 +394,19 @@ reattaching; historical replies and clipboard requests are suppressed. Saved
 output may contain sensitive text and echoed commands. Closing a session removes
 its records, and closing the browser tab removes its session storage.
 
+Pane layout is stored separately in the same tab and engine route. Only sessions
+in the recovery registry can appear in the restored layout; closed sessions stay
+closed. Missing, stale, or malformed layout records fall back to a single pane
+with the first saved session selected. A layout storage failure shows a status
+without disabling terminal replay or interrupting live input and output.
+
 Replay records are capped at 1 MiB of output and 4,096 events per session, subject
 to browser storage quotas. A limit or storage failure disables refresh recovery
 with a visible status while the live terminal continues. Invalid or incomplete
 records, an expired session, an unavailable output range, or a server restart
 produce an explicit failure without starting a replacement shell. Reload must
-reattach within the 30-second server grace period. Split layout and Find queries
-are not restored; normal navigation and duplicated tabs start independently.
+reattach within the 30-second server grace period. Find queries are not restored;
+normal navigation and duplicated tabs start independently.
 This behavior belongs to the local example, not `WebSocketTransport` alone.
 
 ## Output announcements
