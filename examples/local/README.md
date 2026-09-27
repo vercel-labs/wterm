@@ -1,6 +1,6 @@
 # Local Shell Example
 
-Full local terminal in the browser, connected to your machine's shell via WebSocket and [node-pty](https://github.com/microsoft/node-pty). Use the left sidebar to create, switch between, and close multiple independent shell sessions.
+Full local terminal in the browser, connected to your machine's shell via WebSocket and [node-pty](https://github.com/microsoft/node-pty). Use the left sidebar to create, switch between, and close independent shell sessions, and split the workspace to view up to four shells at once.
 
 ## Setup
 
@@ -23,9 +23,9 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 - Terminal resizing, including browser pixel dimensions, is forwarded to the PTY via resize messages
 - The server restores PTY pixel dimensions after each resize so Kitty clients such as `kitten icat` can detect image support
 - Each sidebar tab keeps its terminal and shell session alive while other tabs are active
-- Inactive tabs pause painting while continuing to consume output and answer terminal queries. Switching back paints the latest screen and retained history; hiding the browser document pauses painting for all tabs.
+- Sessions outside the visible layout pause painting while continuing to consume output and answer terminal queries. Switching back paints the latest screen and retained history; hiding the browser document pauses painting for all tabs.
 - **Read output** opens a stable snapshot of retained history and the active screen in a labelled, read-only text area. Use native keyboard navigation and Copy, **Refresh** to capture newer output, and **Close** or Escape to return to the opener. Output keeps running while the snapshot stays unchanged. A capture interrupted by output or resize can be retried; captures above 16,777,216 UTF-16 units fail without returning partial text. Closing cancels pending capture and releases the snapshot.
-- The editable terminal input uses its session name for assistive technology; inactive sessions are excluded from page tab entry. Escape followed by Tab or Shift+Tab moves focus back to the page
+- The editable terminal input uses its session name for assistive technology; hidden sessions are excluded from page tab entry. Escape followed by Tab or Shift+Tab moves focus back to the page
 - On `/ghostty`, an application clipboard-write request shows **Review clipboard request** and **Dismiss** without taking focus. Review opens a fixed, read-only preview; **Copy** (or **Clear clipboard** for empty text) writes only after you click it. New requests do not change an open preview. If the browser denies access, use native Copy from the text field. Clipboard reads are unsupported. Each session retains only its latest pending request, up to 65,536 UTF-8 bytes.
 - The `/ghostty` route uses the graphics-capable core and limits rendered Kitty images to 640×480 CSS pixels
 - Auto-sized Kitty images align with the terminal content origin and reserve their rendered height visually so the following shell prompt appears below the image
@@ -49,10 +49,36 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 | `lib/terminal-protocol.ts` | Shared message types and buffer limits |
 | `app/page.tsx` | Built-in-core entry point |
 | `app/ghostty/page.tsx` | Ghostty-core entry point with bounded Kitty image rendering |
-| `app/session-workspace.tsx` | Sidebar, session tabs, Find controls, and terminal/WebSocket lifecycle |
+| `app/session-workspace.tsx` | Sidebar, split panes, Find controls, and terminal/WebSocket lifecycle |
+| `app/pane-divider.tsx` | Pointer and keyboard pane resizing |
+| `lib/workspace-layout.ts` | Session selection, split geometry, and directional focus |
 | `app/clipboard-request.tsx` | Application clipboard request review and explicit Copy |
 | `app/output-reader.tsx` | Read-only output snapshots, refresh, cancellation, and dialog focus |
 | `app/layout.tsx` | Root layout with metadata |
+
+## Split panes
+
+Use **Split right** or **Split down** in a pane header to open a new shell beside
+or below it. Splits can be nested, with up to four panes visible. Each visible
+pane keeps painting output; keyboard input goes only to the focused terminal.
+Click a terminal or its header to focus it. From terminal input, use
+Command+Option+arrow keys on macOS or Control+Alt+arrow keys to focus a pane in
+that direction. These shortcuts do not take over Find or dialog text fields.
+
+Drag a divider to resize. Dividers also accept keyboard focus: use the arrow
+keys along their axis to adjust, Home/End for the available bounds, and Enter
+to center. Each pane keeps at least 320×220 CSS pixels; smaller windows scroll
+the workspace instead of collapsing panes. The shell receives the pane's
+updated terminal and pixel dimensions.
+
+Selecting a visible session in the sidebar focuses it. Selecting a hidden
+session, or using **New terminal session**, replaces the focused pane while
+keeping its previous shell open. **Zoom pane** temporarily shows one pane;
+**Restore panes** brings back the split layout and divider positions. Close a
+session using its sidebar close button; its neighbor fills the freed space,
+and other shells keep running. Layout changes preserve terminal instances,
+history, Find queries, and connections. Layout is kept only in the current
+page; refreshing still starts a new shell.
 
 ## Output flow control
 

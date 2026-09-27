@@ -3,12 +3,23 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useReducer,
   useRef,
   useState,
   type CSSProperties,
 } from "react";
-import { ArrowDown, ArrowUp, Plus, Search, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Columns2,
+  Rows2,
+  Maximize2,
+  Minimize2,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
 import { Terminal as WTermTerminal, useTerminal } from "@wterm/react";
 import type { SearchState, TerminalCore, WTerm } from "@wterm/dom";
 import { OutputReader } from "./output-reader";
@@ -19,91 +30,18 @@ import {
 import { TerminalConnection } from "../lib/terminal-connection";
 import "@wterm/react/css";
 
-type SessionStatus =
-  "loading" | "connecting" | "reconnecting" | "connected" | "closed";
-
-interface Session {
-  id: string;
-  name: string;
-  status: SessionStatus;
-  cwd: string | null;
-}
-
-interface WorkspaceState {
-  sessions: Session[];
-  activeId: string | null;
-  nextNumber: number;
-}
-
-type WorkspaceAction =
-  | { type: "add" }
-  | { type: "select"; id: string }
-  | { type: "close"; id: string }
-  | { type: "status"; id: string; status: SessionStatus }
-  | { type: "cwd"; id: string; cwd: string };
-
-const INITIAL_STATE: WorkspaceState = {
-  sessions: [
-    { id: "session-1", name: "Terminal 1", status: "connecting", cwd: null },
-  ],
-  activeId: "session-1",
-  nextNumber: 2,
-};
-
-function workspaceReducer(
-  state: WorkspaceState,
-  action: WorkspaceAction,
-): WorkspaceState {
-  switch (action.type) {
-    case "add": {
-      const session: Session = {
-        id: `session-${state.nextNumber}`,
-        name: `Terminal ${state.nextNumber}`,
-        status: "connecting",
-        cwd: null,
-      };
-      return {
-        sessions: [...state.sessions, session],
-        activeId: session.id,
-        nextNumber: state.nextNumber + 1,
-      };
-    }
-    case "select":
-      return state.sessions.some((session) => session.id === action.id)
-        ? { ...state, activeId: action.id }
-        : state;
-    case "close": {
-      const index = state.sessions.findIndex(
-        (session) => session.id === action.id,
-      );
-      if (index === -1) return state;
-
-      const sessions = state.sessions.filter(
-        (session) => session.id !== action.id,
-      );
-      if (state.activeId !== action.id) return { ...state, sessions };
-
-      const nextActive = sessions[index]?.id ?? sessions[index - 1]?.id ?? null;
-      return { ...state, sessions, activeId: nextActive };
-    }
-    case "status":
-      return {
-        ...state,
-        sessions: state.sessions.map((session) =>
-          session.id === action.id
-            ? { ...session, status: action.status }
-            : session,
-        ),
-      };
-    case "cwd":
-      return {
-        ...state,
-        sessions: state.sessions.map((session) =>
-          session.id === action.id ? { ...session, cwd: action.cwd } : session,
-        ),
-      };
-  }
-}
+import {
+  INITIAL_STATE,
+  MAX_PANES,
+  adjacentPane,
+  measureLayout,
+  minimumSize,
+  workspaceReducer,
+  visibleSessions,
+  type Session,
+  type SessionStatus,
+} from "../lib/workspace-layout";
+import { PaneDivider } from "./pane-divider";
 
 function cwdLabel(cwd: string | null): string {
   if (!cwd) return "Starting…";
@@ -126,6 +64,7 @@ function terminalPixelSize(terminal: WTerm): { width: number; height: number } {
 interface SessionTerminalProps {
   session: Session;
   active: boolean;
+  visible: boolean;
   debugEnabled: boolean;
   wasmUrl?: string;
   maxImageWidth?: number;
@@ -138,6 +77,7 @@ interface SessionTerminalProps {
 function SessionTerminal({
   session,
   active,
+  visible,
   debugEnabled,
   wasmUrl,
   maxImageWidth,
@@ -146,6 +86,8 @@ function SessionTerminal({
   onStatus,
   onCwd,
 }: SessionTerminalProps) {
+  const [ready, setReady] = useState(false);
+  const focusedRequest = useRef(0);
   const [core, setCore] = useState<TerminalCore | null>(null);
   const { ref, write } = useTerminal();
   const wsRef = useRef<TerminalConnection | null>(null);
@@ -246,10 +188,20 @@ function SessionTerminal({
   }, [core]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!ready || focusedRequest.current === session.focusRequest) return;
+    focusedRequest.current = session.focusRequest;
+    if (!active || document.querySelector("dialog[open]")) return;
+    terminalRef.current?.element.closest('[role="tabpanel"]')?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
     if (findOpen) findInputRef.current?.focus();
     else ref.current?.focus();
-  }, [active, findOpen, ref]);
+  }, [active, findOpen, ready, ref, session.focusRequest]);
+
+  useEffect(() => {
+    if (findOpen) findInputRef.current?.focus();
+  }, [findOpen]);
 
   const handleReady = useCallback(
     (wt: WTerm) => {
@@ -260,6 +212,7 @@ function SessionTerminal({
         wsRef.current = null;
       }
       terminalRef.current = wt;
+      setReady(true);
       wt.onSearchChange = setSearchState;
       if (wsRef.current) return;
 
@@ -335,11 +288,11 @@ function SessionTerminal({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-[#1f1f1f] pb-2 text-xs">
+      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-[#1f1f1f] pb-2 text-xs">
         <OutputReader
           terminal={terminalRef}
           name={session.name}
-          active={active}
+          active={visible}
         />
         <label className="flex items-center gap-2 px-2 py-1 text-[#aaa]">
           <input
@@ -351,7 +304,7 @@ function SessionTerminal({
         </label>
         {findOpen ? (
           <div
-            className="flex min-w-0 flex-1 items-center gap-2"
+            className="flex min-w-0 basis-full items-center gap-2"
             role="search"
             aria-label="Terminal output"
             onKeyDown={(event) => {
@@ -480,12 +433,12 @@ function SessionTerminal({
         }
         terminal={terminalRef}
         name={session.name}
-        active={active}
+        active={visible}
       />
-      <div className="min-h-0 flex-1 pt-2">
+      <div className="min-h-0 flex-1 pt-2" inert={!ready}>
         <WTermTerminal
           ref={ref}
-          renderingPaused={!active}
+          renderingPaused={!visible}
           announceOutput={active && announceOutput}
           cols={80}
           rows={24}
@@ -500,7 +453,7 @@ function SessionTerminal({
           onClipboardWrite={handleClipboardWrite}
           onResize={handleResize}
           aria-label={session.name}
-          tabIndex={active ? 0 : -1}
+          tabIndex={visible ? 0 : -1}
           className="local-terminal h-full w-full"
           style={
             {
@@ -536,6 +489,35 @@ export function SessionWorkspace({
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).has("debug"),
   );
+
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current!;
+    const measure = () => {
+      const width = viewport.clientWidth;
+      const height = viewport.clientHeight;
+      setSize((previous) =>
+        previous.width === width && previous.height === height
+          ? previous
+          : { width, height },
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
+  const displayLayout =
+    workspace.zoomed && workspace.activeId
+      ? { kind: "pane" as const, session: workspace.activeId }
+      : workspace.layout;
+  const minimum = minimumSize(displayLayout);
+  const width = Math.max(size.width, minimum.width);
+  const height = Math.max(size.height, minimum.height);
+  const { panes, dividers } = measureLayout(displayLayout, width, height);
+  const paneCount = Object.keys(panes).length;
+  const layoutPaneCount = visibleSessions(workspace.layout).length;
 
   const handleStatus = useCallback((id: string, status: SessionStatus) => {
     dispatch({ type: "status", id, status });
@@ -624,46 +606,176 @@ export function SessionWorkspace({
         </div>
       </aside>
 
-      <main className="min-h-0 min-w-0 flex-1 bg-black p-4">
-        <div className="relative h-full min-w-0 overflow-hidden">
-          {workspace.sessions.map((session) => {
-            const active = session.id === workspace.activeId;
-            return (
-              <div
-                key={session.id}
-                className="absolute inset-0"
-                style={{ visibility: active ? "visible" : "hidden" }}
-                aria-hidden={!active}
-                inert={!active}
-                role="tabpanel"
-                aria-label={session.name}
-              >
-                <SessionTerminal
-                  session={session}
-                  active={active}
-                  debugEnabled={debugEnabled}
-                  wasmUrl={wasmUrl}
-                  maxImageWidth={maxImageWidth}
-                  maxImageHeight={maxImageHeight}
-                  coreLoader={coreLoader}
-                  onStatus={handleStatus}
-                  onCwd={handleCwd}
-                />
-              </div>
-            );
-          })}
+      <main
+        className="min-h-0 min-w-0 flex-1 bg-black p-4"
+        onKeyDownCapture={(event) => {
+          if (
+            event.nativeEvent.isComposing ||
+            event.nativeEvent.getModifierState("AltGraph") ||
+            !event.altKey ||
+            event.shiftKey ||
+            event.ctrlKey === event.metaKey ||
+            !(event.target instanceof Element) ||
+            !event.target.closest(".local-terminal") ||
+            !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
+              event.key,
+            ) ||
+            !workspace.activeId ||
+            paneCount < 2
+          )
+            return;
+          event.preventDefault();
+          event.stopPropagation();
+          const next = adjacentPane(
+            panes,
+            workspace.activeId,
+            event.key as "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown",
+          );
+          if (next) dispatch({ type: "select", id: next });
+        }}
+      >
+        <div ref={viewportRef} className="h-full w-full overflow-auto">
+          <div className="relative" style={{ width, height }}>
+            {workspace.sessions.map((session) => {
+              const active = session.id === workspace.activeId;
+              const rect = panes[session.id];
+              const visible = !!rect;
+              return (
+                <div
+                  key={session.id}
+                  id={`pane-${session.id}`}
+                  className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden rounded border ${paneCount > 1 ? (active ? "border-[#888]" : "border-[#333]") : "border-transparent"}`}
+                  style={{
+                    ...(rect ?? { left: 0, top: 0, width, height }),
+                    visibility: visible ? "visible" : "hidden",
+                  }}
+                  aria-hidden={!visible}
+                  inert={!visible}
+                  role="tabpanel"
+                  aria-label={session.name}
+                  onFocusCapture={() =>
+                    dispatch({ type: "focus", id: session.id })
+                  }
+                  onPointerDownCapture={() =>
+                    dispatch({ type: "focus", id: session.id })
+                  }
+                >
+                  <div className="flex h-8 shrink-0 items-center gap-1 px-2 text-xs text-[#aaa]">
+                    <button
+                      type="button"
+                      className="min-w-0 truncate text-left hover:text-white"
+                      onClick={() =>
+                        dispatch({ type: "select", id: session.id })
+                      }
+                      aria-label={`Focus ${session.name}`}
+                      title="Focus pane (⌘⌥ arrows / Ctrl+Alt+arrows in terminal input)"
+                    >
+                      {session.name}
+                    </button>
+                    <span className="ml-auto" />
+                    <button
+                      type="button"
+                      aria-label="Split right"
+                      title={
+                        layoutPaneCount >= MAX_PANES
+                          ? "This layout already has four panes"
+                          : "Split right"
+                      }
+                      disabled={layoutPaneCount >= MAX_PANES}
+                      className="rounded p-1 hover:bg-[#222] hover:text-white disabled:opacity-30"
+                      onClick={() =>
+                        dispatch({
+                          type: "split",
+                          id: session.id,
+                          direction: "right",
+                        })
+                      }
+                    >
+                      <Columns2 size={14} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Split down"
+                      title={
+                        layoutPaneCount >= MAX_PANES
+                          ? "This layout already has four panes"
+                          : "Split down"
+                      }
+                      disabled={layoutPaneCount >= MAX_PANES}
+                      className="rounded p-1 hover:bg-[#222] hover:text-white disabled:opacity-30"
+                      onClick={() =>
+                        dispatch({
+                          type: "split",
+                          id: session.id,
+                          direction: "down",
+                        })
+                      }
+                    >
+                      <Rows2 size={14} aria-hidden="true" />
+                    </button>
+                    {layoutPaneCount > 1 && (
+                      <button
+                        type="button"
+                        aria-label={
+                          workspace.zoomed ? "Restore panes" : "Zoom pane"
+                        }
+                        title={
+                          workspace.zoomed
+                            ? "Restore panes"
+                            : "Zoom pane; other sessions stay open"
+                        }
+                        className="rounded p-1 hover:bg-[#222] hover:text-white"
+                        onClick={() =>
+                          dispatch({ type: "zoom", id: session.id })
+                        }
+                      >
+                        {workspace.zoomed ? (
+                          <Minimize2 size={14} aria-hidden="true" />
+                        ) : (
+                          <Maximize2 size={14} aria-hidden="true" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  <div className="min-h-0 flex-1 px-2 pb-2">
+                    <SessionTerminal
+                      session={session}
+                      active={active}
+                      visible={visible}
+                      debugEnabled={debugEnabled}
+                      wasmUrl={wasmUrl}
+                      maxImageWidth={maxImageWidth}
+                      maxImageHeight={maxImageHeight}
+                      coreLoader={coreLoader}
+                      onStatus={handleStatus}
+                      onCwd={handleCwd}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+            {dividers.map((divider) => (
+              <PaneDivider
+                key={divider.id}
+                divider={divider}
+                onResize={(id, ratio) =>
+                  dispatch({ type: "resize", id, ratio })
+                }
+              />
+            ))}
 
-          {workspace.sessions.length === 0 && (
-            <div className="flex h-full items-center justify-center text-sm text-white/35">
-              <button
-                type="button"
-                onClick={() => dispatch({ type: "add" })}
-                className="rounded-md border border-[#2e2e2e] px-3 py-2 text-xs text-[#a1a1a1] hover:bg-[#1c1c1c] hover:text-white"
-              >
-                New terminal session
-              </button>
-            </div>
-          )}
+            {workspace.sessions.length === 0 && (
+              <div className="flex h-full items-center justify-center text-sm text-white/35">
+                <button
+                  type="button"
+                  onClick={() => dispatch({ type: "add" })}
+                  className="rounded-md border border-[#2e2e2e] px-3 py-2 text-xs text-[#a1a1a1] hover:bg-[#1c1c1c] hover:text-white"
+                >
+                  New terminal session
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </main>
     </div>

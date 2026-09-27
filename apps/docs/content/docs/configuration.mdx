@@ -14,7 +14,8 @@ See the full [API Reference](/api-reference#terminal-options) for types, default
 Set `renderingPaused: true` for a pane that is not visible. Change it with
 `term.setRenderingPaused(paused)` in vanilla JavaScript, or the reactive
 `renderingPaused` prop in React, Vue, and Svelte. The local workspace does this
-automatically for inactive session tabs.
+automatically for sessions outside the visible layout. All visible split panes
+keep painting, including those without keyboard focus.
 
 Paused panes keep parsing output, retaining history, resizing the core, and
 delivering replies, titles, and bells. They stop scheduling terminal paints and
@@ -234,6 +235,25 @@ producers and catch `RangeError` to report input that exceeded a limit. Explicit
 `close()` discards unsent data; reconnect never replays bytes already handed to
 the browser. See [Buffering and delivery](/api-reference#buffering-and-delivery)
 for thresholds, lifecycle behavior, and delivery limits.
+
+### Local split panes
+
+The [local example](https://github.com/vercel-labs/wterm/tree/main/examples/local)
+can display up to four shells using **Split right** and **Split down**. Drag a
+divider, or focus it and use arrow keys, to resize. Home/End move to its bounds;
+Enter centers it. Panes retain at least 320×220 CSS pixels, with workspace
+scrolling when needed. Each shell receives its own updated dimensions.
+
+Click a terminal to focus it. Command+Option+arrows on macOS or
+Control+Alt+arrows move from terminal input to the adjacent pane. Find and
+dialog text fields retain their keyboard behavior. Only the focused terminal
+receives keyboard input; all visible panes continue rendering.
+
+Selecting a hidden sidebar session replaces the focused pane without closing
+its shell. **Zoom pane** and **Restore panes** temporarily hide and restore
+the other panes. Closing a session collapses its split while other sessions
+keep their terminal state and connections. Layout changes preserve history
+and per-session Find queries. Layout does not survive a page refresh.
 
 ### Local workspace recovery
 

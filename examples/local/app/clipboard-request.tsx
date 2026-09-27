@@ -62,7 +62,7 @@ export function ClipboardRequest({
   return (
     <>
       {request && (
-        <div className="flex shrink-0 items-center gap-3 py-2 text-xs text-[#aaa]">
+        <div className="flex shrink-0 flex-wrap items-center gap-3 py-2 text-xs text-[#aaa]">
           <span role="status">
             An application wants to{" "}
             {request.text ? "copy text" : "clear the clipboard"}.
