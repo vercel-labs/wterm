@@ -283,7 +283,9 @@ export function parseCell(
   byteOffset: number,
   cellBytes = CELL_BYTES,
 ): WasmCellData {
-  return {
+  const colorFlags = view.getUint8(byteOffset + 12);
+  const contentFlags = view.getUint8(byteOffset + 13);
+  const cell: WasmCellData = {
     codepoint: view.getUint32(byteOffset, true),
     fgR: view.getUint8(byteOffset + 4),
     fgG: view.getUint8(byteOffset + 5),
@@ -293,22 +295,23 @@ export function parseCell(
     bgB: view.getUint8(byteOffset + 9),
     flags: view.getUint8(byteOffset + 10),
     width: view.getUint8(byteOffset + 11),
-    colorFlags: view.getUint8(byteOffset + 12),
-    hasGrapheme: (view.getUint8(byteOffset + 13) & 1) !== 0,
-    hasHyperlink: (view.getUint8(byteOffset + 13) & 2) !== 0,
-    spacerHead: (view.getUint8(byteOffset + 13) & 4) !== 0,
-    ...(cellBytes === CELL_BYTES_V2
-      ? {
-          underlineStyle: UNDERLINE_STYLES[view.getUint8(byteOffset + 16)],
-          underlineRgb:
-            view.getUint8(byteOffset + 12) & 4
-              ? (view.getUint8(byteOffset + 17) << 16) |
-                (view.getUint8(byteOffset + 18) << 8) |
-                view.getUint8(byteOffset + 19)
-              : undefined,
-        }
-      : {}),
+    colorFlags,
+    hasGrapheme: (contentFlags & 1) !== 0,
+    hasHyperlink: (contentFlags & 2) !== 0,
+    spacerHead: (contentFlags & 4) !== 0,
   };
+  // History scans decode millions of cells. Assign the extended fields
+  // directly instead of allocating and spreading another object per cell.
+  if (cellBytes === CELL_BYTES_V2) {
+    cell.underlineStyle = UNDERLINE_STYLES[view.getUint8(byteOffset + 16)];
+    cell.underlineRgb =
+      colorFlags & 4
+        ? (view.getUint8(byteOffset + 17) << 16) |
+          (view.getUint8(byteOffset + 18) << 8) |
+          view.getUint8(byteOffset + 19)
+        : undefined;
+  }
+  return cell;
 }
 
 /** Byte size of one cell in the viewport buffer. */

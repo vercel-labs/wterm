@@ -86,6 +86,9 @@ export function* scanSearch(
         cell.chars ?? String.fromCodePoint(cell.char || 32),
         caseSensitive,
       );
+      // With no prefix in progress, an unrelated single-unit cell cannot
+      // contribute coordinates. A later full match replaces every ring slot.
+      if (matched === 0 && text.length === 1 && text !== needle[0]) continue;
       const position = {
         row,
         col,

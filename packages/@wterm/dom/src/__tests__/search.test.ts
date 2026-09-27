@@ -71,6 +71,31 @@ describe("cell-aware search", () => {
     expect(find("fgh")).toEqual([]);
   });
 
+  it("keeps match coordinates after gaps, failed prefixes, and overlapping matches", () => {
+    core.init(6, 2);
+    const text = "abax---abababa---abax---ababa";
+    core.writeString(text);
+    const starts: number[] = [];
+    for (
+      let start = text.indexOf("ababa");
+      start !== -1;
+      start = text.indexOf("ababa", start + 1)
+    )
+      starts.push(start);
+    const position = (index: number) => ({
+      row: Math.floor(index / 6),
+      col: index % 6,
+      endCol: (index % 6) + 1,
+    });
+    expect(find("ababa")).toEqual(
+      starts.map((start) => ({
+        start: position(start),
+        end: position(start + 4),
+      })),
+    );
+    expect(starts).toHaveLength(3);
+  });
+
   it("omits wide-character spacer heads in live rows and history", () => {
     core.writeString("abcde界!");
     expect(core.getCell(0, 5).spacerHead).toBe(true);

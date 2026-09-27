@@ -9,6 +9,11 @@ Combining marks and ZWJ emoji are exposed through `CellData.chars` as complete s
 
 `CellData.spacerHead` marks the empty right-edge filler before a wrapped wide glyph. WTerm's full-history Find uses this flag, grapheme strings, and native row-wrap metadata to match text across soft wraps without inserting artificial spaces.
 
+The bindings decode extended cell attributes without temporary style objects to
+reduce allocation overhead when searching large histories. The
+[history-search measurements](../../../e2e/harness/README.md#history-search-measurements)
+cover sparse and absent matches in 100,000 retained lines across three browsers.
+
 WTerm also uses this metadata when copying native text selections: soft wraps join without newlines, spacer heads are omitted, and partial graphemes copy as whole cells. Explicit newlines remain intact. See [selection and copy](../dom/README.md#selecting-and-copying-text).
 
 `trackPosition({ row, col })` follows a retained cell through scrolling and reflow. The returned handle has `resolve()` and `dispose()` methods; row zero is the oldest retained row. It resolves to `null` after pruning, reset, screen switching, reinitialization, or disposal. Up to 64 simultaneous handles are supported; invalid coordinates, exhausted capacity, and older binaries return `null`. Release handles when finished. WTerm uses this API to preserve native selections and separately checks for overwritten text. See the [core contract](../core/README.md#tracked-cell-positions).

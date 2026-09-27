@@ -347,13 +347,40 @@ partial results. Control cases check cancellation cleanup and timer fallback.
 
 The runner spawns no PTY. Per-case attachments and the combined
 `e2e/test-results/search/search.json` record the corpus hash, source commit/dirty
-status, built search script and WASM hashes, browser/headless mode, host/CPU, font geometry, retained rows,
+status, built search script, Ghostty bindings and WASM hashes, browser/headless mode, host/CPU, font geometry, retained rows,
 match counts, bounded mounted rows, and failed cases. Browser resize deferrals
 are counted separately from application errors as in the input suite. Failures
 before initialization and control cases have null measurements. CI uploads the
 directory as `terminal-history-search`; it checks correctness without timing
 thresholds. Use the same hardware, browser, profile, and display configuration
 with repeated runs for performance comparisons.
+
+### Sample search comparison
+
+On September 27, 2026, the `stress` profile ran each query three times per
+browser on an Apple M1 Max, Darwin 25.6.0 arm64, Node 24.20.0, headless at
+1280×900 and device scale 1. The table shows completion ranges across both
+queries, rounded to milliseconds. The baseline is commit `df59d571`; the
+updated decoder avoids temporary style objects, and the scanner skips
+coordinate bookkeeping for unrelated single-character cells.
+
+| Browser | Baseline | Updated |
+| --- | --- | --- |
+| Chromium 153.0.8010.12 | 766–846 ms | 456–475 ms |
+| Firefox 155.0 | 1,506–1,544 ms | 748–812 ms |
+| WebKit 26.6 | 887–983 ms | 469–498 ms |
+
+All runs retained 100,001 rows without pruning and found the expected 101
+matches or zero matches. Updated first-result callbacks arrived in 5–7 ms;
+maximum frame intervals were 21/46/20 ms for Chromium/Firefox/WebKit. These
+are local measurements of the fixed ASCII corpus, not universal latency
+guarantees or measurements of physical presentation.
+
+The updated report fingerprints are:
+
+- Search script: `a8a23f42dc79f18445da4a2be6a9470fd9df8f6031cce6262fa628bcbb649cc9`
+- Ghostty bindings: `9259e94ebfffb8b25b2f00377176e2b5f8750b22b1cdbcda3e1750d6059b374e`
+- WASM (unchanged): `ac3cc614582520889a9e1c1d3fcfe03beeb4232811151444bec2dae09d0a772d`
 
 ## What the measurements mean
 

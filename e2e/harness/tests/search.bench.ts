@@ -35,6 +35,16 @@ const source = {
       ),
     )
     .digest("hex"),
+  ghosttyBindingsSha256: createHash("sha256")
+    .update(
+      readFileSync(
+        new URL(
+          "../../../packages/@wterm/ghostty/dist/wasm-bindings.js",
+          import.meta.url,
+        ),
+      ),
+    )
+    .digest("hex"),
   ghosttyWasmSha256: createHash("sha256")
     .update(
       readFileSync(

@@ -337,7 +337,8 @@ WTERM_SEARCH_PROFILE=stress pnpm bench:search --project chromium --repeat-each 3
 The smoke profile retains 10,000 lines; `stress` retains 100,000. Reports under
 `e2e/test-results/search/` record first results, completion, highlight-frame
 opportunities, frame/task delays, retained history, and source/environment
-metadata. CI checks correctness and cancellation without speed thresholds.
+metadata, including hashes of the search scanner, Ghostty bindings, and WASM.
+CI checks correctness and cancellation without speed thresholds.
 See the [harness documentation](e2e/harness/README.md#history-search-measurements)
 for the fixed corpus and measurement boundaries.
 
