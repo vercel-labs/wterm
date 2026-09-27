@@ -282,6 +282,25 @@ chunk schedule, not native-terminal throughput or physical display latency.
 See the [harness documentation](e2e/harness/README.md#output-load-measurements)
 for measurement boundaries and comparison guidance.
 
+### Check sustained output
+
+Verify each batch of output before history discards it, check rendered text, and
+sample resources after history starts pruning:
+
+```bash
+pnpm bench:stability
+WTERM_STABILITY_PROFILE=soak pnpm bench:stability --project chromium --grep 'ghostty sustained output'
+```
+
+The short profile runs both engines in all three browsers. The `soak` profile
+measures at least 30 minutes and 100 MiB per case after warmup. Runs fail on text
+loss, stalled rendering, mounted-row overflow, or WASM capacity growth after
+warmup. Bounded reports go to `e2e/test-results/stability/`; CI runs the short
+profile and uploads them. JS heap observations include instrumentation and
+ordinary garbage collection and do not establish leak freedom or process-memory
+limits. See the [harness documentation](e2e/harness/README.md#sustained-output-and-resource-checks)
+for the workload and measurement boundaries.
+
 ### Measure input responsiveness
 
 Measure native browser keyboard input with synchronous local echo while one or

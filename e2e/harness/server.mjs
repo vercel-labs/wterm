@@ -228,6 +228,7 @@ export async function createHarnessServer({
               join(root, "load.html"),
               join(root, "input.html"),
               join(root, "search.html"),
+              join(root, "stability.html"),
             ],
           },
         },

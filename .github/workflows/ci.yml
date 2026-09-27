@@ -130,6 +130,17 @@ jobs:
           path: e2e/test-results/input/
           if-no-files-found: ignore
 
+      - name: Sustained terminal output smoke tests
+        run: pnpm bench:stability
+
+      - name: Upload sustained terminal output reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-stability
+          path: e2e/test-results/stability/
+          if-no-files-found: ignore
+
       - name: Upload PTY baseline reports and failure traces
         if: always()
         uses: actions/upload-artifact@v4

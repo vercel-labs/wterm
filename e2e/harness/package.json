@@ -16,6 +16,8 @@
     "bench:input": "node run-e2e.mjs --input",
     "prebench:search": "node prepare-pty.mjs",
     "bench:search": "node run-e2e.mjs --search",
+    "prebench:stability": "node prepare-pty.mjs",
+    "bench:stability": "node run-e2e.mjs --stability",
     "record": "node record-apps.mjs",
     "type-check": "tsc --noEmit"
   },

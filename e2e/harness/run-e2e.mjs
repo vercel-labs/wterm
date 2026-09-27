@@ -8,8 +8,11 @@ const args = process.argv.slice(2);
 const load = args[0] === "--load";
 const input = args[0] === "--input";
 const search = args[0] === "--search";
-if (load || input || search) args.shift();
-const harness = await createHarnessServer({ load: load || input || search });
+const stability = args[0] === "--stability";
+if (load || input || search || stability) args.shift();
+const harness = await createHarnessServer({
+  load: load || input || search || stability,
+});
 let child;
 let interrupted;
 let killTimer;
@@ -32,13 +35,15 @@ try {
       "--config",
       fileURLToPath(
         new URL(
-          search
-            ? "search.config.ts"
-            : input
-              ? "input.config.ts"
-              : load
-                ? "load.config.ts"
-                : "playwright.config.ts",
+          stability
+            ? "stability.config.ts"
+            : search
+              ? "search.config.ts"
+              : input
+                ? "input.config.ts"
+                : load
+                  ? "load.config.ts"
+                  : "playwright.config.ts",
           import.meta.url,
         ),
       ),

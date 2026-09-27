@@ -179,6 +179,62 @@ multiple repetitions. Keep per-run results rather than pooling samples across
 machines. These reports do not compare wterm with desktop Ghostty or xterm.js,
 measure startup/idle CPU, or certify input latency or multi-terminal behavior.
 
+## Sustained output and resource checks
+
+```bash
+pnpm bench:stability
+WTERM_STABILITY_PROFILE=soak pnpm bench:stability --project chromium --grep 'ghostty sustained output'
+```
+
+This suite checks sustained ANSI-colored scrolling at 80 × 24 cells. Each
+zero-delay timer task writes 16 numbered ASCII rows with changing fingerprints.
+Every parsed row is compared with its expected text before another batch can
+discard it. Each renderer update checks the latest batch's DOM text separately;
+coalesced intermediate batches need not paint. This checks text ordering and
+preservation, not color/style fidelity. The final batch must render, followed by
+two animation callbacks, before a run can complete.
+
+Both engines warm up with at least 1 MiB of output, history pruning, and a checked
+render. Ghostty uses a 64 KiB history budget; the built-in engine keeps its default
+history setting. The `smoke` profile then writes for at least three seconds and
+128 KiB. The `soak` profile writes for at least 30 minutes and 100 MiB. Each run has
+a 2 GiB output limit and a deadline two minutes beyond the profile duration.
+Warmup must finish within 30 seconds. Each case uses a fresh page and production
+bundle, with no PTY, output transport, graphics, resize, or user input.
+
+Resource samples record WASM capacity, optional Chromium JS heap usage, terminal
+DOM elements and mounted rows, retained history, and discarded rows. Sampling
+runs before output, at the measurement boundary, every second (`smoke`) or ten
+seconds (`soak`), and at completion or failure, retaining at most 2,000 samples.
+WASM capacity must stay at its post-warmup size and mounted rows must stay below
+200. Samples that exceed these bounds remain in failed reports. JS heap includes
+workload generation, assertions, reporting, and ordinary garbage collection; it
+has no pass/fail threshold. These observations do not measure process RSS,
+establish a full memory cap, or prove leak freedom.
+
+`frameIntervals` measures time between animation callbacks. `taskDelays` measures
+time from scheduling a zero-delay output task to its execution, including timer
+clamping. Both cover only the measured phase: means/maxima cover all samples,
+while percentiles retain at most the latest 4,096. Generation, row assertions,
+resource checks, and host report polling affect the workload. A five-second gap
+between checked renders fails the run; this is a hang check, not a responsiveness
+budget or physical presentation measurement.
+
+Cancellation, hidden pages, navigation, and browser errors stop the producer and
+restore instrumentation. Failure controls exercise cancellation, lost output,
+paused rendering, and excess mounted rows. Per-case and combined `stability.json`
+reports under `e2e/test-results/stability/` include source/workload/WASM hashes,
+host/browser/font metadata, verified row/frame counts, and bounded resource
+samples. The host retains the last polled report if the page fails. A hung or
+crashed browser may leave only a partial or missing measurement; the case still
+fails. Long runs print progress approximately once a minute. CI runs the short
+profile across Chromium, Firefox, and WebKit and uploads `terminal-stability`.
+
+For long-run comparisons, keep the browser, machine, power mode, font installation,
+and profile fixed; close unrelated workloads and preserve individual reports.
+Passing this suite alone does not certify input latency, transport queues,
+graphics retention, all terminal protocols, or desktop Ghostty parity.
+
 ## Input responsiveness measurements
 
 ```bash
