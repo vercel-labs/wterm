@@ -314,6 +314,105 @@ partial counters; failures before initialization have a null measurement.
 Probe correctness tests are included in the report with null measurements.
 CI uploads the directory as `terminal-input-responsiveness`.
 
+## PTY input latency
+
+```bash
+pnpm bench:pty-input
+WTERM_PTY_INPUT_PROFILE=measure pnpm bench:pty-input --project firefox --repeat-each 3
+```
+
+This separate production-bundle suite runs a raw-mode Node program in each of
+one or eight real PTYs. The fixture requires both stdin and stdout to be TTYs;
+it does not run a shell or shell line editor. Ghostty uses 80 columns by 24 rows.
+The active terminal receives trusted Playwright keyboard events. Each lowercase
+key passes through WTerm input, WebSocket, and the PTY before the child writes its
+unique sequence marker back through the same PTY. There is no local echo. The
+other seven panes are inert and rendering-paused, but continue parsing output.
+
+The three workloads are idle, ANSI scrolling, and redraw. They use the same 32
+complete chunks of at most 16 KiB as the local-echo suite. Each PTY submits one
+chunk, waits for its stdout callback, then waits 16 ms before submitting another.
+There are no catch-up bursts; actual throughput depends on scheduling and flow
+control and is reported per session. The first probe waits for output from every
+non-idle producer. The partial scroll region reserves row 1 for echo. The child
+reports its final chunk, generated-byte, and probe counts; the suite checks those
+counts against the fixture and every received byte against server accounting.
+
+Browser acknowledgments grant credit only after synchronous terminal parsing.
+Each connection allows at most 64 KiB of unacknowledged output. PTY reads pause at
+that limit and resume below 16 KiB; pending server output is capped at 1 MiB and
+1,024 chunks. Overflow fails the measurement. The endpoint accepts only a fixed
+workload, cumulative byte acknowledgments, start/stop controls, and at most 1,024
+single lowercase keys. It shares the harness's loopback binding and exact
+Host/Origin checks. It never accepts a command or executable path.
+
+| Field | Boundary |
+| --- | --- |
+| `driver.requestToDOMReportMs` | Driver timestamp immediately before `page.keyboard.press` to receipt of the matching DOM-observation binding callback |
+| `driver.requestToFrameReportMs` | Same request to receipt of a subsequent animation-callback report that rechecks the visible marker |
+| `measurement.probes.keyDispatchToDOMMs` | Browser capture-phase key dispatch to matching DOM observation, including PTY/WebSocket round trip |
+| `measurement.probes.keyDispatchToFrameMs` | Same browser dispatch to the subsequent animation callback |
+| `measurement.sessions[].receivedMiBPerSecond` | Bytes received after starting the run through final PTY drain, including echo and final summary, per elapsed second |
+| `measurement.sessions[].writeMs` / `renderMs` | Browser terminal writes and renderer calls during that interval; hidden panes must have zero render calls |
+| `measurement.sessions[].flow` | Final sent/acknowledged bytes, peak unacknowledged/pending bytes, pauses, and child exit status |
+| `measurement.resources` | Before/after WASM capacity, mounted rows, DOM elements and retained history rows |
+
+Driver timings use one clock outside the browser, so they include time waiting
+for browser input dispatch. They also include automation command delivery and
+binding-callback IPC, and are not an isolated measurement of the input queue.
+Browser timings use a separate clock; the suite never subtracts timestamps from
+different clocks. Observer/binding instrumentation affects results. Neither
+measurement captures OS key delivery, physical display presentation, remote
+network latency, or desktop Ghostty. This synthetic raw-mode workload does not
+certify latency for every terminal application or the local workspace's transport.
+
+Probes are serial and paced by completion. `smoke` uses 16 keys per case;
+`measure` uses 256, with all samples retained up to the 1,024-key limit. Small
+sample counts give limited evidence about tail latency. Write/render summaries
+retain the latest 8,192 samples, with whole-run count, mean and maximum. A missing
+echo fails after five seconds; the driver timeout runs outside the browser so a
+blocked page cannot suppress it. Hidden pages, lost focus, overlapping input,
+socket/process failure, and incomplete output drain also fail. Runs have a
+90-second deadline. Finish, failure, page close, and server shutdown stop owned
+producers and close their PTYs.
+
+Correctness controls deliberately block browser dispatch for 750 ms and verify
+that driver timing includes the stall; another withholds rendering and requires
+failure rather than counting arbitrary frame callbacks. Server tests withhold
+ACKs, resume credit, reject invalid controls, and verify child termination.
+Shared CI applies no speed thresholds to the workload measurements.
+
+Combined and per-case `pty-input.json` reports under `e2e/test-results/pty-input/`
+include partial failures, driver and browser timings, fixture/source/WASM hashes,
+host/CPU, Node and browser versions, headless mode, font geometry, repeat index,
+queue statistics, and resource snapshots. Initialization failures have a null
+measurement. CI uploads them as `terminal-pty-input`. Compare latency alongside
+throughput using repeated runs on the same hardware and browser configuration.
+
+### Sample PTY measurements
+
+On September 27, 2026, an Apple M1 Max running Darwin 25.6.0 arm64 and Node
+24.20.0 completed three `measure` repeats per workload/configuration: 54 cases
+and 13,824 echoes. The headless viewport was 1280×900 with device scale 1.
+The table gives ranges across the three repeats of both busy workloads
+(ANSI and redraw). Throughput is summed across the indicated PTYs; timings are
+`driver.requestToFrameReportMs`, including automation overhead.
+
+| Browser | PTYs | p95 | p99 | Aggregate output |
+| --- | --- | --- | --- | --- |
+| Chromium 153.0.8010.12 | 1 | 49.9–50.9 ms | 50.2–54.7 ms | 0.73–0.89 MiB/s |
+| Chromium 153.0.8010.12 | 8 | 48.9–52.0 ms | 49.8–67.4 ms | 5.30–7.11 MiB/s |
+| Firefox 155.0 | 1 | 17.3–36.6 ms | 17.6–49.5 ms | 0.84–0.93 MiB/s |
+| Firefox 155.0 | 8 | 167.2–201.4 ms | 174.6–269.8 ms | 5.76–6.49 MiB/s |
+| WebKit 26.6 | 1 | 34.0–34.1 ms | 34.2–36.0 ms | 0.84–0.91 MiB/s |
+| WebKit 26.6 | 8 | 34.0–34.4 ms | 34.6–45.1 ms | 6.58–7.02 MiB/s |
+
+All expected echoes arrived, byte accounting matched, hidden panes made zero
+renderer calls, and queues stayed within the declared bounds. Firefox's eight
+busy PTYs had substantially longer latency than its idle and single-PTY cases.
+These are measurements of this fixture and transport, not a physical-display
+comparison or a guarantee for the local workspace or other applications.
+
 ## History search measurements
 
 ```bash
@@ -421,6 +520,9 @@ If a native binding is missing, install the platform build prerequisites and run
 | `tests/load-reporter.ts` | Combined load measurements, provenance, and failed-case reports |
 | `input.html`, `src/input-main.ts` | Isolated local-echo page and one/eight session setup |
 | `src/input.ts`, `src/input-workloads.ts`, `src/echo-probe.ts` | Bounded output producers, instrumentation, and matching DOM/frame echo probe |
+| `pty-input.html`, `src/pty-input-main.ts`, `pty-input.config.ts` | Real-PTY input measurements and browser instrumentation |
+| `pty-input-fixture.mjs`, `pty-input-server.mjs` | Raw-mode echo/output program, byte credit, and PTY lifecycle |
+| `tests/pty-input-driver.ts`, `tests/pty-input.bench.ts`, `tests/pty-input-server.test.mjs` | Driver-clock timing, browser controls, and bounded-flow/process cleanup checks |
 | `input.config.ts`, `tests/input*.bench.ts` | Input measurements, probe failure checks, and cleanup assertions |
 | `search.html`, `src/search-main.ts`, `src/search-workload.ts` | Retained-history corpus and search timing/cleanup |
 | `search.config.ts`, `tests/search.bench.ts` | Search measurements, correctness assertions, and cancellation controls |

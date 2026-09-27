@@ -133,6 +133,17 @@ jobs:
       - name: Sustained terminal output smoke tests
         run: pnpm bench:stability
 
+      - name: PTY input latency smoke tests
+        run: pnpm bench:pty-input
+
+      - name: Upload PTY input latency reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-pty-input
+          path: e2e/test-results/pty-input/
+          if-no-files-found: ignore
+
       - name: Upload sustained terminal output reports
         if: always()
         uses: actions/upload-artifact@v4

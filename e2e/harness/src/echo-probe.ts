@@ -1,6 +1,6 @@
 import { Samples } from "./metrics";
 
-/** Local keyboard echo observed in DOM, followed by a frame opportunity. */
+/** Keyboard echo observed in DOM, followed by a frame opportunity. */
 export class EchoProbe {
   private observer: MutationObserver;
   private pending: {
@@ -22,6 +22,10 @@ export class EchoProbe {
     private element: HTMLElement,
     private write: (text: string) => void,
     private fail: (error: string) => void,
+    private remote?: {
+      send(key: string): void;
+      observed(stage: "dom" | "frame", sequence: number): void;
+    },
   ) {
     this.observer = new MutationObserver(() => this.observe());
     this.observer.observe(element.querySelector(".term-grid")!, {
@@ -83,7 +87,8 @@ export class EchoProbe {
     }
     probe.output = true;
     // A synchronous local echo exercises WTerm input, parsing and rendering.
-    this.write(`\x1b7\x1b[1;1H\x1b[0m\x1b[2K${probe.marker}\x1b8`);
+    if (this.remote) this.remote.send(data);
+    else this.write(`\x1b7\x1b[1;1H\x1b[0m\x1b[2K${probe.marker}\x1b8`);
   }
 
   private matches(): boolean {
@@ -104,6 +109,7 @@ export class EchoProbe {
     )
       return;
     probe.domAt = performance.now();
+    this.remote?.observed("dom", this.sequence);
     this.frame = requestAnimationFrame(() => {
       this.frame = null;
       if (this.stopped || this.pending !== probe) return;
@@ -122,6 +128,7 @@ export class EchoProbe {
       this.pending = null;
       if (this.timer !== null) clearTimeout(this.timer);
       this.timer = null;
+      this.remote?.observed("frame", this.completed);
     });
   }
 

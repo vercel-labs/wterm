@@ -325,6 +325,23 @@ timing thresholds. These local-echo measurements exclude input delivery before
 browser dispatch, network/PTY latency, and physical presentation. See the
 [harness documentation](e2e/harness/README.md#input-responsiveness-measurements).
 
+### Measure PTY input latency
+
+Measure trusted keyboard input through a real PTY while one or eight Ghostty
+terminals receive idle, ANSI, or redraw output:
+
+```bash
+pnpm bench:pty-input
+WTERM_PTY_INPUT_PROFILE=measure pnpm bench:pty-input --project firefox --repeat-each 3
+```
+
+Reports under `e2e/test-results/pty-input/` include driver-request-to-echo timings
+that include browser input queueing, plus browser-dispatch timings, PTY throughput,
+queue bounds, and environment metadata. Driver timings include automation overhead;
+frame callbacks indicate a paint opportunity, not physical presentation. See the
+[harness documentation](e2e/harness/README.md#pty-input-latency) for the fixture and
+measurement boundaries.
+
 ### Measure history search
 
 Search a fully retained Ghostty history with sparse matches and a no-match query:

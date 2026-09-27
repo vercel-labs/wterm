@@ -15,6 +15,7 @@
     "playwright.config.ts",
     "load.config.ts",
     "input.config.ts",
+    "pty-input.config.ts",
     "search.config.ts",
     "stability.config.ts"
   ]

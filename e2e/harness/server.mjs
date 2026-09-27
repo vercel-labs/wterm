@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 import * as pty from "node-pty";
 import { WebSocket, WebSocketServer } from "ws";
 import { build, createServer as createViteServer } from "vite";
+import { attachPtyInput } from "./pty-input-server.mjs";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const require = createRequire(import.meta.url);
@@ -82,7 +83,7 @@ export async function createHarnessServer({
 
   server.on("upgrade", (request, socket, head) => {
     if (
-      (request.url !== "/pty" && request.url !== "/transport") ||
+      !["/pty", "/transport", "/pty-input"].includes(request.url) ||
       request.headers.origin !== allowedOrigin ||
       request.headers.host !== new URL(allowedOrigin).host
     ) {
@@ -90,6 +91,10 @@ export async function createHarnessServer({
       return;
     }
     wss.handleUpgrade(request, socket, head, (ws) => {
+      if (request.url === "/pty-input") {
+        attachPtyInput(ws, cwd, sessions);
+        return;
+      }
       // A binary echo endpoint exercises the browser transport without a PTY.
       if (request.url === "/transport") {
         ws.on("error", () => ws.terminate());
@@ -227,6 +232,7 @@ export async function createHarnessServer({
             input: [
               join(root, "load.html"),
               join(root, "input.html"),
+              join(root, "pty-input.html"),
               join(root, "search.html"),
               join(root, "stability.html"),
             ],
