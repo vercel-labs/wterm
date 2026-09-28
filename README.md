@@ -74,7 +74,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Grapheme strings** — the Ghostty core preserves combining marks and ZWJ emoji through the DOM renderer and scrollback
 - **Kitty terminal images** — Ghostty-backed terminals render direct PNG/RGB/RGBA graphics in a scroll-aware canvas overlay with configurable display bounds; implicit image placements keep following prompts visually below the image
 - **24-bit color** — full RGB SGR support
-- **Auto-resize** — `ResizeObserver`-based terminal resizing; reported dimensions reflect the grid size applied by the core so connected PTYs stay aligned
+- **Auto-resize** — vanilla terminals measure omitted dimensions before core initialization to avoid an unnecessary initial resize; reported dimensions keep connected PTYs aligned
 - **Wide grids** — the built-in core grows its cell storage as needed, up to 1024 columns and 512 rows
 - **Framework bindings** — React, Vue 3, and Svelte components
 - **In-browser Bash shell** — optional just-bash adapter with Unicode-aware line editing, Ctrl+R history search and Ctrl+S navigation to newer matches, cursor-aware tab completion, Home/End and Delete editing, word-wise cursor movement and erasure, Ctrl+U/Ctrl+K deletion before/after the cursor, Ctrl+Y restoration, and Ctrl+C command interruption

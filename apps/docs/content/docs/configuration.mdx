@@ -66,8 +66,16 @@ behavior is automatic for both cores and all framework bindings.
 
 ### PTY size
 
+With vanilla `WTerm` and `autoResize: true`, omitted `cols` and `rows` are
+measured from the container before the core is initialized. This avoids allocating
+an 80×24 grid and immediately resizing it. Explicit dimensions are respected at
+initialization; subsequent container changes still auto-resize. Hidden or
+unmeasurable containers use the 80×24 defaults until they can be measured.
+With `autoResize: false`, dimensions retain their explicit values or defaults.
+
 After `init()` or `resize()`, read `wt.cols` and `wt.rows` to size a connected
-PTY. `onResize(cols, rows)` also receives the applied grid size. A core can
+PTY. `onResize(cols, rows)` also receives the applied grid size, including when
+initialization changes the requested size. A core can
 apply fewer cells than requested; the built-in core currently supports up to
 1024 columns and 512 rows. Keeping the PTY at the applied size prevents its output from
 wrapping at different columns than the browser terminal.

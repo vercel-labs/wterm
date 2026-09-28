@@ -170,13 +170,13 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
       <td><code>cols</code></td>
       <td><code>number</code></td>
       <td><code>80</code></td>
-      <td>Initial column count</td>
+      <td>Initial column count. Vanilla auto-resizing measures omitted dimensions before initialization; 80 is the fallback.</td>
     </tr>
     <tr>
       <td><code>rows</code></td>
       <td><code>number</code></td>
       <td><code>24</code></td>
-      <td>Initial row count</td>
+      <td>Initial row count. Vanilla auto-resizing measures omitted dimensions before initialization; 24 is the fallback.</td>
     </tr>
     <tr>
       <td><code>core</code></td>
@@ -278,7 +278,7 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
       <td><code>onResize</code></td>
       <td><code>(cols: number, rows: number) =&gt; void</code></td>
       <td>—</td>
-      <td>Called after resize with the grid dimensions applied by the core. Use these values when resizing a connected PTY.</td>
+      <td>Called with the grid dimensions applied by the core after resize or when initialization changes the requested size. Use these values when resizing a connected PTY.</td>
     </tr>
   </tbody>
 </table>

@@ -145,8 +145,8 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `cols` | `number` | `80` | Initial column count |
-| `rows` | `number` | `24` | Initial row count |
+| `cols` | `number` | Measured or `80` | Initial column count; omitted dimensions are measured before core initialization when auto-resizing |
+| `rows` | `number` | Measured or `24` | Initial row count; hidden or unmeasurable containers use the fallback |
 | `wasmUrl` | `string` | — | Optional URL to serve the WASM binary separately (embedded by default) |
 | `autoResize` | `boolean` | `true` | Auto-resize based on container dimensions |
 | `maxImageWidth` | `number` | — | Maximum rendered Kitty image width in CSS pixels. Images larger than the limit are scaled down proportionally. |
@@ -162,7 +162,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `onClipboardWrite` | `(text: string) => void` | — | Application clipboard-write request; the host chooses whether to accept it |
 | `onShellIntegration` | `(state: ShellIntegrationState) => void` | — | Latest shell-reported command state; requires OSC 133 and a supporting core |
 | `onWorkingDirectory` | `(uri: string) => void` | — | Shell-reported OSC 7 URI; empty clears it. Requires a supporting core. |
-| `onResize` | `(cols: number, rows: number) => void` | — | Called with the grid dimensions applied by the core after resize |
+| `onResize` | `(cols: number, rows: number) => void` | — | Called with the applied grid dimensions after resize or when initialization changes the requested size |
 | `onSearchChange` | `(state: SearchState) => void` | — | Receives search progress, count, and active match changes |
 
 **Methods:**

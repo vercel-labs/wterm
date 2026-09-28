@@ -305,6 +305,57 @@ describe("WTerm", () => {
   });
 
   describe("init", () => {
+    it.each([
+      [{}, 100, 28],
+      [{ cols: 60 }, 60, 28],
+      [{ rows: 12 }, 100, 12],
+      [{ cols: 60, rows: 12 }, 60, 12],
+      [{ autoResize: false }, 80, 24],
+    ])(
+      "measures unspecified initial dimensions with %j",
+      async (options, cols, rows) => {
+        vi.spyOn(
+          HTMLElement.prototype,
+          "getBoundingClientRect",
+        ).mockImplementation(function (this: HTMLElement) {
+          return {
+            width: this === element ? 800 : 8,
+            height: this === element ? 600 : 20,
+          } as DOMRect;
+        });
+        const onResize = vi.fn();
+        const term = new WTerm(element, { ...options, onResize });
+        await term.init();
+        expect(mockBridge.init).toHaveBeenCalledExactlyOnceWith(cols, rows);
+        expect(mockBridge.resize).not.toHaveBeenCalled();
+        expect([term.cols, term.rows]).toEqual([cols, rows]);
+        if (options.autoResize === false || (options.cols && options.rows))
+          expect(onResize).not.toHaveBeenCalled();
+        else expect(onResize).toHaveBeenCalledExactlyOnceWith(cols, rows);
+        term.destroy();
+      },
+    );
+
+    it("keeps fallback dimensions while hidden and fits after becoming visible", async () => {
+      let visible = false;
+      vi.spyOn(
+        HTMLElement.prototype,
+        "getBoundingClientRect",
+      ).mockImplementation(function (this: HTMLElement) {
+        return {
+          width: visible ? (this === element ? 800 : 8) : 0,
+          height: visible ? (this === element ? 600 : 20) : 0,
+        } as DOMRect;
+      });
+      const term = new WTerm(element);
+      await term.init();
+      expect(mockBridge.init).toHaveBeenCalledExactlyOnceWith(80, 24);
+      visible = true;
+      term.fit();
+      expect(mockBridge.resize).toHaveBeenCalledExactlyOnceWith(100, 28);
+      term.destroy();
+    });
+
     it("loads the WASM bridge and initializes it", async () => {
       const term = new WTerm(element);
       await term.init();
@@ -601,6 +652,7 @@ describe("WTerm", () => {
     });
 
     it("uses the core's applied dimensions after initialization", async () => {
+      const onResize = vi.fn();
       vi.mocked(mockBridge.init).mockImplementation(() => {
         vi.mocked(mockBridge.getCols).mockReturnValue(256);
         vi.mocked(mockBridge.getRows).mockReturnValue(120);
@@ -609,12 +661,14 @@ describe("WTerm", () => {
         cols: 320,
         rows: 120,
         autoResize: false,
+        onResize,
       });
       await term.init();
 
       expect(mockBridge.init).toHaveBeenCalledWith(320, 120);
       expect(term.cols).toBe(256);
       expect(term.rows).toBe(120);
+      expect(onResize).toHaveBeenCalledExactlyOnceWith(256, 120);
       expect(element.querySelectorAll(".term-row")).toHaveLength(120);
     });
 

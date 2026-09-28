@@ -68,6 +68,8 @@ export class WTerm {
   debug: DebugAdapter | null = null;
 
   private _coreOption: TerminalCore | undefined;
+  private _initialColsExplicit: boolean;
+  private _initialRowsExplicit: boolean;
   private _themeColors: TerminalThemeColors | null = null;
   private wasmUrl: string | undefined;
   private maxImageWidth: number | undefined;
@@ -119,6 +121,8 @@ export class WTerm {
   constructor(element: HTMLElement, options: WTermOptions = {}) {
     this.element = element;
     this._coreOption = options.core;
+    this._initialColsExplicit = options.cols !== undefined;
+    this._initialRowsExplicit = options.rows !== undefined;
     this.wasmUrl = options.wasmUrl;
     this.maxImageWidth = options.maxImageWidth;
     this.maxImageHeight = options.maxImageHeight;
@@ -350,6 +354,16 @@ export class WTerm {
         this.bridge = await WasmBridge.load(this.wasmUrl);
       }
       if (this._destroyed) return this;
+      const initialCols = this.cols;
+      const initialRows = this.rows;
+      this._setRowHeight();
+      if (this.autoResize) {
+        const size = this._measureGridSize();
+        if (size) {
+          if (!this._initialColsExplicit) this.cols = size.cols;
+          if (!this._initialRowsExplicit) this.rows = size.rows;
+        }
+      }
       this.bridge.init(this.cols, this.rows);
       if (this._themeColors) this.bridge.setThemeColors?.(this._themeColors);
       this.cols = this.bridge.getCols();
@@ -361,7 +375,6 @@ export class WTerm {
         (globalThis as Record<string, unknown>).__wterm = this;
       }
 
-      this._setRowHeight();
       this._measureCharSize();
 
       this.renderer = new Renderer(this._container, {
@@ -426,6 +439,8 @@ export class WTerm {
 
       this.input.focus();
       this._initialRender();
+      if (this.cols !== initialCols || this.rows !== initialRows)
+        this.onResize?.(this.cols, this.rows);
     } catch (err) {
       this.destroy();
       throw new Error(
@@ -570,8 +585,14 @@ export class WTerm {
   /** Fit the grid to the current element and font metrics. */
   fit(): void {
     if (!this.bridge || this._destroyed) return;
+    const size = this._measureGridSize();
+    if (size && (size.cols !== this.cols || size.rows !== this.rows))
+      this.resize(size.cols, size.rows);
+  }
+
+  private _measureGridSize(): { cols: number; rows: number } | null {
     const measured = this._measureCharSize();
-    if (!measured) return;
+    if (!measured) return null;
     const style = getComputedStyle(this.element);
     const rect = this.element.getBoundingClientRect();
     const pixels = (value: string) => parseFloat(value) || 0;
@@ -599,10 +620,10 @@ export class WTerm {
       pixels(style.paddingBottom) -
       bordersY -
       scrollbarHeight;
-    if (width <= 0 || height <= 0) return;
+    if (width <= 0 || height <= 0) return null;
     const cols = Math.max(1, Math.floor(width / measured.charWidth));
     const rows = Math.max(1, Math.floor(height / measured.rowHeight));
-    if (cols !== this.cols || rows !== this.rows) this.resize(cols, rows);
+    return { cols, rows };
   }
 
   resize(cols: number, rows: number): void {
