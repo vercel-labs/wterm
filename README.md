@@ -27,6 +27,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 ## Features
 
 - **Pluggable cores** — built-in lightweight Zig core or opt-in [libghostty](packages/@wterm/ghostty) backend for full VT compliance
+- **Lower idle memory** — Ghostty allocates terminal pages as needed, reducing memory reserved by idle terminals and alternate screens
 - **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~26 KB `.wasm` binary (release build)
 - **DOM rendering** — native text selection, clipboard, browser find, and screen reader support for mounted rows
 - **Named terminal input** — the editable control exposes host labels and descriptions to assistive technology and follows the host's tab order; Escape followed by Tab or Shift+Tab moves focus back to the page

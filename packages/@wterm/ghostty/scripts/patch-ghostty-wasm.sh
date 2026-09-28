@@ -9,7 +9,7 @@
 #   5. kitty/graphics_exec.zig — passes the owning screen to image storage
 #   6. kitty/graphics_unicode.zig — updates upstream image-storage tests
 #   7. page.zig — uses posix.mmap/munmap for page memory
-#   8. PageList.zig — pageAllocator() returns Mach VM allocator on macOS
+#   8. PageList.zig — uses the WASM allocator and grows page pools on demand
 #   9. osc.zig — bounds encoded clipboard requests while parsing
 #
 # Page memory is replaced with wasm_allocator on WASM targets, Kitty file and
@@ -107,6 +107,14 @@ new_pa = '''inline fn pageAllocator() Allocator {
 
 if 'wasm_allocator' not in src[src.find('inline fn pageAllocator()'):src.find('inline fn pageAllocator()') + 700]:
     src = src.replace(old_pa, new_pa, 1)
+
+# WASM linear memory cannot shrink. Allocate page-pool entries as needed
+# instead of reserving four pages before the terminal has any output.
+old_preheat = 'const page_preheat = 4;'
+new_preheat = 'const page_preheat = if (builtin.target.cpu.arch.isWasm()) 0 else 4;'
+if src.count(old_preheat) != 1:
+    raise SystemExit('PageList page preheat shape changed')
+src = src.replace(old_preheat, new_preheat, 1)
 
 # Backport ghostty-org/ghostty@420de124f04aa322bf250098cc62d7195db94bfd.
 # Native page allocators supply zeroed memory. The WASM allocator can return
