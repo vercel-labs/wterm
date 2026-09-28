@@ -114,4 +114,81 @@ for (const core of ["builtin", "ghostty"]) {
     expect(result.nativeText.trimEnd()).toBe(result.selectedText);
     expect(result.mounted).toBeLessThan(50);
   });
+
+  test(`${core}: clear and refill refresh history with the same row count`, async ({
+    page,
+  }) => {
+    await page.goto(`/?core=${core}&mode=replay`);
+    await expect(page.locator("#status")).toHaveText("Replay ready");
+    const result = await page.evaluate(async () => {
+      const api = window.ptyHarness;
+      api.resize(40, 8);
+      const terminal = document.querySelector<HTMLElement>("#terminal")!;
+      const write = async (label: string) => {
+        api.replayWrite(
+          btoa(
+            "\x1bc\x1b[3J" +
+              Array.from({ length: 200 }, (_, i) => `${label} ${i}\r\n`).join(
+                "",
+              ),
+          ),
+          4096,
+        );
+        await api.frame();
+      };
+      await write("before");
+      const height = terminal
+        .querySelector(".term-row")!
+        .getBoundingClientRect().height;
+      terminal.scrollTop = height * 100;
+      terminal.dispatchEvent(new Event("scroll"));
+      await api.frame();
+      const before = api.snapshot().scrollbackCount;
+      await write("after");
+      return {
+        before,
+        after: api.snapshot().scrollbackCount,
+        rows: Array.from(
+          terminal.querySelectorAll(".term-scrollback-row"),
+          (row) => row.textContent!.trimEnd(),
+        ),
+      };
+    });
+    expect(result.after).toBe(result.before);
+    expect(result.rows.length).toBeGreaterThan(0);
+    expect(result.rows.every((row) => row.startsWith("after "))).toBe(true);
+  });
 }
+
+test("ghostty: OSC palette output refreshes retained history colors", async ({
+  page,
+}) => {
+  await page.goto("/?core=ghostty&mode=replay");
+  await expect(page.locator("#status")).toHaveText("Replay ready");
+  const result = await page.evaluate(async () => {
+    const api = window.ptyHarness;
+    api.resize(40, 8);
+    api.replayWrite(btoa("\x1b[44mhistory\x1b[K\r\n".repeat(200)), 4096);
+    await api.frame();
+    const terminal = document.querySelector<HTMLElement>("#terminal")!;
+    const height = terminal
+      .querySelector(".term-row")!
+      .getBoundingClientRect().height;
+    terminal.scrollTop = height * 100;
+    terminal.dispatchEvent(new Event("scroll"));
+    await api.frame();
+    const row = terminal.querySelector<HTMLElement>(".term-scrollback-row")!;
+    const before = api.snapshot().scrollbackCount;
+    api.replayWrite(btoa("\x1b]4;4;rgb:12/34/56\x1b\\"), 4096);
+    await api.frame();
+    return {
+      before,
+      after: api.snapshot().scrollbackCount,
+      retained: terminal.querySelector(".term-scrollback-row") === row,
+      background: getComputedStyle(row).backgroundColor,
+    };
+  });
+  expect(result.after).toBe(result.before);
+  expect(result.retained).toBe(true);
+  expect(result.background).toBe("rgb(18, 52, 86)");
+});

@@ -756,32 +756,35 @@ describe("Renderer", () => {
       );
     });
 
-    it("refreshes visible scrollback without an optional rollover signal", () => {
-      let prefix = "A";
-      const bridge = createMockBridge(2, 1);
-      bridge.getScrollbackCount = () => 1000;
-      bridge.getScrollbackLineLen = () => 2;
-      bridge.getScrollbackCell = () => makeCell(prefix);
-      const renderer = new Renderer(container);
-      const viewport = {
-        scrollTop: 5000,
-        clientHeight: 20,
-        rowHeight: 10,
-        overscanRows: 1,
-      };
+    it.each([5000, 5010])(
+      "refreshes scrollback without rollover metadata at scrollTop %i",
+      (scrollTop) => {
+        let prefix = "A";
+        const bridge = createMockBridge(2, 1);
+        bridge.getScrollbackCount = () => 1000;
+        bridge.getScrollbackLineLen = () => 2;
+        bridge.getScrollbackCell = () => makeCell(prefix);
+        const renderer = new Renderer(container);
+        const viewport = {
+          scrollTop: 5000,
+          clientHeight: 20,
+          rowHeight: 10,
+          overscanRows: 1,
+        };
 
-      renderer.render(bridge as any, viewport);
-      expect(container.querySelector(".term-scrollback-row")?.textContent).toBe(
-        "AA",
-      );
+        renderer.render(bridge as any, viewport);
+        expect(
+          container.querySelector(".term-scrollback-row")?.textContent,
+        ).toBe("AA");
 
-      prefix = "B";
-      renderer.render(bridge as any, viewport);
+        prefix = "B";
+        renderer.render(bridge as any, { ...viewport, scrollTop });
 
-      expect(container.querySelector(".term-scrollback-row")?.textContent).toBe(
-        "BB",
-      );
-    });
+        expect(
+          container.querySelector(".term-scrollback-row")?.textContent,
+        ).toBe("BB");
+      },
+    );
 
     it("preserves unchanged visible scrollback row elements", () => {
       const bridge = createMockBridge(2, 1);
@@ -811,18 +814,26 @@ describe("Renderer", () => {
       observer.disconnect();
     });
 
-    it("only creates newly visible history rows when the viewport advances", () => {
-      const bridge = createMockBridge(2, 1);
+    it("only reads and creates entering history rows when scrolling in either direction", () => {
+      const bridge = {
+        ...createMockBridge(2, 1),
+        getScrollbackRowMetadata: vi.fn(() => ({
+          wrapsToNext: false,
+          continuesPrevious: false,
+        })),
+      };
       bridge.getScrollbackCount = () => 1000;
-      bridge.getScrollbackLineLen = () => 2;
-      bridge.getScrollbackCell = (offset: number) =>
-        makeCell(String(offset % 10));
+      const lengths = vi.fn(() => 2);
+      const cells = vi.fn((offset: number) => makeCell(String(offset % 10)));
+      bridge.getScrollbackLineLen = lengths;
+      bridge.getScrollbackCell = cells;
       const renderer = new Renderer(container);
       const viewport = {
         scrollTop: 5000,
         clientHeight: 20,
         rowHeight: 10,
         overscanRows: 1,
+        scrollbackDiscardedCount: 0,
       };
       renderer.render(bridge as any, viewport);
       const before = Array.from(
@@ -831,6 +842,9 @@ describe("Renderer", () => {
       const textNodes = before
         .slice(1)
         .map((row) => row.firstChild!.firstChild);
+      lengths.mockClear();
+      cells.mockClear();
+      bridge.getScrollbackRowMetadata.mockClear();
       const create = vi.spyOn(document, "createElement");
       renderer.render(bridge as any, { ...viewport, scrollTop: 5010 });
       const createdRows = create.mock.results.filter(({ value }) =>
@@ -851,9 +865,30 @@ describe("Renderer", () => {
         "66",
       ]);
       expect(createdRows).toHaveLength(1);
+      expect(lengths.mock.calls).toEqual([[496]]);
+      expect(cells).toHaveBeenCalledTimes(2);
+      expect(bridge.getScrollbackRowMetadata.mock.calls).toEqual([[496]]);
+
+      lengths.mockClear();
+      cells.mockClear();
+      bridge.getScrollbackRowMetadata.mockClear();
+      renderer.render(bridge as any, viewport);
+      const back = Array.from(
+        container.querySelectorAll(".term-scrollback-row"),
+      );
+      expect(back.slice(1)).toEqual(after.slice(0, 3));
+      expect(back.map((row) => row.textContent)).toEqual([
+        "00",
+        "99",
+        "88",
+        "77",
+      ]);
+      expect(lengths.mock.calls).toEqual([[500]]);
+      expect(cells).toHaveBeenCalledTimes(2);
+      expect(bridge.getScrollbackRowMetadata.mock.calls).toEqual([[500]]);
     });
 
-    it("refreshes changed history content and backgrounds in the retained row", () => {
+    it("refreshes retained content after output without changing history counts", () => {
       let char = "A";
       let bgRgb: number | undefined = 0xff0000;
       const bridge = createMockBridge(2, 1);
@@ -861,12 +896,19 @@ describe("Renderer", () => {
       bridge.getScrollbackLineLen = () => 2;
       bridge.getScrollbackCell = () => ({ ...makeCell(char), bgRgb });
       const renderer = new Renderer(container);
-      renderer.render(bridge as any);
+      const viewport = {
+        scrollTop: 0,
+        clientHeight: 10,
+        rowHeight: 10,
+        scrollbackDiscardedCount: 0,
+      };
+      renderer.render(bridge as any, viewport);
       const row = container.querySelector<HTMLElement>(".term-scrollback-row")!;
       expect(row.style.background).toBe("rgb(255, 0, 0)");
+      renderer.beforeMutation(bridge);
       char = "B";
       bgRgb = undefined;
-      renderer.render(bridge as any);
+      renderer.render(bridge as any, viewport);
       expect(container.querySelector(".term-scrollback-row")).toBe(row);
       expect(row.textContent).toBe("BB");
       expect(row.style.background).toBe("");
@@ -934,17 +976,19 @@ describe("Renderer", () => {
       expect(reads).toBe(firstReads);
     });
 
-    it("retains selected rows without mounting the gap to a distant viewport", () => {
+    it("retains selected row content without rereading it or mounting the gap", () => {
       const bridge = createMockBridge(1, 1);
       bridge.getScrollbackCount = () => 100;
       bridge.getScrollbackLineLen = () => 1;
-      bridge.getScrollbackCell = () => makeCell("A");
+      const cells = vi.fn(() => makeCell("A"));
+      bridge.getScrollbackCell = cells;
       const renderer = new Renderer(container);
       const viewport = {
         scrollTop: 0,
         clientHeight: 20,
         rowHeight: 10,
         overscanRows: 0,
+        scrollbackDiscardedCount: 0,
       };
 
       renderer.render(bridge as any, viewport);
@@ -956,10 +1000,13 @@ describe("Renderer", () => {
       selection.addRange(range);
       selection.extend(firstRow, 1);
 
+      cells.mockClear();
       renderer.render(bridge as any, { ...viewport, scrollTop: 100 });
 
       expect(container.contains(firstRow)).toBe(true);
       expect(container.querySelectorAll(".term-scrollback-row").length).toBe(3);
+      expect(cells).toHaveBeenCalledTimes(2);
+      expect(renderer.getSelectionText()).toBe("A");
       selection.removeAllRanges();
     });
   });

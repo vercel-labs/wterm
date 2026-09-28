@@ -19,6 +19,8 @@ alongside fragmented Unicode and ANSI output, including while painting is paused
 history rows and incoming output leaves unchanged history DOM intact. Both
 cores retain native selections, Unicode copy text, links, and row backgrounds
 across those updates in all three browser engines.
+It also checks that clear/refill and Ghostty OSC palette updates refresh mounted
+history even when the retained row count is unchanged.
 
 Requires macOS or Linux, Node.js 24+, pnpm 11+, and a C++/Python build toolchain on Linux for `node-pty`. On macOS the package uses prebuilt binaries; the preparation script restores the published spawn helper's executable bit. The workspace allows `node-pty`'s native install scripts so clean Linux installs build the binding.
 

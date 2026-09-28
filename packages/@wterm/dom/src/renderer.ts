@@ -838,11 +838,16 @@ export class Renderer {
     }
     const ordered = Array.from(indices).sort((a, b) => a - b);
     const keys = ordered.map((index) => discardedCount + index);
-    if (
+    // beforeMutation marks the painted content stale, even when output leaves
+    // the history length and discarded count unchanged (for example OSC colors).
+    const contentUnchanged =
+      this.painted &&
       !this.colorsChanged &&
       hasDiscardedCount &&
       scrollbackCount === this._renderedScrollbackCount &&
-      discardedCount === this._renderedDiscardedCount &&
+      discardedCount === this._renderedDiscardedCount;
+    if (
+      contentUnchanged &&
       keys.length === this._scrollbackKeys.length &&
       keys.every((key, index) => key === this._scrollbackKeys[index])
     ) {
@@ -882,11 +887,10 @@ export class Renderer {
       if (!rowEl) {
         rowEl = document.createElement("div");
         rowEl.className = "term-row term-scrollback-row";
+        this._updateScrollbackRow(core, offset, rowEl);
+      } else if (!contentUnchanged) {
+        this._updateScrollbackRow(core, offset, rowEl);
       }
-      // Compare the generated content before touching DOM, as for live rows.
-      // Building a detached candidate would parse and serialize every retained
-      // row even when only one new history row enters the viewport.
-      this._updateScrollbackRow(core, offset, rowEl);
 
       if (rowEl !== nextSibling) {
         this.container.insertBefore(

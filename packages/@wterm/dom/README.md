@@ -268,6 +268,8 @@ Ordinary byte output is scanned directly without creating a decoded string copy.
 
 Scrollback normally keeps only the visible rows plus overscan mounted in the DOM. Up to 1,000 selected history rows can also stay mounted, separately from a distant viewport. Gaps remain virtualized. Native browser find and accessibility inspect mounted rows, not every retained history row. Scrolling updates the window, while new output follows the exact bottom only when the terminal was already there.
 
+With the built-in and Ghostty cores, scrolling reuses the content of overlapping history rows and reads only rows entering the window. Output, theme changes, resize, and history changes refresh the content. Custom cores without a discarded-history count refresh mounted history on every render.
+
 WTerm owns scrollback anchoring when old history is discarded. The package stylesheet disables browser-native scroll anchoring on the terminal scroller so rollover produces one deterministic adjustment across browsers.
 
 ### Selecting and copying text
