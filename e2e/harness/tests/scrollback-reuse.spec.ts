@@ -1,6 +1,78 @@
 import { expect, test } from "@playwright/test";
 
 for (const core of ["builtin", "ghostty"]) {
+  test(`${core}: small scrolls reuse overscan without changing visible history`, async ({
+    page,
+  }) => {
+    await page.goto(`/?core=${core}&mode=replay`);
+    await expect(page.locator("#status")).toHaveText("Replay ready");
+    const result = await page.evaluate(async () => {
+      const api = window.ptyHarness;
+      api.resize(40, 8);
+      api.replayWrite(
+        btoa(Array.from({ length: 200 }, (_, i) => `row ${i}\r\n`).join("")),
+        4096,
+      );
+      await api.frame();
+      const terminal = document.querySelector<HTMLElement>("#terminal")!;
+      const height = terminal
+        .querySelector(".term-row")!
+        .getBoundingClientRect().height;
+      const scroll = async (row: number) => {
+        terminal.scrollTop = height * row;
+        terminal.dispatchEvent(new Event("scroll"));
+        await api.frame();
+      };
+      await scroll(100);
+      const grid = terminal.querySelector(".term-grid")!;
+      const original = grid.innerHTML;
+      const mutations: MutationRecord[] = [];
+      const observer = new MutationObserver((records) =>
+        mutations.push(...records),
+      );
+      observer.observe(grid, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
+      const visible: string[] = [];
+      for (const row of [101, 105, 100, 95]) {
+        await scroll(row);
+        const top =
+          terminal.getBoundingClientRect().top +
+          terminal.clientTop +
+          parseFloat(getComputedStyle(terminal).paddingTop);
+        const first = Array.from(
+          terminal.querySelectorAll(".term-scrollback-row"),
+        ).find((el) => Math.abs(el.getBoundingClientRect().top - top) < 1);
+        visible.push(first?.textContent?.trimEnd() ?? "missing");
+      }
+      const unchanged = grid.innerHTML === original;
+      observer.disconnect();
+      await scroll(106);
+      const refreshed = grid.innerHTML !== original;
+      await scroll(20);
+      const labels = Array.from(
+        terminal.querySelectorAll(".term-scrollback-row"),
+        (row) => row.textContent!.trimEnd(),
+      );
+      return {
+        unchanged,
+        mutations: mutations.length,
+        visible,
+        refreshed,
+        labels,
+      };
+    });
+    expect(result.unchanged).toBe(true);
+    expect(result.mutations).toBe(0);
+    expect(result.visible).toEqual(["row 101", "row 105", "row 100", "row 95"]);
+    expect(result.refreshed).toBe(true);
+    expect(result.labels).toContain("row 20");
+    expect(result.labels.length).toBeLessThan(50);
+  });
+
   test(`${core}: scrolling and incoming output reuse unchanged history DOM`, async ({
     page,
   }) => {

@@ -1037,6 +1037,68 @@ describe("Renderer", () => {
       ).toBe(retainedRow);
     });
 
+    it("keeps overscan rows until scrolling approaches the window edge", () => {
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 2;
+      const cells = vi.fn((offset: number) => makeCell(String(offset % 10)));
+      bridge.getScrollbackCell = cells;
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 5000,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 10,
+        scrollbackDiscardedCount: 0,
+      };
+      renderer.render(bridge as any, viewport);
+      const html = container.innerHTML;
+      cells.mockClear();
+      for (const scrollTop of [5010, 5050, 5000, 4950]) {
+        renderer.render(bridge as any, { ...viewport, scrollTop });
+        expect(container.innerHTML).toBe(html);
+      }
+      expect(cells).not.toHaveBeenCalled();
+
+      renderer.render(bridge as any, { ...viewport, scrollTop: 5060 });
+      expect(cells).toHaveBeenCalledTimes(12);
+      expect(container.querySelectorAll(".term-scrollback-row")).toHaveLength(
+        22,
+      );
+      expect(container.firstElementChild?.getAttribute("style")).toContain(
+        "4960px",
+      );
+
+      renderer.beforeMutation(bridge as any);
+      cells.mockClear();
+      renderer.render(bridge as any, { ...viewport, scrollTop: 5070 });
+      expect(cells).toHaveBeenCalledTimes(44);
+    });
+
+    it("updates history spacer heights when row metrics change", () => {
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 2;
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any, {
+        scrollTop: 5000,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 10,
+        scrollbackDiscardedCount: 0,
+      });
+      renderer.render(bridge as any, {
+        scrollTop: 10000,
+        clientHeight: 40,
+        rowHeight: 20,
+        overscanRows: 10,
+        scrollbackDiscardedCount: 0,
+      });
+      expect(container.firstElementChild?.getAttribute("style")).toContain(
+        "9800px",
+      );
+    });
+
     it("does not reread scrollback when history and window are unchanged", () => {
       const bridge = createMockBridge(2, 1);
       bridge.getScrollbackCount = () => 1000;

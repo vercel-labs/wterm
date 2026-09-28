@@ -58,7 +58,8 @@ described below.
 
 ### Scrollback rendering
 
-Scrollback keeps a bounded window of mounted rows. As you scroll, overlapping
+Scrollback keeps a bounded window of mounted rows. Small scrolls reuse this
+window until the viewport approaches its edge. When it moves, overlapping
 rows reuse their existing elements; unchanged text and links keep their DOM
 nodes when new output arrives. This reduces DOM work while reading history
 without changing selection, copy, or the amount of retained history. The

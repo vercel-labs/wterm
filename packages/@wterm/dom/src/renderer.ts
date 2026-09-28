@@ -385,6 +385,7 @@ export class Renderer {
 
   private _scrollbackRowEls: HTMLDivElement[] = [];
   private _scrollbackKeys: number[] = [];
+  private _scrollbackRowHeight = 0;
   private _scrollbackGapSpacers: HTMLDivElement[] = [];
   private _renderedScrollbackCount = -1;
   private _renderedDiscardedCount = -1;
@@ -858,6 +859,33 @@ export class Renderer {
       !selection.isCollapsed &&
       (this.container.contains(selection.anchorNode) ||
         this.container.contains(selection.focusNode));
+    // beforeMutation invalidates content even when history counts stay the same
+    // (for example OSC colors). Only scrolls through unchanged rows can reuse it.
+    const contentUnchanged =
+      this.painted &&
+      !this.colorsChanged &&
+      hasDiscardedCount &&
+      scrollbackCount === this._renderedScrollbackCount &&
+      discardedCount === this._renderedDiscardedCount;
+    // Keep the existing overscan window until the viewport approaches its edge.
+    const first = (this._scrollbackKeys[0] ?? Infinity) - discardedCount;
+    const last =
+      (this._scrollbackKeys[this._scrollbackKeys.length - 1] ?? -Infinity) -
+      discardedCount +
+      1;
+    const margin = Math.ceil(overscan / 2);
+    if (
+      virtual &&
+      contentUnchanged &&
+      !selectionInContainer &&
+      !viewport?.selectedRows &&
+      rowHeight === this._scrollbackRowHeight &&
+      this._scrollbackKeys.length === last - first &&
+      this._scrollbackKeys.length <= visibleRows + 2 * overscan &&
+      first <= Math.max(0, Math.min(scrollbackCount, firstVisible - margin)) &&
+      last >= Math.min(scrollbackCount, firstVisible + visibleRows + margin)
+    )
+      return;
     const indices = new Set<number>();
     for (let index = start; index < end; index++) indices.add(index);
     if (
@@ -886,16 +914,9 @@ export class Renderer {
     }
     const ordered = Array.from(indices).sort((a, b) => a - b);
     const keys = ordered.map((index) => discardedCount + index);
-    // beforeMutation marks the painted content stale, even when output leaves
-    // the history length and discarded count unchanged (for example OSC colors).
-    const contentUnchanged =
-      this.painted &&
-      !this.colorsChanged &&
-      hasDiscardedCount &&
-      scrollbackCount === this._renderedScrollbackCount &&
-      discardedCount === this._renderedDiscardedCount;
     if (
       contentUnchanged &&
+      rowHeight === this._scrollbackRowHeight &&
       keys.length === this._scrollbackKeys.length &&
       keys.every((key, index) => key === this._scrollbackKeys[index])
     ) {
@@ -953,6 +974,7 @@ export class Renderer {
     this._scrollbackKeys = keys;
     this._renderedScrollbackCount = scrollbackCount;
     this._renderedDiscardedCount = discardedCount;
+    this._scrollbackRowHeight = rowHeight;
 
     if (this._scrollbackTopSpacer) {
       this._scrollbackTopSpacer.style.height = `${(ordered[0] ?? scrollbackCount) * rowHeight}px`;
