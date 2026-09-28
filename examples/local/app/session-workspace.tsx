@@ -101,6 +101,7 @@ interface SessionTerminalProps {
   coreLoader?: () => Promise<TerminalCore>;
   onStatus: (id: string, status: SessionStatus) => void;
   onCwd: (id: string, cwd: string) => void;
+  onDirectory: (id: string, uri: string) => void;
   onShell: (id: string, state: ShellIntegrationState) => void;
 }
 
@@ -121,6 +122,7 @@ function SessionTerminal({
   coreLoader,
   onStatus,
   onCwd,
+  onDirectory,
   onShell,
 }: SessionTerminalProps) {
   const [ready, setReady] = useState(false);
@@ -625,6 +627,7 @@ function SessionTerminal({
           onReady={handleReady}
           onData={handleData}
           onShellIntegration={(state) => onShell(session.id, state)}
+          onWorkingDirectory={(uri) => onDirectory(session.id, uri)}
           onClipboardWrite={handleClipboardWrite}
           onResize={handleResize}
           aria-label={session.name}
@@ -791,6 +794,10 @@ function ReadyWorkspace({
     dispatch({ type: "cwd", id, cwd });
   }, []);
 
+  const handleDirectory = useCallback((id: string, uri: string) => {
+    dispatch({ type: "directory", id, uri });
+  }, []);
+
   const handleShell = useCallback(
     (id: string, shell: ShellIntegrationState) => {
       dispatch({ type: "shell", id, shell });
@@ -941,9 +948,14 @@ function ReadyWorkspace({
                   />
                   <span
                     className="truncate"
-                    title={session.cwd ?? session.name}
+                    dir="ltr"
+                    title={
+                      session.reportedCwd !== null
+                        ? `Shell-reported directory: ${session.reportedCwd}`
+                        : (session.cwd ?? session.name)
+                    }
                   >
-                    {cwdLabel(session.cwd)}
+                    {session.reportedCwd ?? cwdLabel(session.cwd)}
                   </span>
                 </button>
                 {shellLabel(session) && (
@@ -1161,6 +1173,7 @@ function ReadyWorkspace({
                         coreLoader={coreLoader}
                         onStatus={handleStatus}
                         onCwd={handleCwd}
+                        onDirectory={handleDirectory}
                         onShell={handleShell}
                       />
                     )}

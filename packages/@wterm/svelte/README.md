@@ -53,6 +53,7 @@ The terminal accepts the shared `WTerm` options `cols`, `rows`, `core`,
 | `onBell`   | `(count: number) => void`              | —       | Called with the pending BEL count; the host controls any alert                            |
 | `onClipboardWrite` | `(text: string) => void` | — | Application clipboard-write request; the host chooses whether to accept it |
 | `onShellIntegration` | `(state: ShellIntegrationState) => void` | — | Latest shell-reported command state; requires OSC 133 and a supporting core |
+| `onWorkingDirectory` | `(uri: string) => void` | — | Shell-reported OSC 7 URI; empty clears it. Requires a supporting core. Also accepts `onworkingdirectory`. |
 | `onResize` | `(cols: number, rows: number) => void` | —       | Called after the terminal is resized                                                      |
 | `onReady`  | `(wt: WTerm) => void`                  | —       | Called after initialization completes                                                     |
 | `onError`  | `(error: unknown) => void`             | —       | Called if WASM loading or initialization fails                                            |
@@ -161,6 +162,14 @@ this option. New searches, `readText()`, and Select All wait for painting to res
 Ghostty clipboard writes are requests only: review the text and handle browser permissions before copying. No clipboard access occurs automatically. See [Application clipboard requests](../dom/README.md#application-clipboard-requests).
 
 The `onclipboardwrite` callback alias is also supported.
+
+## Working directories
+
+With Ghostty, `onWorkingDirectory(uri)` receives raw OSC 7 directory reports, including
+while rendering is paused. An empty string clears the value. Svelte also accepts `onworkingdirectory`.
+Treat the URI as untrusted metadata. See
+[Working directories](https://wterm.dev/configuration#working-directories) for
+the contract, limits, and shell setup.
 
 ## Shell integration
 

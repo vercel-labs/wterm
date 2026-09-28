@@ -230,6 +230,14 @@ attached browser terminal so CSS and live/retained rendering update together.
 
 `TerminalCore.getClipboardWrite?()` consumes the latest application request. `null` means none and `""` requests a clear. Ghostty implements this optional effect; older/custom and built-in cores may omit it. Hosts own acceptance and browser permissions; there is no clipboard-read API or automatic clipboard access.
 
+## Working directories
+
+The optional `TerminalCore.getWorkingDirectory()` consumes the latest OSC 7
+URI, returning `null` when unchanged or unsupported and `""` when reset.
+Ghostty retains up to 2047 UTF-8 bytes, coalesces pending reports, and clears the
+value on RIS. Treat the URI as untrusted metadata; it does not establish a local
+directory or authenticated host. WTerm forwards it through `onWorkingDirectory`.
+
 ## Shell integration state
 
 `ShellIntegrationState` contains `phase` (`unknown`, `prompt`, `input`, `running`,

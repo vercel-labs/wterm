@@ -50,7 +50,7 @@ await term.init();
 
 ## Options and Methods
 
-The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `onData`, `onBinary`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
+The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `onData`, `onBinary`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onWorkingDirectory`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
 
 See [WTerm Methods](/api-reference#wterm-methods) for all instance methods, including [full-history Find](/api-reference#terminal-search): `search`, `findNext`, `findPrevious`, `getSearchState`, and `clearSearch`. Use the `onSearchChange` WTerm option or instance callback for progress and match counts.
 
@@ -211,6 +211,10 @@ reactive. Browser document visibility also pauses painting. See
 [Inactive panes](/configuration#inactive-panes) for focus and capture behavior.
 
 ## Shell integration
+
+With Ghostty, `onWorkingDirectory(uri)` receives raw OSC 7 directory reports,
+including while rendering is paused. An empty string clears the value. Treat
+the URI as untrusted metadata; see [Working directories](/configuration#working-directories).
 
 With Ghostty and a shell emitting OSC 133, `onShellIntegration` receives the
 latest prompt, input, running, or completion state and the last reported exit

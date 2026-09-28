@@ -5,7 +5,7 @@ navTitle: "Configuration"
 
 ## Options
 
-The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, and `onResize` (exposed as `@data`, `@title`, `@bell`, `@clipboard-write`, `@shell-integration`, and `@resize` events in Vue).
+The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onWorkingDirectory`, and `onResize` (exposed as `@data`, `@title`, `@bell`, `@clipboard-write`, `@shell-integration`, `@working-directory`, and `@resize` events in Vue).
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
 
@@ -78,6 +78,44 @@ Both cores count BEL controls outside OSC sequences. `onBell(count)` runs as
 output is written, even if synchronized output is holding a paint. Several
 bells in one write chunk arrive as one count. WTerm leaves sound and visual
 alerts to the host application.
+
+### Working directories
+
+With Ghostty, `onWorkingDirectory(uri)` receives the latest shell-reported
+OSC 7 URI. React and Svelte use that callback prop; Vue uses
+`@working-directory`. Svelte also accepts `onworkingdirectory`. Events arrive
+during parsing, including in hidden panes and while synchronized output holds
+a paint. Missing callbacks discard updates. The built-in core and older WASM
+assets produce no events; update a manually served Ghostty binary when upgrading.
+
+The raw URI is untrusted metadata. It does not establish a local filesystem
+path or authenticate a remote host. Validate it for your application and render
+labels as text. WTerm does not open URLs, access directories, or change a
+shell's working directory in response.
+
+Ghostty retains at most 2047 UTF-8 bytes. Invalid UTF-8 and oversized reports
+are ignored; pending reports coalesce and identical repeats are suppressed.
+An empty report or full terminal reset (RIS) clears the value with `""`.
+`TerminalCore.getWorkingDirectory?()` consumes the same updates, with `null`
+meaning unchanged or unsupported. Reports apply to either screen and survive
+resizing; initialization starts without a directory.
+
+Enable OSC 7 in your shell integration, including the local shell when
+returning from SSH. WTerm does not install shell configuration. For example,
+this report displays `build-box:/home/me/project name` in the local `/ghostty`
+workspace:
+
+```sh
+printf '\033]7;%s\033\\' 'file://build-box/home/me/project%20name'
+```
+
+The workspace accepts `file://host/absolute/path` reports, decodes the path,
+and retains any nonempty host in the label. The tooltip identifies the value as
+shell-reported. Invalid/non-file URLs, credentials, ports, and control-bearing
+paths are ignored. The last valid report takes precedence over process polling;
+empty OSC 7 or RIS restores the latest local process directory. Directory
+reports restore through saved session output within the documented reload
+recovery limits.
 
 ### Shell integration
 
@@ -231,7 +269,7 @@ See [Vue-Only Props](/api-reference#vue-only-props) and [Vue Events](/api-refere
 
 The Svelte `Terminal` component adds the `theme` prop and forwards standard
 `<div>` attributes such as `class`, `style`, `id`, and ARIA attributes. Svelte 5
-applications can use the `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onResize`, `onReady`, and
+applications can use the `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onWorkingDirectory`, `onResize`, `onReady`, and
 `onError` callback props.
 
 See [Svelte-only Props](/api-reference#svelte-only-props) for details.

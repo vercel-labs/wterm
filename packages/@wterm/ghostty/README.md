@@ -335,6 +335,19 @@ verified behavior and remaining compatibility gaps.
 
 ## Shell command state
 
+`getWorkingDirectory()` consumes the latest shell-reported OSC 7 URI. `null`
+means unchanged; `""` clears it after an empty report or full terminal reset
+(RIS). Complete, valid UTF-8 reports of at most 2047 bytes are retained;
+oversized or invalid UTF-8 reports are ignored. Pending reports coalesce and
+identical repeats are suppressed. Reports work on either screen and survive
+resize. Reinitialization starts without a directory.
+
+WTerm forwards updates through `onWorkingDirectory(uri)`, including during
+paused or synchronized rendering. The URI is passed verbatim: hosts must
+validate it before use and must not assume it identifies a local path or an
+authenticated remote host. Older WASM assets return `null`; update a manually
+served binary to receive these events. See [Working directories](https://wterm.dev/configuration#working-directories).
+
 `getShellIntegrationState()` consumes the latest OSC 133 state change, forwarded
 by WTerm as `onShellIntegration({ phase, exitCode })`. A/N/P mark `prompt`, B/I
 mark `input`, C marks `running` and clears the previous exit code, and D marks

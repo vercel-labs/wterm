@@ -207,6 +207,8 @@ export interface TerminalCore {
 
   // -- Side outputs --
   getTitle(): string | null;
+  /** Consume the latest OSC 7 URI. Empty means reset; null means unchanged or unsupported. Treat as untrusted metadata. */
+  getWorkingDirectory?(): string | null;
   /** Read and clear the number of pending BEL controls. Optional for custom cores. */
   getBellCount?(): number;
   /** Consume the latest application clipboard-write request. Empty text means clear; null means none. Hosts choose whether to accept it. */

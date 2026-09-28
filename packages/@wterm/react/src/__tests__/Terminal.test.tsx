@@ -19,6 +19,7 @@ vi.mock("@wterm/dom", () => {
     this.onData = options?.onData ?? null;
     this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
+    this.onWorkingDirectory = options?.onWorkingDirectory ?? null;
     this.onBell = options?.onBell ?? null;
     this.onClipboardWrite = options?.onClipboardWrite ?? null;
     this.onShellIntegration = options?.onShellIntegration ?? null;
@@ -315,6 +316,23 @@ describe("Terminal component", () => {
     instance.onShellIntegration(running);
     expect(first).toHaveBeenCalledExactlyOnceWith(running);
     expect(next).toHaveBeenCalledExactlyOnceWith(complete);
+    expect(lastWTermInstance).toBe(instance);
+  });
+
+  it("forwards directory reports to the latest callback without remounting", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const first = vi.fn(),
+      next = vi.fn();
+    const { rerender } = render(<Terminal onWorkingDirectory={first} />);
+    await act(async () => {});
+    const instance = lastWTermInstance;
+    instance.onWorkingDirectory("file://remote/work");
+    rerender(<Terminal onWorkingDirectory={next} />);
+    instance.onWorkingDirectory("");
+    rerender(<Terminal />);
+    instance.onWorkingDirectory("file:///ignored");
+    expect(first).toHaveBeenCalledExactlyOnceWith("file://remote/work");
+    expect(next).toHaveBeenCalledExactlyOnceWith("");
     expect(lastWTermInstance).toBe(instance);
   });
 

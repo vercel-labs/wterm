@@ -256,6 +256,30 @@ test("Ghostty reload preserves reflowed history, both screens, modes and Kitty p
   expect(after.placements).toEqual(main.placements);
 });
 
+test("reload restores the shell-reported directory and continues an unfinished directory report", async ({
+  page,
+}) => {
+  const h = await server(page);
+  await page.goto("/ghostty");
+  await expect.poll(() => h.attaches.length).toBe(1);
+  const prefix = Buffer.from(
+    "\x1b]7;file://remote/before\x07\x1b]7;file://remote/after%20reload",
+  );
+  h.sockets[0].send(prefix);
+  await expect.poll(h.ack).toBe(prefix.length);
+  await page.reload();
+  await expect.poll(() => h.attaches.length).toBe(2);
+  h.sockets[1].send(JSON.stringify({ type: "cwd", cwd: "/local" }));
+  await expect(
+    page.getByRole("button", { name: "remote:/before", exact: true }),
+  ).toBeVisible();
+  h.sockets[1].send(Buffer.from("\x1b\\"));
+  await expect(
+    page.getByRole("button", { name: "remote:/after reload", exact: true }),
+  ).toBeVisible();
+  expect(h.inputs).toEqual([]);
+});
+
 test("historical clipboard requests stay dismissed after restoring a Ghostty session", async ({
   page,
 }) => {

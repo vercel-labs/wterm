@@ -1,4 +1,5 @@
 import type { ShellIntegrationState } from "@wterm/core";
+import { reportedDirectory } from "./working-directory";
 
 export type SessionStatus =
   "loading" | "connecting" | "reconnecting" | "connected" | "closed";
@@ -18,6 +19,7 @@ export interface Session {
   name: string;
   status: SessionStatus;
   cwd: string | null;
+  reportedCwd: string | null;
   focusRequest: number;
   shell: ShellIntegrationState | null;
 }
@@ -35,6 +37,7 @@ export type WorkspaceAction =
   | { type: "resize"; id: string; ratio: number }
   | { type: "status"; id: string; status: SessionStatus }
   | { type: "cwd"; id: string; cwd: string }
+  | { type: "directory"; id: string; uri: string }
   | { type: "shell"; id: string; shell: ShellIntegrationState };
 
 export const MAX_PANES = 4;
@@ -47,6 +50,7 @@ const session = (number: number): Session => ({
   name: `Terminal ${number}`,
   status: "connecting",
   cwd: null,
+  reportedCwd: null,
   focusRequest: 1,
   shell: null,
 });
@@ -226,6 +230,22 @@ export function workspaceReducer(
           item.id === action.id
             ? { ...item, shell: { ...action.shell } }
             : item,
+        ),
+      };
+    }
+    case "directory": {
+      const reportedCwd = reportedDirectory(action.uri);
+      const current = state.sessions.find((item) => item.id === action.id);
+      if (
+        !current ||
+        reportedCwd === undefined ||
+        current.reportedCwd === reportedCwd
+      )
+        return state;
+      return {
+        ...state,
+        sessions: state.sessions.map((item) =>
+          item.id === action.id ? { ...item, reportedCwd } : item,
         ),
       };
     }

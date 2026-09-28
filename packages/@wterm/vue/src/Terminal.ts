@@ -119,6 +119,8 @@ const Terminal = defineComponent({
      * Forwards `WTerm`'s `onTitle` callback.
      */
     title: (_title: string) => true,
+    /** Shell-reported OSC 7 URI; empty resets it. */
+    workingDirectory: (_uri: string) => true,
     /** Forwards `WTerm`'s `onBell` callback with the number of BEL controls. */
     bell: (_count: number) => true,
     /** Application clipboard request; the host decides whether to accept it. */
@@ -171,6 +173,7 @@ const Terminal = defineComponent({
           ? (data: Uint8Array) => emit("binary", data)
           : undefined,
         onTitle: (title: string) => emit("title", title),
+        onWorkingDirectory: (uri: string) => emit("workingDirectory", uri),
         onBell: (count: number) => emit("bell", count),
         onClipboardWrite: (text: string) => emit("clipboardWrite", text),
         onShellIntegration: (state: ShellIntegrationState) =>

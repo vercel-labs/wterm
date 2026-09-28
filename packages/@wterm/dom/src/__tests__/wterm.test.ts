@@ -1206,6 +1206,49 @@ describe("WTerm", () => {
   });
 
   describe("shell integration", () => {
+    it("consumes directory reports while hidden and synchronized, including resets and callback failures", async () => {
+      const getWorkingDirectory = vi.fn().mockReturnValue(null);
+      Object.assign(mockBridge, { getWorkingDirectory });
+      const term = new WTerm(element, { renderingPaused: true });
+      await term.init();
+      getWorkingDirectory.mockReturnValueOnce("file:///unobserved");
+      term.write("no listener");
+      const callback = vi.fn();
+      term.onWorkingDirectory = callback;
+      term.write("ordinary output");
+      expect(callback).not.toHaveBeenCalled();
+      vi.mocked(mockBridge.synchronizedOutput).mockReturnValue(true);
+      getWorkingDirectory.mockReturnValueOnce("file://remote/work");
+      term.write("hidden update");
+      expect(callback).toHaveBeenCalledExactlyOnceWith("file://remote/work");
+      const failure = new Error("directory callback failed");
+      callback.mockImplementationOnce(() => {
+        throw failure;
+      });
+      const onData = vi.fn();
+      term.onData = onData;
+      getWorkingDirectory
+        .mockReturnValueOnce("")
+        .mockReturnValueOnce("file:///next");
+      vi.mocked(mockBridge.writeRaw).mockImplementation(
+        (_bytes, afterChunk) => {
+          afterChunk?.();
+          vi.mocked(mockBridge.getResponse).mockReturnValueOnce("reply");
+          afterChunk?.();
+        },
+      );
+      expect(() => term.write(new Uint8Array([1]))).toThrow(failure);
+      expect(callback.mock.calls).toEqual([
+        ["file://remote/work"],
+        [""],
+        ["file:///next"],
+      ]);
+      expect(onData).toHaveBeenCalledExactlyOnceWith("reply");
+      term.destroy();
+      term.write("late");
+      expect(callback).toHaveBeenCalledTimes(3);
+    });
+
     it("consumes state without a listener and delivers changes while painting is paused or synchronized", async () => {
       const getShellIntegrationState = vi.fn().mockReturnValue(null);
       Object.assign(mockBridge, { getShellIntegrationState });

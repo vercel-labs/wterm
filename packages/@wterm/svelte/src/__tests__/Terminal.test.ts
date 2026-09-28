@@ -18,6 +18,7 @@ vi.mock("@wterm/dom", () => {
     this.onData = options?.onData ?? null;
     this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
+    this.onWorkingDirectory = options?.onWorkingDirectory ?? null;
     this.onBell = options?.onBell ?? null;
     this.onClipboardWrite = options?.onClipboardWrite ?? null;
     this.onShellIntegration = options?.onShellIntegration ?? null;
@@ -324,6 +325,31 @@ describe("Terminal component", () => {
     lastWTermInstance.onShellIntegration(state);
     expect(onShellIntegration).toHaveBeenCalledExactlyOnceWith(state);
     expect(onshellintegration).toHaveBeenCalledExactlyOnceWith(state);
+  });
+
+  it("forwards directory reports through both callback styles and updates without remounting", async () => {
+    const onWorkingDirectory = vi.fn(),
+      onworkingdirectory = vi.fn(),
+      next = vi.fn();
+    const result = render(Terminal, {
+      props: { onWorkingDirectory, onworkingdirectory },
+    });
+    await Promise.resolve();
+    const instance = lastWTermInstance;
+    instance.onWorkingDirectory("file://remote/work");
+    await result.rerender({
+      onWorkingDirectory: next,
+      onworkingdirectory: undefined,
+    });
+    instance.onWorkingDirectory("");
+    expect(onWorkingDirectory).toHaveBeenCalledExactlyOnceWith(
+      "file://remote/work",
+    );
+    expect(onworkingdirectory).toHaveBeenCalledExactlyOnceWith(
+      "file://remote/work",
+    );
+    expect(next).toHaveBeenCalledExactlyOnceWith("");
+    expect(lastWTermInstance).toBe(instance);
   });
 
   it("forwards title, bell, and resize callbacks", async () => {

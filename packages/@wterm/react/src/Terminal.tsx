@@ -43,6 +43,7 @@ export interface TerminalProps extends Omit<
   onData?: (data: string) => void;
   onBinary?: (data: Uint8Array) => void;
   onTitle?: (title: string) => void;
+  onWorkingDirectory?: (uri: string) => void;
   onBell?: (count: number) => void;
   onClipboardWrite?: (text: string) => void;
   onShellIntegration?: (state: ShellIntegrationState) => void;
@@ -75,6 +76,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     onData,
     onBinary,
     onTitle,
+    onWorkingDirectory,
     onBell,
     onClipboardWrite,
     onShellIntegration,
@@ -92,6 +94,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     onData,
     onBinary,
     onTitle,
+    onWorkingDirectory,
     onBell,
     onClipboardWrite,
     onShellIntegration,
@@ -108,6 +111,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     onData,
     onBinary,
     onTitle,
+    onWorkingDirectory,
     onBell,
     onClipboardWrite,
     onShellIntegration,
@@ -158,6 +162,8 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
           ? (data: Uint8Array) => callbacksRef.current.onBinary?.(data)
           : undefined,
         onTitle: (title: string) => callbacksRef.current.onTitle?.(title),
+        onWorkingDirectory: (uri: string) =>
+          callbacksRef.current.onWorkingDirectory?.(uri),
         onBell: (count: number) => callbacksRef.current.onBell?.(count),
         onClipboardWrite: (text: string) =>
           callbacksRef.current.onClipboardWrite?.(text),

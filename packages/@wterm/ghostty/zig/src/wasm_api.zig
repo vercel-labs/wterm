@@ -84,7 +84,25 @@ const CELL_BYTES_V2 = 20;
 const RESPONSE_QUEUE_MAX = 256;
 const RESPONSE_MAX_BYTES = 64;
 const TITLE_BUFFER_BYTES = 256;
+// Upstream's fixed 2048-byte OSC buffer reserves one byte for the trailing NUL.
+const DIRECTORY_BUFFER_BYTES = 2047;
 const CLIPBOARD_MAX_BYTES = 64 * 1024;
+
+// OSC 7 is host metadata, not a filesystem operation. Retain the latest
+// complete UTF-8 report without allocating or interpreting its authority.
+const DirectoryState = struct {
+    bytes: [DIRECTORY_BUFFER_BYTES]u8 = undefined,
+    len: u16 = 0,
+    changed: bool = false,
+
+    fn set(self: *DirectoryState, uri: []const u8) void {
+        if (uri.len > self.bytes.len or !std.unicode.utf8ValidateSlice(uri)) return;
+        if (std.mem.eql(u8, self.bytes[0..self.len], uri)) return;
+        @memcpy(self.bytes[0..uri.len], uri);
+        self.len = @intCast(uri.len);
+        self.changed = true;
+    }
+};
 
 // Constant-size current state. Prompt redraws retain the last reported result;
 // starting a command clears it. This deliberately does not retain command text.
@@ -200,6 +218,7 @@ const ResponseHandler = struct {
     inner: ReadonlyHandler,
     queue: *ResponseQueue,
     title: *TitleState,
+    directory: *DirectoryState,
     clipboard: *ClipboardState,
     shell: *ShellState,
     bell_count: *u32,
@@ -215,6 +234,7 @@ const ResponseHandler = struct {
         terminal: *Terminal,
         queue: *ResponseQueue,
         title: *TitleState,
+        directory: *DirectoryState,
         clipboard: *ClipboardState,
         shell: *ShellState,
         bell_count: *u32,
@@ -227,6 +247,7 @@ const ResponseHandler = struct {
             .inner = .init(terminal),
             .queue = queue,
             .title = title,
+            .directory = directory,
             .clipboard = clipboard,
             .shell = shell,
             .bell_count = bell_count,
@@ -283,6 +304,7 @@ const ResponseHandler = struct {
         if (comptime action == .full_reset) {
             self.positions.clear();
             self.shell.* = .{ .changed = true };
+            self.directory.* = .{ .changed = true };
         }
         const screen = self.inner.terminal.screens.active;
         defer if (screen != self.inner.terminal.screens.active) self.positions.clear();
@@ -368,6 +390,7 @@ const ResponseHandler = struct {
                 self.queue.push(out);
             },
             .window_title => self.title.set(value.title),
+            .report_pwd => self.directory.set(value.url),
             .clipboard_contents => self.clipboard.set(value.kind, value.data),
             .semantic_prompt => {
                 try self.inner.vt(action, value);
@@ -466,6 +489,7 @@ const State = struct {
     render: RenderState,
     responses: ResponseQueue,
     title: TitleState,
+    directory: DirectoryState,
     clipboard: ClipboardState,
     shell: ShellState,
     bell_count: u32,
@@ -710,6 +734,7 @@ export fn init(
     };
     state.responses = .{};
     state.title = .{};
+    state.directory = .{};
     state.clipboard = .{};
     state.shell = .{};
     state.bell_count = 0;
@@ -723,6 +748,7 @@ export fn init(
         &state.terminal,
         &state.responses,
         &state.title,
+        &state.directory,
         &state.clipboard,
         &state.shell,
         &state.bell_count,
@@ -771,6 +797,18 @@ export fn get_title_len(ptr: usize) i32 {
 
 export fn get_title_ptr(ptr: usize) [*]const u8 {
     return &stateFromPtr(ptr).title.bytes;
+}
+
+// -1 is unchanged; an empty report clears the host's displayed directory.
+export fn get_working_directory_len(ptr: usize) i32 {
+    const directory = &stateFromPtr(ptr).directory;
+    if (!directory.changed) return -1;
+    directory.changed = false;
+    return directory.len;
+}
+
+export fn get_working_directory_ptr(ptr: usize) [*]const u8 {
+    return &stateFromPtr(ptr).directory.bytes;
 }
 
 export fn get_bell_count(ptr: usize) u32 {

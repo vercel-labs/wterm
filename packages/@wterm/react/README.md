@@ -62,6 +62,7 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 | `onBell` | `(count: number) => void` | — | Called with pending BEL count as output is written; the host controls any alert |
 | `onClipboardWrite` | `(text: string) => void` | — | Application clipboard-write request; the host chooses whether to accept it |
 | `onShellIntegration` | `(state: ShellIntegrationState) => void` | — | Latest shell-reported command state; requires OSC 133 and a supporting core |
+| `onWorkingDirectory` | `(uri: string) => void` | — | Shell-reported OSC 7 URI; empty clears it. Requires a supporting core. |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called after resize with the grid dimensions applied by the core |
 | `onReady` | `(wt: WTerm) => void` | — | Called after WASM is loaded and the terminal is initialized; `wt.cols` and `wt.rows` report its applied grid size |
 
@@ -160,6 +161,14 @@ this option. New searches, `readText()`, and Select All wait for painting to res
 
 
 Ghostty clipboard writes are requests only: review the text and handle browser permissions before copying. No clipboard access occurs automatically. See [Application clipboard requests](../dom/README.md#application-clipboard-requests).
+
+## Working directories
+
+With Ghostty, `onWorkingDirectory(uri)` receives raw OSC 7 directory reports, including
+while rendering is paused. An empty string clears the value.
+Treat the URI as untrusted metadata. See
+[Working directories](https://wterm.dev/configuration#working-directories) for
+the contract, limits, and shell setup.
 
 ## Shell integration
 

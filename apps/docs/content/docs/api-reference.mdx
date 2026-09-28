@@ -269,6 +269,12 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
       <td>Latest shell-reported prompt, input, running, or completion state. Ghostty with OSC 133; see <a href="/configuration#shell-integration">Shell integration</a>.</td>
     </tr>
     <tr>
+      <td><code>onWorkingDirectory</code></td>
+      <td><code>(uri: string) =&gt; void</code></td>
+      <td>—</td>
+      <td>Raw shell-reported OSC 7 URI from Ghostty; empty clears it. Treat as untrusted metadata. See <a href="/configuration#working-directories">Working directories</a>.</td>
+    </tr>
+    <tr>
       <td><code>onResize</code></td>
       <td><code>(cols: number, rows: number) =&gt; void</code></td>
       <td>—</td>
@@ -371,6 +377,11 @@ The Vue `<Terminal>` component adds these props on top of the shared options abo
       <td>Latest shell state from Ghostty. Use <code>@shell-integration</code>; see <a href="/configuration#shell-integration">Shell integration</a>.</td>
     </tr>
     <tr>
+      <td><code>workingDirectory</code></td>
+      <td><code>(uri: string)</code></td>
+      <td>Raw OSC 7 URI from Ghostty; empty clears it. Use <code>@working-directory</code>; see <a href="/configuration#working-directories">Working directories</a>.</td>
+    </tr>
+    <tr>
       <td><code>resize</code></td>
       <td><code>(cols: number, rows: number)</code></td>
       <td>Emitted after the terminal is resized.</td>
@@ -437,6 +448,11 @@ attributes such as `class`, `style`, `id`, and ARIA attributes to its root
       <td><code>onShellIntegration</code></td>
       <td><code>(state: ShellIntegrationState) =&gt; void</code></td>
       <td>Latest shell-reported prompt, input, running, or completion state. Ghostty with OSC 133; see <a href="/configuration#shell-integration">Shell integration</a>.</td>
+    </tr>
+    <tr>
+      <td><code>onWorkingDirectory</code></td>
+      <td><code>(uri: string) =&gt; void</code></td>
+      <td>Raw OSC 7 URI from Ghostty; empty clears it. Also accepts <code>onworkingdirectory</code>; see <a href="/configuration#working-directories">Working directories</a>.</td>
     </tr>
     <tr>
       <td><code>onResize</code></td>
@@ -1120,6 +1136,10 @@ When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string 
     <tr>
       <td><code>getTitle(): string | null</code></td>
       <td>Get pending title change (via OSC escape), or <code>null</code> if unchanged</td>
+    </tr>
+    <tr>
+      <td><code>getWorkingDirectory?(): string | null</code></td>
+      <td>Consume a raw OSC 7 URI from a supporting core. Empty clears it; null means unchanged or unsupported. See <a href="/configuration#working-directories">Working directories</a>.</td>
     </tr>
     <tr>
       <td><code>getBellCount?(): number</code></td>

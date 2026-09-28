@@ -445,6 +445,12 @@ the source changes. Consumers do not need Zig or Docker.
 
 ## Shell integration
 
+OSC 7 directory reports reach `onWorkingDirectory(uri)`, or
+`GhosttyCore.getWorkingDirectory()` for headless consumers. Empty strings clear
+the value; `null` from the core means unchanged. See
+[Working directories](/configuration#working-directories) for URI handling,
+resource limits, shell setup, and workspace display behavior.
+
 With Ghostty and a shell emitting OSC 133, `onShellIntegration` receives the
 latest prompt, input, running, or completion state and the last reported exit
 code. Delivery continues while painting is paused; markers in one parser chunk

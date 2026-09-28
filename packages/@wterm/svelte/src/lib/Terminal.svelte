@@ -62,6 +62,7 @@
   export let onData: ((data: string) => void) | undefined = undefined;
   export let onBinary: ((data: Uint8Array) => void) | undefined = undefined;
   export let onTitle: ((title: string) => void) | undefined = undefined;
+  export let onWorkingDirectory: ((uri: string) => void) | undefined = undefined;
   export let onBell: ((count: number) => void) | undefined = undefined;
   export let onClipboardWrite: ((text: string) => void) | undefined = undefined;
   export let onShellIntegration:
@@ -74,6 +75,7 @@
   export let ondata: ((data: string) => void) | undefined = undefined;
   export let onbinary: ((data: Uint8Array) => void) | undefined = undefined;
   export let ontitle: ((title: string) => void) | undefined = undefined;
+  export let onworkingdirectory: ((uri: string) => void) | undefined = undefined;
   export let onbell: ((count: number) => void) | undefined = undefined;
   export let onclipboardwrite: ((text: string) => void) | undefined = undefined;
   export let onshellintegration:
@@ -120,6 +122,11 @@
   function handleClipboardWrite(text: string): void {
     onClipboardWrite?.(text);
     onclipboardwrite?.(text);
+  }
+
+  function handleWorkingDirectory(uri: string): void {
+    onWorkingDirectory?.(uri);
+    onworkingdirectory?.(uri);
   }
 
   function handleShellIntegration(state: ShellIntegrationState): void {
@@ -174,6 +181,7 @@
       onData: hasDataHandler() ? handleData : undefined,
       onBinary: hasBinaryHandler() ? handleBinary : undefined,
       onTitle: handleTitle,
+      onWorkingDirectory: handleWorkingDirectory,
       onBell: handleBell,
       onClipboardWrite: handleClipboardWrite,
       onShellIntegration: handleShellIntegration,

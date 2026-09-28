@@ -17,6 +17,7 @@ vi.mock("@wterm/dom", () => {
     this.onData = options?.onData ?? null;
     this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
+    this.onWorkingDirectory = options?.onWorkingDirectory ?? null;
     this.onBell = options?.onBell ?? null;
     this.onClipboardWrite = options?.onClipboardWrite ?? null;
     this.onShellIntegration = options?.onShellIntegration ?? null;
@@ -311,6 +312,17 @@ describe("Terminal component", () => {
     lastWTermInstance.onShellIntegration(running);
     lastWTermInstance.onShellIntegration(reset);
     expect(wrapper.emitted("shellIntegration")).toEqual([[running], [reset]]);
+  });
+
+  it("emits working-directory reports including resets", async () => {
+    const wrapper = await mountTerminal();
+    await flushPromises();
+    lastWTermInstance.onWorkingDirectory("file://remote/work");
+    lastWTermInstance.onWorkingDirectory("");
+    expect(wrapper.emitted("workingDirectory")).toEqual([
+      ["file://remote/work"],
+      [""],
+    ]);
   });
 
   it("emits bell counts when WTerm onBell fires", async () => {

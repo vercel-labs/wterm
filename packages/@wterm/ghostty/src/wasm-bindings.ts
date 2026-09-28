@@ -143,6 +143,8 @@ export interface GhosttyExports {
   // Host effects. Optional for apps still serving an older Ghostty binary.
   get_title_len?(ptr: number): number;
   get_title_ptr?(ptr: number): number;
+  get_working_directory_len?(ptr: number): number;
+  get_working_directory_ptr?(ptr: number): number;
   get_bell_count?(ptr: number): number;
   get_clipboard_write_len?(ptr: number): number;
   get_clipboard_write_ptr?(ptr: number): number;

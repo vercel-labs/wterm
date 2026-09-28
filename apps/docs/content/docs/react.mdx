@@ -46,7 +46,7 @@ function App() {
 
 ## Props
 
-The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `onData`, `onBinary`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onResize`) plus [React-only props](/api-reference#react-only-props) (`theme`, `onReady`, `onError`). Pass a [`TerminalCore`](/ghostty) instance to the `core` prop to use an alternative emulation backend.
+The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `onData`, `onBinary`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onWorkingDirectory`, `onResize`) plus [React-only props](/api-reference#react-only-props) (`theme`, `onReady`, `onError`). Pass a [`TerminalCore`](/ghostty) instance to the `core` prop to use an alternative emulation backend.
 
 Standard `div` props (`className`, `style`, `id`, etc.) are forwarded to the container element.
 
@@ -132,6 +132,10 @@ reactive. Browser document visibility also pauses painting. See
 Application clipboard writes require an explicit host policy; see [Clipboard requests](/configuration#clipboard-requests).
 
 ## Shell integration
+
+With Ghostty, the `onWorkingDirectory` prop receives raw OSC 7 URI reports,
+including while rendering is paused. An empty string clears the value. Treat
+the URI as untrusted metadata; see [Working directories](/configuration#working-directories).
 
 With Ghostty and a shell emitting OSC 133, `onShellIntegration` receives the
 latest prompt, input, running, or completion state and the last reported exit

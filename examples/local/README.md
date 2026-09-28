@@ -30,7 +30,7 @@ Opens at `local-example.wterm.localhost` via [portless](https://github.com/verce
 - On `/ghostty`, an application clipboard-write request shows **Review clipboard request** and **Dismiss** without taking focus. Review opens a fixed, read-only preview; **Copy** (or **Clear clipboard** for empty text) writes only after you click it. New requests do not change an open preview. If the browser denies access, use native Copy from the text field. Clipboard reads are unsupported. Each session retains only its latest pending request, up to 65,536 UTF-8 bytes.
 - The `/ghostty` route uses the graphics-capable core and limits rendered Kitty images to 640×480 CSS pixels
 - Auto-sized Kitty images align with the terminal content origin and reserve their rendered height visually so the following shell prompt appears below the image
-- Each session displays its full current working directory in the sidebar, abbreviating the home directory as `~` and updating after `cd`
+- Each session displays its directory in the sidebar. On `/ghostty`, OSC 7 shell reports show the reported host and decoded path, including remote or nested shells. Without a report, the sidebar uses the local shell process's directory, abbreviating home as `~`.
 - Select terminal text and use the browser's normal Copy action. On `/ghostty`, wrapped commands copy without added newlines; explicit line breaks, whole Unicode cells, and block glyphs are preserved. Trailing padding is trimmed at fully selected hard row ends. Hold Shift to select when a terminal application has enabled mouse tracking.
 - On `/ghostty`, native selections also follow output scrolling and pane resizing while their text remains intact. Overwrites, discarded edges, resets, and screen switches clear the selection. Preservation covers up to 1,000 rows and 1,048,576 UTF-16 units; selecting while an older frame is still displayed keeps ordinary browser behavior.
 - Double-click words or paths and triple-click logical lines. On `/ghostty`, selection crosses confirmed soft wraps, including unmounted history; the built-in core stops at physical row boundaries. Hold Shift for live text when an application has enabled mouse reporting. Selection expands up to 1,000 rows and 1,048,576 UTF-16 units; oversized or pending frames keep browser behavior.
@@ -100,6 +100,21 @@ navigation or a new tab starts a fresh workspace; layout recovery uses the same
 session limits described below.
 
 ## Shell command indicators
+
+On `/ghostty`, a shell emitting OSC 7 `file://host/absolute/path` reports also
+updates its sidebar directory, including while hidden or in a full-screen
+application. A nonempty host is always displayed as `host:/path`; the tooltip
+identifies it as shell-reported metadata. The workspace displays this text
+without opening URLs or accessing the reported path. Malformed/non-file URIs,
+credentials, ports, and paths containing control characters are ignored.
+
+The last valid report takes precedence over local process polling until the
+shell sends another report, empty OSC 7, or a terminal reset. Empty reports and
+resets restore the latest process-based directory. Enable OSC 7 in both local
+and remote shell integration to update the label when returning from SSH.
+Reports restore with the session's saved output on reload, within the same
+recovery limits. See [Working directories](https://wterm.dev/configuration#working-directories)
+for the callback contract and a sample report. No shell configuration is installed.
 
 On `/ghostty`, shells that emit OSC 133 show **Ready**, **Running**, **Done**, or
 **Exit N** in their sidebar entry and pane header. A reported result remains

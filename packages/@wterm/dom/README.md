@@ -157,6 +157,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `onBell` | `(count: number) => void` | — | Called with the number of BEL controls since the last delivery |
 | `onClipboardWrite` | `(text: string) => void` | — | Application clipboard-write request; the host chooses whether to accept it |
 | `onShellIntegration` | `(state: ShellIntegrationState) => void` | — | Latest shell-reported command state; requires OSC 133 and a supporting core |
+| `onWorkingDirectory` | `(uri: string) => void` | — | Shell-reported OSC 7 URI; empty clears it. Requires a supporting core. |
 | `onResize` | `(cols: number, rows: number) => void` | — | Called with the grid dimensions applied by the core after resize |
 | `onSearchChange` | `(state: SearchState) => void` | — | Receives search progress, count, and active match changes |
 
@@ -513,6 +514,14 @@ selectors, invalid text, and oversized requests are ignored. Several writes
 within one parsed chunk may coalesce to the latest valid request. The built-in
 core, custom cores without `getClipboardWrite()`, and older Ghostty WASM assets
 produce no requests.
+
+## Working directories
+
+With Ghostty, `onWorkingDirectory(uri)` receives raw OSC 7 directory reports, including
+while rendering is paused. An empty string clears the value.
+Treat the URI as untrusted metadata. See
+[Working directories](https://wterm.dev/configuration#working-directories) for
+the contract, limits, and shell setup.
 
 ## Shell integration
 

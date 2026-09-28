@@ -47,6 +47,8 @@ export interface WTermOptions {
   /** Raw input bytes, used by X10 mouse reports. */
   onBinary?: (data: Uint8Array) => void;
   onTitle?: (title: string) => void;
+  /** Shell-reported OSC 7 URI; empty clears it. Untrusted metadata, not a verified local path. */
+  onWorkingDirectory?: (uri: string) => void;
   /** Called with the number of BEL controls since the last delivery. */
   onBell?: (count: number) => void;
   /** Application request only: the host must apply its clipboard policy. No browser clipboard access is automatic. */
@@ -105,6 +107,7 @@ export class WTerm {
   onData: ((data: string) => void) | null;
   onBinary: ((data: Uint8Array) => void) | null;
   onTitle: ((title: string) => void) | null;
+  onWorkingDirectory: ((uri: string) => void) | null;
   onBell: ((count: number) => void) | null;
   onShellIntegration: ((state: ShellIntegrationState) => void) | null;
   onClipboardWrite: ((text: string) => void) | null;
@@ -128,6 +131,7 @@ export class WTerm {
     this.onData = options.onData || null;
     this.onBinary = options.onBinary || null;
     this.onTitle = options.onTitle || null;
+    this.onWorkingDirectory = options.onWorkingDirectory || null;
     this.onBell = options.onBell || null;
     this.onShellIntegration = options.onShellIntegration || null;
     this.onClipboardWrite = options.onClipboardWrite || null;
@@ -529,6 +533,12 @@ export class WTerm {
         const state = this.bridge?.getShellIntegrationState?.() ?? null;
         if (state !== null && !this._destroyed)
           this.onShellIntegration?.(state);
+      } catch (error) {
+        recordDeliveryError(error);
+      }
+      try {
+        const uri = this.bridge?.getWorkingDirectory?.() ?? null;
+        if (uri !== null && !this._destroyed) this.onWorkingDirectory?.(uri);
       } catch (error) {
         recordDeliveryError(error);
       }
