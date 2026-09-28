@@ -235,6 +235,7 @@ export async function createHarnessServer({
               join(root, "pty-input.html"),
               join(root, "search.html"),
               join(root, "stability.html"),
+              join(root, "performance.html"),
             ],
           },
         },

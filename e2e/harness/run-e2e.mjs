@@ -10,9 +10,11 @@ const input = args[0] === "--input";
 const ptyInput = args[0] === "--pty-input";
 const search = args[0] === "--search";
 const stability = args[0] === "--stability";
-if (load || input || ptyInput || search || stability) args.shift();
+const performance = args[0] === "--performance";
+if (load || input || ptyInput || search || stability || performance)
+  args.shift();
 const harness = await createHarnessServer({
-  load: load || input || ptyInput || search || stability,
+  load: load || input || ptyInput || search || stability || performance,
 });
 let child;
 let interrupted;
@@ -36,17 +38,19 @@ try {
       "--config",
       fileURLToPath(
         new URL(
-          ptyInput
-            ? "pty-input.config.ts"
-            : stability
-              ? "stability.config.ts"
-              : search
-                ? "search.config.ts"
-                : input
-                  ? "input.config.ts"
-                  : load
-                    ? "load.config.ts"
-                    : "playwright.config.ts",
+          performance
+            ? "performance.config.ts"
+            : ptyInput
+              ? "pty-input.config.ts"
+              : stability
+                ? "stability.config.ts"
+                : search
+                  ? "search.config.ts"
+                  : input
+                    ? "input.config.ts"
+                    : load
+                      ? "load.config.ts"
+                      : "playwright.config.ts",
           import.meta.url,
         ),
       ),

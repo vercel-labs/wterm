@@ -163,6 +163,17 @@ jobs:
       - name: Terminal history search smoke tests
         run: pnpm bench:search
 
+      - name: Terminal startup, scrolling, redraw and memory measurements
+        run: pnpm bench:performance
+
+      - name: Upload terminal performance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-performance
+          path: e2e/test-results/performance/
+          if-no-files-found: ignore
+
       - name: Upload terminal history search reports
         if: always()
         uses: actions/upload-artifact@v4

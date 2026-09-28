@@ -17,6 +17,7 @@
     "input.config.ts",
     "pty-input.config.ts",
     "search.config.ts",
-    "stability.config.ts"
+    "stability.config.ts",
+    "performance.config.ts"
   ]
 }
