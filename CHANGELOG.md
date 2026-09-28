@@ -1,8 +1,34 @@
 # Changelog
 
-## 0.5.1
+## 0.5.2
 
 <!-- release:start -->
+
+### New Features
+
+- **Local workspace controls:** view up to four shells in adjustable split panes, zoom and focus panes, and save appearance, font size, and custom keyboard shortcuts.
+- **Local session recovery:** resume briefly disconnected shells with output replay and input delivery acknowledgments, and restore sessions, split layouts, and focus after reload when saved output and server sessions remain available. Recovery uses bounded storage and a 30-second server grace period.
+- **Shell integration:** expose Ghostty shell command state, exit codes, and working-directory reports; show them in the local workspace and navigate between retained shell prompts.
+- **Rectangular selection:** Alt/Option-drag selects columns from logs and tables, preserving selected spaces and complete Unicode cells when copied.
+- **Application clipboard requests:** forward Ghostty OSC 52 writes to an opt-in host callback; the local workspace offers a text preview and explicit Copy action.
+
+### Improvements
+
+- **Terminal responsiveness:** pause painting for inactive panes, reuse unchanged scrollback rows, reduce query-scanning and full-history search work, and batch local PTY output with browser acknowledgments and bounded queues.
+- **Terminal appearance:** preserve Ghostty underline styles and colors, honor application foreground, background, and cursor overrides, and update host theme colors without restarting terminals.
+- **Build and performance checks:** verify reproducible Ghostty WASM builds and add sustained-output, history-search, and keyboard-to-echo measurements, including real PTYs under output load.
+
+### Bug Fixes
+
+- **Ghostty page initialization:** clear reused WASM page memory so new terminal pages do not inherit stale state from earlier contents.
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.5.1
 
 ### New Features
 
@@ -27,8 +53,6 @@
 
 - @ctate
 - @Railly
-
-<!-- release:end -->
 
 ## 0.5.0
 
