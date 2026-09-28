@@ -1,5 +1,6 @@
 import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
 import { acceptTerminal } from "./terminal-route";
+import { delayWasmInstantiation } from "./wasm-loading";
 
 async function workspace(page: Page, path: string) {
   const sockets: WebSocketRoute[] = [];
@@ -271,39 +272,35 @@ test("a delayed Ghostty pane cannot take focus from the pane selected while it l
   page,
 }) => {
   const h = await workspace(page, "/ghostty");
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let downloading = false;
-  await page.route("**/ghostty-vt.wasm", async (route) => {
-    downloading = true;
-    await gate;
-    await route.continue();
-  });
-  await h
-    .panel(1)
-    .getByRole("button", { name: "Split right", exact: true })
-    .click();
-  await expect.poll(() => downloading).toBe(true);
-  await h
-    .panel(1)
-    .getByRole("button", { name: "Focus Terminal 1", exact: true })
-    .click();
-  await expect(h.input(1)).toBeFocused();
-  release();
-  await expect(
-    page.getByRole("button", { name: "/session-2", exact: true }),
-  ).toBeVisible();
-  await expect(h.input(2)).toBeVisible();
-  await expect(h.input(1)).toBeFocused();
-  await page.keyboard.type("first only");
-  await expect
-    .poll(() => h.inputs.map((input) => input.join("")))
-    .toEqual(["first only", ""]);
-  await page
-    .getByRole("button", { name: "Close Terminal 2", exact: true })
-    .click();
-  await expect(h.input(1)).toBeFocused();
-  expect(h.sockets).toHaveLength(2);
+  const loading = await delayWasmInstantiation(page);
+  try {
+    await h
+      .panel(1)
+      .getByRole("button", { name: "Split right", exact: true })
+      .click();
+    await loading.waitUntilStarted();
+    expect(h.sockets).toHaveLength(1);
+    await h
+      .panel(1)
+      .getByRole("button", { name: "Focus Terminal 1", exact: true })
+      .click();
+    await expect(h.input(1)).toBeFocused();
+    await loading.release();
+    await expect(
+      page.getByRole("button", { name: "/session-2", exact: true }),
+    ).toBeVisible();
+    await expect(h.input(2)).toBeVisible();
+    await expect(h.input(1)).toBeFocused();
+    await page.keyboard.type("first only");
+    await expect
+      .poll(() => h.inputs.map((input) => input.join("")))
+      .toEqual(["first only", ""]);
+    await page
+      .getByRole("button", { name: "Close Terminal 2", exact: true })
+      .click();
+    await expect(h.input(1)).toBeFocused();
+    expect(h.sockets).toHaveLength(2);
+  } finally {
+    await loading.release();
+  }
 });

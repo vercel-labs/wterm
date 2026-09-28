@@ -1,5 +1,6 @@
 import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
 import { acceptTerminal, terminalReady } from "./terminal-route";
+import { delayWasmInstantiation } from "./wasm-loading";
 import {
   DEFAULT_SHORTCUTS,
   SHORTCUTS_KEY,
@@ -349,19 +350,11 @@ test("a pending Find request cannot take focus from a pane selected while Ghostt
 }) => {
   await seed(page);
   const h = await open(page, "/ghostty");
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let downloading = false;
-  await page.route("**/ghostty-vt.wasm", async (route) => {
-    downloading = true;
-    await gate;
-    await route.continue();
-  });
+  const loading = await delayWasmInstantiation(page);
   try {
     await page.keyboard.press("Control+Shift+Enter");
-    await expect.poll(() => downloading).toBe(true);
+    await loading.waitUntilStarted();
+    expect(h.sockets).toHaveLength(1);
     await page
       .getByRole("button", { name: "New terminal session", exact: true })
       .focus();
@@ -370,13 +363,13 @@ test("a pending Find request cannot take focus from a pane selected while Ghostt
       .getByRole("button", { name: "Focus Terminal 1", exact: true })
       .click();
     await expect(input(page, 1)).toBeFocused();
-    release();
+    await loading.release();
     await expect.poll(() => h.sockets.length).toBe(2);
     await expect(
       page.getByRole("textbox", { name: "Find in terminal", exact: true }),
     ).toBeVisible();
     await expect(input(page, 1)).toBeFocused();
   } finally {
-    release();
+    await loading.release();
   }
 });
