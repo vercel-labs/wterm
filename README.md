@@ -383,6 +383,10 @@ render state, terminal effects, retained history, snapshots, and application
 recordings. It documents the compatibility gaps that keep the shipped adapter
 on v1.3.1. Generated binaries and reports stay in its ignored `dist/` directory.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for reporting issues and submitting pull requests.
+
 ## License
 
 Apache-2.0
