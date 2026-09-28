@@ -24,7 +24,7 @@ npm install @wterm/dom
 </script>
 ```
 
-The WASM binary is embedded in the package — no extra setup required. To serve it separately instead, pass `wasmUrl`.
+The WASM binary is embedded in the package — no extra setup required. To serve it separately instead, pass `wasmUrl`. The built-in core shares compilation across terminals while keeping their memory independent. Custom URLs are cached; use versioned URLs when updating the binary. See [WASM loading](../core/README.md#wasmbridge) for cache limits and streaming behavior.
 
 ## Scrollback rendering
 

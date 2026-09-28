@@ -6,6 +6,7 @@ import type {
   UnhandledSequence,
   TerminalCore,
 } from "./terminal-core.js";
+import { loadWasmModule } from "./wasm-loading.js";
 
 interface WasmExports {
   memory: WebAssembly.Memory;
@@ -59,15 +60,6 @@ interface WasmExports {
   getDebugLogMax(): number;
 }
 
-import { WASM_BASE64 } from "./wasm-inline.js";
-
-function decodeBase64(base64: string): ArrayBuffer {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
-
 export class WasmBridge implements TerminalCore {
   private exports: WasmExports;
   private memory: WebAssembly.Memory;
@@ -99,19 +91,8 @@ export class WasmBridge implements TerminalCore {
   }
 
   static async load(url?: string): Promise<WasmBridge> {
-    let bytes: ArrayBuffer;
-    if (url) {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(
-          `[wterm] Failed to load WASM from ${url}: ${response.status} ${response.statusText}`,
-        );
-      }
-      bytes = await response.arrayBuffer();
-    } else {
-      bytes = decodeBase64(WASM_BASE64);
-    }
-    const { instance } = await WebAssembly.instantiate(bytes);
+    const module = await loadWasmModule(url);
+    const instance = await WebAssembly.instantiate(module);
     return new WasmBridge(instance);
   }
 

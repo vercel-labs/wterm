@@ -74,6 +74,18 @@ Tracking follows a cell location, not its immutable contents. A caller preservin
 
 Low-level interface to the Zig/WASM terminal state machine. Implements the `TerminalCore` interface.
 
+The embedded binary is decoded and compiled once per copy of `@wterm/core`,
+including concurrent loads. Every bridge gets a fresh instance and memory;
+terminal contents, dimensions, and modes remain independent.
+
+Custom URLs share downloads and compiled modules for up to four recently used
+resolved URLs per page or worker. Failed downloads and compilations can be
+retried. Cached modules remain until eviction or page/worker reload; use
+versioned or hashed URLs when changing the binary. Serving
+`Content-Type: application/wasm` enables compilation during download in
+supported browsers. Other MIME types, unavailable streaming, or a streaming
+failure fall back to buffered compilation without another fetch.
+
 ```ts
 import { WasmBridge } from "@wterm/core";
 

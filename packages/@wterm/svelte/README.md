@@ -20,7 +20,7 @@ npm install @wterm/dom @wterm/svelte svelte
 ```
 
 The WASM binary is embedded in the package. Pass `wasmUrl` to serve it as a
-separate static asset instead.
+separate static asset instead. The built-in core shares compilation across terminals while keeping their memory independent. Custom URLs are cached; use versioned URLs when updating the binary. See [WASM loading](../core/README.md#wasmbridge) for cache limits and streaming behavior.
 
 By default, typed input is echoed back to the terminal. Use the callback props
 when input needs to be sent to a PTY or another backend:

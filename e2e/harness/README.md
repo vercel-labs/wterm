@@ -6,8 +6,9 @@ This workspace tests the built-in and Ghostty cores in Chromium, Firefox, and We
 
 `read-text.spec.ts` checks stable text snapshots of unmounted history, cancellation, and selection/focus preservation for both cores.
 
-`wasm-loading.spec.ts` checks shared Ghostty downloads, independent terminal
-instances, buffered fallback, and retrying failed loads in all three browsers.
+`wasm-loading.spec.ts` checks shared compilation for the embedded built-in core
+and separately served binaries, independent terminal instances, buffered
+fallback, and retrying failed Ghostty loads in all three browsers.
 
 Input accessibility cases cover named editable controls, readable mounted output, live ARIA label/description changes, tab-order ownership, Escape-then-Tab focus exit in both directions, cancellation, Kitty key ownership, hidden terminals, and teardown across all three browser engines.
 

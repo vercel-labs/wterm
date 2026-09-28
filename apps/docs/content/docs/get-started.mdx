@@ -30,6 +30,8 @@ npm install @wterm/dom
 ```
 
 The WASM binary is embedded in the package — no extra setup required.
+It is decoded and compiled once per copy of `@wterm/core`, including concurrent
+loads. Each terminal still gets its own instance and memory.
 
 ## Quick Start
 
@@ -89,6 +91,16 @@ cp node_modules/@wterm/core/wasm/wterm.wasm public/wterm.wasm
 ```tsx
 <Terminal wasmUrl="/wterm.wasm" />
 ```
+
+Loads of the same resolved URL share the download and compiled module. The
+built-in loader retains up to four recently used URLs per copy of `@wterm/core`
+in a page or worker, separately from its embedded module. Failed downloads and
+compilations can be retried. Use versioned or hashed URLs when updating the
+binary; cached modules remain until eviction or page/worker reload.
+
+Serve `Content-Type: application/wasm` to compile during download in supported
+browsers. Other MIME types, unavailable streaming, or streaming failures fall
+back to buffered compilation without fetching the file again.
 
 ## Building the WASM Binary
 
