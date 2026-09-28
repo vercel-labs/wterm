@@ -23,6 +23,23 @@ function respondWith(body: BodyInit, init?: ResponseInit): void {
   );
 }
 
+it("imports the embedded binary only for loads without a URL", async () => {
+  const imported = vi.fn(() => ({ WASM_BASE64: wasmBytes.toString("base64") }));
+  vi.doMock("../wasm-inline.js", imported);
+  vi.resetModules();
+  try {
+    const { WasmBridge: Bridge } = await import("../index.js");
+    expect(imported).not.toHaveBeenCalled();
+    respondWith(wasmBytes);
+    await Bridge.load("https://wterm.test/custom.wasm");
+    expect(imported).not.toHaveBeenCalled();
+    await Promise.all([Bridge.load(), Bridge.load()]);
+    expect(imported).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.doUnmock("../wasm-inline.js");
+  }
+});
+
 it("decodes and compiles the embedded binary once across concurrent and later loads", async () => {
   const decode = vi.spyOn(globalThis, "atob");
   const compile = vi.spyOn(WebAssembly, "compile");
@@ -94,6 +111,7 @@ describe("compiled built-in modules", () => {
     });
 
   it("shares downloads and streaming compilation but creates independent instances", async () => {
+    const decode = vi.spyOn(globalThis, "atob");
     const response = served();
     const buffered = vi.spyOn(response, "arrayBuffer");
     const fetcher = vi.fn(async () => response);
@@ -112,6 +130,7 @@ describe("compiled built-in modules", () => {
     expect(new Set(instantiate.mock.calls.map((call) => call[0])).size).toBe(1);
     expect(new Set([...first, last]).size).toBe(4);
     expect(new Set([...first, last].map(memory)).size).toBe(4);
+    expect(decode).not.toHaveBeenCalled();
   });
 
   it.each([

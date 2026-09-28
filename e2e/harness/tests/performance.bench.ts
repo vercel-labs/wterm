@@ -76,6 +76,31 @@ function capacity(sample: {
 }
 
 for (const core of ["builtin", "ghostty"]) {
+  test(`${core} downloads the embedded binary only when selected`, async ({
+    page,
+  }) => {
+    const binary = readFileSync(
+      new URL("../../../packages/@wterm/core/wasm/wterm.wasm", import.meta.url),
+    ).toString("base64");
+    const scripts: Promise<string>[] = [];
+    page.on("response", (response) => {
+      if (response.request().resourceType() === "script")
+        scripts.push(response.text());
+    });
+    await open(page, core);
+    const embeddedScripts = async () =>
+      (await Promise.all(scripts)).filter((body) => body.includes(binary));
+    expect(await embeddedScripts()).toHaveLength(0);
+    const measurement = await page.evaluate(() =>
+      window.terminalPerformance.startup(8, true),
+    );
+    expect(measurement.independentMemories).toBe(8);
+    expect(measurement.instances.map(({ char }) => char)).toEqual(
+      Array.from({ length: 8 }, (_, i) => 65 + i),
+    );
+    expect(await embeddedScripts()).toHaveLength(core === "builtin" ? 1 : 0);
+  });
+
   for (const [count, concurrent] of [
     [1, false],
     [8, false],

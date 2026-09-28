@@ -74,9 +74,13 @@ Tracking follows a cell location, not its immutable contents. A caller preservin
 
 Low-level interface to the Zig/WASM terminal state machine. Implements the `TerminalCore` interface.
 
-The embedded binary is decoded and compiled once per copy of `@wterm/core`,
+The embedded binary is imported on the first `WasmBridge.load()` without a URL,
+then decoded and compiled once per copy of `@wterm/core`,
 including concurrent loads. Every bridge gets a fresh instance and memory;
-terminal contents, dimensions, and modes remain independent.
+terminal contents, dimensions, and modes remain independent. Bundlers with code
+splitting emit the embedded binary in a separate JavaScript chunk; Ghostty and
+custom-URL loads do not request it. Deploy that chunk with your other application
+assets. No separate WASM file setup is required.
 
 Custom URLs share downloads and compiled modules for up to four recently used
 resolved URLs per page or worker. Failed downloads and compilations can be

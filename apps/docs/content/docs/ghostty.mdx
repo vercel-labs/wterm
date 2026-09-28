@@ -3,7 +3,7 @@ title: "Ghostty Core"
 navTitle: "Ghostty Core"
 ---
 
-The `@wterm/ghostty` package provides a full-featured terminal emulation core powered by [libghostty](https://ghostty.org) built directly from upstream source. It implements the same `TerminalCore` interface as wterm's built-in Zig core, so it's a drop-in replacement.
+The `@wterm/ghostty` package provides a full-featured terminal emulation core powered by [libghostty](https://ghostty.org) built directly from upstream source. It implements the same `TerminalCore` interface as wterm's built-in Zig core, so it's a drop-in replacement. When your bundler supports code splitting, Ghostty-backed terminals do not download the built-in core's embedded binary.
 
 ## Why use it?
 

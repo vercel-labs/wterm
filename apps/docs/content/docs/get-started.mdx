@@ -82,7 +82,10 @@ await term.init();
 
 ## Serving WASM separately
 
-By default the ~26 KB WASM binary is loaded from the JS bundle. To serve it as a separate static file instead (for caching or CDN), copy it from the package and pass `wasmUrl`:
+By default the ~26 KB WASM binary is embedded in the package and imported when
+the built-in core is first loaded. Bundlers with code splitting emit it in a
+separate JavaScript chunk, so deploy all emitted application assets. Ghostty and
+custom `wasmUrl` loads do not request that chunk. To serve it as a separate static file instead (for caching or CDN), copy it from the package and pass `wasmUrl`:
 
 ```bash
 cp node_modules/@wterm/core/wasm/wterm.wasm public/wterm.wasm

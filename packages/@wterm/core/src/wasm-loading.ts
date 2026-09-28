@@ -1,5 +1,3 @@
-import { WASM_BASE64 } from "./wasm-inline.js";
-
 let embedded: Promise<WebAssembly.Module> | undefined;
 const modules = new Map<string, Promise<WebAssembly.Module>>();
 const MAX_CACHED_MODULES = 4;
@@ -35,8 +33,8 @@ async function compileUrl(url: string): Promise<WebAssembly.Module> {
 /** Share compiled code, including pending work; callers create fresh instances. */
 export function loadWasmModule(url?: string): Promise<WebAssembly.Module> {
   if (!url) {
-    embedded ??= Promise.resolve()
-      .then(() => WebAssembly.compile(decodeBase64(WASM_BASE64)))
+    embedded ??= import("./wasm-inline.js")
+      .then(({ WASM_BASE64 }) => WebAssembly.compile(decodeBase64(WASM_BASE64)))
       .catch((error: unknown) => {
         embedded = undefined;
         throw error;

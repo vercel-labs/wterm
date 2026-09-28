@@ -24,7 +24,7 @@ npm install @wterm/dom
 </script>
 ```
 
-The WASM binary is embedded in the package — no extra setup required. To serve it separately instead, pass `wasmUrl`. The built-in core shares compilation across terminals while keeping their memory independent. Custom URLs are cached; use versioned URLs when updating the binary. See [WASM loading](../core/README.md#wasmbridge) for cache limits and streaming behavior.
+The built-in WASM binary is embedded in the package and imported only when needed — no extra setup required. Bundlers with code splitting emit it as a JavaScript chunk; deploy all emitted assets. Ghostty and custom `wasmUrl` loads do not request that chunk. To serve it separately instead, pass `wasmUrl`. The built-in core shares compilation across terminals while keeping their memory independent. Custom URLs are cached; use versioned URLs when updating the binary. See [WASM loading](../core/README.md#wasmbridge) for cache limits and streaming behavior.
 
 ## Scrollback rendering
 
