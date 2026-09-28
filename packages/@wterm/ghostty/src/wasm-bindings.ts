@@ -199,6 +199,61 @@ function hasWasmMagic(bytes: ArrayBuffer): boolean {
   );
 }
 
+// Share code, never instances or memory. Bound retention for hosts that load
+// many different asset URLs, and share in-flight compilation as well.
+const modules = new Map<string, Promise<WebAssembly.Module>>();
+const MAX_CACHED_MODULES = 4;
+
+async function compileWasm(url: string): Promise<WebAssembly.Module> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `@wterm/ghostty: fetching ${url} returned ${response.status} ` +
+        `${response.statusText}. ${REMEDY}`,
+    );
+  }
+
+  if (
+    typeof WebAssembly.compileStreaming === "function" &&
+    response.headers.get("Content-Type")?.trim().toLowerCase() ===
+      "application/wasm"
+  ) {
+    try {
+      return await WebAssembly.compileStreaming(response.clone());
+    } catch {
+      // Keep the original response for engines that reject streaming, and
+      // preserve the useful non-WASM-body diagnostic below. No second fetch.
+    }
+  }
+
+  const bytes = await response.arrayBuffer();
+  if (!hasWasmMagic(bytes)) {
+    throw new Error(
+      `@wterm/ghostty: ${url} did not return a WASM module. ${REMEDY}`,
+    );
+  }
+  return WebAssembly.compile(bytes);
+}
+
+function loadModule(url: string): Promise<WebAssembly.Module> {
+  const cached = modules.get(url);
+  if (cached) {
+    // Keep recently used assets when another URL displaces a cache entry.
+    modules.delete(url);
+    modules.set(url, cached);
+    return cached;
+  }
+  const pending = compileWasm(url).catch((error: unknown) => {
+    // An evicted request must not remove a newer attempt for the same URL.
+    if (modules.get(url) === pending) modules.delete(url);
+    throw error;
+  });
+  modules.set(url, pending);
+  if (modules.size > MAX_CACHED_MODULES)
+    modules.delete(modules.keys().next().value!);
+  return pending;
+}
+
 /**
  * Load the ghostty-vt WASM module.
  *
@@ -206,7 +261,7 @@ function hasWasmMagic(bytes: ArrayBuffer): boolean {
  *   committed binary at `../wasm/ghostty-vt.wasm`.
  */
 export async function loadGhosttyWasm(wasmUrl?: string): Promise<GhosttyWasm> {
-  const url = wasmUrl ?? defaultWasmUrl();
+  let url = wasmUrl ?? defaultWasmUrl();
 
   // A file: URL in a browser is a build-machine path that survived bundling.
   // fetch() reports it as a bare "Failed to fetch", which names neither the
@@ -223,24 +278,17 @@ export async function loadGhosttyWasm(wasmUrl?: string): Promise<GhosttyWasm> {
     );
   }
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(
-      `@wterm/ghostty: fetching ${url} returned ${response.status} ` +
-        `${response.statusText}. ${REMEDY}`,
-    );
-  }
-
-  const bytes = await response.arrayBuffer();
-  if (!hasWasmMagic(bytes)) {
-    throw new Error(
-      `@wterm/ghostty: ${url} did not return a WASM module. ${REMEDY}`,
-    );
-  }
+  // Relative paths follow the current page/worker base, including <base>.
+  // Resolving before caching avoids reusing an asset after that base changes.
+  if (typeof document !== "undefined")
+    url = new URL(url, document.baseURI).href;
+  else if (typeof location !== "undefined")
+    url = new URL(url, location.href).href;
+  const module = await loadModule(url);
 
   let wasmMemory: WebAssembly.Memory;
 
-  const { instance } = await WebAssembly.instantiate(bytes, {
+  const instance = await WebAssembly.instantiate(module, {
     env: {
       log(ptr: number, len: number) {
         const text = new TextDecoder().decode(

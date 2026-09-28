@@ -265,6 +265,17 @@ use the latest host defaults. Use the updated bundled WASM asset for this API.
 
 ## Bundlers
 
+Loads of the same resolved WASM URL share the download and compiled module,
+including concurrent calls. Each core still has its own instance and memory.
+The loader retains up to four recently used URLs per copy of the package in a
+page or worker; failed downloads and compilations can be retried. Use versioned
+or hashed URLs for new binaries because cached modules are not revalidated on
+each load.
+
+Serve the binary with `Content-Type: application/wasm` to compile while it
+downloads in supported browsers. Other MIME types or unavailable or failing
+streaming support fall back to buffered compilation without another fetch.
+
 The WASM binary is fetched at runtime rather than inlined, so the default has to resolve to a URL your app serves. `GhosttyCore.load()` resolves it with `new URL("../wasm/ghostty-vt.wasm", import.meta.url)`. Bundlers that implement that asset pattern emit the binary and rewrite the URL. Ones that do not leave `import.meta.url` pointing at the machine that built the bundle, and `load()` throws an error saying so.
 
 <table>

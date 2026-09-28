@@ -212,6 +212,17 @@ older assets without the theme export keep their current engine defaults.
 
 ## Bundlers
 
+Loads of the same resolved WASM URL share the download and compiled module,
+including concurrent calls. Each core gets its own instance and memory; screens,
+history, modes, and disposal remain independent. The loader retains up to four
+recently used URLs per copy of the package in a page or worker. Failed downloads
+and compilations can be retried. Use a versioned or hashed URL when changing the
+binary; cached modules are not revalidated on each load.
+
+Serve the binary with `Content-Type: application/wasm` to enable streaming
+compilation while it downloads. Other MIME types, unavailable streaming support,
+or a streaming failure use buffered compilation without fetching the file again.
+
 The WASM binary is fetched at runtime, not inlined, so the default has to resolve to a URL your app actually serves. `GhosttyCore.load()` resolves it with `new URL("../wasm/ghostty-vt.wasm", import.meta.url)`. Bundlers that implement that asset pattern emit the binary and rewrite the URL; ones that do not leave `import.meta.url` pointing at the machine that built the bundle.
 
 | Bundler | Default `GhosttyCore.load()` | Verified |
