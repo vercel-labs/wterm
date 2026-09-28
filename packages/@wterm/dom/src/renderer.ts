@@ -393,7 +393,7 @@ export class Renderer {
   private graphics: GraphicsLayer;
   private searchLayer: HTMLDivElement;
   private rowText = new WeakMap<HTMLElement, RenderedRowText>();
-  private rowHtml = new WeakMap<HTMLElement, string>();
+  private rowParts = new WeakMap<HTMLElement, string[]>();
   private rowBackground = new WeakMap<HTMLElement, string>();
   private selection: TrackedSelection | null = null;
   private needsSetup = false;
@@ -426,7 +426,7 @@ export class Renderer {
     this.rows = rows;
     this.container.innerHTML = "";
     this.rowText = new WeakMap();
-    this.rowHtml = new WeakMap();
+    this.rowParts = new WeakMap();
     this.rowBackground = new WeakMap();
     this.rowEls = [];
     this.prevRowBg = [];
@@ -466,7 +466,10 @@ export class Renderer {
     cursorCol: number,
     rowIndex: number,
   ): void {
-    let html = "";
+    // Each part is one direct child: a cell span, text run, or complete link.
+    // Keeping their boundaries lets a redraw preserve unchanged Unicode cells.
+    const parts: string[] = [];
+    let linkHtml = "";
     const content: RenderedRowText = {
       text: "",
       specialCells: [],
@@ -503,18 +506,24 @@ export class Renderer {
       const href = safeLinkHref(uri);
       const nextLinkKey = href ? linkKey : "";
       if (nextLinkKey !== outputLinkKey) {
-        if (outputLinkKey) html += "</a>";
+        if (outputLinkKey) parts.push(linkHtml + "</a>");
         if (nextLinkKey) {
-          html += `<a class="term-link" href="${escapeHTML(href!)}" target="_blank" rel="noopener noreferrer">`;
+          linkHtml = `<a class="term-link" href="${escapeHTML(href!)}" target="_blank" rel="noopener noreferrer">`;
         }
         outputLinkKey = nextLinkKey;
       }
-      html += content;
+      if (outputLinkKey) linkHtml += content;
+      else parts.push(content);
     };
 
     const flushRun = (endCol: number) => {
       if (!runText) return;
-      let content = "";
+      const append = (className: string, style: string, text: string) =>
+        appendContent(
+          cellSpanHTML(className, style, text),
+          runLinkKey,
+          runLinkUri,
+        );
 
       if (cursorCol >= runStart && cursorCol < endCol) {
         const offset = cursorCol - runStart;
@@ -524,19 +533,18 @@ export class Renderer {
 
         if (before) {
           const style = columnStyle(offset) + runStyle;
-          content += cellSpanHTML("", style, before);
+          append("", style, before);
         }
         const cursorStyle = cursorCellStyle(runStyle);
-        content += cellSpanHTML("term-cursor", cursorStyle, cursorChar);
+        append("term-cursor", cursorStyle, cursorChar);
         if (after) {
           const style = columnStyle(runCells.length - offset - 1) + runStyle;
-          content += cellSpanHTML("", style, after);
+          append("", style, after);
         }
       } else {
         const style = columnStyle(runCells.length) + runStyle;
-        content += cellSpanHTML("", style, runText);
+        append("", style, runText);
       }
-      appendContent(content, runLinkKey, runLinkUri);
       runText = "";
       runCells = [];
     };
@@ -737,10 +745,9 @@ export class Renderer {
       }
     }
     flushRun(this.cols);
-    if (outputLinkKey) html += "</a>";
+    if (outputLinkKey) parts.push(linkHtml + "</a>");
 
-    if (this.rowHtml.get(rowEl) !== html) rowEl.innerHTML = html;
-    this.rowHtml.set(rowEl, html);
+    this.updateRowParts(rowEl, parts);
     this.rowText.set(rowEl, content);
 
     const bgCss =
@@ -756,6 +763,47 @@ export class Renderer {
       rowEl.style.background = bgCss;
       this.rowBackground.set(rowEl, bgCss);
     }
+  }
+
+  private updateRowParts(row: HTMLElement, parts: string[]): void {
+    const previous = this.rowParts.get(row);
+    let start = 0;
+    let oldEnd = previous?.length ?? 0;
+    let newEnd = parts.length;
+    if (previous) {
+      while (
+        start < oldEnd &&
+        start < newEnd &&
+        previous[start] === parts[start]
+      )
+        start++;
+      while (
+        oldEnd > start &&
+        newEnd > start &&
+        previous[oldEnd - 1] === parts[newEnd - 1]
+      ) {
+        oldEnd--;
+        newEnd--;
+      }
+    }
+    if (start === oldEnd && start === newEnd) return;
+
+    const retained = start + parts.length - newEnd;
+    const replaced = Math.max(oldEnd - start, newEnd - start);
+    // Parsing the whole row is cheaper when there is little to retain.
+    if (retained < replaced) {
+      row.innerHTML = parts.join("");
+    } else {
+      // Replace only the changed middle, retaining the native text nodes and
+      // layout objects of the matching prefix and suffix. Links stay atomic.
+      const range = row.ownerDocument.createRange();
+      range.setStart(row, start);
+      range.setEnd(row, oldEnd);
+      range.deleteContents();
+      const html = parts.slice(start, newEnd).join("");
+      if (html) range.insertNode(range.createContextualFragment(html));
+    }
+    this.rowParts.set(row, parts);
   }
 
   private _updateScrollbackRow(

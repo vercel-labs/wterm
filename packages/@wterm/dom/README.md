@@ -35,6 +35,10 @@ temporary row construction and HTML parsing for retained rows. History content,
 cell metadata, and backgrounds still refresh when needed; selection and copy
 retain their existing behavior.
 
+Partial row redraws reuse matching cell spans when most of the row is unchanged,
+reducing layout work for Unicode text. Wide cells, graphemes, and box drawing
+keep their column widths, and links and text decorations remain intact.
+
 ## Input accessibility
 
 The terminal's input is a native multiline textbox named **Terminal** by default. Set `aria-label`, `aria-labelledby`, `aria-describedby`, or `aria-description` on the host element to name or describe that input. Changes stay synchronized; referenced labels and descriptions use the browser's normal ARIA precedence. For example:

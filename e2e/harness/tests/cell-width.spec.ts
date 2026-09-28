@@ -28,6 +28,61 @@ function expectColumn60(cells: { x: number; width: number }[]) {
 }
 
 for (const core of ["builtin", "ghostty"]) {
+  test(`${core} preserves Unicode nodes, geometry, and selection during partial redraws`, async ({
+    page,
+  }) => {
+    await page.goto(`/?core=${core}&mode=replay`);
+    await expect(page.locator("#status")).toHaveText("Replay ready");
+    await page.evaluate(() => window.ptyHarness.resize(30, 4));
+    const text = core === "ghostty" ? "界😀e\u0301│█" : "界😀│█";
+    await write(page, "\x1b[?25l0000 " + text);
+    const row = page.locator(".term-row").first();
+    const retained = await row.evaluateHandle((element) => {
+      const cells = Array.from(element.children).slice(1);
+      const range = document.createRange();
+      range.setStart(cells[0].firstChild!, 0);
+      const end = cells[cells.length - 2].firstChild!;
+      range.setEnd(end, end.textContent!.length);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return cells.map((cell) => ({
+        cell,
+        text: cell.firstChild,
+        x: cell.getBoundingClientRect().x,
+        width: cell.getBoundingClientRect().width,
+      }));
+    });
+
+    // Split the leading ASCII run, then merge it again. The suffix includes
+    // wide glyphs, box/block drawing, and (with Ghostty) a full grapheme.
+    for (const prefix of ["\x1b[31m12\x1b[32m34\x1b[0m ", "abcd "]) {
+      await write(page, "\x1b[1;1H" + prefix);
+      const state = await page.evaluate(
+        (cells) => ({
+          cells: cells.map(({ cell, text, x, width }) => ({
+            connected: cell.isConnected,
+            sameTextNode: cell.firstChild === text,
+            dx: cell.getBoundingClientRect().x - x,
+            dw: cell.getBoundingClientRect().width - width,
+          })),
+          selection: window.getSelection()!.toString(),
+          copied: window.ptyHarness.selectionText(),
+        }),
+        retained,
+      );
+      expect(state.selection).toBe(text);
+      expect(state.copied).toBe(text);
+      for (const cell of state.cells) {
+        expect(cell.connected).toBe(true);
+        expect(cell.sameTextNode).toBe(true);
+        expect(Math.abs(cell.dx)).toBeLessThan(0.1);
+        expect(Math.abs(cell.dw)).toBeLessThan(0.1);
+      }
+    }
+    await retained.dispose();
+  });
+
   test(`${core} aligns fallback glyphs, wide cells, links, and cursors to the same columns`, async ({
     page,
   }) => {

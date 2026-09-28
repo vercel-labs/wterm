@@ -151,6 +151,93 @@ describe("Renderer", () => {
   });
 
   describe("render", () => {
+    it("retains unchanged Unicode cells when runs between them split and merge", () => {
+      const grapheme = {
+        ...makeCell("e", 256, 256, 0x88),
+        chars: "e\u0301",
+        underlineStyle: "curly" as const,
+      };
+      const cells = [
+        makeCell("界", 256, 256, 0, 2),
+        makeCell(" ", 256, 256, 0, 0),
+        makeCell("a"),
+        makeCell("b"),
+        grapheme,
+        makeCell("│"),
+        makeCell("█"),
+      ];
+      const bridge = createMockBridge(cells.length, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.isDirtyRow = () => true;
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector(".term-row")!;
+      const [wide, , accent, box, block] = Array.from(row.children);
+      const accentText = accent.firstChild!.firstChild;
+
+      for (const replacement of [
+        [makeCell("c", 1), makeCell("d", 2)],
+        [makeCell("語", 256, 256, 0, 2), makeCell(" ", 256, 256, 0, 0)],
+        [makeCell("x"), makeCell("y")],
+      ]) {
+        cells.splice(2, 2, ...replacement);
+        renderer.render(bridge);
+        expect(row.firstChild).toBe(wide);
+        expect(Array.from(row.children).slice(-3)).toEqual([
+          accent,
+          box,
+          block,
+        ]);
+        expect(accent.firstChild!.firstChild).toBe(accentText);
+        expect(row.textContent).toBe(
+          "界" +
+            (replacement[0].width === 2
+              ? "語"
+              : String.fromCodePoint(...replacement.map((c) => c.char))) +
+            "e\u0301│█",
+        );
+        expect(row.children).toHaveLength(replacement[0].fg === 1 ? 6 : 5);
+      }
+    });
+
+    it("updates complete links without replacing the Unicode cells around them", () => {
+      const cells = [
+        makeCell("λ"),
+        makeCell("a"),
+        makeCell("b"),
+        makeCell("ψ"),
+      ];
+      cells[1].linkUri = cells[2].linkUri = "https://example.com/old";
+      cells[1].linkKey = cells[2].linkKey = "old";
+      const bridge = createMockBridge(cells.length, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.isDirtyRow = () => true;
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector(".term-row")!;
+      const first = row.firstChild;
+      const last = row.lastChild;
+
+      for (const uri of [
+        "javascript:alert(1)",
+        "https://example.com/new?a=1&b=2",
+      ]) {
+        cells[1].linkUri = cells[2].linkUri = uri;
+        cells[1].linkKey = "left";
+        cells[2].linkKey = "right";
+        renderer.render(bridge);
+        expect(row.firstChild).toBe(first);
+        expect(row.lastChild).toBe(last);
+        expect(row.textContent).toBe("λabψ");
+        const links = Array.from(row.querySelectorAll("a"));
+        expect(links).toHaveLength(uri.startsWith("https:") ? 2 : 0);
+        for (const link of links) {
+          expect(link.href).toBe(uri);
+          expect(link.rel).toBe("noopener noreferrer");
+        }
+      }
+    });
+
     it("keeps selection coordinates stable until a theme repaint and recolors unchanged history", () => {
       let fgRgb = 0x123456;
       const bridge = {
