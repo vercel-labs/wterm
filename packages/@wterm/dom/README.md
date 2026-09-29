@@ -36,7 +36,9 @@ cell metadata, and backgrounds still refresh when needed; selection and copy
 retain their existing behavior.
 
 Partial row redraws reuse matching cell spans when most of the row is unchanged,
-reducing layout work for Unicode text. Wide cells, graphemes, and box drawing
+reducing layout work for Unicode text. When span styles and column widths stay
+the same, text changes update existing text nodes without reparsing HTML.
+Wide cells, graphemes, and box drawing
 keep their column widths, and links and text decorations remain intact.
 
 ## Input accessibility

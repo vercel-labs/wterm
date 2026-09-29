@@ -28,6 +28,71 @@ function expectColumn60(cells: { x: number; width: number }[]) {
 }
 
 for (const core of ["builtin", "ghostty"]) {
+  test(`${core} updates text nodes without changing cell geometry or surviving selections`, async ({
+    page,
+  }) => {
+    await page.goto(`/?core=${core}&mode=replay`);
+    await expect(page.locator("#status")).toHaveText("Replay ready");
+    await page.evaluate(() => window.ptyHarness.resize(30, 4));
+    const accent = core === "ghostty" ? "e\u0301" : "λ";
+    await write(page, "\x1b[?25l0000 keep 界" + accent + " end");
+    const row = page.locator(".term-row").first();
+    const retained = await row.evaluateHandle((element, core) => {
+      const cells = Array.from(element.children);
+      const range = document.createRange();
+      if (core === "ghostty") {
+        // Tracked selections survive a change elsewhere in the same node.
+        range.setStart(cells[0].firstChild!, 5);
+        range.setEnd(cells[0].firstChild!, 9);
+      } else {
+        // Untracked selections remain on an unchanged middle text node.
+        range.selectNodeContents(cells[2]);
+      }
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return cells.map((cell) => ({
+        cell,
+        text: cell.firstChild,
+        x: cell.getBoundingClientRect().x,
+        width: cell.getBoundingClientRect().width,
+      }));
+    }, core);
+    for (const prefix of ["1234", '<&>"']) {
+      const replacement = core === "ghostty" ? "a\u0300" : "λ";
+      await write(
+        page,
+        "\x1b[1;1H" + prefix + " keep 語" + replacement + " fin",
+      );
+      await expect(row).toHaveText(
+        new RegExp("keep 語" + replacement + " fin"),
+      );
+      const state = await page.evaluate(
+        (cells) => ({
+          cells: cells.map(({ cell, text, x, width }) => ({
+            connected: cell.isConnected,
+            sameTextNode: cell.firstChild === text,
+            dx: cell.getBoundingClientRect().x - x,
+            dw: cell.getBoundingClientRect().width - width,
+          })),
+          selection: window.getSelection()!.toString(),
+          copied: window.ptyHarness.selectionText(),
+        }),
+        retained,
+      );
+      expect(state.selection).toBe(core === "ghostty" ? "keep" : "λ");
+      expect(state.copied).toBe(core === "ghostty" ? "keep" : "λ");
+      for (const cell of state.cells) {
+        expect(cell.connected).toBe(true);
+        expect(cell.sameTextNode).toBe(true);
+        expect(Math.abs(cell.dx)).toBeLessThan(0.1);
+        expect(Math.abs(cell.dw)).toBeLessThan(0.1);
+      }
+    }
+    await expect(row).toContainText('<&>" keep');
+    await retained.dispose();
+  });
+
   test(`${core} preserves Unicode nodes, geometry, and selection during partial redraws`, async ({
     page,
   }) => {

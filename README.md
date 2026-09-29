@@ -52,7 +52,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Rectangular selection** — Alt/Option-drag copies columns from logs and tables, preserving selected spaces and complete Unicode cells
 - **Selection preservation** — Ghostty native selections follow scrolling and reflow while their text remains intact; selected history is mounted separately from the viewport
 - **Native hyperlinks** — OSC 8 links remain attached to their exact cells through viewport and scrollback, with safe HTTP(S) anchors
-- **Dirty-row tracking** — only touched rows are re-rendered each frame via `requestAnimationFrame`; partial redraws reuse unchanged cell spans to reduce Unicode layout work
+- **Dirty-row tracking** — only touched rows are re-rendered each frame via `requestAnimationFrame`; partial redraws reuse unchanged cell spans, and text changes reuse text nodes when styles and column widths match
 - **Frame-direct scheduling** — writes queue their render on the next animation frame without an extra timer hop
 - **Synchronized output** — mode 2026 blocks paint atomically with a bounded recovery deadline; the built-in core answers private-mode status queries so applications can detect support
 - **Terminal queries** — the built-in core answers operating-status and cursor-position reports, plus primary device attributes for supported VT100 features

@@ -151,6 +151,91 @@ describe("Renderer", () => {
   });
 
   describe("render", () => {
+    it("updates flat span text in place, including literal HTML and graphemes", () => {
+      const cells = [
+        makeCell("a"),
+        makeCell("界", 256, 256, 0, 2),
+        makeCell(" ", 256, 256, 0, 0),
+        { ...makeCell("e"), chars: "e\u0301" },
+        makeCell("b"),
+      ];
+      const bridge = createMockBridge(cells.length, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.isDirtyRow = () => true;
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector(".term-row")!;
+      const spans = Array.from(row.children);
+      const texts = spans.map((span) => span.firstChild);
+      const observer = new MutationObserver(() => {});
+      observer.observe(row, { subtree: true, childList: true });
+
+      for (const [left, right] of [
+        ["<", ">"],
+        ["&", '"'],
+      ]) {
+        cells[0] = makeCell(left);
+        cells[1] = makeCell("語", 256, 256, 0, 2);
+        cells[3] = { ...makeCell("a"), chars: "a\u0300" };
+        cells[4] = makeCell(right);
+        renderer.render(bridge);
+        expect(Array.from(row.children)).toEqual(spans);
+        expect(spans.map((span) => span.firstChild)).toEqual(texts);
+        expect(row.textContent).toBe(`${left}語a\u0300${right}`);
+        expect(row.querySelectorAll("span")).toHaveLength(4);
+        expect(observer.takeRecords()).toHaveLength(0);
+      }
+      observer.disconnect();
+    });
+
+    it("leaves unchanged text nodes alone between text-only updates", () => {
+      const cells = [makeCell("λ"), makeCell("ψ"), makeCell("π")];
+      const bridge = createMockBridge(3, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.isDirtyRow = () => true;
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector(".term-row")!;
+      const middle = row.children[1].firstChild;
+      const observer = new MutationObserver(() => {});
+      observer.observe(row, { subtree: true, characterData: true });
+      cells[0] = makeCell("α");
+      cells[2] = makeCell("ω");
+      renderer.render(bridge);
+      expect(row.textContent).toBe("αψω");
+      const changes = observer.takeRecords();
+      expect(changes).toHaveLength(2);
+      expect(changes.some((change) => change.target === middle)).toBe(false);
+      observer.disconnect();
+    });
+
+    it("replaces spans when colors, decorations, or cursor styling change", () => {
+      const cells = [makeCell("λ"), makeCell("ψ")];
+      const bridge = createMockBridge(2, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.isDirtyRow = () => true;
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector(".term-row")!;
+      const original = row.firstChild;
+      cells[0] = makeCell("α", 1);
+      renderer.render(bridge);
+      expect(row.firstChild).not.toBe(original);
+      expect((row.firstChild as HTMLElement).style.color).toBe(
+        "var(--term-color-1)",
+      );
+      cells[0] = { ...cells[0], flags: 0x88, underlineStyle: "curly" };
+      renderer.render(bridge);
+      expect(row.firstElementChild!.children).toHaveLength(1);
+      expect(row.textContent).toBe("αψ");
+      cells[0] = makeCell("β", 1);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: true });
+      renderer.render(bridge);
+      expect(row.firstElementChild!.className).toBe("term-cursor");
+      expect(row.firstElementChild!.children).toHaveLength(0);
+      expect(row.textContent).toBe("βψ");
+    });
+
     it("retains unchanged Unicode cells when runs between them split and merge", () => {
       const grapheme = {
         ...makeCell("e", 256, 256, 0x88),

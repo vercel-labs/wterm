@@ -146,12 +146,20 @@ function escapeHTML(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+interface RowPart {
+  html: string;
+  /** Flat spans can keep their element and text node when only text changes. */
+  opening?: string;
+  text?: string;
+}
+
 // CSS applies one decoration style/color to every line on an element. Keep
 // the strike on its own inline element so colored/curly underlines do not
 // change it. The cell span still owns geometry and the text appears only once.
-function cellSpanHTML(className: string, style: string, text: string): string {
+function cellSpanPart(className: string, style: string, text: string): RowPart {
   let content = escapeHTML(text);
-  if (style.includes("text-decoration:underline line-through;")) {
+  const flat = !style.includes("text-decoration:underline line-through;");
+  if (!flat) {
     style = style.replace(
       "text-decoration:underline line-through;",
       "text-decoration:underline;",
@@ -160,7 +168,12 @@ function cellSpanHTML(className: string, style: string, text: string): string {
   }
   const classAttr = className ? ` class="${className}"` : "";
   const styleAttr = style ? ` style="${style}"` : "";
-  return `<span${classAttr}${styleAttr}>${content}</span>`;
+  const opening = `<span${classAttr}${styleAttr}>`;
+  return {
+    html: `${opening}${content}</span>`,
+    opening: flat ? opening : undefined,
+    text: flat ? text : undefined,
+  };
 }
 
 function safeLinkHref(uri: string | undefined): string | undefined {
@@ -394,7 +407,7 @@ export class Renderer {
   private graphics: GraphicsLayer;
   private searchLayer: HTMLDivElement;
   private rowText = new WeakMap<HTMLElement, RenderedRowText>();
-  private rowParts = new WeakMap<HTMLElement, string[]>();
+  private rowParts = new WeakMap<HTMLElement, RowPart[]>();
   private rowBackground = new WeakMap<HTMLElement, string>();
   private selection: TrackedSelection | null = null;
   private needsSetup = false;
@@ -469,7 +482,7 @@ export class Renderer {
   ): void {
     // Each part is one direct child: a cell span, text run, or complete link.
     // Keeping their boundaries lets a redraw preserve unchanged Unicode cells.
-    const parts: string[] = [];
+    const parts: RowPart[] = [];
     let linkHtml = "";
     const content: RenderedRowText = {
       text: "",
@@ -500,20 +513,20 @@ export class Renderer {
     let uniformBackground = lineLen >= this.cols;
 
     const appendContent = (
-      content: string,
+      content: RowPart,
       linkKey: string,
       uri: string | undefined,
     ) => {
       const href = safeLinkHref(uri);
       const nextLinkKey = href ? linkKey : "";
       if (nextLinkKey !== outputLinkKey) {
-        if (outputLinkKey) parts.push(linkHtml + "</a>");
+        if (outputLinkKey) parts.push({ html: linkHtml + "</a>" });
         if (nextLinkKey) {
           linkHtml = `<a class="term-link" href="${escapeHTML(href!)}" target="_blank" rel="noopener noreferrer">`;
         }
         outputLinkKey = nextLinkKey;
       }
-      if (outputLinkKey) linkHtml += content;
+      if (outputLinkKey) linkHtml += content.html;
       else parts.push(content);
     };
 
@@ -521,7 +534,7 @@ export class Renderer {
       if (!runText) return;
       const append = (className: string, style: string, text: string) =>
         appendContent(
-          cellSpanHTML(className, style, text),
+          cellSpanPart(className, style, text),
           runLinkKey,
           runLinkUri,
         );
@@ -557,7 +570,7 @@ export class Renderer {
       linkKey: string,
       linkUri?: string,
     ) => {
-      appendContent(cellSpanHTML(className, style, text), linkKey, linkUri);
+      appendContent(cellSpanPart(className, style, text), linkKey, linkUri);
     };
 
     for (let col = 0; col < this.cols; col++) {
@@ -746,7 +759,7 @@ export class Renderer {
       }
     }
     flushRun(this.cols);
-    if (outputLinkKey) parts.push(linkHtml + "</a>");
+    if (outputLinkKey) parts.push({ html: linkHtml + "</a>" });
 
     this.updateRowParts(rowEl, parts);
     this.rowText.set(rowEl, content);
@@ -766,7 +779,7 @@ export class Renderer {
     }
   }
 
-  private updateRowParts(row: HTMLElement, parts: string[]): void {
+  private updateRowParts(row: HTMLElement, parts: RowPart[]): void {
     const previous = this.rowParts.get(row);
     let start = 0;
     let oldEnd = previous?.length ?? 0;
@@ -775,13 +788,13 @@ export class Renderer {
       while (
         start < oldEnd &&
         start < newEnd &&
-        previous[start] === parts[start]
+        previous[start].html === parts[start].html
       )
         start++;
       while (
         oldEnd > start &&
         newEnd > start &&
-        previous[oldEnd - 1] === parts[newEnd - 1]
+        previous[oldEnd - 1].html === parts[newEnd - 1].html
       ) {
         oldEnd--;
         newEnd--;
@@ -789,11 +802,31 @@ export class Renderer {
     }
     if (start === oldEnd && start === newEnd) return;
 
+    // Keep spans with unchanged geometry and styling. Assigning raw text to
+    // their existing text nodes avoids HTML parsing and element replacement.
+    let textOnly = previous !== undefined && oldEnd === newEnd;
+    for (let i = start; textOnly && i < newEnd; i++) {
+      const child = row.childNodes[i];
+      textOnly =
+        parts[i].opening !== undefined &&
+        parts[i].opening === previous![i].opening &&
+        child?.childNodes.length === 1 &&
+        child.firstChild?.nodeType === 3;
+    }
+    if (textOnly) {
+      for (let i = start; i < newEnd; i++) {
+        if (parts[i].html !== previous![i].html)
+          row.childNodes[i].firstChild!.nodeValue = parts[i].text!;
+      }
+      this.rowParts.set(row, parts);
+      return;
+    }
+
     const retained = start + parts.length - newEnd;
     const replaced = Math.max(oldEnd - start, newEnd - start);
     // Parsing the whole row is cheaper when there is little to retain.
     if (retained < replaced) {
-      row.innerHTML = parts.join("");
+      row.innerHTML = parts.map((part) => part.html).join("");
     } else {
       // Replace only the changed middle, retaining the native text nodes and
       // layout objects of the matching prefix and suffix. Links stay atomic.
@@ -801,7 +834,10 @@ export class Renderer {
       range.setStart(row, start);
       range.setEnd(row, oldEnd);
       range.deleteContents();
-      const html = parts.slice(start, newEnd).join("");
+      const html = parts
+        .slice(start, newEnd)
+        .map((part) => part.html)
+        .join("");
       if (html) range.insertNode(range.createContextualFragment(html));
     }
     this.rowParts.set(row, parts);
