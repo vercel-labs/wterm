@@ -1,8 +1,22 @@
 # Changelog
 
-## 0.5.3
+## 0.5.4
 
 <!-- release:start -->
+
+### Bug Fixes
+
+- **Glyph rendering:** preserve italic and fallback glyph overhang without shifting adjacent terminal columns.
+- **Cursor appearance:** keep the cursor active while the mouse is pressed inside the terminal, preserving native text selection.
+- **Row spacing:** preserve fractional CSS row heights during terminal initialization.
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.5.3
 
 ### Improvements
 
@@ -19,8 +33,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.5.2
 

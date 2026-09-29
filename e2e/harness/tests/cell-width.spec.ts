@@ -28,6 +28,78 @@ function expectColumn60(cells: { x: number; width: number }[]) {
 }
 
 for (const core of ["builtin", "ghostty"]) {
+  test(`${core} paints glyph overhang without changing adjacent cell positions`, async ({
+    page,
+  }) => {
+    await page.goto(`/?core=${core}&mode=replay`);
+    await expect(page.locator("#status")).toHaveText("Replay ready");
+    await page.evaluate(() => window.ptyHarness.resize(30, 4));
+    await write(page, "\x1b[?25l     \x1b[1mW\x1b[0m         \x1b[31mX");
+    const grid = page.locator(".term-grid");
+    const state = await grid.evaluate((element) => {
+      const spans = Array.from(
+        element
+          .querySelector(".term-row")!
+          .querySelectorAll<HTMLElement>("span"),
+      );
+      const glyph = spans.find((span) => span.textContent === "W")!;
+      const next = glyph.nextElementSibling as HTMLElement;
+      // Force ink beyond one cell independently of installed fallback fonts.
+      glyph.style.fontSize = "32px";
+      glyph.style.fontFamily = "monospace";
+      glyph.style.color = "rgb(255,255,255)";
+      const r = glyph.getBoundingClientRect(),
+        g = element.getBoundingClientRect();
+      return {
+        right: r.right - g.x,
+        top: r.top - g.y,
+        bottom: r.bottom - g.y,
+        next: next.getBoundingClientRect().x,
+        width: r.width,
+      };
+    });
+    const png = await grid.screenshot({ scale: "css" });
+    const ink = await page.evaluate(
+      async ({ png, state }) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${png}`;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(image, 0, 0);
+        let bright = 0;
+        for (
+          let x = Math.ceil(state.right) + 1;
+          x < Math.ceil(state.right) + 5;
+          x++
+        )
+          for (let y = Math.ceil(state.top); y < state.bottom; y++) {
+            const pixel = ctx.getImageData(x, y, 1, 1).data;
+            if (pixel[0] > 150 && pixel[1] > 150 && pixel[2] > 150) bright++;
+          }
+        return bright;
+      },
+      { png: png.toString("base64"), state },
+    );
+    expect(ink).toBeGreaterThan(0);
+    const after = await grid.evaluate((element) => {
+      const glyph = Array.from(
+        element.querySelectorAll<HTMLElement>("span"),
+      ).find((span) => span.textContent === "W")!;
+      const r = glyph.getBoundingClientRect();
+      return {
+        width: r.width,
+        next: glyph.nextElementSibling!.getBoundingClientRect().x,
+        right: r.right,
+      };
+    });
+    expect(after.width).toBe(state.width);
+    expect(after.next).toBe(state.next);
+    expect(after.next).toBe(after.right);
+  });
+
   test(`${core} updates text nodes without changing cell geometry or surviving selections`, async ({
     page,
   }) => {

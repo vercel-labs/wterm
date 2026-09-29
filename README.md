@@ -58,7 +58,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Terminal queries** — the built-in core answers operating-status and cursor-position reports, plus primary device attributes for supported VT100 features
 - **Themes** — CSS custom properties with built-in Default, Solarized Dark, Monokai, and Light themes
 - **Cell backgrounds** — colored and reversed cells stay within their columns; uniformly colored rows fill the available width
-- **Aligned terminal borders** — fallback glyphs stay in their cells and common box-drawing strokes connect across rows and columns
+- **Aligned terminal text and borders** — glyph overhang preserves column positions, fractional row heights retain host typography, and common box-drawing strokes connect across cells
 - **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly
 - **Underline styles and colors** — Ghostty preserves single, double, curly, dotted, and dashed underlines in the viewport and scrollback
 - **Application colors** — Ghostty foreground, background, and cursor overrides with theme-preserving resets; inverse cells use the actual defaults

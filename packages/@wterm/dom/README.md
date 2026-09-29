@@ -452,14 +452,21 @@ container. `WTerm` supplies its host automatically. Custom cores can expose
 
 Use a monospace font through `--term-font-family`. Cells use its measured width,
 so braille, box drawing, and other fallback glyphs cannot push later columns out
-of alignment. Wide characters occupy two cells, and oversized glyphs are clipped
-to their cells. Widths update when fonts load or the font size changes, including
+of alignment. Wide characters occupy two cells. Glyph ink can extend past a
+cell's advance, preserving italic and fallback glyphs without moving adjacent
+columns; the viewport still clips output at its edges. Fractional
+`--term-row-height` values are preserved during initialization. Widths update
+when fonts load or the font size changes, including
 with `autoResize: false`. Unicode text remains selectable and OSC 8 links keep
 their text together.
 
 Common light, heavy, and rounded box-drawing characters keep their strokes
 connected across cell edges even when the selected font leaves gaps. The
 characters remain selectable and copy as text.
+
+The cursor keeps its active appearance while the mouse is pressed in the
+terminal, including native text selection. After release, its appearance follows
+input focus; clicking without selecting text focuses the terminal input.
 
 Colored and reversed cells keep their backgrounds within their columns, including
 the last column and rows in scrollback. A complete row with one shared, opaque

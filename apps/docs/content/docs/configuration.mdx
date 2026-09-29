@@ -237,8 +237,10 @@ requests. Update any manually served WASM asset when upgrading.
 
 Both cores honor application requests for block, bar, and underline cursors
 (DECSCUSR), plus cursor blink mode (`CSI ? 12 h/l`). This lets editors change
-the cursor when switching between normal and insert mode. Unfocused terminals
-show a steady outline, and hiding the cursor with mode 25 takes effect even
+the cursor when switching between normal and insert mode. The cursor keeps its
+active appearance while the mouse is pressed inside the terminal, preserving
+native drag selection. Otherwise, unfocused terminals show a steady outline.
+Hiding the cursor with mode 25 takes effect even
 when no text changes.
 
 Omit `cursorBlink` to follow the application (initially steady). Set it to

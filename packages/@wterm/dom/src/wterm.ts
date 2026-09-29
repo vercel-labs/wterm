@@ -1256,9 +1256,8 @@ export class WTerm {
     const h = probe.getBoundingClientRect().height;
     probe.remove();
     if (h > 0) {
-      const rh = Math.ceil(h);
-      this._rowHeight = rh;
-      this.element.style.setProperty("--term-row-height", `${rh}px`);
+      this._rowHeight = h;
+      this.element.style.setProperty("--term-row-height", `${h}px`);
     }
   }
 

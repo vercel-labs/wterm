@@ -187,7 +187,8 @@
 .term-row > span,
 .term-link > span {
   width: calc(var(--term-span-cols, 1) * var(--term-cell-width, 1ch));
-  overflow: hidden;
+  /* Glyph ink may overhang its advance without moving the following cell. */
+  overflow: visible;
 }
 
 .term-link {
@@ -290,7 +291,7 @@
 
 .term-wide {
   --term-span-cols: 2;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .term-cursor {
@@ -300,14 +301,16 @@
   outline-offset: -1px;
 }
 
-.wterm.focused .term-cursor {
+/* Native text selection can blur the input until click-to-focus runs. Keep
+   the cursor active during that press without cancelling the selection. */
+.wterm:is(.focused, :active) .term-cursor {
   background: var(--term-app-cursor, var(--term-cursor));
   color: var(--term-app-bg, var(--term-bg));
   outline: none;
 }
 
-.wterm.focused .term-grid[data-cursor-shape="bar"] .term-cursor,
-.wterm.focused .term-grid[data-cursor-shape="underline"] .term-cursor {
+.wterm:is(.focused, :active) .term-grid[data-cursor-shape="bar"] .term-cursor,
+.wterm:is(.focused, :active) .term-grid[data-cursor-shape="underline"] .term-cursor {
   background: var(--term-cell-bg, transparent);
   color: var(--term-cell-fg, inherit);
   box-shadow: var(--term-cursor-shadow);
@@ -323,8 +326,8 @@
     var(--term-app-cursor, var(--term-cursor));
 }
 
-.wterm.focused.cursor-blink .term-cursor,
-.wterm.focused:not(.cursor-steady)
+.wterm:is(.focused, :active).cursor-blink .term-cursor,
+.wterm:is(.focused, :active):not(.cursor-steady)
   .term-grid[data-cursor-blink="true"]
   .term-cursor {
   animation: var(--term-cursor-animation, cursor-blink) 1s step-end infinite;

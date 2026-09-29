@@ -602,6 +602,25 @@ describe("WTerm", () => {
   });
 
   describe("resize", () => {
+    it("keeps fractional CSS row heights during initialization", async () => {
+      vi.spyOn(
+        HTMLElement.prototype,
+        "getBoundingClientRect",
+      ).mockImplementation(function (this: HTMLElement) {
+        return {
+          width: this.tagName === "SPAN" ? 8.5 : 850,
+          height: this === element ? 390 : 19.5,
+        } as DOMRect;
+      });
+      const term = new WTerm(element, { autoResize: false, rows: 20 });
+      await term.init();
+      expect(element.style.getPropertyValue("--term-row-height")).toBe(
+        "19.5px",
+      );
+      expect(term.rows).toBe(20);
+      term.destroy();
+    });
+
     it("fits the content box using current fractional font metrics and ignores hidden or destroyed elements", async () => {
       const term = new WTerm(element, { autoResize: false });
       const resize = vi.spyOn(term, "resize");
