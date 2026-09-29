@@ -1,8 +1,28 @@
 # Changelog
 
-## 0.5.2
+## 0.5.3
 
 <!-- release:start -->
+
+### Improvements
+
+- **History scrolling:** reuse unchanged history content and keep the mounted row window during small scrolls, reducing repeated rendering and layout work.
+- **Terminal redraws:** preserve unchanged cell spans and update existing text nodes when styles and column widths match, reducing work for Unicode output while preserving selection, links, and text decorations.
+- **Startup memory:** allocate Ghostty screen pages as needed and measure auto-sized terminal hosts before creating the grid, avoiding unused pages and unnecessary initial resizes.
+- **WASM loading:** stream compilation where supported and reuse compiled modules across terminals for both cores, while keeping each terminal's state and memory independent.
+- **Built-in WASM downloads:** import the embedded binary only on first use. With code splitting, Ghostty and custom-URL applications skip its JavaScript chunk; applications using the built-in core must deploy all generated assets.
+
+### Bug Fixes
+
+- **Scrollback spacing:** update spacer heights when the row height changes, even when the same history rows remain mounted.
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.5.2
 
 ### New Features
 
@@ -25,8 +45,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.5.1
 
