@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -94,6 +95,60 @@ try {
       "Docs server did not become ready. Run the docs build first.",
     );
   if (!stopping) {
+    if (!process.argv.includes("--terminal")) {
+      const bridge = await fetch(`${url}/api/mcp?webmcp-script`, {
+        signal: AbortSignal.timeout(15000),
+      });
+      assert.strictEqual(bridge.status, 200);
+      assert.match(bridge.headers.get("content-type"), /javascript/);
+      assert.match(await bridge.text(), /registerTool/);
+      console.log("PASS: native WebMCP bridge serves JavaScript");
+
+      const rpc = async (id, method, params = {}) => {
+        const response = await fetch(`${url}/api/mcp`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json, text/event-stream",
+          },
+          body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+          signal: AbortSignal.timeout(15000),
+        });
+        assert.strictEqual(response.status, 200);
+        const body = await response.text();
+        const message = JSON.parse(
+          response.headers.get("content-type").includes("text/event-stream")
+            ? body
+                .split("\n")
+                .find((line) => line.startsWith("data: "))
+                .slice(6)
+            : body,
+        );
+        assert.strictEqual(message.id, id);
+        assert.strictEqual(message.error, undefined);
+        return message.result;
+      };
+      const { tools } = await rpc(1, "tools/list");
+      assert.deepStrictEqual(
+        tools.map((tool) => tool.name),
+        ["search_docs"],
+      );
+      console.log(
+        "PASS: MCP tools/list exposes search_docs without duplicates",
+      );
+
+      const result = await rpc(2, "tools/call", {
+        name: "search_docs",
+        arguments: { query: "WebSocketTransport", locale: "en" },
+      });
+      assert.ok(!result.isError);
+      const results = JSON.parse(
+        result.content.find((item) => item.type === "text").text,
+      );
+      assert.ok(Array.isArray(results));
+      assert.ok(results.some((item) => item.url.startsWith("/api-reference")));
+      console.log("PASS: MCP tools/call searches native documentation content");
+    }
     const args = process.argv.includes("--terminal")
       ? [
           fileURLToPath(import.meta.resolve("@playwright/test/cli")),
