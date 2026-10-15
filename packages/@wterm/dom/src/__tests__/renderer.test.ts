@@ -285,6 +285,39 @@ describe("Renderer", () => {
       }
     });
 
+    it("reuses one Range for partial redraws across rows and frames", () => {
+      const rows = 4;
+      const label = (n: number) => String(n).padStart(3, "0");
+      const line = (n: number) => [
+        ...Array.from(label(n), (ch) => makeCell(ch, (n % 6) + 1)),
+        ...Array.from(" kept text", (ch) => makeCell(ch)),
+      ];
+      const grid = Array.from({ length: rows }, (_, row) => line(row));
+      const bridge = createMockBridge(grid[0].length, rows, grid);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.isDirtyRow = () => true;
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const kept = Array.from(container.querySelectorAll(".term-row")).map(
+        (row) => row.lastElementChild,
+      );
+      const createRange = vi.spyOn(document, "createRange");
+
+      for (let frame = 1; frame <= 5; frame++) {
+        for (let row = 0; row < rows; row++)
+          grid[row] = line(frame * rows + row);
+        renderer.render(bridge);
+      }
+
+      expect(createRange.mock.calls.length).toBeLessThanOrEqual(1);
+      const rendered = Array.from(container.querySelectorAll(".term-row"));
+      rendered.forEach((row, index) => {
+        expect(row.textContent).toBe(`${label(5 * rows + index)} kept text`);
+        expect(row.lastElementChild).toBe(kept[index]);
+      });
+      createRange.mockRestore();
+    });
+
     it("updates complete links without replacing the Unicode cells around them", () => {
       const cells = [
         makeCell("λ"),
