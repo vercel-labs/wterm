@@ -4,6 +4,7 @@ const grid_mod = @import("grid.zig");
 const parser_mod = @import("parser.zig");
 const scrollback_mod = @import("scrollback.zig");
 const hyperlink_mod = @import("hyperlink.zig");
+const color_mod = @import("color.zig");
 const unicode_width = @import("unicode_width.zig");
 const charset_mod = @import("charset.zig");
 
@@ -102,6 +103,7 @@ pub const Terminal = struct {
     parser: Parser = .{},
     scrollback: ?*Scrollback = null,
     hyperlinks: hyperlink_mod.Table = .{},
+    colors: color_mod.Table = .{},
 
     cols: u16,
     rows: u16,
@@ -1225,7 +1227,7 @@ pub const Terminal = struct {
     }
 
     /// Parses 38;5;n (256-color) and 38;2;r;g;b (24-bit color)
-    fn parseExtendedColor(self: *const Terminal, start: u8, color: *u16) u8 {
+    fn parseExtendedColor(self: *Terminal, start: u8, color: *u16) u8 {
         if (start + 1 >= self.parser.param_count) return 0;
         const kind = self.parser.params[start + 1];
         if (kind == 5 and start + 2 < self.parser.param_count) {
@@ -1236,10 +1238,10 @@ pub const Terminal = struct {
             const r = self.parser.params[start + 2];
             const g = self.parser.params[start + 3];
             const b_val = self.parser.params[start + 4];
-            // Pack RGB into u16: use color indices 257+ for RGB
-            // Store as index into a separate RGB table via WASM API
-            // For now, find closest 256-color match
-            color.* = rgbTo256(@intCast(r), @intCast(g), @intCast(b_val));
+            if (r > 255 or g > 255 or b_val > 255) return 4;
+            const rgb = (@as(u32, r) << 16) | (@as(u32, g) << 8) | b_val;
+            color.* = self.colors.intern(rgb) orelse
+                rgbTo256(@intCast(r), @intCast(g), @intCast(b_val));
             return 4;
         }
         return 0;
@@ -1344,6 +1346,18 @@ fn rgbTo256(r: u8, g: u8, b: u8) u16 {
     const gi: u16 = @intCast((@as(u32, g) * 5 + 127) / 255);
     const bi: u16 = @intCast((@as(u32, b) * 5 + 127) / 255);
     return 16 + ri * 36 + gi * 6 + bi;
+}
+
+test {
+    _ = color_mod;
+}
+
+test "truecolor SGR keeps exact RGB values" {
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[38;2;255;100;0mA\x1b[0m \x1b[48;2;10;20;30mB\x1b[0m");
+    try std.testing.expectEqual(@as(u32, 0xff6400), t.colors.get(t.grid.getCell(0, 0).fg).?);
+    try std.testing.expectEqual(@as(u32, 0x0a141e), t.colors.get(t.grid.getCell(0, 2).bg).?);
+    try std.testing.expectEqual(cell_mod.DEFAULT_COLOR, t.grid.getCell(0, 2).fg);
 }
 
 test "basic print" {
