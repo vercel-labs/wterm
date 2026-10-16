@@ -8,6 +8,9 @@ import type {
 } from "./terminal-core.js";
 import { loadWasmModule } from "./wasm-loading.js";
 
+/** Set in a cell char when the low bits index the core's grapheme cluster table. */
+const CLUSTER_BIT = 0x80000000;
+
 interface WasmExports {
   memory: WebAssembly.Memory;
   init(cols: number, rows: number): void;
@@ -42,6 +45,8 @@ interface WasmExports {
   getLinkUriLen(index: number): number;
   getLinkIdPtr(index: number): number;
   getLinkIdLen(index: number): number;
+  getClusterPtr?(index: number): number;
+  getClusterLen?(index: number): number;
   getHyperlinkCapacity?(): number;
   getHyperlinkCount?(): number;
   getHyperlinkRejectedCount?(): number;
@@ -72,6 +77,7 @@ export class WasmBridge implements TerminalCore {
   private decoder = new TextDecoder();
   private _dv!: DataView;
   private _dvBuffer: ArrayBuffer | null = null;
+  private clusterCache = new Map<number, string>();
   private linkCache = new Map<
     number,
     { linkUri: string; linkId?: string; linkKey: string }
@@ -99,6 +105,7 @@ export class WasmBridge implements TerminalCore {
   init(cols: number, rows: number): void {
     this.exports.init(cols, rows);
     this.linkCache.clear();
+    this.clusterCache.clear();
     this._updatePointers();
   }
 
@@ -139,6 +146,7 @@ export class WasmBridge implements TerminalCore {
       flags: dv.getUint8(offset + 8),
       width: dv.getUint8(offset + 9),
     };
+    this._resolveCluster(result);
     Object.assign(result, this._readLink(dv.getUint16(offset + 10, true)));
     return result;
   }
@@ -282,6 +290,7 @@ export class WasmBridge implements TerminalCore {
       flags: dv.getUint8(off + 8),
       width: dv.getUint8(off + 9),
     };
+    this._resolveCluster(result);
     Object.assign(result, this._readLink(dv.getUint16(off + 10, true)));
     return result;
   }
@@ -324,6 +333,29 @@ export class WasmBridge implements TerminalCore {
   resize(cols: number, rows: number): void {
     this.exports.resizeTerminal(cols, rows);
     this._updatePointers();
+  }
+
+  private _resolveCluster(cell: CellData): void {
+    if (cell.char < CLUSTER_BIT) return;
+    const index = cell.char - CLUSTER_BIT;
+    let chars = this.clusterCache.get(index);
+    if (chars === undefined) {
+      const len = this.exports.getClusterLen?.(index) ?? 0;
+      chars =
+        len === 0
+          ? ""
+          : this.decoder.decode(
+              new Uint8Array(
+                this.memory.buffer,
+                this.exports.getClusterPtr!(index),
+                len,
+              ),
+            );
+      this.clusterCache.set(index, chars);
+    }
+    cell.char = chars.codePointAt(0) ?? 32;
+    if (chars.length > String.fromCodePoint(cell.char).length)
+      cell.chars = chars;
   }
 
   private _readLink(

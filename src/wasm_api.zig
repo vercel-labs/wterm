@@ -24,6 +24,7 @@ export fn init(cols: u32, rows: u32) void {
         terminal = Terminal.init(c, r);
     }
     terminal.hyperlinks.reset();
+    terminal.clusters.reset();
     terminal.scrollback = &scrollback;
     terminal.alt_grid = &alt_grid;
     scrollback.reset();
@@ -185,6 +186,17 @@ export fn getHyperlinkCount() u32 {
 
 export fn getHyperlinkRejectedCount() u32 {
     return terminal.hyperlinks.rejected;
+}
+
+/// UTF-8 bytes of a grapheme cluster; `index` is a cell char with its cluster bit cleared.
+export fn getClusterPtr(index: u32) [*]const u8 {
+    const bytes = terminal.clusters.get(index) orelse return &input_buffer;
+    return bytes.ptr;
+}
+
+export fn getClusterLen(index: u32) u32 {
+    const bytes = terminal.clusters.get(index) orelse return 0;
+    return @intCast(bytes.len);
 }
 
 // -- Scrollback --
