@@ -21,6 +21,8 @@ fn grownCapacity(current: u16, needed: u16, maximum: u16) u16 {
 pub const Grid = struct {
     cells: []Cell = undefined,
     dirty: []u8 = undefined,
+    /// 1 when the row's content continues on the next row through autowrap.
+    wrapped: []u8 = undefined,
     stride: u16 = 0,
     capacity_rows: u16 = 0,
     cols: u16 = 0,
@@ -36,6 +38,7 @@ pub const Grid = struct {
         if (self.stride != 0) {
             allocator.free(self.cells);
             allocator.free(self.dirty);
+            allocator.free(self.wrapped);
         }
         self.* = .{};
     }
@@ -50,19 +53,25 @@ pub const Grid = struct {
         const dirty = try allocator.alloc(u8, capacity_rows);
         errdefer allocator.free(dirty);
         @memset(dirty, 1);
+        const wrapped = try allocator.alloc(u8, capacity_rows);
+        errdefer allocator.free(wrapped);
+        @memset(wrapped, 0);
 
         var r: u16 = 0;
         while (r < self.rows) : (r += 1) {
             const start = @as(usize, r) * stride;
             @memcpy(cells[start .. start + self.cols], self.rowConst(r)[0..self.cols]);
             dirty[r] = self.dirty[r];
+            wrapped[r] = self.wrapped[r];
         }
         if (self.stride != 0) {
             allocator.free(self.cells);
             allocator.free(self.dirty);
+            allocator.free(self.wrapped);
         }
         self.cells = cells;
         self.dirty = dirty;
+        self.wrapped = wrapped;
         self.stride = stride;
         self.capacity_rows = capacity_rows;
     }
@@ -132,6 +141,7 @@ pub const Grid = struct {
             self.getRow(row)[c] = blank;
         }
         self.dirty[row] = 1;
+        self.wrapped[row] = 0;
     }
 
     pub fn clearRange(self: *Grid, row: u16, start_col: u16, end_col: u16) void {
@@ -159,6 +169,7 @@ pub const Grid = struct {
             self.getRow(row)[c] = blank;
         }
         self.dirty[row] = 1;
+        if (end >= self.cols) self.wrapped[row] = 0;
     }
 
     pub fn clearWideCellAt(self: *Grid, row: u16, col: u16, blank: Cell) void {
@@ -262,6 +273,7 @@ pub const Grid = struct {
         while (row + n < bottom) : (row += 1) {
             @memcpy(self.getRow(row)[0..self.cols], self.getRow(row + n)[0..self.cols]);
             self.dirty[row] = 1;
+            self.wrapped[row] = self.wrapped[row + n];
         }
         while (row < bottom) : (row += 1) {
             self.clearRowAs(row, blank);
@@ -279,6 +291,7 @@ pub const Grid = struct {
             const src = dst - n;
             @memcpy(self.getRow(dst)[0..self.cols], self.getRow(src)[0..self.cols]);
             self.dirty[dst] = 1;
+            self.wrapped[dst] = self.wrapped[src];
         }
         var row = top;
         while (row < top + n) : (row += 1) {

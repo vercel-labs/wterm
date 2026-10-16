@@ -222,6 +222,179 @@ pub const Terminal = struct {
         }
         self.grid.sanitizeWideRowWidth(row, width, Cell{});
         self.grid.dirty[row] = 1;
+        self.grid.wrapped[row] = @intFromBool(line.wrapped);
+    }
+
+    /// Rewraps primary-screen history and rows at a new width, moving rows
+    /// between scrollback and the grid as their wrapped height changes.
+    /// Returns false, changing nothing, when the work buffers cannot be allocated.
+    fn reflowPrimary(self: *Terminal, cols: u16, rows: u16) bool {
+        const alloc = grid_mod.allocator;
+        const sb = self.scrollback.?;
+        const old_cols = self.cols;
+
+        // Rows below both the cursor and the last written row are not content.
+        var last_row: u16 = self.cursor_row;
+        var r: u16 = self.rows;
+        while (r > self.cursor_row + 1) {
+            r -= 1;
+            if (!rowIsBlank(self.grid.rowConst(r)[0..old_cols])) {
+                last_row = r;
+                break;
+            }
+        }
+
+        // Join source rows into logical lines.
+        var cells: std.ArrayList(Cell) = .empty;
+        defer cells.deinit(alloc);
+        var starts: std.ArrayList(u32) = .empty;
+        defer starts.deinit(alloc);
+        var cursor_line: u32 = 0;
+        var cursor_offset: u32 = 0;
+
+        const source_count: u32 = sb.count + last_row + 1;
+        var line_open = false;
+        var i: u32 = 0;
+        while (i < source_count) : (i += 1) {
+            const src = self.sourceRow(i, old_cols);
+            if (!line_open) {
+                starts.append(alloc, @intCast(cells.items.len)) catch return false;
+                line_open = true;
+            }
+            if (i == sb.count + self.cursor_row) {
+                cursor_line = @intCast(starts.items.len - 1);
+                cursor_offset = @as(u32, @intCast(cells.items.len)) - starts.items[starts.items.len - 1] +
+                    self.cursor_col + @intFromBool(self.wrap_pending);
+            }
+            var len = src.cells.len;
+            if (src.wrapped) {
+                // A wide glyph that did not fit leaves a blank at the row end.
+                if (len > 0 and i + 1 < source_count and rowIsBlank(src.cells[len - 1 .. len])) {
+                    const next = self.sourceRow(i + 1, old_cols);
+                    if (next.cells.len > 0 and next.cells[0].width == cell_mod.WIDTH_WIDE) len -= 1;
+                }
+            } else {
+                len = trimmedLen(src.cells);
+                line_open = false;
+            }
+            cells.appendSlice(alloc, src.cells[0..len]) catch return false;
+        }
+        starts.append(alloc, @intCast(cells.items.len)) catch return false;
+
+        // Rewrap at the new width, recording where the cursor lands.
+        var out = Rewrap{ .cols = cols };
+        defer out.deinit(alloc);
+        var cursor_out_row: u32 = 0;
+        var cursor_out_col: u32 = 0;
+        var cursor_pending = false;
+
+        var li: u32 = 0;
+        while (li + 1 < starts.items.len) : (li += 1) {
+            const line = cells.items[starts.items[li]..starts.items[li + 1]];
+            out.newRow(alloc, false) catch return false;
+            const is_cursor_line = li == cursor_line;
+            var col: u32 = 0;
+            var ci: u32 = 0;
+            while (ci < line.len) {
+                var cell = line[ci];
+                var take: u32 = 1;
+                var span: u32 = 1;
+                if (cell.width == cell_mod.WIDTH_WIDE) {
+                    if (cols < 2) {
+                        cell = Cell{};
+                    } else {
+                        span = 2;
+                    }
+                    if (ci + 1 < line.len and line[ci + 1].width == cell_mod.WIDTH_CONTINUATION) take = 2;
+                } else if (cell.width == cell_mod.WIDTH_CONTINUATION) {
+                    // An orphaned continuation carries no glyph.
+                    cell = Cell{};
+                }
+                if (col + span > cols) {
+                    out.newRow(alloc, true) catch return false;
+                    col = 0;
+                }
+                if (is_cursor_line and cursor_offset >= ci and cursor_offset < ci + take) {
+                    cursor_out_row = out.lastRow();
+                    cursor_out_col = col;
+                }
+                const row = out.row(out.lastRow());
+                row[col] = cell;
+                if (span == 2) {
+                    row[col + 1] = if (take == 2) line[ci + 1] else Cell{
+                        .char = 0,
+                        .fg = cell.fg,
+                        .bg = cell.bg,
+                        .flags = cell.flags,
+                        .width = cell_mod.WIDTH_CONTINUATION,
+                        .link = cell.link,
+                    };
+                }
+                ci += take;
+                col += span;
+            }
+            if (is_cursor_line and cursor_offset >= line.len) {
+                // The cursor sits past the content; extend with blank rows.
+                var target = col + (cursor_offset - @as(u32, @intCast(line.len)));
+                while (target > cols) {
+                    out.newRow(alloc, true) catch return false;
+                    target -= cols;
+                }
+                cursor_out_row = out.lastRow();
+                if (target == cols) {
+                    cursor_out_col = cols - 1;
+                    cursor_pending = true;
+                } else {
+                    cursor_out_col = target;
+                }
+            }
+        }
+
+        const total = out.rowCount();
+        var grid_start: u32 = if (total > rows) total - rows else 0;
+        if (grid_start > cursor_out_row) grid_start = cursor_out_row;
+
+        const discarded = sb.discarded;
+        sb.reset();
+        var hr: u32 = 0;
+        while (hr < grid_start) : (hr += 1) {
+            const row = out.row(hr);
+            sb.push(row, trimmedLen(row), out.wrapped.items[hr] != 0);
+        }
+        sb.discarded +%= discarded;
+
+        self.cols = cols;
+        self.rows = rows;
+        self.grid.cols = cols;
+        self.grid.rows = rows;
+        var gr: u16 = 0;
+        while (gr < rows) : (gr += 1) {
+            const src = grid_start + gr;
+            if (src < total) {
+                @memcpy(self.grid.getRow(gr)[0..cols], out.row(src));
+                self.grid.wrapped[gr] = out.wrapped.items[src];
+                self.grid.dirty[gr] = 1;
+            } else {
+                self.grid.clearRow(gr);
+            }
+        }
+        self.cursor_row = @intCast(cursor_out_row - grid_start);
+        self.cursor_col = @intCast(cursor_out_col);
+        self.wrap_pending = cursor_pending;
+        return true;
+    }
+
+    const SourceRow = struct { cells: []const Cell, wrapped: bool };
+
+    /// Row `index` of history followed by the grid, oldest first.
+    fn sourceRow(self: *const Terminal, index: u32, width: u16) SourceRow {
+        const sb = self.scrollback.?;
+        if (index < sb.count) {
+            const line = sb.getLine(sb.count - 1 - index).?;
+            return .{ .cells = line.cells[0..line.len], .wrapped = line.wrapped };
+        }
+        const row: u16 = @intCast(index - sb.count);
+        return .{ .cells = self.grid.rowConst(row)[0..width], .wrapped = self.grid.wrapped[row] != 0 };
     }
 
     fn logUnhandled(self: *Terminal, final: u8, private_marker: u8) void {
@@ -345,8 +518,10 @@ pub const Terminal = struct {
             self.alt_grid.?.ensureCapacity(cols, rows) catch return;
         }
 
+        const reflowed = cols != old_cols and !self.using_alt_screen and
+            self.scrollback != null and self.reflowPrimary(cols, rows);
         // Clear cells beyond the new column width for each preserved row
-        if (cols < old_cols) {
+        if (!reflowed and cols < old_cols) {
             const preserve_rows = if (rows < old_rows) rows else old_rows;
             var r: u16 = 0;
             while (r < preserve_rows) : (r += 1) {
@@ -362,7 +537,7 @@ pub const Terminal = struct {
         // keeps the newest rows. Blank trailing rows below the cursor are
         // discarded first so a shrink that fits does not push live content.
         var restored: u16 = 0;
-        if (rows < old_rows) {
+        if (!reflowed and rows < old_rows) {
             // Scroll only as far as it takes to keep the cursor on screen, so a
             // shrink at a fresh prompt pushes nothing and rows below the cursor
             // are discarded rather than preserved.
@@ -382,7 +557,7 @@ pub const Terminal = struct {
                         // width survives in history as a wide cell with no
                         // continuation.
                         self.grid.sanitizeWideRowWidth(r, push_cols, Cell{});
-                        self.scrollback.?.push(self.grid.getRow(r), push_cols);
+                        self.scrollback.?.push(self.grid.getRow(r), push_cols, self.grid.wrapped[r] != 0);
                     }
                 }
                 self.grid.scrollUp(0, old_rows, from_top, Cell{});
@@ -401,7 +576,7 @@ pub const Terminal = struct {
         // Growing vertically is the inverse: refill from the top out of history
         // before blanking anything, so shrink then grow is identity on the
         // visible content.
-        if (rows > old_rows) {
+        if (!reflowed and rows > old_rows) {
             const gained = rows - old_rows;
             if (!self.using_alt_screen and self.scrollback != null) {
                 const available = self.scrollback.?.count;
@@ -425,7 +600,7 @@ pub const Terminal = struct {
         }
 
         // Clear newly exposed columns when growing horizontally
-        if (cols > old_cols) {
+        if (!reflowed and cols > old_cols) {
             const preserve_rows = if (old_rows < rows) old_rows else rows;
             var r2: u16 = 0;
             while (r2 < preserve_rows) : (r2 += 1) {
@@ -474,6 +649,7 @@ pub const Terminal = struct {
 
     fn printChar(self: *Terminal, codepoint: u21) void {
         if (self.wrap_pending and self.auto_wrap) {
+            self.grid.wrapped[self.cursor_row] = 1;
             self.cursor_col = 0;
             self.doLinefeed();
             self.wrap_pending = false;
@@ -493,6 +669,7 @@ pub const Terminal = struct {
                 const blank = self.blankCell();
                 self.grid.clearWideCellAt(self.cursor_row, self.cursor_col, blank);
                 self.grid.setCell(self.cursor_row, self.cursor_col, blank);
+                self.grid.wrapped[self.cursor_row] = 1;
                 self.cursor_col = 0;
                 self.doLinefeed();
             } else {
@@ -567,7 +744,7 @@ pub const Terminal = struct {
         if (self.cursor_row + 1 >= self.scroll_bottom) {
             if (!self.using_alt_screen and self.scroll_top == 0) {
                 if (self.scrollback) |sb| {
-                    sb.push(self.grid.getRow(self.scroll_top), self.cols);
+                    sb.push(self.grid.getRow(self.scroll_top), self.cols, self.grid.wrapped[self.scroll_top] != 0);
                 }
             }
             self.grid.scrollUp(self.scroll_top, self.scroll_bottom, 1, self.blankCell());
@@ -1118,7 +1295,7 @@ pub const Terminal = struct {
             if (self.scrollback) |sb| {
                 var i: u16 = 0;
                 while (i < count and i < self.scroll_bottom - self.scroll_top) : (i += 1) {
-                    sb.push(self.grid.getRow(self.scroll_top + i), self.cols);
+                    sb.push(self.grid.getRow(self.scroll_top + i), self.cols, self.grid.wrapped[self.scroll_top + i] != 0);
                 }
             }
         }
@@ -1330,6 +1507,51 @@ fn appendU16(buf: []u8, start: u8, val: u16) u8 {
     }
     return pos;
 }
+
+fn rowIsBlank(cells: []const Cell) bool {
+    for (cells) |cell| {
+        if (!std.meta.eql(cell, Cell{})) return false;
+    }
+    return true;
+}
+
+fn trimmedLen(cells: []const Cell) u16 {
+    var len = cells.len;
+    while (len > 0 and std.meta.eql(cells[len - 1], Cell{})) len -= 1;
+    return @intCast(len);
+}
+
+/// Output rows of a reflow, each `cols` cells wide.
+const Rewrap = struct {
+    cols: u16,
+    cells: std.ArrayList(Cell) = .empty,
+    wrapped: std.ArrayList(u8) = .empty,
+
+    fn deinit(self: *Rewrap, alloc: std.mem.Allocator) void {
+        self.cells.deinit(alloc);
+        self.wrapped.deinit(alloc);
+    }
+
+    /// Starts a row; `continues` marks the previous row as wrapping into it.
+    fn newRow(self: *Rewrap, alloc: std.mem.Allocator, continues: bool) !void {
+        if (continues) self.wrapped.items[self.wrapped.items.len - 1] = 1;
+        try self.cells.appendNTimes(alloc, Cell{}, self.cols);
+        try self.wrapped.append(alloc, 0);
+    }
+
+    fn rowCount(self: *const Rewrap) u32 {
+        return @intCast(self.wrapped.items.len);
+    }
+
+    fn lastRow(self: *const Rewrap) u32 {
+        return self.rowCount() - 1;
+    }
+
+    fn row(self: *const Rewrap, index: u32) []Cell {
+        const start = @as(usize, index) * self.cols;
+        return self.cells.items[start .. start + self.cols];
+    }
+};
 
 fn rgbTo256(r: u8, g: u8, b: u8) u16 {
     // Check grayscale ramp first
@@ -2164,7 +2386,7 @@ test "scrollback reads stay correct after a pop on a wrapped ring" {
     var i: u32 = 0;
     while (i < scrollback_mod.MAX_SCROLLBACK_LINES + 10) : (i += 1) {
         row[0] = Cell{ .char = 'a' + @as(u32, @intCast(i % 26)) };
-        sb.push(&row, 1);
+        sb.push(&row, 1, false);
     }
     const newest = sb.getLine(0).?.cells[0].char;
     const second = sb.getLine(1).?.cells[0].char;
@@ -2336,4 +2558,122 @@ test "alternate screen exit clamps a saved cursor after shrinking" {
     try testing.expectEqual(@as(u16, 79), t.cursor_col);
     t.write("X");
     try testing.expectEqual(@as(u32, 'X'), t.grid.getCell(1, 79).char);
+}
+
+fn testRowText(t: *Terminal, row: u16, buf: []u8) []const u8 {
+    var n: usize = 0;
+    var c: u16 = 0;
+    while (c < t.cols) : (c += 1) {
+        const cell = t.grid.getCell(row, c);
+        if (cell.width == cell_mod.WIDTH_CONTINUATION) continue;
+        n += std.unicode.utf8Encode(@intCast(cell.char), buf[n..]) catch unreachable;
+    }
+    return std.mem.trimEnd(u8, buf[0..n], " ");
+}
+
+fn testScrollbackText(sb: *const Scrollback, offset: u32, buf: []u8) []const u8 {
+    const line = sb.getLine(offset).?;
+    var n: usize = 0;
+    for (line.cells[0..line.len]) |cell| {
+        if (cell.width == cell_mod.WIDTH_CONTINUATION) continue;
+        n += std.unicode.utf8Encode(@intCast(cell.char), buf[n..]) catch unreachable;
+    }
+    return std.mem.trimEnd(u8, buf[0..n], " ");
+}
+
+test "narrowing reflows a soft-wrapped line instead of discarding it" {
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(80, 24);
+    t.scrollback = sb;
+    var long: [80]u8 = undefined;
+    for (&long, 0..) |*b, idx| b.* = 'a' + @as(u8, @intCast(idx % 26));
+    t.write(&long);
+    t.write("\r\nsecond\r\n");
+
+    t.resize(40, 24);
+    var buf: [512]u8 = undefined;
+    try testing.expectEqualStrings(long[0..40], testRowText(&t, 0, &buf));
+    try testing.expectEqualStrings(long[40..80], testRowText(&t, 1, &buf));
+    try testing.expectEqualStrings("second", testRowText(&t, 2, &buf));
+    try testing.expectEqual(@as(u16, 3), t.cursor_row);
+    try testing.expectEqual(@as(u16, 0), t.cursor_col);
+
+    t.resize(80, 24);
+    try testing.expectEqualStrings(&long, testRowText(&t, 0, &buf));
+    try testing.expectEqualStrings("second", testRowText(&t, 1, &buf));
+    try testing.expectEqual(@as(u16, 2), t.cursor_row);
+}
+
+test "reflow keeps hard line breaks and the cursor inside its line" {
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(10, 5);
+    t.scrollback = sb;
+    t.write("0123456789\r\n$ abcdefgh");
+    try testing.expectEqual(@as(u16, 1), t.cursor_row);
+    try testing.expectEqual(@as(u16, 9), t.cursor_col);
+
+    t.resize(4, 5);
+    var buf: [64]u8 = undefined;
+    // Six rows of output in a five-row grid: the oldest moves into history.
+    try testing.expectEqual(@as(u32, 1), sb.count);
+    try testing.expectEqualStrings("0123", testScrollbackText(sb, 0, &buf));
+    try testing.expectEqualStrings("4567", testRowText(&t, 0, &buf));
+    try testing.expectEqualStrings("89", testRowText(&t, 1, &buf));
+    try testing.expectEqualStrings("$ ab", testRowText(&t, 2, &buf));
+    try testing.expectEqualStrings("cdef", testRowText(&t, 3, &buf));
+    try testing.expectEqualStrings("gh", testRowText(&t, 4, &buf));
+    try testing.expectEqual(@as(u16, 4), t.cursor_row);
+    try testing.expectEqual(@as(u16, 2), t.cursor_col);
+}
+
+test "reflow rewraps scrollback and keeps wide cells paired" {
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(6, 2);
+    t.scrollback = sb;
+    t.write("ab\u{4e2d}\u{6587}x\r\nend");
+    // Row 0 "ab中文" is full, "x" wrapped; the first row scrolled into history.
+    try testing.expectEqual(@as(u32, 1), sb.count);
+
+    t.resize(5, 2);
+    var buf: [64]u8 = undefined;
+    // "ab中" fits in 4 of 5 columns; "文" would split, so it moves down.
+    try testing.expectEqual(@as(u32, 1), sb.count);
+    try testing.expectEqualStrings("ab\u{4e2d}", testScrollbackText(sb, 0, &buf));
+    try testing.expectEqualStrings("\u{6587}x", testRowText(&t, 0, &buf));
+    try testing.expectEqualStrings("end", testRowText(&t, 1, &buf));
+    var c: u16 = 0;
+    while (c < t.cols) : (c += 1) {
+        const cell = t.grid.getCell(1, c);
+        if (cell.width == cell_mod.WIDTH_WIDE) try testing.expectEqual(cell_mod.WIDTH_CONTINUATION, t.grid.getCell(1, c + 1).width);
+    }
+}
+
+test "alternate screen does not reflow" {
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(10, 3);
+    t.scrollback = sb;
+    var alt = Grid.init(10, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("\x1b[?1049h0123456789x");
+    t.resize(5, 3);
+    var buf: [64]u8 = undefined;
+    try testing.expectEqualStrings("01234", testRowText(&t, 0, &buf));
+    try testing.expectEqualStrings("x", testRowText(&t, 1, &buf));
 }
