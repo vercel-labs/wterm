@@ -1,6 +1,9 @@
 const std = @import("std");
 const table = @import("unicode_width_table.zig");
 
+/// Every codepoint below this is narrow, so callers can skip the table search.
+pub const first_wide: u21 = table.wide_ranges[0][0];
+
 /// Return the terminal display width for a single Unicode codepoint.
 ///
 /// This intentionally handles single-codepoint width only. Grapheme clusters
