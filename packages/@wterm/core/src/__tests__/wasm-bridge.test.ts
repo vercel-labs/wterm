@@ -37,6 +37,29 @@ describe("WasmBridge", () => {
     });
   });
 
+  it("reads grapheme clusters from visible and scrollback cells", () => {
+    const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
+    bridge.writeString(`${family}x e\u0301z`);
+    expect(bridge.getCell(0, 0)).toMatchObject({
+      char: 0x1f468,
+      chars: family,
+      width: 2,
+    });
+    expect(bridge.getCell(0, 2).char).toBe(0x78);
+    expect(bridge.getCell(0, 4).chars).toBe("e\u0301");
+    expect(bridge.getCell(0, 5).char).toBe(0x7a);
+
+    bridge.writeString("\r\n".repeat(24));
+    const offset = bridge.getScrollbackCount() - 1;
+    expect(bridge.getScrollbackCell(offset, 0).chars).toBe(family);
+  });
+
+  it("leaves single code point cells without chars", () => {
+    bridge.writeString("A\u4e2d");
+    expect(bridge.getCell(0, 0).chars).toBeUndefined();
+    expect(bridge.getCell(0, 1)).toMatchObject({ char: 0x4e2d, width: 2 });
+  });
+
   it("exposes any-motion mouse tracking from the committed WASM", () => {
     expect(bridge.mouseEncoding()).toBe("x10");
     bridge.writeString("\x1b[?1003h\x1b[?1006h");
