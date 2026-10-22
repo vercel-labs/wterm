@@ -4,6 +4,7 @@ const grid_mod = @import("grid.zig");
 const parser_mod = @import("parser.zig");
 const scrollback_mod = @import("scrollback.zig");
 const hyperlink_mod = @import("hyperlink.zig");
+const grapheme_mod = @import("grapheme.zig");
 const unicode_width = @import("unicode_width.zig");
 const charset_mod = @import("charset.zig");
 
@@ -102,6 +103,12 @@ pub const Terminal = struct {
     parser: Parser = .{},
     scrollback: ?*Scrollback = null,
     hyperlinks: hyperlink_mod.Table = .{},
+    clusters: grapheme_mod.ClusterTable = .{},
+    /// Segments printed code points; reset by anything that is not a print.
+    segmenter: grapheme_mod.Segmenter = .{},
+    /// Cell holding the cluster the next code point may extend.
+    cluster_row: u16 = 0,
+    cluster_col: u16 = 0,
 
     cols: u16,
     rows: u16,
@@ -337,6 +344,8 @@ pub const Terminal = struct {
         const old_rows = self.rows;
 
         if (cols == old_cols and rows == old_rows) return;
+        // Rows and columns can move under the open cluster.
+        self.segmenter = .{};
 
         // An allocation failure leaves both the active and inactive screens at
         // their old size. The host can read the applied dimensions afterward.
@@ -459,6 +468,7 @@ pub const Terminal = struct {
 
     fn processByte(self: *Terminal, byte: u8) void {
         const action = self.parser.feed(byte);
+        if (action != .none and action != .print) self.segmenter = .{};
         switch (action) {
             .none => {},
             .print => self.printChar(self.parser.print_char),
@@ -473,13 +483,19 @@ pub const Terminal = struct {
     // -- Print --
 
     fn printChar(self: *Terminal, codepoint: u21) void {
+        const mapped = self.charset.map(codepoint);
+        if (!self.segmenter.breaksBefore(mapped)) {
+            self.extendCluster(mapped);
+            return;
+        }
+
         if (self.wrap_pending and self.auto_wrap) {
             self.cursor_col = 0;
             self.doLinefeed();
             self.wrap_pending = false;
         }
 
-        var char = self.charset.map(codepoint);
+        var char = mapped;
         var width = unicode_width.displayWidth(char);
         if (width == cell_mod.WIDTH_WIDE and self.cols < 2) {
             // A one-column grid cannot hold a wide pair. Consume a blank
@@ -496,6 +512,7 @@ pub const Terminal = struct {
                 self.cursor_col = 0;
                 self.doLinefeed();
             } else {
+                self.segmenter = .{};
                 return;
             }
         }
@@ -506,6 +523,8 @@ pub const Terminal = struct {
             self.grid.clearWideCellAt(self.cursor_row, self.cursor_col + 1, blank);
         }
 
+        self.cluster_row = self.cursor_row;
+        self.cluster_col = self.cursor_col;
         self.grid.setCell(self.cursor_row, self.cursor_col, Cell{
             .char = @intCast(char),
             .fg = self.current_fg,
@@ -527,6 +546,60 @@ pub const Terminal = struct {
         } else {
             self.cursor_col = self.cols - 1;
         }
+    }
+
+    /// Appends a code point to the cluster printed last, widening it when VS16
+    /// or a second regional indicator turns it into emoji presentation.
+    fn extendCluster(self: *Terminal, cp: u21) void {
+        const row = self.cluster_row;
+        const col = self.cluster_col;
+        if (row >= self.rows or col >= self.cols) return;
+        var cell = self.grid.getCell(row, col);
+        if (cell.width == cell_mod.WIDTH_CONTINUATION) return;
+
+        var buf: [grapheme_mod.MAX_CLUSTER_CODEPOINTS * 4]u8 = undefined;
+        var len: usize = 0;
+        if (cell.char & grapheme_mod.CLUSTER_BIT != 0) {
+            const existing = self.clusters.get(cell.char & ~grapheme_mod.CLUSTER_BIT) orelse return;
+            @memcpy(buf[0..existing.len], existing);
+            len = existing.len;
+        } else {
+            len = std.unicode.utf8Encode(@intCast(cell.char), &buf) catch return;
+        }
+        const stored = std.unicode.utf8CountCodepoints(buf[0..len]) catch return;
+        if (stored < grapheme_mod.MAX_CLUSTER_CODEPOINTS) {
+            len += std.unicode.utf8Encode(cp, buf[len..]) catch return;
+            if (self.clusters.intern(grid_mod.allocator, buf[0..len])) |index| {
+                cell.char = grapheme_mod.CLUSTER_BIT | index;
+            }
+        }
+
+        const widens = cell.width == cell_mod.WIDTH_NARROW and
+            (cp == 0xFE0F or grapheme_mod.props(cp).gcb == .regional_indicator) and
+            col + 1 < self.cols and !self.wrap_pending and self.cursor_row == row and
+            self.cursor_col == col + 1;
+        if (widens) {
+            const blank = self.blankCell();
+            self.grid.clearWideCellAt(row, col + 1, blank);
+            cell.width = cell_mod.WIDTH_WIDE;
+            self.grid.setCell(row, col + 1, Cell{
+                .char = 0,
+                .fg = cell.fg,
+                .bg = cell.bg,
+                .flags = cell.flags,
+                .width = cell_mod.WIDTH_CONTINUATION,
+                .link = cell.link,
+            });
+            if (col + 2 < self.cols) {
+                self.cursor_col = col + 2;
+            } else if (self.auto_wrap) {
+                self.cursor_col = self.cols - 1;
+                self.wrap_pending = true;
+            } else {
+                self.cursor_col = self.cols - 1;
+            }
+        }
+        self.grid.setCell(row, col, cell);
     }
 
     // -- C0 control codes --
@@ -1344,6 +1417,10 @@ fn rgbTo256(r: u8, g: u8, b: u8) u16 {
     const gi: u16 = @intCast((@as(u32, g) * 5 + 127) / 255);
     const bi: u16 = @intCast((@as(u32, b) * 5 + 127) / 255);
     return 16 + ri * 36 + gi * 6 + bi;
+}
+
+test {
+    _ = grapheme_mod;
 }
 
 test "basic print" {
@@ -2336,4 +2413,59 @@ test "alternate screen exit clamps a saved cursor after shrinking" {
     try testing.expectEqual(@as(u16, 79), t.cursor_col);
     t.write("X");
     try testing.expectEqual(@as(u32, 'X'), t.grid.getCell(1, 79).char);
+}
+
+fn testClusterText(t: *const Terminal, row: u16, col: u16) []const u8 {
+    const cell = t.grid.getCell(row, col);
+    return t.clusters.get(cell.char & ~grapheme_mod.CLUSTER_BIT).?;
+}
+
+test "grapheme clusters share one cell group" {
+    const testing = std.testing;
+    var t = Terminal.init(20, 4);
+    t.write("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}x\r\n\u{1F1EF}\u{1F1F5}y\r\ne\u{301}z");
+    try testing.expectEqualStrings("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}", testClusterText(&t, 0, 0));
+    try testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(0, 0).width);
+    try testing.expectEqual(@as(u32, 'x'), t.grid.getCell(0, 2).char);
+    // Two regional indicators widen into one flag.
+    try testing.expectEqualStrings("\u{1F1EF}\u{1F1F5}", testClusterText(&t, 1, 0));
+    try testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(1, 0).width);
+    try testing.expectEqual(@as(u32, 'y'), t.grid.getCell(1, 2).char);
+    try testing.expectEqualStrings("e\u{301}", testClusterText(&t, 2, 0));
+    try testing.expectEqual(@as(u32, 'z'), t.grid.getCell(2, 1).char);
+    try testing.expectEqual(@as(u16, 2), t.cursor_col);
+}
+
+test "a control sequence ends the cluster" {
+    var t = Terminal.init(20, 2);
+    t.write("e\x1b[1m\u{301}");
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.getCell(0, 0).char);
+    try std.testing.expectEqual(@as(u32, 0x301), t.grid.getCell(0, 1).char);
+}
+
+test "VS16 at the last column keeps the cell narrow" {
+    var t = Terminal.init(4, 2);
+    t.write("abc\u{2764}\u{FE0F}");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 3).width);
+    try std.testing.expectEqualStrings("\u{2764}\u{FE0F}", testClusterText(&t, 0, 3));
+}
+
+test "long runs of combining marks keep a bounded cluster" {
+    var t = Terminal.init(20, 2);
+    t.write("a");
+    var i: usize = 0;
+    while (i < 200) : (i += 1) t.write("\u{301}");
+    t.write("b");
+    const stored = try std.unicode.utf8CountCodepoints(testClusterText(&t, 0, 0));
+    try std.testing.expectEqual(grapheme_mod.MAX_CLUSTER_CODEPOINTS, stored);
+    try std.testing.expectEqual(@as(u32, 'b'), t.grid.getCell(0, 1).char);
+}
+
+test "a resize between a base and its mark starts a new cluster" {
+    var t = Terminal.init(10, 4);
+    t.write("A\r\nB\r\nC\r\nDe");
+    t.resize(10, 2);
+    t.write("\u{301}");
+    // The base may have moved; the mark must not vanish or attach elsewhere.
+    try std.testing.expectEqual(@as(u32, 0x301), t.grid.getCell(t.cursor_row, t.cursor_col - 1).char);
 }
