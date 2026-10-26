@@ -148,12 +148,6 @@ importers:
         specifier: workspace:*
         version: link:../../packages/@wterm/ghostty
     devDependencies:
-      '@xterm/addon-webgl':
-        specifier: ^0.19.0
-        version: 0.19.0
-      '@xterm/xterm':
-        specifier: ^6.0.0
-        version: 6.0.0
       vite:
         specifier: ^8.3.0
         version: 8.3.0(@types/node@26.6.2)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.1)
@@ -4797,12 +4791,6 @@ packages:
         optional: true
       vue:
         optional: true
-
-  '@xterm/addon-webgl@0.19.0':
-    resolution: {integrity: sha512-b3fMOsyLVuCeNJWxolACEUED0vm7qC0cy4wRvf3oURSzDTYVQiGPhTnhWZwIHdvC48Y+oLhvYXnY4XDXPoJo6A==}
-
-  '@xterm/xterm@6.0.0':
-    resolution: {integrity: sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==}
 
   abbrev@2.0.0:
     resolution: {integrity: sha512-6/mh1E2u2YgEsCHdY0Yx5oW+61gZU+1vXaoiHHrpKeuRNNgFvS+/jrwHiQhB5apAf5oB7UB7E19ol2R2LKH8hQ==}
@@ -13590,10 +13578,6 @@ snapshots:
     optionalDependencies:
       typescript: 6.0.2
       vue: 3.5.32(typescript@6.0.2)
-
-  '@xterm/addon-webgl@0.19.0': {}
-
-  '@xterm/xterm@6.0.0': {}
 
   abbrev@2.0.0: {}
 

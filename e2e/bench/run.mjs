@@ -1,5 +1,5 @@
-// Headed renderer benchmark: rotates renderer order per round, fresh browser per run.
-// Env: SCENARIOS=single,wall,agents  TYPES=wterm,wterm-ghostty,xterm-webgl  ROUNDS=3  SECONDS=8  OUT=results.json
+// Headed benchmark of wterm renderers: rotates renderer order per round, fresh browser per run.
+// Env: SCENARIOS=single,wall,agents  TYPES=wterm,wterm-webgl,wterm-ghostty,wterm-ghostty-webgl  ROUNDS=3  SECONDS=8  OUT=results.json
 import { chromium } from "@playwright/test";
 import { startPreview } from "./server.mjs";
 import { writeFile } from "node:fs/promises";
@@ -14,9 +14,9 @@ const all = {
   megawall: { count: 64, cols: 80, rows: 24, workload: "halfblock" },
 };
 const scenarios = (process.env.SCENARIOS ?? "single,wall,agents").split(",");
-const types = (process.env.TYPES ?? "wterm,wterm-ghostty,xterm-webgl").split(
-  ",",
-);
+const types = (
+  process.env.TYPES ?? "wterm,wterm-webgl,wterm-ghostty,wterm-ghostty-webgl"
+).split(",");
 const rounds = Number(process.env.ROUNDS ?? 3);
 const seconds = Number(process.env.SECONDS ?? 8);
 const server = await startPreview();

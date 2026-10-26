@@ -2,17 +2,10 @@ import { WTerm } from "@wterm/dom";
 import "@wterm/dom/css";
 import { GhosttyCore } from "@wterm/ghostty";
 import ghosttyWasm from "@wterm/ghostty/ghostty-vt.wasm?url";
-import { Terminal } from "@xterm/xterm";
-import { WebglAddon } from "@xterm/addon-webgl";
-import "@xterm/xterm/css/xterm.css";
 import { cycle, halfblock, kitty, logs, type Workload } from "./workloads";
 
 export type RendererType =
-  | "wterm"
-  | "wterm-webgl"
-  | "wterm-ghostty"
-  | "wterm-ghostty-webgl"
-  | "xterm-webgl";
+  "wterm" | "wterm-webgl" | "wterm-ghostty" | "wterm-ghostty-webgl";
 
 interface Instance {
   write(data: string): Promise<void>;
@@ -29,21 +22,6 @@ async function mount(
   fontSize: number,
   count: number,
 ): Promise<Instance> {
-  if (type === "xterm-webgl") {
-    const term = new Terminal({
-      cols,
-      rows,
-      fontSize,
-      lineHeight: 1,
-      fontFamily: "monospace",
-    });
-    term.open(host);
-    term.loadAddon(new WebglAddon());
-    return {
-      write: (data) =>
-        new Promise((done) => term.write(data, () => nextFrame().then(done))),
-    };
-  }
   const core = type.startsWith("wterm-ghostty")
     ? await GhosttyCore.load({ wasmPath: ghosttyWasm })
     : undefined;
