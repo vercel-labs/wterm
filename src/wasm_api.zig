@@ -29,12 +29,14 @@ export fn init(cols: u32, rows: u32) void {
     terminal.alt_grid = &alt_grid;
     scrollback.reset();
     initialized = true;
+    terminal.grid.normalize();
 }
 
 export fn resizeTerminal(cols: u32, rows: u32) void {
     const c: u16 = if (cols > grid_mod.MAX_COLS) grid_mod.MAX_COLS else if (cols == 0) 1 else @intCast(cols);
     const r: u16 = if (rows > grid_mod.MAX_ROWS) grid_mod.MAX_ROWS else if (rows == 0) 1 else @intCast(rows);
     terminal.resize(c, r);
+    terminal.grid.normalize();
 }
 
 // -- Input --
@@ -46,11 +48,14 @@ export fn getWriteBuffer() [*]u8 {
 export fn writeBytes(len: u32) void {
     const n = if (len > input_buffer.len) input_buffer.len else len;
     terminal.write(input_buffer[0..n]);
+    // The host reads cells from getGridPtr() directly between calls.
+    terminal.grid.normalize();
 }
 
 // -- Grid data --
 
 export fn getGridPtr() [*]const u8 {
+    terminal.grid.normalize();
     return @ptrCast(terminal.grid.cells.ptr);
 }
 

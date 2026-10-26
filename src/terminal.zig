@@ -482,7 +482,7 @@ pub const Terminal = struct {
         }
 
         var char = self.charset.map(codepoint);
-        var width = unicode_width.displayWidth(char);
+        var width: u8 = if (char < unicode_width.first_wide) cell_mod.WIDTH_NARROW else unicode_width.displayWidth(char);
         if (width == cell_mod.WIDTH_WIDE and self.cols < 2) {
             // A one-column grid cannot hold a wide pair. Consume a blank
             // cell instead, preserving the usual cursor and wrapping behavior.
@@ -502,10 +502,13 @@ pub const Terminal = struct {
             }
         }
 
-        const blank = self.blankCell();
-        self.grid.clearWideCellAt(self.cursor_row, self.cursor_col, blank);
-        if (width == cell_mod.WIDTH_WIDE) {
-            self.grid.clearWideCellAt(self.cursor_row, self.cursor_col + 1, blank);
+        // Overwriting a narrow cell with a narrow one cannot split a wide pair.
+        if (width == cell_mod.WIDTH_WIDE or self.grid.getCell(self.cursor_row, self.cursor_col).width != cell_mod.WIDTH_NARROW) {
+            const blank = self.blankCell();
+            self.grid.clearWideCellAt(self.cursor_row, self.cursor_col, blank);
+            if (width == cell_mod.WIDTH_WIDE) {
+                self.grid.clearWideCellAt(self.cursor_row, self.cursor_col + 1, blank);
+            }
         }
 
         self.grid.setCell(self.cursor_row, self.cursor_col, Cell{
@@ -2350,4 +2353,86 @@ test "alternate screen exit clamps a saved cursor after shrinking" {
     try testing.expectEqual(@as(u16, 79), t.cursor_col);
     t.write("X");
     try testing.expectEqual(@as(u32, 'X'), t.grid.getCell(1, 79).char);
+}
+
+fn testExpectRowsLogical(t: *Terminal, first: u8) !void {
+    // Rows hold consecutive letters from `first`, read both through the
+    // accessors and through the physical layout the host sees.
+    t.grid.normalize();
+    var r: u16 = 0;
+    while (r < t.rows) : (r += 1) {
+        const want: u32 = first + r;
+        try std.testing.expectEqual(want, t.grid.getCell(r, 0).char);
+        try std.testing.expectEqual(want, t.grid.cells[@as(usize, r) * t.grid.stride].char);
+    }
+}
+
+test "full-screen scrolls keep logical rows and normalize for the host" {
+    var t = Terminal.init(4, 3);
+    var c: u8 = 'a';
+    while (c <= 'z') : (c += 1) {
+        t.write(&.{c});
+        if (c != 'z') t.write("\r\n");
+    }
+    try testExpectRowsLogical(&t, 'x');
+    for (t.grid.dirty[0..t.rows]) |d| try std.testing.expectEqual(@as(u8, 1), d);
+}
+
+test "a scroll region interleaved with full-screen scrolls" {
+    var t = Terminal.init(4, 4);
+    t.write("a\r\nb\r\nc\r\nd\r\ne\r\nf");
+    // Rows c d e f; scroll only rows 2-3, then scroll the whole screen again.
+    t.write("\x1b[2;3r\x1b[3;1H\nX\x1b[r\x1b[4;1H\ng");
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'X'), t.grid.getCell(1, 0).char);
+    try std.testing.expectEqual(@as(u32, 'f'), t.grid.getCell(2, 0).char);
+    try std.testing.expectEqual(@as(u32, 'g'), t.grid.getCell(3, 0).char);
+    try std.testing.expectEqual(@as(u32, 'X'), t.grid.cells[1 * @as(usize, t.grid.stride)].char);
+}
+
+test "resize right after a scroll burst keeps content" {
+    var t = Terminal.init(5, 3);
+    t.write("a\r\nb\r\nc\r\nd\r\ne");
+    t.resize(5, 6);
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.getCell(t.cursor_row, 0).char);
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.cells[@as(usize, t.cursor_row) * t.grid.stride].char);
+    t.resize(5, 2);
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.cells[@as(usize, t.cursor_row) * t.grid.stride].char);
+}
+
+test "alternate screen scrolls do not disturb the primary layout" {
+    var t = Terminal.init(4, 3);
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("a\r\nb\r\nc\r\nd");
+    t.write("\x1b[?1049h1\r\n2\r\n3\r\n4\r\n5");
+    t.write("\x1b[?1049l");
+    try testExpectRowsLogical(&t, 'b');
+}
+
+test "resizing while the primary screen is hidden after scrolls" {
+    var t = Terminal.init(4, 3);
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh\x1b[?1049h");
+    t.resize(4, 4);
+    t.write("\x1b[?1049l");
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'h'), t.grid.getCell(t.cursor_row, 0).char);
+}
+
+test "entering the alternate screen after it scrolled and the terminal grew" {
+    var t = Terminal.init(4, 3);
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("\x1b[?1049h1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7\r\n8\x1b[?1049l");
+    t.resize(4, 4);
+    t.write("\x1b[?1049hX");
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'X'), t.grid.cells[0].char);
 }
