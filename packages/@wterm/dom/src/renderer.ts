@@ -1,5 +1,6 @@
 import type {
   CellData,
+  CursorState,
   TerminalCore,
   TerminalPosition,
   TerminalColorOverrides,
@@ -430,6 +431,8 @@ export class Renderer {
   private searchActive = false;
   private gpuPalette: GpuPalette | null = null;
   private gpuCursor: GpuCursor | null = null;
+  private gpuCoreCursor: CursorState | null = null;
+  private hostObserver: MutationObserver | null = null;
   private blinkTimer: ReturnType<typeof setInterval> | null = null;
 
   get hasImageFlow(): boolean {
@@ -1087,8 +1090,9 @@ export class Renderer {
       this._gpuFrame(core, viewport!, resized)
     )
       return;
-    // A text-only render leaves the matching GPU frame on screen.
-    if (!gpuEligible) this._hideGpu();
+    // A text-only render leaves the matching GPU frame on screen; any other
+    // DOM frame, including one the GPU path declined, shows the DOM text.
+    if (!gpuEligible || !this.forceText) this._hideGpu();
 
     this.syncScrollback(
       core,
@@ -1362,7 +1366,10 @@ export class Renderer {
         this.gpuWanted = false;
         return false;
       }
+      // Hidden until a GPU frame paints it; a declined first frame keeps DOM.
+      this.gpu.canvas.hidden = true;
       this.container.appendChild(this.gpu.canvas);
+      this._observeHost();
     }
     if (this.gpu.contextLost) {
       this.gpu.destroy();
@@ -1397,27 +1404,20 @@ export class Renderer {
     if (this.gpu.atlasStale) {
       this.gpu.acknowledgeAtlas();
       for (let r = 0; r < this.rows; r++) this.gpu.updateRow(core, r);
+      // More distinct glyphs on screen than the atlas holds: paint this
+      // frame as DOM text and rebuild the GPU rows on the next one.
+      if (this.gpu.atlasStale) {
+        this.gpu.acknowledgeAtlas();
+        this.staleRows.clear();
+        this.gpuAllDirty = true;
+        return false;
+      }
     }
     if (core.getScrollbackCount() !== this._renderedScrollbackCount)
       this.staleScrollback = true;
     const cursor = core.getCursor();
-    const host = this.container.parentElement;
-    // Mirrors the CSS: solid and blinking only while the terminal has focus.
-    const focused = host?.matches(".focused, :active") ?? false;
-    const blinking =
-      focused &&
-      ((host?.classList.contains("cursor-blink") ?? false) ||
-        (!(host?.classList.contains("cursor-steady") ?? false) &&
-          cursor.blinking === true));
-    this.gpuCursor = {
-      row: cursor.row,
-      col: cursor.col,
-      shape: cursor.shape ?? "block",
-      visible: cursor.visible,
-      focused,
-    };
-    this._syncBlink(blinking);
-    this.gpu.setCursor(this._blinkedCursor(blinking));
+    this.gpuCoreCursor = cursor;
+    this._applyGpuCursor();
     core.clearDirty();
     this.gpuAllDirty = false;
     this.colorsChanged = false;
@@ -1440,6 +1440,44 @@ export class Renderer {
     }
     this.painted = true;
     return true;
+  }
+
+  /** Cursor focus and blink from the host, as the CSS reads them. */
+  private _applyGpuCursor(): void {
+    const cursor = this.gpuCoreCursor;
+    if (!this.gpu || !cursor) return;
+    const host = this.container.parentElement;
+    // Mirrors the CSS: solid and blinking only while the terminal has focus.
+    const focused = host?.matches(".focused, :active") ?? false;
+    const blinking =
+      focused &&
+      ((host?.classList.contains("cursor-blink") ?? false) ||
+        (!(host?.classList.contains("cursor-steady") ?? false) &&
+          cursor.blinking === true));
+    this.gpuCursor = {
+      row: cursor.row,
+      col: cursor.col,
+      shape: cursor.shape ?? "block",
+      visible: cursor.visible,
+      focused,
+    };
+    this._syncBlink(blinking);
+    this.gpu.setCursor(this._blinkedCursor(blinking));
+  }
+
+  /** Focus and blink classes change without output; redraw the cursor then. */
+  private _observeHost(): void {
+    const host = this.container.parentElement;
+    if (!host || this.hostObserver) return;
+    this.hostObserver = new MutationObserver(() => {
+      if (!this.gpu || !this.gpuShown) return;
+      this._applyGpuCursor();
+      this.gpu.draw();
+    });
+    this.hostObserver.observe(host, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
   }
 
   /** The cursor with the CSS blink phase applied: on for the first half second. */
@@ -1505,6 +1543,8 @@ export class Renderer {
   }
 
   destroy(): void {
+    this.hostObserver?.disconnect();
+    this.hostObserver = null;
     this._syncBlink(false);
     this.gpu?.destroy();
     this.gpu = null;
