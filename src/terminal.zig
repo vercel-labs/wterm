@@ -319,6 +319,9 @@ pub const Terminal = struct {
                     i += n;
                     continue;
                 }
+            } else if (self.parser.state == .csi_param) {
+                i += self.parser.feedCsiParams(data[i..]);
+                if (i == data.len) break;
             }
             self.processByte(data[i]);
             i += 1;
@@ -2564,6 +2567,8 @@ test "printable runs match byte-at-a-time parsing" {
     const inputs = [_][]const u8{
         "plain ascii that runs past the last column of a narrow grid",
         "\x1b[31;44mstyled\x1b[0m \x1b]8;;https://x.test\x07link\x1b]8;;\x07 done",
+        "\x1b[38;2;12;34;56;48;2;78;90;123m▀▀\x1b[38;5;255;48;5;16m▄█\x1b[0mend",
+        "\x1b[1;4:0;38:2:12:34:56m▀\x1b[38;2;65536;2;3m▄\x1b[mreset",
         "\u{754C}\u{1F600}\u{E9} wide at the edge \u{8A9E}\u{8A9E}\u{8A9E}\u{8A9E}",
         "\x1b(0lqqk\x1b(B mapped then ascii",
         "bad \xC3 utf8 \xE2\x82 cut \xFF\xFE end",
