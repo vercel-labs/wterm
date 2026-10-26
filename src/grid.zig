@@ -25,6 +25,9 @@ pub const Grid = struct {
     wrapped: []u8 = undefined,
     stride: u16 = 0,
     capacity_rows: u16 = 0,
+    /// Physical row holding logical row 0. Full-screen scrolls advance it
+    /// instead of moving memory; normalize() restores 0 before JS reads.
+    top_row: u16 = 0,
     cols: u16 = 0,
     rows: u16 = 0,
 
@@ -44,8 +47,12 @@ pub const Grid = struct {
     }
 
     pub fn ensureCapacity(self: *Grid, cols: u16, rows: u16) error{OutOfMemory}!void {
+        // A size change must start from physical row 0, or rows past the old
+        // window can run off the end of the buffer, also on a hidden screen.
+        self.normalize();
         const stride = grownCapacity(self.stride, cols, MAX_COLS);
-        const capacity_rows = grownCapacity(self.capacity_rows, rows, MAX_ROWS);
+        const slack_rows: u16 = @min(@as(u32, rows) * 2, MAX_ROWS);
+        const capacity_rows = grownCapacity(self.capacity_rows, slack_rows, MAX_ROWS);
         if (stride == self.stride and capacity_rows == self.capacity_rows) return;
 
         const cells = try allocator.alloc(Cell, @as(usize, stride) * capacity_rows);
@@ -74,15 +81,16 @@ pub const Grid = struct {
         self.wrapped = wrapped;
         self.stride = stride;
         self.capacity_rows = capacity_rows;
+        self.top_row = 0;
     }
 
     pub fn getRow(self: *Grid, index: u16) []Cell {
-        const start = @as(usize, index) * self.stride;
+        const start = (@as(usize, self.top_row) + index) * self.stride;
         return self.cells[start .. start + self.stride];
     }
 
     pub fn rowConst(self: *const Grid, index: u16) []const Cell {
-        const start = @as(usize, index) * self.stride;
+        const start = (@as(usize, self.top_row) + index) * self.stride;
         return self.cells[start .. start + self.stride];
     }
 
@@ -96,6 +104,7 @@ pub const Grid = struct {
 
     /// Resize an inactive screen, retaining cells in the shared top-left area.
     pub fn resizeView(self: *Grid, cols: u16, rows: u16) void {
+        self.normalize();
         const old_cols = self.cols;
         const old_rows = self.rows;
         self.cols = cols;
@@ -269,6 +278,18 @@ pub const Grid = struct {
         if (count == 0 or top >= bottom) return;
         const n = if (count > bottom - top) bottom - top else count;
 
+        if (top == 0 and bottom == self.rows) {
+            if (@as(u32, self.top_row) + n + self.rows > self.capacity_rows) self.normalize();
+            if (@as(u32, self.top_row) + n + self.rows <= self.capacity_rows) {
+                self.top_row += n;
+                std.mem.copyForwards(u8, self.wrapped[0 .. self.rows - n], self.wrapped[n..self.rows]);
+                var r: u16 = self.rows - n;
+                while (r < self.rows) : (r += 1) self.clearRowAs(r, blank);
+                @memset(self.dirty[0..self.rows], 1);
+                return;
+            }
+        }
+
         var row = top;
         while (row + n < bottom) : (row += 1) {
             @memcpy(self.getRow(row)[0..self.cols], self.getRow(row + n)[0..self.cols]);
@@ -278,6 +299,16 @@ pub const Grid = struct {
         while (row < bottom) : (row += 1) {
             self.clearRowAs(row, blank);
         }
+    }
+
+    /// Move the visible window back to physical row 0 so `cells.ptr` addresses
+    /// logical row 0, the layout the host reads.
+    pub fn normalize(self: *Grid) void {
+        if (self.top_row == 0) return;
+        const len = @as(usize, self.rows) * self.stride;
+        const start = @as(usize, self.top_row) * self.stride;
+        std.mem.copyForwards(Cell, self.cells[0..len], self.cells[start .. start + len]);
+        self.top_row = 0;
     }
 
     pub fn scrollDown(self: *Grid, top: u16, bottom: u16, count: u16, blank: Cell) void {
