@@ -57,6 +57,19 @@ async function expectBackgrounds(
   }
 }
 
+/** Returns the core-resolved RGB background of a cell, or null when the theme supplies it. */
+async function coreBackground(page: Page, row: number, col: number) {
+  return page.evaluate(
+    ([row, col]) => {
+      const rgb = window.ptyHarness.snapshot().cells[row][col].bgRgb;
+      return rgb === undefined
+        ? null
+        : `rgb(${(rgb >> 16) & 255}, ${(rgb >> 8) & 255}, ${rgb & 255})`;
+    },
+    [row, col],
+  );
+}
+
 for (const core of ["builtin", "ghostty"]) {
   test(`${core} confines edge-cell backgrounds and preserves full-width status bars`, async ({
     page,
@@ -81,11 +94,13 @@ for (const core of ["builtin", "ghostty"]) {
     const background = await page
       .locator(".wterm")
       .evaluate((el) => getComputedStyle(el).backgroundColor);
-    const red = await rows
-      .nth(1)
-      .locator("span")
-      .last()
-      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    const red =
+      (await coreBackground(page, 1, 19)) ??
+      (await rows
+        .nth(1)
+        .locator("span")
+        .last()
+        .evaluate((el) => getComputedStyle(el).backgroundColor));
     const reversed = await rows
       .nth(0)
       .locator("span")

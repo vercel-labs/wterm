@@ -61,6 +61,34 @@ function colorToCSS(index: number): string | null {
   return `rgb(${level},${level},${level})`;
 }
 
+const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+
+function cellColorPixel(
+  index: number,
+  rgb: number | undefined,
+): number | undefined {
+  if (rgb === undefined) {
+    if (index < 16 || index > 255) return undefined;
+    if (index < 232) {
+      const offset = index - 16;
+      rgb =
+        ((Math.floor(offset / 36) * 51) << 16) |
+        (((Math.floor(offset / 6) % 6) * 51) << 8) |
+        ((offset % 6) * 51);
+    } else {
+      const level = (index - 232) * 10 + 8;
+      rgb = (level << 16) | (level << 8) | level;
+    }
+  }
+  return LITTLE_ENDIAN
+    ? (0xff000000 |
+        ((rgb & 0xff) << 16) |
+        (rgb & 0xff00) |
+        ((rgb >>> 16) & 0xff)) >>>
+        0
+    : ((rgb << 8) | 0xff) >>> 0;
+}
+
 function cellFgCSS(fg: number, fgRgb: number | undefined): string | null {
   if (fgRgb !== undefined) return rgbToCSS(fgRgb);
   return colorToCSS(fg);
@@ -71,20 +99,25 @@ function cellBgCSS(bg: number, bgRgb: number | undefined): string | null {
   return colorToCSS(bg);
 }
 
-function buildCellStyle({
-  fg,
-  bg,
-  flags,
-  fgRgb,
-  bgRgb,
-  underlineStyle,
-  underlineRgb,
-}: CellData): string {
-  let fgCSS = cellFgCSS(fg, fgRgb);
-  let bgCSS = cellBgCSS(bg, bgRgb);
-  if (flags & FLAG_REVERSE) {
-    [fgCSS, bgCSS] = [bgCSS ?? DEFAULT_BG_CSS, fgCSS ?? DEFAULT_FG_CSS];
-  }
+function cellBackgroundPixel(cell: CellData): number | undefined {
+  return cell.flags & FLAG_REVERSE
+    ? cellColorPixel(cell.fg, cell.fgRgb)
+    : cellColorPixel(cell.bg, cell.bgRgb);
+}
+
+function buildCellStyle(
+  { fg, bg, flags, fgRgb, bgRgb, underlineStyle, underlineRgb }: CellData,
+  includeBackground = true,
+): string {
+  const reverse = flags & FLAG_REVERSE;
+  const fgCSS = reverse
+    ? (cellBgCSS(bg, bgRgb) ?? DEFAULT_BG_CSS)
+    : cellFgCSS(fg, fgRgb);
+  const bgCSS = includeBackground
+    ? reverse
+      ? (cellFgCSS(fg, fgRgb) ?? DEFAULT_FG_CSS)
+      : cellBgCSS(bg, bgRgb)
+    : null;
 
   let style = "";
   if (fgCSS) style += `color:${fgCSS};`;
@@ -415,6 +448,18 @@ export class Renderer {
   private painted = false;
   private colorHost: HTMLElement;
   private viewport: RenderViewport | undefined;
+  private cellCanvas: HTMLCanvasElement;
+  private cellContext: CanvasRenderingContext2D | null = null;
+  private cellImage: ImageData | null = null;
+  private cellPixels: Uint32Array | null = null;
+  private cellEdges: Int32Array | null = null;
+  private cellTop: Uint32Array | null = null;
+  private cellBottom: Uint32Array | null = null;
+  private cellBandUsed: boolean[] = [];
+  private cellEnabled = false;
+  private cellSuspended = false;
+  private cellRowHeight = 0;
+  private cellCharWidth = 0;
 
   get hasImageFlow(): boolean {
     return (
@@ -433,6 +478,12 @@ export class Renderer {
     this.searchLayer = document.createElement("div");
     this.searchLayer.className = "term-search-layer";
     this.searchLayer.setAttribute("aria-hidden", "true");
+    this.cellCanvas = document.createElement("canvas");
+    this.cellCanvas.className = "term-cell-canvas";
+    this.cellCanvas.setAttribute("aria-hidden", "true");
+    this.cellCanvas.addEventListener("contextrestored", () => {
+      if (this.cellImage) this.cellContext?.putImageData(this.cellImage, 0, 0);
+    });
   }
 
   setup(cols: number, rows: number): void {
@@ -449,6 +500,10 @@ export class Renderer {
     this._scrollbackGapSpacers = [];
     this._renderedScrollbackCount = -1;
     this._renderedDiscardedCount = -1;
+    this.cellEnabled = false;
+    this.cellRowHeight = 0;
+    this.cellCharWidth = 0;
+    this.releaseCellImage();
 
     const fragment = document.createDocumentFragment();
     this._scrollbackTopSpacer = document.createElement("div");
@@ -466,11 +521,121 @@ export class Renderer {
       this.rowEls.push(rowEl);
     }
     this.container.appendChild(fragment);
+    this.container.appendChild(this.cellCanvas);
     this.searchLayer.replaceChildren();
     this.container.appendChild(this.searchLayer);
     this.graphics.setup();
     this.prevCursorRow = -1;
     this.prevCursorCol = -1;
+  }
+
+  /**
+   * Sizes the live-row color canvas to the grid. Cell edges sit on whole CSS
+   * pixels, matching where the browser paints DOM cell backgrounds.
+   */
+  private syncCellCanvas(viewport?: RenderViewport): boolean {
+    const rowHeight = viewport?.rowHeight ?? 0;
+    const charWidth = viewport?.charWidth ?? 0;
+    const enabled =
+      Number.isInteger(rowHeight) &&
+      rowHeight > 0 &&
+      Number.isFinite(charWidth) &&
+      charWidth > 0 &&
+      !this.hasImageFlow &&
+      !this.cellSuspended &&
+      (this.cellContext ??= this.cellCanvas.getContext("2d")) !== null;
+    if (!enabled) {
+      const changed = this.cellEnabled;
+      this.cellEnabled = false;
+      if (changed) this.releaseCellImage();
+      return changed;
+    }
+    if (
+      this.cellEnabled &&
+      this.cellRowHeight === rowHeight &&
+      this.cellCharWidth === charWidth
+    )
+      return false;
+    const edges = new Int32Array(this.cols + 1);
+    for (let col = 0; col <= this.cols; col++)
+      edges[col] = Math.round(col * charWidth);
+    this.releaseCellImage();
+    this.cellEnabled = true;
+    this.cellRowHeight = rowHeight;
+    this.cellCharWidth = charWidth;
+    this.cellEdges = edges;
+    this.cellTop = new Uint32Array(this.cols);
+    this.cellBottom = new Uint32Array(this.cols);
+    return true;
+  }
+
+  /** Frees the canvas bitmap and pixel buffer until a row needs them again. */
+  private releaseCellImage(): void {
+    this.cellImage = null;
+    this.cellPixels = null;
+    this.cellBandUsed = [];
+    this.cellCanvas.width = 0;
+    this.cellCanvas.height = 0;
+    this.cellCanvas.hidden = true;
+  }
+
+  /** Allocates the canvas bitmap on the first row that has canvas cells. */
+  private ensureCellImage(): boolean {
+    if (this.cellImage) return true;
+    if (!this.cellContext) return false;
+    const width = Math.max(1, this.cellEdges![this.cols]);
+    const height = this.rows * this.cellRowHeight;
+    this.cellCanvas.width = width;
+    this.cellCanvas.height = height;
+    this.cellCanvas.style.width = `${width}px`;
+    this.cellCanvas.style.height = `${height}px`;
+    this.cellCanvas.hidden = false;
+    this.cellImage = this.cellContext.createImageData(width, height);
+    this.cellPixels = new Uint32Array(this.cellImage.data.buffer);
+    return true;
+  }
+
+  /** Expands one row's cell colors into its canvas band and uploads it. */
+  private paintCellBand(rowIndex: number, used: boolean): void {
+    if (!used && !this.cellBandUsed[rowIndex]) return;
+    if (!this.ensureCellImage()) return;
+    const pixels = this.cellPixels!;
+    const image = this.cellImage!;
+    const width = image.width;
+    const height = this.cellRowHeight;
+    const band = rowIndex * height * width;
+    if (!used) {
+      pixels.fill(0, band, band + height * width);
+    } else {
+      const edges = this.cellEdges!;
+      const top = this.cellTop!;
+      const bottom = this.cellBottom!;
+      const split = Math.round(height / 2);
+      const bottomLine = band + split * width;
+      for (let col = 0; col < this.cols; col++) {
+        pixels.fill(top[col], band + edges[col], band + edges[col + 1]);
+        pixels.fill(
+          bottom[col],
+          bottomLine + edges[col],
+          bottomLine + edges[col + 1],
+        );
+      }
+      for (let line = 1; line < height; line++) {
+        if (line === split) continue;
+        const source = line < split ? band : bottomLine;
+        pixels.copyWithin(band + line * width, source, source + width);
+      }
+    }
+    this.cellBandUsed[rowIndex] = used;
+    this.cellContext!.putImageData(
+      image,
+      0,
+      0,
+      0,
+      rowIndex * height,
+      width,
+      height,
+    );
   }
 
   private _buildRowContent(
@@ -511,6 +676,15 @@ export class Renderer {
     let outputLinkKey = "";
     let rowBackground: string | undefined;
     let uniformBackground = lineLen >= this.cols;
+    const canvasTop = rowIndex >= 0 && this.cellEnabled ? this.cellTop : null;
+    const canvasBottom = this.cellBottom!;
+    if (canvasTop) {
+      canvasTop.fill(0);
+      canvasBottom.fill(0);
+    }
+    let canvasUsed = false;
+    let canvasText = "";
+    let canvasCols = 0;
 
     const appendContent = (
       content: RowPart,
@@ -573,6 +747,18 @@ export class Renderer {
       appendContent(cellSpanPart(className, style, text), linkKey, linkUri);
     };
 
+    const flushCanvasRun = () => {
+      if (!canvasCols) return;
+      appendStyledSpan(
+        "term-canvas-run",
+        columnStyle(canvasCols),
+        canvasText,
+        "",
+      );
+      canvasText = "";
+      canvasCols = 0;
+    };
+
     for (let col = 0; col < this.cols; col++) {
       const cell = getCell(col);
       const inBounds = col < lineLen;
@@ -580,6 +766,57 @@ export class Renderer {
       const width = inBounds ? (cell.width ?? 1) : 1;
       const cellLinkKey = inBounds ? linkIdentity(cell) : "";
       const cellLinkUri = inBounds ? cell.linkUri : undefined;
+
+      if (
+        canvasTop &&
+        inBounds &&
+        width === 1 &&
+        col !== cursorCol &&
+        !cellLinkUri &&
+        !(
+          cell.flags &
+          (FLAG_DIM | FLAG_INVISIBLE | FLAG_UNDERLINE | FLAG_STRIKETHROUGH)
+        ) &&
+        (!cell.underlineStyle || cell.underlineStyle === "none") &&
+        (cp === 0x2580 || cp === 0x2584 || cp === 0x2588)
+      ) {
+        let foreground = cellColorPixel(cell.fg, cell.fgRgb);
+        let background = cellColorPixel(cell.bg, cell.bgRgb);
+        if (cell.flags & FLAG_REVERSE)
+          [foreground, background] = [background, foreground];
+        if (
+          foreground !== undefined &&
+          (cp === 0x2588 || background !== undefined)
+        ) {
+          flushRun(col);
+          canvasTop[col] = cp === 0x2584 ? background! : foreground;
+          canvasBottom[col] = cp === 0x2580 ? background! : foreground;
+          canvasUsed = true;
+          const text = cell.chars ?? String.fromCodePoint(cp);
+          recordText(text, col);
+          canvasText += text;
+          canvasCols++;
+          uniformBackground = false;
+          runStart = col + 1;
+          continue;
+        }
+      }
+      const canvasBackground =
+        canvasTop &&
+        inBounds &&
+        width === 1 &&
+        col !== cursorCol &&
+        !cellLinkKey &&
+        !(cell.flags & (FLAG_DIM | FLAG_INVISIBLE)) &&
+        !(cp >= 0x2580 && cp <= 0x259f)
+          ? cellBackgroundPixel(cell)
+          : undefined;
+      if (canvasTop && canvasBackground !== undefined) {
+        canvasTop[col] = canvasBackground;
+        canvasBottom[col] = canvasBackground;
+        canvasUsed = true;
+      }
+      flushCanvasRun();
 
       // Only a shared, opaque background can fill the unused row width.
       // Otherwise it would also show through default, dim, or hidden cells.
@@ -717,7 +954,9 @@ export class Renderer {
         const ch =
           cell.chars ?? (inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ");
         recordText(ch, col, 1, cell.spacerHead === true);
-        const style = inBounds ? buildCellStyle(cell) : "";
+        const style = inBounds
+          ? buildCellStyle(cell, canvasBackground === undefined)
+          : "";
 
         // Font fallback can give a narrow Unicode glyph a different advance
         // from ASCII. Bound each such cell (including complete graphemes) so
@@ -759,10 +998,12 @@ export class Renderer {
       }
     }
     flushRun(this.cols);
+    flushCanvasRun();
     if (outputLinkKey) parts.push({ html: linkHtml + "</a>" });
 
     this.updateRowParts(rowEl, parts);
     this.rowText.set(rowEl, content);
+    if (canvasTop) this.paintCellBand(rowIndex, canvasUsed);
 
     const bgCss =
       uniformBackground && rowBackground !== DEFAULT_BG_CSS
@@ -1061,6 +1302,17 @@ export class Renderer {
       },
     );
 
+    this.graphics.reconcile(core, {
+      scrollTop: viewport?.scrollTop ?? 0,
+      clientHeight: viewport?.clientHeight ?? 0,
+      rowHeight: viewport?.rowHeight ?? 0,
+      charWidth: viewport?.charWidth ?? 0,
+      overscanRows: viewport?.overscanRows ?? DEFAULT_SCROLLBACK_OVERSCAN_ROWS,
+      scrollbackCount: core.getScrollbackCount(),
+    });
+    const canvasChanged = this.syncCellCanvas(viewport);
+    this.cellCanvas.style.top = `${core.getScrollbackCount() * (viewport?.rowHeight ?? 0)}px`;
+
     const cursor = core.getCursor();
     const cursorVisible = cursor.visible;
     const shape = cursor.shape ?? "block";
@@ -1077,7 +1329,8 @@ export class Renderer {
       cursorVisible !== this.prevCursorVisible;
 
     for (let r = 0; r < this.rows; r++) {
-      const isDirty = this.colorsChanged || resized || core.isDirtyRow(r);
+      const isDirty =
+        this.colorsChanged || resized || canvasChanged || core.isDirtyRow(r);
       const hadCursor = r === this.prevCursorRow && needsCursorUpdate;
       const hasCursor = r === cursor.row;
 
@@ -1106,14 +1359,6 @@ export class Renderer {
     this.colorsChanged = false;
     this.selection.afterRender(this.selectionRows(), positions);
     this.painted = true;
-    this.graphics.reconcile(core, {
-      scrollTop: viewport?.scrollTop ?? 0,
-      clientHeight: viewport?.clientHeight ?? 0,
-      rowHeight: viewport?.rowHeight ?? 0,
-      charWidth: viewport?.charWidth ?? 0,
-      overscanRows: viewport?.overscanRows ?? DEFAULT_SCROLLBACK_OVERSCAN_ROWS,
-      scrollbackCount: core.getScrollbackCount(),
-    });
   }
 
   /** Mounted rows in chronological, retained-buffer coordinates. */
@@ -1244,6 +1489,11 @@ export class Renderer {
     return nearest && { row: nearest.row, col: nearest.col };
   }
 
+  /** Turns the color canvas off so block cells keep their own colored spans. */
+  setCanvasSuspended(suspended: boolean): void {
+    this.cellSuspended = suspended;
+  }
+
   requestSetup(): void {
     this.needsSetup = true;
   }
@@ -1267,5 +1517,8 @@ export class Renderer {
     this.container.innerHTML = "";
     this.rowEls = [];
     this._scrollbackRowEls = [];
+    this.cellImage = null;
+    this.cellPixels = null;
+    this.cellContext = null;
   }
 }

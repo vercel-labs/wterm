@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Renderer } from "../renderer.js";
 import type { CellData, CursorState, TerminalPosition } from "@wterm/core";
 
@@ -57,6 +57,314 @@ describe("Renderer", () => {
       renderer.setup(40, 12);
       const rows = container.querySelectorAll(".term-row");
       expect(rows).toHaveLength(12);
+    });
+  });
+
+  describe("cell canvas", () => {
+    const viewport = {
+      scrollTop: 0,
+      clientHeight: 8,
+      rowHeight: 4,
+      charWidth: 7.5,
+    };
+    const opaque = {
+      ...makeCell("█"),
+      fgRgb: 0x112233,
+      bgRgb: 0x445566,
+    };
+    const edge = (col: number) => Math.round(col * viewport.charWidth);
+    const center = (col: number) => Math.floor((edge(col) + edge(col + 1)) / 2);
+
+    function pixel(
+      image: { width: number; data: Uint8ClampedArray },
+      x: number,
+      y: number,
+    ) {
+      const i = (y * image.width + x) * 4;
+      return Array.from(image.data.slice(i, i + 4));
+    }
+
+    function mockCanvas() {
+      const context = {
+        createImageData: vi.fn((width: number, height: number) => ({
+          width,
+          height,
+          data: new Uint8ClampedArray(width * height * 4),
+        })),
+        putImageData: vi.fn(),
+      };
+      const getContext = vi
+        .spyOn(HTMLCanvasElement.prototype, "getContext")
+        .mockReturnValue(context as unknown as CanvasRenderingContext2D);
+      return { context, getContext };
+    }
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it("gives block cells their own spans while the canvas is suspended", () => {
+      mockCanvas();
+      const bridge = createMockBridge(2, 1, [[opaque, opaque]]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.setup(2, 1);
+      renderer.render(bridge, viewport);
+      expect(container.querySelectorAll(".term-canvas-run")).toHaveLength(1);
+      renderer.setCanvasSuspended(true);
+      renderer.render(bridge, viewport);
+      expect(container.querySelector(".term-canvas-run")).toBeNull();
+      expect(container.querySelectorAll(".term-block")).toHaveLength(2);
+      renderer.setCanvasSuspended(false);
+      renderer.render(bridge, viewport);
+      expect(container.querySelectorAll(".term-canvas-run")).toHaveLength(1);
+    });
+
+    it("extends a uniform canvas-painted background to the row edge", () => {
+      mockCanvas();
+      const cells: CellData[] = ["a", "b"].map((char) => ({
+        ...makeCell(char),
+        bgRgb: 0x14283c,
+      }));
+      const bridge = createMockBridge(2, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.setup(2, 1);
+      renderer.render(bridge, viewport);
+      const row = container.querySelector<HTMLElement>(".term-row")!;
+      expect(row.style.background).toBe("rgb(20, 40, 60)");
+      expect(row.firstElementChild?.getAttribute("style") ?? "").not.toContain(
+        "background",
+      );
+      expect(
+        container.querySelector<HTMLCanvasElement>(".term-cell-canvas")!.hidden,
+      ).toBe(false);
+
+      cells[0] = { ...cells[0], char: 0x2580, fgRgb: 0xff0000 };
+      bridge.isDirtyRow = () => true;
+      renderer.render(bridge, viewport);
+      expect(row.style.background).toBe("");
+      expect(row.querySelector(".term-canvas-run")?.textContent).toBe("▀");
+    });
+
+    it("paints RGBA half blocks, full blocks, reverse, and indexed colors in one text run", () => {
+      const { context } = mockCanvas();
+      const cells = [
+        { ...opaque, char: 0x2580 },
+        { ...makeCell("▄"), fgRgb: 0x778899, bgRgb: 0xaabbcc },
+        opaque,
+        { ...opaque, char: 0x2580, flags: 0x20 },
+        makeCell("▀", 196, 232),
+      ];
+      const bridge = createMockBridge(5, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.setup(5, 1);
+      const canvas =
+        container.querySelector<HTMLCanvasElement>(".term-cell-canvas")!;
+      expect(canvas).not.toBeNull();
+      renderer.render(bridge, { ...viewport, rowHeight: 5 });
+
+      expect(canvas.width).toBe(38);
+      expect(canvas.height).toBe(5);
+      expect(canvas.style.width).toBe("38px");
+      const runs = container.querySelectorAll<HTMLElement>(".term-canvas-run");
+      expect(runs).toHaveLength(1);
+      expect(runs[0].textContent).toBe("▀▄█▀▀");
+      expect(runs[0].style.getPropertyValue("--term-span-cols")).toBe("5");
+
+      expect(context.createImageData).toHaveBeenCalledTimes(1);
+      const image = context.createImageData.mock.results[0].value;
+      const colors = [
+        { top: [17, 34, 51, 255], bottom: [68, 85, 102, 255] },
+        { top: [170, 187, 204, 255], bottom: [119, 136, 153, 255] },
+        { top: [17, 34, 51, 255], bottom: [17, 34, 51, 255] },
+        { top: [68, 85, 102, 255], bottom: [17, 34, 51, 255] },
+        { top: [255, 0, 0, 255], bottom: [8, 8, 8, 255] },
+      ];
+      colors.forEach(({ top, bottom }, col) => {
+        expect(pixel(image, center(col), 0)).toEqual(top);
+        expect(pixel(image, center(col), 4)).toEqual(bottom);
+      });
+      expect(context.putImageData).toHaveBeenCalledWith(
+        image,
+        0,
+        0,
+        0,
+        0,
+        38,
+        5,
+      );
+    });
+
+    it("paints eligible cell backgrounds while retaining merged DOM text", () => {
+      const { context } = mockCanvas();
+      const cells = [
+        { ...makeCell("a"), fgRgb: 0x112233, bgRgb: 0x445566 },
+        { ...makeCell("b"), fgRgb: 0x112233, bg: 196 },
+        { ...makeCell(" "), fgRgb: 0x112233, bgRgb: 0xabcdef },
+        {
+          ...makeCell("r", 196, 256, 0x20),
+          bgRgb: 0x112233,
+        },
+      ];
+      const bridge = createMockBridge(cells.length, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.render(bridge, viewport);
+
+      const row = container.querySelector<HTMLElement>(".term-row")!;
+      const run = row.querySelector<HTMLElement>("span")!;
+      expect(run.textContent).toBe("ab r");
+      expect(run.style.color).toBe("rgb(17, 34, 51)");
+      expect(run.style.background).toBe("");
+      expect(row.style.background).toBe("");
+
+      const image = context.createImageData.mock.results[0].value;
+      [0x445566, 0xff0000, 0xabcdef, 0xff0000].forEach((rgb, col) => {
+        const expected = [rgb >> 16, (rgb >> 8) & 0xff, rgb & 0xff, 255];
+        expect(pixel(image, center(col), 0)).toEqual(expected);
+        expect(pixel(image, center(col), viewport.rowHeight - 1)).toEqual(
+          expected,
+        );
+      });
+    });
+
+    it("keeps cursor, themed, dim, invisible, decorated, linked, wide, and other blocks in the DOM", () => {
+      const { context } = mockCanvas();
+      const cells = [
+        opaque,
+        makeCell("█"),
+        makeCell("█", 1, 16),
+        makeCell("▀", 16, 1),
+        { ...opaque, flags: 0x02 },
+        { ...opaque, flags: 0x40 },
+        { ...opaque, flags: 0x08 },
+        { ...opaque, flags: 0x80 },
+        { ...opaque, linkUri: "https://example.com", linkKey: "block" },
+        { ...opaque, width: 2 },
+        makeCell(" ", 256, 256, 0, 0),
+        { ...opaque, char: 0x2591 },
+        opaque,
+      ];
+      const bridge = createMockBridge(cells.length, 1, [cells]);
+      new Renderer(container).render(bridge, viewport);
+
+      const row = container.querySelector(".term-row")!;
+      expect(row.textContent).toBe("███▀██████░█");
+      expect(row.querySelector(".term-cursor")?.textContent).toBe("█");
+      expect(row.querySelector("a.term-link")?.getAttribute("href")).toBe(
+        "https://example.com/",
+      );
+      expect(row.querySelector(".term-wide")?.textContent).toBe("█");
+      expect(row.querySelectorAll(".term-canvas-run")).toHaveLength(1);
+      expect(row.querySelector(".term-canvas-run")?.textContent).toBe("█");
+
+      const image = context.createImageData.mock.results[0].value;
+      cells.forEach((_, col) => {
+        const expected =
+          col === cells.length - 1 ? [17, 34, 51, 255] : [0, 0, 0, 0];
+        for (const y of [0, viewport.rowHeight - 1]) {
+          expect(pixel(image, center(col), y)).toEqual(expected);
+        }
+      });
+    });
+
+    it("paints a full block from its foreground when the theme supplies the background", () => {
+      const { context } = mockCanvas();
+      const bridge = createMockBridge(1, 1, [[makeCell("█", 196, 256)]]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      new Renderer(container).render(bridge, viewport);
+
+      const image = context.createImageData.mock.results[0].value;
+      expect(pixel(image, center(0), 0)).toEqual([255, 0, 0, 255]);
+      expect(container.querySelector(".term-canvas-run")?.textContent).toBe(
+        "█",
+      );
+    });
+
+    it("falls back without usable geometry or a 2D context", () => {
+      const { context, getContext } = mockCanvas();
+      const bridge = createMockBridge(1, 1, [[opaque]]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      for (const metrics of [
+        undefined,
+        { ...viewport, charWidth: undefined },
+        { ...viewport, charWidth: 0 },
+        { ...viewport, rowHeight: 0 },
+        { ...viewport, rowHeight: 4.5 },
+      ]) {
+        const host = document.createElement("div");
+        container.appendChild(host);
+        new Renderer(host).render(bridge, metrics);
+        expect(host.querySelector(".term-canvas-run")).toBeNull();
+        expect(host.querySelector(".term-block")?.textContent).toBe("█");
+      }
+      expect(getContext).not.toHaveBeenCalled();
+      getContext.mockReturnValue(null);
+      new Renderer(container).render(bridge, viewport);
+      expect(container.querySelector(".term-canvas-run")).toBeNull();
+      expect(container.querySelector(".term-block")?.textContent).toBe("█");
+      expect(context.createImageData).not.toHaveBeenCalled();
+      expect(context.putImageData).not.toHaveBeenCalled();
+    });
+
+    it("clears only a dirty row when its cells fall back to text", () => {
+      const { context } = mockCanvas();
+      const cells = [
+        [opaque, opaque],
+        [opaque, opaque],
+      ];
+      const bridge = createMockBridge(2, 2, cells);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.render(bridge, viewport);
+      expect(
+        container.querySelector<HTMLElement>(".term-row")!.style.background,
+      ).toBe("");
+      const image = context.createImageData.mock.results[0].value;
+      cells[1] = [
+        { ...opaque, char: "x".codePointAt(0)!, bgRgb: undefined },
+        { ...opaque, flags: 0x02 },
+      ];
+      bridge.isDirtyRow = (row) => row === 1;
+      renderer.render(bridge, viewport);
+
+      expect(pixel(image, center(0), 0)).toEqual([17, 34, 51, 255]);
+      expect(pixel(image, center(1), 3)).toEqual([17, 34, 51, 255]);
+      for (const y of [4, 7]) {
+        for (const col of [0, 1]) {
+          expect(pixel(image, center(col), y)).toEqual([0, 0, 0, 0]);
+        }
+      }
+      const rows = container.querySelectorAll(".term-row");
+      expect(rows[0].querySelector(".term-canvas-run")?.textContent).toBe("██");
+      expect(rows[1].querySelector(".term-canvas-run")).toBeNull();
+      expect(rows[1].textContent).toBe("x█");
+    });
+
+    it("offsets the live canvas below scrollback without painting history into it", () => {
+      mockCanvas();
+      const bridge = createMockBridge(1, 1, [[opaque]]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.getScrollbackCount = () => 3;
+      bridge.getScrollbackLineLen = () => 1;
+      bridge.getScrollbackCell = () => opaque;
+      new Renderer(container).render(bridge, {
+        ...viewport,
+        clientHeight: 16,
+        overscanRows: 0,
+      });
+
+      const canvas =
+        container.querySelector<HTMLCanvasElement>(".term-cell-canvas")!;
+      expect(canvas.style.top).toBe("12px");
+      expect(canvas.height).toBe(4);
+      const history = container.querySelectorAll(".term-scrollback-row");
+      expect(history).toHaveLength(3);
+      for (const row of history) {
+        expect(row.textContent).toBe("█");
+        expect(row.querySelector(".term-canvas-run")).toBeNull();
+      }
+      expect(container.querySelectorAll(".term-canvas-run")).toHaveLength(1);
     });
   });
 

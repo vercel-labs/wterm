@@ -103,6 +103,8 @@ export class WTerm {
   private _onScroll: () => void;
   private _onModifierChange: (event: KeyboardEvent) => void;
   private _onWindowBlur: () => void;
+  private _onBeforePrint: () => void;
+  private _onAfterPrint: () => void;
   private _onCopy: (event: ClipboardEvent) => void;
   private _onMouseSelect: (event: MouseEvent) => void;
 
@@ -303,6 +305,16 @@ export class WTerm {
     this.element.ownerDocument.defaultView?.addEventListener(
       "blur",
       this._onWindowBlur,
+    );
+    this._onBeforePrint = () => this._setPrintMode(true);
+    this._onAfterPrint = () => this._setPrintMode(false);
+    this.element.ownerDocument.defaultView?.addEventListener(
+      "beforeprint",
+      this._onBeforePrint,
+    );
+    this.element.ownerDocument.defaultView?.addEventListener(
+      "afterprint",
+      this._onAfterPrint,
     );
     this._onScroll = () => {
       if (this._pendingResizeScrollTop !== null) return;
@@ -998,6 +1010,19 @@ export class WTerm {
     this._synchronizedOutputTimer = null;
   }
 
+  /** Prepares colored print output without advancing a paused or synchronized screen. */
+  private _setPrintMode(printing: boolean): void {
+    if (!this.renderer || this._destroyed) return;
+    const keepCanvas =
+      printing &&
+      (!this._canRender() || this._synchronizedOutputState === "held");
+    this.element.classList.toggle("term-print-canvas", keepCanvas);
+    this.renderer.setCanvasSuspended(printing && !keepCanvas);
+    if (keepCanvas) return;
+    if (printing) this._doRender();
+    else this._scheduleRender();
+  }
+
   private _setupRendererIfNeeded(): void {
     if (!this._rendererNeedsSetup) return;
     this._setupRenderer();
@@ -1275,16 +1300,31 @@ export class WTerm {
     probe.style.width = "auto";
     probe.textContent = "W";
     row.appendChild(probe);
+    const block = document.createElement("span");
+    block.style.width = "auto";
+    block.style.letterSpacing = "0";
+    block.textContent = "\u2580";
+    row.appendChild(block);
 
     this._container.appendChild(row);
     const charWidth = probe.getBoundingClientRect().width;
+    const blockWidth = block.getBoundingClientRect().width;
     const rowHeight = row.getBoundingClientRect().height;
     row.remove();
 
     if (charWidth === 0 || rowHeight === 0) return null;
+    const changed =
+      this._charWidth > 0 &&
+      (charWidth !== this._charWidth || rowHeight !== this._rowHeight);
     this._charWidth = charWidth;
     this._rowHeight = rowHeight;
     this.element.style.setProperty("--term-cell-width", `${charWidth}px`);
+    const drift = blockWidth > 0 ? charWidth - blockWidth : 0;
+    this.element.style.setProperty(
+      "--term-block-spacing",
+      Math.abs(drift) > 0.01 ? `${drift}px` : "0px",
+    );
+    if (changed && this.renderer) this._scheduleRender();
     return { charWidth, rowHeight };
   }
 
@@ -1441,7 +1481,15 @@ export class WTerm {
       "blur",
       this._onWindowBlur,
     );
-    this.element.classList.remove("link-modifier-active");
+    this.element.ownerDocument.defaultView?.removeEventListener(
+      "beforeprint",
+      this._onBeforePrint,
+    );
+    this.element.ownerDocument.defaultView?.removeEventListener(
+      "afterprint",
+      this._onAfterPrint,
+    );
+    this.element.classList.remove("link-modifier-active", "term-print-canvas");
     this.element.innerHTML = "";
     if (
       this.debug &&
