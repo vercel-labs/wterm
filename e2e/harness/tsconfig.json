@@ -11,6 +11,7 @@
   },
   "include": [
     "src",
+    "throughput/*.ts",
     "tests/*.ts",
     "playwright.config.ts",
     "load.config.ts",

@@ -26,6 +26,7 @@
     "bench:terminal": "turbo run build --filter='@internal/pty-harness^...' && pnpm --filter @internal/pty-harness bench",
     "bench:input": "turbo run build --filter='@internal/pty-harness^...' && pnpm --filter @internal/pty-harness bench:input",
     "bench:pty-input": "turbo run build --filter='@internal/pty-harness^...' && pnpm --filter @internal/pty-harness bench:pty-input",
+    "bench:throughput": "turbo run build --filter='@internal/pty-harness^...' && pnpm --filter @internal/pty-harness bench:throughput",
     "bench:search": "turbo run build --filter='@internal/pty-harness^...' && pnpm --filter @internal/pty-harness bench:search",
     "bench:stability": "turbo run build --filter='@internal/pty-harness^...' && pnpm --filter @internal/pty-harness bench:stability",
     "bench:performance": "turbo run build --filter='@internal/pty-harness^...' && pnpm --filter @internal/pty-harness bench:performance",

@@ -456,6 +456,23 @@ without reproducing it. Reports now retain the failing session index and socket
 error/close details. Completed cases preserved byte and message accounting,
 stayed within queue bounds, and made zero hidden-pane renderer calls.
 
+## Throughput measurements
+
+```bash
+pnpm bench:throughput
+pnpm bench:throughput -- --save-baseline
+pnpm bench:throughput -- --repeat 3 --only halfblock_1,logs_64
+```
+
+Reports frames per terminal per second and mount time per terminal, in
+headless Chromium with vsync and the frame cap off. Scenarios: `halfblock_1`
+(one 160x50 truecolor half-block animation), `halfblock_16` and
+`halfblock_64` (walls of 80x24 terminals), `logs_64` (64 terminals streaming
+colored lines under a status bar), and `tui_1` (a 160x50 dashboard).
+`--save-baseline` stores the row text and screenshots of four still screens;
+later runs exit with status 1 when the text differs or more than 0.5% of
+pixels differ.
+
 ## History search measurements
 
 ```bash
