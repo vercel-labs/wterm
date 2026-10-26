@@ -52,6 +52,7 @@ interface WasmExports {
   getScrollbackDiscardedCount(): number;
   getScrollbackLine(offset: number): number;
   getScrollbackLineLen(offset: number): number;
+  getScrollbackClearCount?(): number;
   getResponsePtr(): number;
   getResponseLen(): number;
   clearResponse(): void;
@@ -145,6 +146,11 @@ export class WasmBridge implements TerminalCore {
     this._resolveRgb(result);
     Object.assign(result, this._readLink(dv.getUint16(offset + 10, true)));
     return result;
+  }
+
+  /** Times the history was cleared, as by CSI 3 J or reinitialization. */
+  getScrollbackClearCount(): number {
+    return this.exports.getScrollbackClearCount?.() ?? 0;
   }
 
   /** Raw hyperlink table index of a grid cell; 0 when it has no link. */

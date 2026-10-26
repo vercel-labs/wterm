@@ -602,6 +602,9 @@ export class WTerm {
   /** New state from a core that applies writes asynchronously. */
   private _onCoreUpdate = (): void => {
     if (!this.bridge || this._destroyed) return;
+    // The core changed, as after a write: stale captures and drags end.
+    this._textCapture.cancel();
+    this._rectangleDrag.cancel();
     this.renderer?.beforeMutation(this.bridge);
     this._historySelection.invalidate();
     const result = this._deliverCoreEffects();

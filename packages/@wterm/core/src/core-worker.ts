@@ -13,6 +13,9 @@ import {
 let bridge: WasmBridge | null = null;
 let sentLinks = new Map<number, string>();
 let scrollbackTotal = 0;
+let scrollbackClears = -1;
+/** Replies drained between parsing chunks, so the core queue never overflows. */
+let replies: string[] = [];
 let scrollbackReset = true;
 let allDirty = true;
 let pending = false;
@@ -64,7 +67,10 @@ function buildUpdate(b: WasmBridge): {
   const count = b.getScrollbackCount();
   const discarded = b.getScrollbackDiscardedCount?.() ?? 0;
   const total = count + discarded;
-  const reset = scrollbackReset || total < scrollbackTotal;
+  const clears = b.getScrollbackClearCount();
+  const reset =
+    scrollbackReset || clears !== scrollbackClears || total < scrollbackTotal;
+  scrollbackClears = clears;
   const added = reset ? count : Math.min(count, total - scrollbackTotal);
   scrollbackTotal = total;
   scrollbackReset = false;
@@ -86,9 +92,9 @@ function buildUpdate(b: WasmBridge): {
     }
   }
 
-  const responses: string[] = [];
-  for (let r = b.getResponse(); r !== null; r = b.getResponse())
-    responses.push(r);
+  drainReplies(b);
+  const responses = replies;
+  replies = [];
   const update: CoreUpdate = {
     t: "update",
     cols,
@@ -117,6 +123,11 @@ function buildUpdate(b: WasmBridge): {
     clusters,
   };
   return { update, transfer: [cells.buffer, sbCells.buffer] };
+}
+
+function drainReplies(b: WasmBridge): void {
+  for (let r = b.getResponse(); r !== null; r = b.getResponse())
+    replies.push(r);
 }
 
 // Writes that arrive together are parsed before one update goes back.
@@ -150,8 +161,10 @@ self.onmessage = async (event: MessageEvent<ToWorker>) => {
     }
     if (!bridge) return;
     if (msg.t === "write") {
-      if (typeof msg.data === "string") bridge.writeString(msg.data);
-      else bridge.writeRaw(msg.data);
+      const b = bridge;
+      const afterChunk = () => drainReplies(b);
+      if (typeof msg.data === "string") b.writeString(msg.data, afterChunk);
+      else b.writeRaw(msg.data, afterChunk);
     } else if (msg.t === "resize") {
       bridge.resize(msg.cols, msg.rows);
       scrollbackReset = true;

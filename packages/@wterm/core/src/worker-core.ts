@@ -86,6 +86,12 @@ export class WorkerCore implements TerminalCore {
         worker.removeEventListener("message", onMessage);
       };
       worker.addEventListener("message", onMessage);
+      // A worker that fails to load or throws before replying never posts.
+      worker.addEventListener(
+        "error",
+        (event) => reject(new Error(event.message || "worker failed to start")),
+        { once: true },
+      );
       core.post({ t: "load", wasmUrl: options.wasmUrl });
     });
     worker.addEventListener("message", (event: MessageEvent<FromWorker>) => {
