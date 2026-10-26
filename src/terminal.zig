@@ -254,6 +254,9 @@ pub const Terminal = struct {
     pub fn reset(self: *Terminal, cols: u16, rows: u16) void {
         self.grid.reset(cols, rows);
         self.parser = .{};
+        self.segmenter = .{};
+        self.cluster_row = 0;
+        self.cluster_col = 0;
         self.cols = cols;
         self.rows = rows;
         self.cursor_row = 0;
@@ -2678,4 +2681,15 @@ test "entering the alternate screen after it scrolled and the terminal grew" {
     t.write("\x1b[?1049hX");
     t.grid.normalize();
     try std.testing.expectEqual(@as(u32, 'X'), t.grid.cells[0].char);
+}
+
+test "reinitializing starts a fresh cluster at the home position" {
+    var t = Terminal.init(10, 2);
+    t.write("ABC");
+    t.clusters.reset();
+    t.reset(10, 2);
+    t.write("\u{301}");
+    try std.testing.expectEqual(@as(u32, 0x301), t.grid.getCell(0, 0).char);
+    try std.testing.expectEqual(@as(u32, ' '), t.grid.getCell(0, 2).char);
+    try std.testing.expectEqual(@as(u16, 1), t.cursor_col);
 }
