@@ -25,16 +25,19 @@ export fn init(cols: u32, rows: u32) void {
     }
     terminal.hyperlinks.reset();
     terminal.clusters.reset();
+    terminal.colors.reset();
     terminal.scrollback = &scrollback;
     terminal.alt_grid = &alt_grid;
     scrollback.reset();
     initialized = true;
+    terminal.grid.normalize();
 }
 
 export fn resizeTerminal(cols: u32, rows: u32) void {
     const c: u16 = if (cols > grid_mod.MAX_COLS) grid_mod.MAX_COLS else if (cols == 0) 1 else @intCast(cols);
     const r: u16 = if (rows > grid_mod.MAX_ROWS) grid_mod.MAX_ROWS else if (rows == 0) 1 else @intCast(rows);
     terminal.resize(c, r);
+    terminal.grid.normalize();
 }
 
 // -- Input --
@@ -46,11 +49,14 @@ export fn getWriteBuffer() [*]u8 {
 export fn writeBytes(len: u32) void {
     const n = if (len > input_buffer.len) input_buffer.len else len;
     terminal.write(input_buffer[0..n]);
+    // The host reads cells from getGridPtr() directly between calls.
+    terminal.grid.normalize();
 }
 
 // -- Grid data --
 
 export fn getGridPtr() [*]const u8 {
+    terminal.grid.normalize();
     return @ptrCast(terminal.grid.cells.ptr);
 }
 
@@ -197,6 +203,12 @@ export fn getClusterPtr(index: u32) [*]const u8 {
 export fn getClusterLen(index: u32) u32 {
     const bytes = terminal.clusters.get(index) orelse return 0;
     return @intCast(bytes.len);
+}
+
+/// Returns 0xRRGGBB for a truecolor cell index, or 0xFFFFFFFF when the index is not a truecolor entry.
+export fn getColorRgb(index: u32) u32 {
+    if (index > 0xffff) return 0xffffffff;
+    return terminal.colors.get(@intCast(index)) orelse 0xffffffff;
 }
 
 // -- Scrollback --

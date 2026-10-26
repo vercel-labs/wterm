@@ -60,6 +60,27 @@ describe("WasmBridge", () => {
     expect(bridge.getCell(0, 1)).toMatchObject({ char: 0x4e2d, width: 2 });
   });
 
+  it("keeps exact truecolor values in visible and scrollback cells", () => {
+    bridge.writeString(
+      "\x1b[38;2;255;100;0mA\x1b[0m \x1b[48;2;10;20;30mB\x1b[0m",
+    );
+    expect(bridge.getCell(0, 0).fgRgb).toBe(0xff6400);
+    expect(bridge.getCell(0, 0).bgRgb).toBeUndefined();
+    expect(bridge.getCell(0, 2).bgRgb).toBe(0x0a141e);
+    expect(bridge.getCell(0, 2).fgRgb).toBeUndefined();
+
+    bridge.writeString("\r\n".repeat(24));
+    expect(bridge.getScrollbackCount()).toBeGreaterThan(0);
+    const offset = bridge.getScrollbackCount() - 1;
+    expect(bridge.getScrollbackCell(offset, 0).fgRgb).toBe(0xff6400);
+  });
+
+  it("keeps 256-color cells on the palette", () => {
+    bridge.writeString("\x1b[38;5;208mA");
+    expect(bridge.getCell(0, 0).fg).toBe(208);
+    expect(bridge.getCell(0, 0).fgRgb).toBeUndefined();
+  });
+
   it("exposes any-motion mouse tracking from the committed WASM", () => {
     expect(bridge.mouseEncoding()).toBe("x10");
     bridge.writeString("\x1b[?1003h\x1b[?1006h");

@@ -10,6 +10,7 @@ import { loadWasmModule } from "./wasm-loading.js";
 
 /** Set in a cell char when the low bits index the core's grapheme cluster table. */
 const CLUSTER_BIT = 0x80000000;
+const DEFAULT_COLOR = 256;
 
 interface WasmExports {
   memory: WebAssembly.Memory;
@@ -47,6 +48,7 @@ interface WasmExports {
   getLinkIdLen(index: number): number;
   getClusterPtr?(index: number): number;
   getClusterLen?(index: number): number;
+  getColorRgb?(index: number): number;
   getHyperlinkCapacity?(): number;
   getHyperlinkCount?(): number;
   getHyperlinkRejectedCount?(): number;
@@ -147,6 +149,7 @@ export class WasmBridge implements TerminalCore {
       width: dv.getUint8(offset + 9),
     };
     this._resolveCluster(result);
+    this._resolveRgb(result);
     Object.assign(result, this._readLink(dv.getUint16(offset + 10, true)));
     return result;
   }
@@ -291,6 +294,7 @@ export class WasmBridge implements TerminalCore {
       width: dv.getUint8(off + 9),
     };
     this._resolveCluster(result);
+    this._resolveRgb(result);
     Object.assign(result, this._readLink(dv.getUint16(off + 10, true)));
     return result;
   }
@@ -356,6 +360,24 @@ export class WasmBridge implements TerminalCore {
     cell.char = chars.codePointAt(0) ?? 32;
     if (chars.length > String.fromCodePoint(cell.char).length)
       cell.chars = chars;
+  }
+
+  private _resolveRgb(cell: CellData): void {
+    if (cell.fg > DEFAULT_COLOR) {
+      const rgb = this._readRgb(cell.fg);
+      if (rgb !== undefined) cell.fgRgb = rgb;
+    }
+    if (cell.bg > DEFAULT_COLOR) {
+      const rgb = this._readRgb(cell.bg);
+      if (rgb !== undefined) cell.bgRgb = rgb;
+    }
+  }
+
+  private _readRgb(index: number): number | undefined {
+    const rgb = this.exports.getColorRgb?.(index);
+    if (rgb === undefined) return undefined;
+    // WASM returns u32 as a signed i32; the 0xFFFFFFFF miss marker reads as -1.
+    return rgb < 0 || rgb > 0xffffff ? undefined : rgb;
   }
 
   private _readLink(

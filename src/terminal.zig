@@ -5,6 +5,7 @@ const parser_mod = @import("parser.zig");
 const scrollback_mod = @import("scrollback.zig");
 const hyperlink_mod = @import("hyperlink.zig");
 const grapheme_mod = @import("grapheme.zig");
+const color_mod = @import("color.zig");
 const unicode_width = @import("unicode_width.zig");
 const charset_mod = @import("charset.zig");
 
@@ -109,6 +110,7 @@ pub const Terminal = struct {
     /// Cell holding the cluster the next code point may extend.
     cluster_row: u16 = 0,
     cluster_col: u16 = 0,
+    colors: color_mod.Table = .{},
 
     cols: u16,
     rows: u16,
@@ -306,9 +308,78 @@ pub const Terminal = struct {
     // -- Public API --
 
     pub fn write(self: *Terminal, data: []const u8) void {
-        for (data) |byte| {
-            self.processByte(byte);
+        var i: usize = 0;
+        while (i < data.len) {
+            if (self.parser.state == .ground) {
+                const n = self.printRun(data[i..]);
+                if (n > 0) {
+                    i += n;
+                    continue;
+                }
+            }
+            self.processByte(data[i]);
+            i += 1;
         }
+    }
+
+    /// Writes a run of printable text straight into the cursor row and returns
+    /// the bytes consumed. It stops, leaving the rest to printChar, at anything
+    /// that needs printChar's care: control bytes, partial or invalid UTF-8,
+    /// a mapped charset, a pending wrap, the last column, or a cell that is
+    /// already part of a wide pair.
+    fn printRun(self: *Terminal, data: []const u8) usize {
+        // Only plain ASCII maps code points to themselves; British and DEC
+        // graphics take the printChar path.
+        if (self.wrap_pending or self.charset.single_shift != null or
+            self.charset.slots[self.charset.gl] != .ascii) return 0;
+        std.debug.assert(self.cursor_row < self.rows);
+        const cols = self.cols;
+        const row = self.grid.getRow(self.cursor_row);
+        var col: u16 = self.cursor_col;
+        var i: usize = 0;
+        while (i < data.len) {
+            const b = data[i];
+            var cp: u21 = undefined;
+            var len: usize = 1;
+            if (b >= 0x20 and b < 0x7F) {
+                cp = b;
+            } else {
+                len = parser_mod.utf8SequenceLength(b);
+                if (len < 2 or i + len > data.len or !parser_mod.utf8Continuations(data[i + 1 .. i + len])) break;
+                cp = parser_mod.decodeUtf8(data[i .. i + len]);
+            }
+            const width: u16 = if (cp < unicode_width.first_wide) 1 else unicode_width.displayWidth(cp);
+            if (col + width >= cols) break;
+            if (row[col].width != cell_mod.WIDTH_NARROW) break;
+            if (width == 2 and row[col + 1].width != cell_mod.WIDTH_NARROW) break;
+            // Checked last so a code point handed back to printChar is segmented once.
+            if (!self.segmenter.breaksBefore(cp)) {
+                self.cursor_col = col;
+                self.extendCluster(cp);
+                col = self.cursor_col;
+                i += len;
+                if (self.wrap_pending) break;
+                continue;
+            }
+            self.cluster_row = self.cursor_row;
+            self.cluster_col = col;
+            row[col] = .{
+                .char = cp,
+                .fg = self.current_fg,
+                .bg = self.current_bg,
+                .flags = self.current_flags,
+                .width = @intCast(width),
+                .link = self.current_link,
+            };
+            if (width == 2) row[col + 1] = self.continuationCell();
+            col += width;
+            i += len;
+        }
+        if (i > 0) {
+            self.cursor_col = col;
+            self.grid.dirty[self.cursor_row] = 1;
+        }
+        return i;
     }
 
     pub fn responsePtr(self: *const Terminal) [*]const u8 {
@@ -496,7 +567,7 @@ pub const Terminal = struct {
         }
 
         var char = mapped;
-        var width = unicode_width.displayWidth(char);
+        var width: u8 = if (char < unicode_width.first_wide) cell_mod.WIDTH_NARROW else unicode_width.displayWidth(char);
         if (width == cell_mod.WIDTH_WIDE and self.cols < 2) {
             // A one-column grid cannot hold a wide pair. Consume a blank
             // cell instead, preserving the usual cursor and wrapping behavior.
@@ -517,10 +588,13 @@ pub const Terminal = struct {
             }
         }
 
-        const blank = self.blankCell();
-        self.grid.clearWideCellAt(self.cursor_row, self.cursor_col, blank);
-        if (width == cell_mod.WIDTH_WIDE) {
-            self.grid.clearWideCellAt(self.cursor_row, self.cursor_col + 1, blank);
+        // Overwriting a narrow cell with a narrow one cannot split a wide pair.
+        if (width == cell_mod.WIDTH_WIDE or self.grid.getCell(self.cursor_row, self.cursor_col).width != cell_mod.WIDTH_NARROW) {
+            const blank = self.blankCell();
+            self.grid.clearWideCellAt(self.cursor_row, self.cursor_col, blank);
+            if (width == cell_mod.WIDTH_WIDE) {
+                self.grid.clearWideCellAt(self.cursor_row, self.cursor_col + 1, blank);
+            }
         }
 
         self.cluster_row = self.cursor_row;
@@ -1298,7 +1372,7 @@ pub const Terminal = struct {
     }
 
     /// Parses 38;5;n (256-color) and 38;2;r;g;b (24-bit color)
-    fn parseExtendedColor(self: *const Terminal, start: u8, color: *u16) u8 {
+    fn parseExtendedColor(self: *Terminal, start: u8, color: *u16) u8 {
         if (start + 1 >= self.parser.param_count) return 0;
         const kind = self.parser.params[start + 1];
         if (kind == 5 and start + 2 < self.parser.param_count) {
@@ -1309,10 +1383,10 @@ pub const Terminal = struct {
             const r = self.parser.params[start + 2];
             const g = self.parser.params[start + 3];
             const b_val = self.parser.params[start + 4];
-            // Pack RGB into u16: use color indices 257+ for RGB
-            // Store as index into a separate RGB table via WASM API
-            // For now, find closest 256-color match
-            color.* = rgbTo256(@intCast(r), @intCast(g), @intCast(b_val));
+            if (r > 255 or g > 255 or b_val > 255) return 4;
+            const rgb = (@as(u32, r) << 16) | (@as(u32, g) << 8) | b_val;
+            color.* = self.colors.intern(rgb) orelse
+                rgbTo256(@intCast(r), @intCast(g), @intCast(b_val));
             return 4;
         }
         return 0;
@@ -1421,6 +1495,15 @@ fn rgbTo256(r: u8, g: u8, b: u8) u16 {
 
 test {
     _ = grapheme_mod;
+    _ = color_mod;
+}
+
+test "truecolor SGR keeps exact RGB values" {
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[38;2;255;100;0mA\x1b[0m \x1b[48;2;10;20;30mB\x1b[0m");
+    try std.testing.expectEqual(@as(u32, 0xff6400), t.colors.get(t.grid.getCell(0, 0).fg).?);
+    try std.testing.expectEqual(@as(u32, 0x0a141e), t.colors.get(t.grid.getCell(0, 2).bg).?);
+    try std.testing.expectEqual(cell_mod.DEFAULT_COLOR, t.grid.getCell(0, 2).fg);
 }
 
 test "basic print" {
@@ -2468,4 +2551,131 @@ test "a resize between a base and its mark starts a new cluster" {
     t.write("\u{301}");
     // The base may have moved; the mark must not vanish or attach elsewhere.
     try std.testing.expectEqual(@as(u32, 0x301), t.grid.getCell(t.cursor_row, t.cursor_col - 1).char);
+}
+
+fn testFeedBytewise(t: *Terminal, data: []const u8) void {
+    for (data) |b| t.processByte(b);
+}
+
+test "printable runs match byte-at-a-time parsing" {
+    const inputs = [_][]const u8{
+        "plain ascii that runs past the last column of a narrow grid",
+        "\x1b[31;44mstyled\x1b[0m \x1b]8;;https://x.test\x07link\x1b]8;;\x07 done",
+        "\u{754C}\u{1F600}\u{E9} wide at the edge \u{8A9E}\u{8A9E}\u{8A9E}\u{8A9E}",
+        "\x1b(0lqqk\x1b(B mapped then ascii",
+        "bad \xC3 utf8 \xE2\x82 cut \xFF\xFE end",
+        "\x1b[1;9H\u{754C}\u{754C}over\x1b[1;10Hx",
+        "\u{754C}\u{754C}\x1b[1;2Hxy\x1b[2;1H\u{754C}\x1b[2;1Hz",
+        "a\u{754C}\x1b[1;1H\u{8A9E}",
+        "e\u{301}z \u{1F1EF}\u{1F1F5} \u{1F468}\u{200D}\u{1F469} \u{2764}\u{FE0F}",
+        "abc",
+    };
+    for (inputs) |input| {
+        var fast = Terminal.init(9, 4);
+        var slow = Terminal.init(9, 4);
+        // Start clean so dirty marks come only from the input.
+        fast.grid.clearDirty();
+        slow.grid.clearDirty();
+        fast.write(input);
+        testFeedBytewise(&slow, input);
+        try std.testing.expectEqual(slow.cursor_row, fast.cursor_row);
+        try std.testing.expectEqual(slow.cursor_col, fast.cursor_col);
+        try std.testing.expectEqual(slow.wrap_pending, fast.wrap_pending);
+        var r: u16 = 0;
+        while (r < 4) : (r += 1) {
+            try std.testing.expectEqual(slow.grid.dirty[r], fast.grid.dirty[r]);
+            var c: u16 = 0;
+            while (c < 9) : (c += 1) try std.testing.expectEqualDeep(slow.grid.getCell(r, c), fast.grid.getCell(r, c));
+        }
+    }
+}
+
+test "a UTF-8 sequence split across writes still decodes" {
+    var t = Terminal.init(10, 2);
+    t.write("a\xE7\x95");
+    t.write("\x8Cb");
+    try std.testing.expectEqual(@as(u32, 0x754C), t.grid.getCell(0, 1).char);
+    try std.testing.expectEqual(@as(u32, 'b'), t.grid.getCell(0, 3).char);
+}
+
+fn testExpectRowsLogical(t: *Terminal, first: u8) !void {
+    // Rows hold consecutive letters from `first`, read both through the
+    // accessors and through the physical layout the host sees.
+    t.grid.normalize();
+    var r: u16 = 0;
+    while (r < t.rows) : (r += 1) {
+        const want: u32 = first + r;
+        try std.testing.expectEqual(want, t.grid.getCell(r, 0).char);
+        try std.testing.expectEqual(want, t.grid.cells[@as(usize, r) * t.grid.stride].char);
+    }
+}
+
+test "full-screen scrolls keep logical rows and normalize for the host" {
+    var t = Terminal.init(4, 3);
+    var c: u8 = 'a';
+    while (c <= 'z') : (c += 1) {
+        t.write(&.{c});
+        if (c != 'z') t.write("\r\n");
+    }
+    try testExpectRowsLogical(&t, 'x');
+    for (t.grid.dirty[0..t.rows]) |d| try std.testing.expectEqual(@as(u8, 1), d);
+}
+
+test "a scroll region interleaved with full-screen scrolls" {
+    var t = Terminal.init(4, 4);
+    t.write("a\r\nb\r\nc\r\nd\r\ne\r\nf");
+    // Rows c d e f; scroll only rows 2-3, then scroll the whole screen again.
+    t.write("\x1b[2;3r\x1b[3;1H\nX\x1b[r\x1b[4;1H\ng");
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'X'), t.grid.getCell(1, 0).char);
+    try std.testing.expectEqual(@as(u32, 'f'), t.grid.getCell(2, 0).char);
+    try std.testing.expectEqual(@as(u32, 'g'), t.grid.getCell(3, 0).char);
+    try std.testing.expectEqual(@as(u32, 'X'), t.grid.cells[1 * @as(usize, t.grid.stride)].char);
+}
+
+test "resize right after a scroll burst keeps content" {
+    var t = Terminal.init(5, 3);
+    t.write("a\r\nb\r\nc\r\nd\r\ne");
+    t.resize(5, 6);
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.getCell(t.cursor_row, 0).char);
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.cells[@as(usize, t.cursor_row) * t.grid.stride].char);
+    t.resize(5, 2);
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.cells[@as(usize, t.cursor_row) * t.grid.stride].char);
+}
+
+test "alternate screen scrolls do not disturb the primary layout" {
+    var t = Terminal.init(4, 3);
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("a\r\nb\r\nc\r\nd");
+    t.write("\x1b[?1049h1\r\n2\r\n3\r\n4\r\n5");
+    t.write("\x1b[?1049l");
+    try testExpectRowsLogical(&t, 'b');
+}
+
+test "resizing while the primary screen is hidden after scrolls" {
+    var t = Terminal.init(4, 3);
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh\x1b[?1049h");
+    t.resize(4, 4);
+    t.write("\x1b[?1049l");
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'h'), t.grid.getCell(t.cursor_row, 0).char);
+}
+
+test "entering the alternate screen after it scrolled and the terminal grew" {
+    var t = Terminal.init(4, 3);
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("\x1b[?1049h1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7\r\n8\x1b[?1049l");
+    t.resize(4, 4);
+    t.write("\x1b[?1049hX");
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'X'), t.grid.cells[0].char);
 }
