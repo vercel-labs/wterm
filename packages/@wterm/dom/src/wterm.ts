@@ -1303,18 +1303,96 @@ export class WTerm {
       for (const entry of entries) {
         if (entry.target === this.element) containerRect = entry.contentRect;
       }
-      const measured = this._measureCharSize();
-      if (!measured || !this.autoResize || !containerRect) return;
-
-      const { charWidth, rowHeight } = measured;
-      const newCols = Math.max(1, Math.floor(containerRect.width / charWidth));
-      const newRows = Math.max(1, Math.floor(containerRect.height / rowHeight));
-      if (newCols !== this.cols || newRows !== this.rows) {
-        this.resize(newCols, newRows);
-      }
+      this._lastContainerRect = containerRect ?? null;
+      this._fitAutoResize();
     });
     this.resizeObserver.observe(probe);
     if (this.autoResize) this.resizeObserver.observe(this.element);
+
+    // A software keyboard shrinks the visual viewport without resizing the
+    // element, so rows behind it would stay in the grid and hide the cursor.
+    const viewport = this.element.ownerDocument.defaultView?.visualViewport;
+    if (this.autoResize && viewport) {
+      this._visualViewport = viewport;
+      viewport.addEventListener("resize", this._onVisualViewportChange);
+      viewport.addEventListener("scroll", this._onVisualViewportChange);
+    }
+  }
+
+  private _lastContainerRect: DOMRectReadOnly | null = null;
+  /** Reserves the part of the element the keyboard covers, below the grid. */
+  private _keyboardSpacer: HTMLDivElement | null = null;
+  private _visualViewport: VisualViewport | null = null;
+  private _visualViewportFrame = 0;
+
+  private _onVisualViewportChange = (): void => {
+    // The keyboard animates; fit once per frame instead of once per event.
+    if (this._visualViewportFrame || this._destroyed) return;
+    this._visualViewportFrame = requestAnimationFrame(() => {
+      this._visualViewportFrame = 0;
+      this._fitAutoResize();
+    });
+  };
+
+  /**
+   * Height of the element's content box not hidden by a software keyboard: the
+   * band between the visual viewport's bottom and the layout viewport's bottom.
+   * Parts of the element merely scrolled out of view still count as visible.
+   */
+  private _visibleContentHeight(contentHeight: number): number {
+    const viewport = this._visualViewport;
+    // Pinch zoom also shrinks the visual viewport; only a keyboard should refit.
+    if (!viewport || Math.abs(viewport.scale - 1) > 0.01) return contentHeight;
+    const layoutBottom =
+      this.element.ownerDocument.defaultView?.innerHeight ?? 0;
+    const coveredTop = viewport.offsetTop + viewport.height;
+    if (coveredTop >= layoutBottom) return contentHeight;
+    const rect = this.element.getBoundingClientRect();
+    const style = getComputedStyle(this.element);
+    const top =
+      rect.top +
+      (parseFloat(style.borderTopWidth) || 0) +
+      (parseFloat(style.paddingTop) || 0);
+    const covered = Math.max(
+      0,
+      Math.min(top + contentHeight, layoutBottom) - Math.max(top, coveredTop),
+    );
+    return contentHeight - covered;
+  }
+
+  /** Keeps the grid's last row above the keyboard while the element scrolls to the bottom. */
+  private _setKeyboardInset(px: number): void {
+    if (px <= 0) {
+      this._keyboardSpacer?.remove();
+      this._keyboardSpacer = null;
+      return;
+    }
+    if (!this._keyboardSpacer) {
+      this._keyboardSpacer = document.createElement("div");
+      this._keyboardSpacer.className = "term-keyboard-spacer";
+      this._keyboardSpacer.setAttribute("aria-hidden", "true");
+      this.element.appendChild(this._keyboardSpacer);
+    }
+    this._keyboardSpacer.style.height = `${px}px`;
+  }
+
+  private _fitAutoResize(): void {
+    const containerRect = this._lastContainerRect;
+    const measured = this._measureCharSize();
+    if (!measured || !this.autoResize || !containerRect || this._destroyed)
+      return;
+    const { charWidth, rowHeight } = measured;
+    const contentHeight = containerRect.height;
+    const height = this._visibleContentHeight(contentHeight);
+    const newCols = Math.max(1, Math.floor(containerRect.width / charWidth));
+    const newRows = Math.max(1, Math.floor(height / rowHeight));
+    const atBottom = this._isScrolledToBottom();
+    this._setKeyboardInset(contentHeight - height);
+    if (newCols !== this.cols || newRows !== this.rows) {
+      this.resize(newCols, newRows);
+    } else if (atBottom) {
+      this._scrollToBottom();
+    }
   }
 
   destroy(): void {
@@ -1329,6 +1407,17 @@ export class WTerm {
     this._cancelScheduledRender();
     this._cancelSynchronizedOutputFallback();
     if (this.resizeObserver) this.resizeObserver.disconnect();
+    if (this._visualViewportFrame)
+      cancelAnimationFrame(this._visualViewportFrame);
+    this._visualViewport?.removeEventListener(
+      "resize",
+      this._onVisualViewportChange,
+    );
+    this._visualViewport?.removeEventListener(
+      "scroll",
+      this._onVisualViewportChange,
+    );
+    this._visualViewport = null;
     if (this.input) this.input.destroy();
     this.renderer?.destroy();
     this.renderer = null;

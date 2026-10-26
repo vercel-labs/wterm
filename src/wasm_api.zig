@@ -24,6 +24,7 @@ export fn init(cols: u32, rows: u32) void {
         terminal = Terminal.init(c, r);
     }
     terminal.hyperlinks.reset();
+    terminal.colors.reset();
     terminal.scrollback = &scrollback;
     terminal.alt_grid = &alt_grid;
     scrollback.reset();
@@ -190,6 +191,12 @@ export fn getHyperlinkCount() u32 {
 
 export fn getHyperlinkRejectedCount() u32 {
     return terminal.hyperlinks.rejected;
+}
+
+/// Returns 0xRRGGBB for a truecolor cell index, or 0xFFFFFFFF when the index is not a truecolor entry.
+export fn getColorRgb(index: u32) u32 {
+    if (index > 0xffff) return 0xffffffff;
+    return terminal.colors.get(@intCast(index)) orelse 0xffffffff;
 }
 
 // -- Scrollback --
