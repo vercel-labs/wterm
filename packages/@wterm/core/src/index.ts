@@ -21,5 +21,6 @@ export type {
   TerminalCore,
 } from "./terminal-core.js";
 export { WasmBridge } from "./wasm-bridge.js";
+export { WorkerCore, type WorkerCoreOptions } from "./worker-core.js";
 export { WebSocketTransport } from "./transport.js";
 export type { WebSocketTransportOptions } from "./transport.js";

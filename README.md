@@ -31,6 +31,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Shared WASM loading** — both cores reuse compiled modules while keeping separate terminal memory; the built-in binary loads only when selected and is decoded once, and supported browsers compile separately served binaries during download
 - **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~26 KB `.wasm` binary (release build)
 - **DOM rendering** — native text selection, clipboard, browser find, and screen reader support for mounted rows
+- **Worker core** — `WorkerCore` parses off the main thread so many busy panes use more than one CPU core
 - **Named terminal input** — the editable control exposes host labels and descriptions to assistive technology and follows the host's tab order; Escape followed by Tab or Shift+Tab moves focus back to the page
 - **Terminal-aware copy** — selected text preserves explicit newlines and complete Unicode cells, includes block glyphs, and joins confirmed Ghostty soft wraps
 - **Read retained output** — capture a stable text snapshot with `readText()`; the local workspace provides a read-only output dialog with explicit refresh

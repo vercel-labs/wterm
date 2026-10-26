@@ -36,6 +36,20 @@ const core = await GhosttyCore.load();
 const term = new WTerm(el, { core });
 ```
 
+### Worker core
+
+`WorkerCore` runs the built-in core in a Web Worker, so parsing leaves the main thread and many busy terminals can use more than one CPU core. Pair it with `renderer: "webgl"` for pages with many panes of heavy output.
+
+```ts
+import { WorkerCore } from "@wterm/core";
+import { WTerm } from "@wterm/dom";
+
+const core = await WorkerCore.load();
+const term = new WTerm(el, { core, renderer: "webgl" });
+```
+
+Writes return before they are parsed. Cells, replies, titles and bells arrive with the next update from the worker, which the DOM wrapper picks up through `TerminalCore.setUpdateListener`. Each `WorkerCore` owns one worker; call `dispose()` when the terminal is gone. Debug tooling sees no unhandled sequences from a worker core. Bundlers that do not resolve `new Worker(new URL(..., import.meta.url))` can pass their own `worker` running `@wterm/core`'s `core-worker.js`.
+
 ## API
 
 ### Terminal row metadata

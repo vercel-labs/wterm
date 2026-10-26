@@ -236,4 +236,9 @@ export interface TerminalCore {
 
   // -- Debug --
   getUnhandledSequences(): UnhandledSequence[];
+  /**
+   * Cores that apply writes asynchronously, such as a worker-backed core,
+   * call this listener whenever new state is available to read.
+   */
+  setUpdateListener?(listener: (() => void) | null): void;
 }
