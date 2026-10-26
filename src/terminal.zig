@@ -711,8 +711,8 @@ pub const Terminal = struct {
     }
 
     fn restoreCursor(self: *Terminal) void {
-        self.cursor_row = self.saved_cursor_row;
-        self.cursor_col = self.saved_cursor_col;
+        self.cursor_row = @min(self.saved_cursor_row, self.rows - 1);
+        self.cursor_col = @min(self.saved_cursor_col, self.cols - 1);
         self.current_fg = self.saved_fg;
         self.current_bg = self.saved_bg;
         self.current_flags = self.saved_flags;
@@ -2537,4 +2537,17 @@ test "entering the alternate screen after it scrolled and the terminal grew" {
     t.write("\x1b[?1049hX");
     t.grid.normalize();
     try std.testing.expectEqual(@as(u32, 'X'), t.grid.cells[0].char);
+}
+
+test "a cursor saved before a shrink is clamped when restored" {
+    var t = Terminal.init(10, 10);
+    var alt = Grid.init(10, 10);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("\x1b[10;10H\x1b7");
+    t.resize(10, 4);
+    t.write("\x1b[?47h\x1b8x");
+    try std.testing.expect(t.cursor_row < t.rows);
+    try std.testing.expect(t.cursor_col < t.cols);
+    try std.testing.expectEqual(@as(u32, 'x'), t.grid.getCell(3, 9).char);
 }
