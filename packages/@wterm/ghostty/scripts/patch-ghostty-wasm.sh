@@ -11,6 +11,7 @@
 #   7. page.zig — uses posix.mmap/munmap for page memory
 #   8. PageList.zig — uses the WASM allocator and grows page pools on demand
 #   9. osc.zig — bounds encoded clipboard requests while parsing
+#  10. stream.zig — exposes csiDispatch for the wrapper's CSI fast path
 #
 # Page memory is replaced with wasm_allocator on WASM targets, Kitty file and
 # shared-memory media are disabled, Wuffs gets freestanding compatibility
@@ -795,4 +796,17 @@ with open('$PAGE_ZIG', 'w') as f:
     f.write(src)
 
 print('page.zig patched for WASM')
+"
+
+STREAM_ZIG="$GHOSTTY_SRC/src/terminal/stream.zig"
+python3 -c "
+path = '$STREAM_ZIG'
+src = open(path).read()
+old = '        inline fn csiDispatch(self: *Self, input: Parser.Action.CSI) !void {'
+new = '        pub inline fn csiDispatch(self: *Self, input: Parser.Action.CSI) !void {'
+if new not in src:
+    assert old in src, 'csiDispatch signature changed; update this patch'
+    src = src.replace(old, new, 1)
+open(path, 'w').write(src)
+print('stream.zig patched for WASM')
 "
