@@ -37,6 +37,29 @@ describe("WasmBridge", () => {
     });
   });
 
+  it("reads grapheme clusters from visible and scrollback cells", () => {
+    const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
+    bridge.writeString(`${family}x e\u0301z`);
+    expect(bridge.getCell(0, 0)).toMatchObject({
+      char: 0x1f468,
+      chars: family,
+      width: 2,
+    });
+    expect(bridge.getCell(0, 2).char).toBe(0x78);
+    expect(bridge.getCell(0, 4).chars).toBe("e\u0301");
+    expect(bridge.getCell(0, 5).char).toBe(0x7a);
+
+    bridge.writeString("\r\n".repeat(24));
+    const offset = bridge.getScrollbackCount() - 1;
+    expect(bridge.getScrollbackCell(offset, 0).chars).toBe(family);
+  });
+
+  it("leaves single code point cells without chars", () => {
+    bridge.writeString("A\u4e2d");
+    expect(bridge.getCell(0, 0).chars).toBeUndefined();
+    expect(bridge.getCell(0, 1)).toMatchObject({ char: 0x4e2d, width: 2 });
+  });
+
   it("keeps exact truecolor values in visible and scrollback cells", () => {
     bridge.writeString(
       "\x1b[38;2;255;100;0mA\x1b[0m \x1b[48;2;10;20;30mB\x1b[0m",
