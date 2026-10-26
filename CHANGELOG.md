@@ -1,8 +1,20 @@
 # Changelog
 
-## 0.5.4
+## 0.5.5
 
 <!-- release:start -->
+
+### Documentation
+
+- Updated **WebMCP integration** in the docs site with the Geistdocs MCP adapter and route-contract coverage (#190)
+
+### Contributors
+
+- @Railly
+
+<!-- release:end -->
+
+## 0.5.4
 
 ### Bug Fixes
 
@@ -13,8 +25,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.5.3
 

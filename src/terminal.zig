@@ -4,6 +4,7 @@ const grid_mod = @import("grid.zig");
 const parser_mod = @import("parser.zig");
 const scrollback_mod = @import("scrollback.zig");
 const hyperlink_mod = @import("hyperlink.zig");
+const color_mod = @import("color.zig");
 const unicode_width = @import("unicode_width.zig");
 const charset_mod = @import("charset.zig");
 
@@ -102,6 +103,7 @@ pub const Terminal = struct {
     parser: Parser = .{},
     scrollback: ?*Scrollback = null,
     hyperlinks: hyperlink_mod.Table = .{},
+    colors: color_mod.Table = .{},
 
     cols: u16,
     rows: u16,
@@ -538,7 +540,7 @@ pub const Terminal = struct {
         }
 
         var char = self.charset.map(codepoint);
-        var width = unicode_width.displayWidth(char);
+        var width: u8 = if (char < unicode_width.first_wide) cell_mod.WIDTH_NARROW else unicode_width.displayWidth(char);
         if (width == cell_mod.WIDTH_WIDE and self.cols < 2) {
             // A one-column grid cannot hold a wide pair. Consume a blank
             // cell instead, preserving the usual cursor and wrapping behavior.
@@ -558,10 +560,13 @@ pub const Terminal = struct {
             }
         }
 
-        const blank = self.blankCell();
-        self.grid.clearWideCellAt(self.cursor_row, self.cursor_col, blank);
-        if (width == cell_mod.WIDTH_WIDE) {
-            self.grid.clearWideCellAt(self.cursor_row, self.cursor_col + 1, blank);
+        // Overwriting a narrow cell with a narrow one cannot split a wide pair.
+        if (width == cell_mod.WIDTH_WIDE or self.grid.getCell(self.cursor_row, self.cursor_col).width != cell_mod.WIDTH_NARROW) {
+            const blank = self.blankCell();
+            self.grid.clearWideCellAt(self.cursor_row, self.cursor_col, blank);
+            if (width == cell_mod.WIDTH_WIDE) {
+                self.grid.clearWideCellAt(self.cursor_row, self.cursor_col + 1, blank);
+            }
         }
 
         self.grid.setCell(self.cursor_row, self.cursor_col, Cell{
@@ -1283,7 +1288,7 @@ pub const Terminal = struct {
     }
 
     /// Parses 38;5;n (256-color) and 38;2;r;g;b (24-bit color)
-    fn parseExtendedColor(self: *const Terminal, start: u8, color: *u16) u8 {
+    fn parseExtendedColor(self: *Terminal, start: u8, color: *u16) u8 {
         if (start + 1 >= self.parser.param_count) return 0;
         const kind = self.parser.params[start + 1];
         if (kind == 5 and start + 2 < self.parser.param_count) {
@@ -1294,10 +1299,10 @@ pub const Terminal = struct {
             const r = self.parser.params[start + 2];
             const g = self.parser.params[start + 3];
             const b_val = self.parser.params[start + 4];
-            // Pack RGB into u16: use color indices 257+ for RGB
-            // Store as index into a separate RGB table via WASM API
-            // For now, find closest 256-color match
-            color.* = rgbTo256(@intCast(r), @intCast(g), @intCast(b_val));
+            if (r > 255 or g > 255 or b_val > 255) return 4;
+            const rgb = (@as(u32, r) << 16) | (@as(u32, g) << 8) | b_val;
+            color.* = self.colors.intern(rgb) orelse
+                rgbTo256(@intCast(r), @intCast(g), @intCast(b_val));
             return 4;
         }
         return 0;
@@ -1402,6 +1407,18 @@ fn rgbTo256(r: u8, g: u8, b: u8) u16 {
     const gi: u16 = @intCast((@as(u32, g) * 5 + 127) / 255);
     const bi: u16 = @intCast((@as(u32, b) * 5 + 127) / 255);
     return 16 + ri * 36 + gi * 6 + bi;
+}
+
+test {
+    _ = color_mod;
+}
+
+test "truecolor SGR keeps exact RGB values" {
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[38;2;255;100;0mA\x1b[0m \x1b[48;2;10;20;30mB\x1b[0m");
+    try std.testing.expectEqual(@as(u32, 0xff6400), t.colors.get(t.grid.getCell(0, 0).fg).?);
+    try std.testing.expectEqual(@as(u32, 0x0a141e), t.colors.get(t.grid.getCell(0, 2).bg).?);
+    try std.testing.expectEqual(cell_mod.DEFAULT_COLOR, t.grid.getCell(0, 2).fg);
 }
 
 test "basic print" {
@@ -2438,4 +2455,86 @@ test "a UTF-8 sequence split across writes still decodes" {
     t.write("\x8Cb");
     try std.testing.expectEqual(@as(u32, 0x754C), t.grid.getCell(0, 1).char);
     try std.testing.expectEqual(@as(u32, 'b'), t.grid.getCell(0, 3).char);
+}
+
+fn testExpectRowsLogical(t: *Terminal, first: u8) !void {
+    // Rows hold consecutive letters from `first`, read both through the
+    // accessors and through the physical layout the host sees.
+    t.grid.normalize();
+    var r: u16 = 0;
+    while (r < t.rows) : (r += 1) {
+        const want: u32 = first + r;
+        try std.testing.expectEqual(want, t.grid.getCell(r, 0).char);
+        try std.testing.expectEqual(want, t.grid.cells[@as(usize, r) * t.grid.stride].char);
+    }
+}
+
+test "full-screen scrolls keep logical rows and normalize for the host" {
+    var t = Terminal.init(4, 3);
+    var c: u8 = 'a';
+    while (c <= 'z') : (c += 1) {
+        t.write(&.{c});
+        if (c != 'z') t.write("\r\n");
+    }
+    try testExpectRowsLogical(&t, 'x');
+    for (t.grid.dirty[0..t.rows]) |d| try std.testing.expectEqual(@as(u8, 1), d);
+}
+
+test "a scroll region interleaved with full-screen scrolls" {
+    var t = Terminal.init(4, 4);
+    t.write("a\r\nb\r\nc\r\nd\r\ne\r\nf");
+    // Rows c d e f; scroll only rows 2-3, then scroll the whole screen again.
+    t.write("\x1b[2;3r\x1b[3;1H\nX\x1b[r\x1b[4;1H\ng");
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'X'), t.grid.getCell(1, 0).char);
+    try std.testing.expectEqual(@as(u32, 'f'), t.grid.getCell(2, 0).char);
+    try std.testing.expectEqual(@as(u32, 'g'), t.grid.getCell(3, 0).char);
+    try std.testing.expectEqual(@as(u32, 'X'), t.grid.cells[1 * @as(usize, t.grid.stride)].char);
+}
+
+test "resize right after a scroll burst keeps content" {
+    var t = Terminal.init(5, 3);
+    t.write("a\r\nb\r\nc\r\nd\r\ne");
+    t.resize(5, 6);
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.getCell(t.cursor_row, 0).char);
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.cells[@as(usize, t.cursor_row) * t.grid.stride].char);
+    t.resize(5, 2);
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.cells[@as(usize, t.cursor_row) * t.grid.stride].char);
+}
+
+test "alternate screen scrolls do not disturb the primary layout" {
+    var t = Terminal.init(4, 3);
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("a\r\nb\r\nc\r\nd");
+    t.write("\x1b[?1049h1\r\n2\r\n3\r\n4\r\n5");
+    t.write("\x1b[?1049l");
+    try testExpectRowsLogical(&t, 'b');
+}
+
+test "resizing while the primary screen is hidden after scrolls" {
+    var t = Terminal.init(4, 3);
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh\x1b[?1049h");
+    t.resize(4, 4);
+    t.write("\x1b[?1049l");
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'h'), t.grid.getCell(t.cursor_row, 0).char);
+}
+
+test "entering the alternate screen after it scrolled and the terminal grew" {
+    var t = Terminal.init(4, 3);
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("\x1b[?1049h1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7\r\n8\x1b[?1049l");
+    t.resize(4, 4);
+    t.write("\x1b[?1049hX");
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'X'), t.grid.cells[0].char);
 }
