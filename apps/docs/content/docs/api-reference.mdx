@@ -1130,6 +1130,14 @@ When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string 
       <td>Check if a row has changed since last <code>clearDirty()</code></td>
     </tr>
     <tr>
+      <td><code>getRowId(row): number | null</code></td>
+      <td>Optional. Live row identity that follows scrolling; null when unavailable</td>
+    </tr>
+    <tr>
+      <td><code>isRowContentDirty(row): boolean</code></td>
+      <td>Optional. Whether the row's content changed since <code>clearDirty()</code>, ignoring movement</td>
+    </tr>
+    <tr>
       <td><code>clearDirty()</code></td>
       <td>Reset all dirty-row flags</td>
     </tr>

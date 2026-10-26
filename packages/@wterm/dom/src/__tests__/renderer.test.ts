@@ -61,6 +61,82 @@ describe("Renderer", () => {
     });
   });
 
+  it("moves clean live rows without reading their cells and relocates the cursor", () => {
+    const cells = ["a", "b", "c", "d"].map((text) => [makeCell(text)]);
+    let ids = [1, 2, 3, 4];
+    let dirtyRow = -1;
+    const bridge = {
+      ...createMockBridge(1, 4, cells),
+      getRowId: (row: number) => ids[row],
+      isRowContentDirty: (row: number) => row === dirtyRow,
+      trackPosition: (position: TerminalPosition) => {
+        const id = ids[position.row];
+        return {
+          resolve: () => {
+            const row = ids.indexOf(id);
+            return row < 0 ? null : { row, col: position.col };
+          },
+          dispose: () => {},
+        };
+      },
+    };
+    bridge.getCursor = () => ({ row: 2, col: 0, visible: true });
+    const renderer = new Renderer(container);
+    renderer.render(bridge);
+    const original = Array.from(container.querySelectorAll(".term-row"));
+    const getCell = vi.spyOn(bridge, "getCell");
+    const range = document.createRange();
+    range.selectNodeContents(original[2]);
+    const selection = document.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    markSelectionChanged(document);
+    renderer.beforeMutation(bridge);
+
+    cells.splice(1, 2, cells[2], [makeCell("e")]);
+    ids = [1, 3, 5, 4];
+    bridge.isDirtyRow = () => true;
+    dirtyRow = 2;
+    renderer.render(bridge);
+    const moved = container.querySelectorAll(".term-row");
+    expect(Array.from(moved, (row) => row.textContent)).toEqual([
+      "a",
+      "c",
+      "e",
+      "d",
+    ]);
+    expect(moved[1]).toBe(original[2]);
+    expect(moved[0]).toBe(original[0]);
+    expect(moved[3]).toBe(original[3]);
+    expect(moved[1].querySelector(".term-cursor")).toBeNull();
+    expect(moved[2].querySelector(".term-cursor")).not.toBeNull();
+    expect(getCell.mock.calls.map(([row]) => row)).toEqual([1, 2]);
+    expect(selection.toString()).toBe("c");
+    expect(renderer.getSelectionText()).toBe("c");
+
+    getCell.mockClear();
+    renderer.beforeMutation(bridge);
+    cells.splice(1, 2, [makeCell("f")], cells[1]);
+    ids = [1, 6, 3, 4];
+    dirtyRow = 1;
+    renderer.render(bridge);
+    const reversed = container.querySelectorAll(".term-row");
+    expect(Array.from(reversed, (row) => row.textContent)).toEqual([
+      "a",
+      "f",
+      "c",
+      "d",
+    ]);
+    expect(reversed[2]).toBe(original[2]);
+    expect(reversed[1].querySelector(".term-cursor")).toBeNull();
+    expect(reversed[2].querySelector(".term-cursor")).not.toBeNull();
+    expect(getCell.mock.calls.map(([row]) => row)).toEqual([1, 2]);
+    expect(selection.toString()).toBe("c");
+    expect(renderer.getSelectionText()).toBe("c");
+    selection.removeAllRanges();
+    renderer.destroy();
+  });
+
   describe("cell canvas", () => {
     const viewport = {
       scrollTop: 0,
@@ -144,6 +220,53 @@ describe("Renderer", () => {
       renderer.render(bridge, viewport);
       expect(row.style.background).toBe("");
       expect(row.querySelector(".term-canvas-run")?.textContent).toBe("▀");
+    });
+
+    it("moves clean canvas bands with their DOM text in either direction", () => {
+      const { context } = mockCanvas();
+      context.putImageData.mockImplementation((image: ImageData) =>
+        image.data.slice(),
+      );
+      const cells = [0x112233, 0x445566, 0x778899].map((fgRgb) => [
+        { ...opaque, fgRgb },
+      ]);
+      let ids = [1, 2, 3];
+      const bridge = {
+        ...createMockBridge(1, 3, cells),
+        getRowId: (row: number) => ids[row],
+      };
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.render(bridge, viewport);
+      const image = context.createImageData.mock.results[0].value;
+      const original = Array.from(container.querySelectorAll(".term-row"));
+      context.putImageData.mockClear();
+      cells.push(cells.shift()!);
+      ids = [2, 3, 1];
+      renderer.render(bridge, viewport);
+      expect(container.querySelectorAll(".term-row")[1]).toBe(original[2]);
+      expect(context.putImageData).toHaveBeenNthCalledWith(1, image, 0, 0);
+      const moved = {
+        ...image,
+        data: context.putImageData.mock.results[0].value,
+      };
+      expect(pixel(moved, 0, 0)).toEqual([68, 85, 102, 255]);
+      expect(pixel(moved, 0, 4)).toEqual([119, 136, 153, 255]);
+      expect(pixel(moved, 0, 8)).toEqual([17, 34, 51, 255]);
+      context.putImageData.mockClear();
+      cells.unshift(cells.pop()!);
+      ids = [1, 2, 3];
+      renderer.render(bridge, viewport);
+      expect(container.querySelectorAll(".term-row")[0]).toBe(original[0]);
+      expect(context.putImageData).toHaveBeenNthCalledWith(1, image, 0, 0);
+      const restored = {
+        ...image,
+        data: context.putImageData.mock.results[0].value,
+      };
+      expect(pixel(restored, 0, 0)).toEqual([17, 34, 51, 255]);
+      expect(pixel(restored, 0, 4)).toEqual([68, 85, 102, 255]);
+      expect(pixel(restored, 0, 8)).toEqual([119, 136, 153, 255]);
+      renderer.destroy();
     });
 
     it("paints RGBA half blocks, full blocks, reverse, and indexed colors in one text run", () => {
