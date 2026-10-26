@@ -96,3 +96,18 @@ it("grows the page pool for output and keeps retained text through reflow", asyn
     }
   }
 });
+
+it("reads cells after memory grows between reads", async () => {
+  const core = await create(0);
+  core.init(10, 2);
+  core.writeString("ab");
+  expect(core.getCell(0, 1).char).toBe(0x62);
+  const memory = (
+    core as unknown as { wasm: { exports: { memory: WebAssembly.Memory } } }
+  ).wasm.exports.memory;
+  const before = memory.buffer.byteLength;
+  memory.grow(1);
+  expect(memory.buffer.byteLength).toBeGreaterThan(before);
+  expect(core.getCell(0, 0).char).toBe(0x61);
+  expect(core.getCell(0, 1).char).toBe(0x62);
+});

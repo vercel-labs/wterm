@@ -229,6 +229,32 @@ const ResponseHandler = struct {
     apc_bytes: usize = 0,
     apc_oversized: bool = false,
 
+    /// Equivalent to one apc_put per byte. Once a Kitty command reaches its
+    /// payload, the rest of the slice is appended in bulk.
+    pub fn apcPutSlice(self: *ResponseHandler, bytes: []const u8) void {
+        const room = GRAPHICS_MAX_APC_BYTES -| self.apc_bytes;
+        const take = @min(room, bytes.len);
+        if (take < bytes.len) self.apc_oversized = true;
+        self.apc_bytes += take;
+        var rem = bytes[0..take];
+        while (rem.len > 0) {
+            switch (self.apc.state) {
+                .kitty => |*parser| if (parser.state == .data) {
+                    parser.data.appendSlice(parser.arena.child_allocator, rem) catch {
+                        // Matches feed(): a failed append drops the command.
+                        self.apc.state.deinit();
+                        self.apc.state = .{ .ignore = {} };
+                    };
+                    return;
+                },
+                .ignore => return,
+                else => {},
+            }
+            self.apc.feed(self.alloc, rem[0]);
+            rem = rem[1..];
+        }
+    }
+
     pub fn init(
         alloc: Allocator,
         terminal: *Terminal,
@@ -782,8 +808,109 @@ export fn resize(ptr: usize, cols: u16, rows: u16) void {
 
 export fn write(ptr: usize, data_ptr: [*]const u8, data_len: u32) void {
     const state = stateFromPtr(ptr);
-    state.stream.nextSlice(data_ptr[0..data_len]) catch {};
+    const stream = &state.stream;
+    var rem = data_ptr[0..data_len];
+    while (rem.len > 0) {
+        // Without SIMD every byte takes one parser step. These fast paths
+        // cover the common cases and leave everything else to the parser.
+        if (stream.parser.state == .sos_pm_apc_string) {
+            // Printable bytes inside an APC string are all apc_put actions;
+            // hand them over in one slice instead of one parser step each.
+            const run = apcPrintableRun(rem);
+            if (run > 0) {
+                stream.handler.apcPutSlice(rem[0..run]);
+                rem = rem[run..];
+                continue;
+            }
+        } else if (stream.parser.state == .ground and stream.utf8decoder.state == 0) {
+            const used = if (rem[0] == 0x1b) fastCsi(stream, rem) else fastPrint(stream, rem);
+            if (used > 0) {
+                rem = rem[used..];
+                continue;
+            }
+        }
+        stream.next(rem[0]) catch {};
+        rem = rem[1..];
+    }
     refreshGraphicsGeneration(state);
+}
+
+/// Dispatches a complete `ESC [ params final` with only digits and `;`, as
+/// the parser would. Returns 0, consuming nothing, for anything else: private
+/// markers, intermediates, colons, controls, long parameters, too many
+/// parameters, or a sequence cut off by the end of the write.
+fn fastCsi(stream: *ResponseStream, bytes: []const u8) usize {
+    if (bytes.len < 3 or bytes[1] != '[') return 0;
+    var params: [vt.Parser.MAX_PARAMS]u16 = undefined;
+    var count: usize = 0;
+    var acc: u32 = 0;
+    var digits: u8 = 0;
+    var i: usize = 2;
+    while (i < bytes.len) : (i += 1) {
+        const c = bytes[i];
+        switch (c) {
+            '0'...'9' => {
+                // Five digits cannot wrap; the parser saturates at u16 max.
+                if (digits == 5) return 0;
+                acc = acc * 10 + (c - '0');
+                digits += 1;
+            },
+            ';' => {
+                if (count + 1 >= vt.Parser.MAX_PARAMS) return 0;
+                params[count] = @intCast(@min(acc, std.math.maxInt(u16)));
+                count += 1;
+                acc = 0;
+                digits = 0;
+            },
+            0x40...0x7e => {
+                if (digits > 0) {
+                    if (count + 1 >= vt.Parser.MAX_PARAMS) return 0;
+                    params[count] = @intCast(@min(acc, std.math.maxInt(u16)));
+                    count += 1;
+                }
+                var intermediates: [0]u8 = .{};
+                stream.csiDispatch(.{
+                    .intermediates = &intermediates,
+                    .params = params[0..count],
+                    .params_sep = .initEmpty(),
+                    .final = c,
+                }) catch {};
+                return i + 1;
+            },
+            else => return 0,
+        }
+    }
+    return 0;
+}
+
+/// Prints a run of complete, valid UTF-8 text that holds no controls, DEL or
+/// C1 code points. Returns the bytes consumed; 0 leaves the byte to the parser.
+fn fastPrint(stream: *ResponseStream, bytes: []const u8) usize {
+    var i: usize = 0;
+    while (i < bytes.len) {
+        const b = bytes[i];
+        if (b < 0x80) {
+            if (b < 0x20 or b == 0x7f) break;
+            stream.print(b) catch {};
+            i += 1;
+            continue;
+        }
+        const len = std.unicode.utf8ByteSequenceLength(b) catch break;
+        if (i + len > bytes.len) break;
+        const cp = std.unicode.utf8Decode(bytes[i .. i + len]) catch break;
+        if (cp < 0xa0) break;
+        stream.print(cp) catch {};
+        i += len;
+    }
+    return i;
+}
+
+/// Length of the leading run of bytes that the parser maps to apc_put
+/// without leaving the APC string state.
+fn apcPrintableRun(bytes: []const u8) usize {
+    var n: usize = 0;
+    while (n < bytes.len and bytes[n] >= 0x20 and bytes[n] <= 0x7F) n += 1;
+    return n;
 }
 
 // A negative length means no pending title. Zero is a valid empty title.
