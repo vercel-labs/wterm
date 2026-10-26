@@ -1067,13 +1067,23 @@ export class GhosttyCore implements TerminalCore {
           : this.wasm.exports.get_viewport;
       read(this.termPtr, this._viewportBufPtr);
       this._viewportStale = false;
+      // The update may have grown memory; rebuild over the current buffer.
+      this._viewportView = null;
     }
-    if (this._viewportView?.buffer !== this.wasm.exports.memory.buffer) {
-      this._viewportView = new DataView(
-        this.wasm.exports.memory.buffer,
-        this._viewportBufPtr,
-        this._viewportBufSize,
-      );
+    // Reading memory.buffer for every cell is costly. Memory growth detaches
+    // the old buffer, and a detached view throws on byteLength.
+    if (this._viewportView) {
+      try {
+        this._viewportView.byteLength;
+        return;
+      } catch {
+        this._viewportView = null;
+      }
     }
+    this._viewportView = new DataView(
+      this.wasm.exports.memory.buffer,
+      this._viewportBufPtr,
+      this._viewportBufSize,
+    );
   }
 }
