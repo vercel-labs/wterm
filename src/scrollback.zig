@@ -8,6 +8,10 @@ pub const ScrollbackLine = struct {
     cells: []Cell = undefined,
     capacity: u16 = 0,
     len: u16 = 0,
+    /// The line continues on the next line through autowrap.
+    /// 0, or the grid row marker it was pushed with: 1 wrapped, 2 wrapped
+    /// with a padding cell left by a wide glyph that moved to the next row.
+    wrapped: u8 = 0,
 };
 
 pub const Scrollback = struct {
@@ -27,7 +31,7 @@ pub const Scrollback = struct {
         self.discarded = 0;
     }
 
-    pub fn push(self: *Scrollback, row: []const Cell, len: u16) void {
+    pub fn push(self: *Scrollback, row: []const Cell, len: u16, wrapped: u8) void {
         var line = &self.lines[self.write_pos];
         if (line.capacity < len) {
             const cells = grid_mod.allocator.alloc(Cell, len) catch return;
@@ -37,6 +41,7 @@ pub const Scrollback = struct {
         }
         @memcpy(line.cells[0..len], row[0..len]);
         line.len = len;
+        line.wrapped = wrapped;
 
         self.write_pos = (self.write_pos + 1) % MAX_SCROLLBACK_LINES;
         if (self.count < MAX_SCROLLBACK_LINES) {
