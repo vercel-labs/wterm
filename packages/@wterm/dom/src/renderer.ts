@@ -1044,7 +1044,9 @@ export class Renderer {
     }
   }
 
-  private syncColorOverrides(colors: TerminalColorOverrides = {}): void {
+  /** Applies application color overrides; true when any changed. */
+  private syncColorOverrides(colors: TerminalColorOverrides = {}): boolean {
+    let changed = false;
     for (const [key, property] of [
       ["foreground", "--term-app-fg"],
       ["background", "--term-app-bg"],
@@ -1053,13 +1055,16 @@ export class Renderer {
       const value = colors[key];
       const css = value === undefined ? "" : rgbToCSS(value);
       if (this.colorHost.style.getPropertyValue(property) === css) continue;
+      changed = true;
       if (css) this.colorHost.style.setProperty(property, css);
       else this.colorHost.style.removeProperty(property);
     }
+    return changed;
   }
 
   render(core: TerminalCore, viewport?: RenderViewport): void {
-    this.syncColorOverrides(core.getColorOverrides?.());
+    if (this.syncColorOverrides(core.getColorOverrides?.()))
+      this.gpuPalette = null;
     this.viewport = viewport;
     this.selection ??= new TrackedSelection(
       this.container.parentElement ?? this.container,
@@ -1144,6 +1149,8 @@ export class Renderer {
     this.staleRows.clear();
     this.staleScrollback = false;
     this.forceText = false;
+    // Newly mounted history moves the live rows; keep the canvas over them.
+    if (this.gpuShown) this._placeGpuCanvas();
     this.gpuAllDirty = true;
     this.colorsChanged = false;
     this.selection.afterRender(this.selectionRows(), positions);
@@ -1331,6 +1338,12 @@ export class Renderer {
       viewport?.live === true &&
       !!viewport.charWidth &&
       !!viewport.rowHeight &&
+      GpuGrid.fits(
+        this.cols,
+        this.rows,
+        viewport.charWidth,
+        viewport.rowHeight,
+      ) &&
       !this.hasImageFlow &&
       // Image positions follow the DOM scrollback, which the GPU path defers.
       ((core.getGraphicsState?.()?.placements.length ?? 0) === 0 ||
@@ -1379,6 +1392,12 @@ export class Renderer {
         this.staleRows.add(r);
       }
     }
+    // Filling the atlas clears it, leaving rows built earlier this frame
+    // pointing at freed slots: rebuild every row against the fresh atlas.
+    if (this.gpu.atlasStale) {
+      this.gpu.acknowledgeAtlas();
+      for (let r = 0; r < this.rows; r++) this.gpu.updateRow(core, r);
+    }
     if (core.getScrollbackCount() !== this._renderedScrollbackCount)
       this.staleScrollback = true;
     const cursor = core.getCursor();
@@ -1412,12 +1431,8 @@ export class Renderer {
       overscanRows: viewport.overscanRows ?? DEFAULT_SCROLLBACK_OVERSCAN_ROWS,
       scrollbackCount: core.getScrollbackCount(),
     });
-    const first = this.rowEls[0];
-    if (first) {
-      const transform = `translate(${first.offsetLeft}px, ${first.offsetTop}px)`;
-      if (this.gpu.canvas.style.transform !== transform)
-        this.gpu.canvas.style.transform = transform;
-    }
+    this._placeGpuCanvas();
+
     if (!this.gpuShown) {
       this.gpu.canvas.hidden = false;
       this.container.classList.add("term-gpu-active");
@@ -1447,6 +1462,14 @@ export class Renderer {
     }, 500);
   }
 
+  private _placeGpuCanvas(): void {
+    const first = this.rowEls[0];
+    if (!first || !this.gpu) return;
+    const transform = `translate(${first.offsetLeft}px, ${first.offsetTop}px)`;
+    if (this.gpu.canvas.style.transform !== transform)
+      this.gpu.canvas.style.transform = transform;
+  }
+
   private _hideGpu(): void {
     this._syncBlink(false);
     if (!this.gpuShown || !this.gpu) return;
@@ -1466,9 +1489,13 @@ export class Renderer {
       return m ? (Number(m[0]) << 16) | (Number(m[1]) << 8) | Number(m[2]) : 0;
     };
     const palette = {
-      fg: read("--term-fg", "#e5e5e5"),
-      bg: read("--term-bg", "#000"),
-      cursor: read("--term-cursor", "var(--term-fg, #e5e5e5)"),
+      // Application overrides win over the theme, as in the CSS.
+      fg: read("--term-app-fg", "var(--term-fg, #e5e5e5)"),
+      bg: read("--term-app-bg", "var(--term-bg, #000)"),
+      cursor: read(
+        "--term-app-cursor",
+        "var(--term-cursor, var(--term-app-fg, var(--term-fg, #e5e5e5)))",
+      ),
       ansi: Array.from({ length: 16 }, (_, i) =>
         read(`--term-color-${i}`, "#000"),
       ),

@@ -645,6 +645,25 @@ export class GpuGrid {
     );
   }
 
+  /** Accepts the current atlas after rebuilding every row against it. */
+  acknowledgeAtlas(): void {
+    if (this.atlas) this.atlasGeneration = this.atlas.generation;
+  }
+
+  /** Whether a grid of this size fits the shared render target. */
+  static fits(
+    cols: number,
+    rows: number,
+    charWidth: number,
+    rowHeight: number,
+  ): boolean {
+    const dpr = window.devicePixelRatio || 1;
+    return (
+      Math.round(cols * charWidth * dpr) <= TILE_SIZE &&
+      Math.round(rows * rowHeight * dpr) <= TILE_SIZE
+    );
+  }
+
   setCursor(cursor: GpuCursor | null): void {
     this.cursor = cursor;
   }
