@@ -353,8 +353,9 @@ pub const Terminal = struct {
         }
 
         const total = out.rowCount();
-        var grid_start: u32 = if (total > rows) total - rows else 0;
-        if (grid_start > cursor_out_row) grid_start = cursor_out_row;
+        // Anchor the output to the bottom so rows below the cursor are kept;
+        // a cursor that lands in history stays on the top row.
+        const grid_start: u32 = if (total > rows) total - rows else 0;
 
         const discarded = sb.discarded;
         sb.reset();
@@ -380,7 +381,7 @@ pub const Terminal = struct {
                 self.grid.clearRow(gr);
             }
         }
-        self.cursor_row = @intCast(cursor_out_row - grid_start);
+        self.cursor_row = if (cursor_out_row >= grid_start) @intCast(cursor_out_row - grid_start) else 0;
         self.cursor_col = @intCast(cursor_out_col);
         self.wrap_pending = cursor_pending;
         return true;
@@ -2877,4 +2878,29 @@ test "entering the alternate screen after it scrolled and the terminal grew" {
     t.write("\x1b[?1049hX");
     t.grid.normalize();
     try std.testing.expectEqual(@as(u32, 'X'), t.grid.cells[0].char);
+}
+
+test "reflow keeps output below a cursor that sits above it" {
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(6, 3);
+    t.scrollback = sb;
+    t.write("abcdef\r\nghijkl\r\nmnopqr\x1b[H");
+
+    t.resize(3, 3);
+    var buf: [64]u8 = undefined;
+    try testing.expectEqual(@as(u32, 3), sb.count);
+    try testing.expectEqualStrings("jkl", testRowText(&t, 0, &buf));
+    try testing.expectEqualStrings("pqr", testRowText(&t, 2, &buf));
+    try testing.expectEqual(@as(u16, 0), t.cursor_row);
+
+    t.resize(6, 3);
+    try testing.expectEqual(@as(u32, 0), sb.count);
+    try testing.expectEqualStrings("abcdef", testRowText(&t, 0, &buf));
+    try testing.expectEqualStrings("ghijkl", testRowText(&t, 1, &buf));
+    try testing.expectEqualStrings("mnopqr", testRowText(&t, 2, &buf));
+    try testing.expect(t.cursor_row < t.rows);
 }
