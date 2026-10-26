@@ -266,12 +266,12 @@ through `onData`.
 
 ### Worker core
 
-`WorkerCore` from `@wterm/core` runs the built-in core in a Web Worker. Parsing
+`WorkerCore` from `@wterm/core/worker` runs the built-in core in a Web Worker. Parsing
 leaves the main thread, so pages with many busy panes can use more than one
 CPU core. Pair it with `renderer: "webgl"`:
 
 ```ts
-import { WorkerCore } from "@wterm/core";
+import { WorkerCore } from "@wterm/core/worker";
 
 const core = await WorkerCore.load();
 const term = new WTerm(element, { core, renderer: "webgl" });
@@ -279,7 +279,8 @@ const term = new WTerm(element, { core, renderer: "webgl" });
 
 Writes return before they are parsed: cells, replies, titles, and bells arrive
 with the worker's next update. Each `WorkerCore` owns one worker; call
-`dispose()` when the terminal is gone.
+`dispose()` when the terminal is gone. The worker uses code splitting, so set
+`worker: { format: "es" }` in a Vite config.
 
 ### React-only
 
