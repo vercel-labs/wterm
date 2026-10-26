@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Renderer } from "../renderer.js";
+import { markSelectionChanged } from "../selection-state.js";
 import type { CellData, CursorState, TerminalPosition } from "@wterm/core";
 
 function createMockBridge(cols: number, rows: number, grid: CellData[][] = []) {
@@ -1541,6 +1542,7 @@ describe("Renderer", () => {
       selection.removeAllRanges();
       selection.addRange(range);
       selection.extend(firstRow, 1);
+      document.dispatchEvent(new Event("selectionchange"));
 
       cells.mockClear();
       renderer.render(bridge as any, { ...viewport, scrollTop: 100 });

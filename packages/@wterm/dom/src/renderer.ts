@@ -13,6 +13,7 @@ import {
 } from "./selection.js";
 import { selectionRange, type SelectionUnit } from "./selection-range.js";
 import { rectangleSelection } from "./rectangle-selection.js";
+import { markSelectionChanged, selectionMayExist } from "./selection-state.js";
 import {
   TrackedSelection,
   MAX_TRACKED_SELECTION_ROWS,
@@ -1127,7 +1128,9 @@ export class Renderer {
           Math.min(scrollbackCount, firstVisible + visibleRows + overscan),
         )
       : scrollbackCount;
-    const selection = this.container.ownerDocument.getSelection();
+    const selection = selectionMayExist(this.container.ownerDocument)
+      ? this.container.ownerDocument.getSelection()
+      : null;
     const selectionInContainer =
       selection !== null &&
       !selection.isCollapsed &&
@@ -1441,6 +1444,7 @@ export class Renderer {
       end = edge(range.end, true);
     const native = this.container.ownerDocument.getSelection();
     if (!start || !end || !native) return false;
+    markSelectionChanged(this.container.ownerDocument);
     native.setBaseAndExtent(...start, ...end);
     this.selection?.capture(core, this.selectionRows());
     return true;

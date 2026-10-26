@@ -11,6 +11,7 @@ import {
   type SelectedRow,
 } from "./selection.js";
 import { MAX_SELECTION_ROWS, MAX_SELECTION_TEXT } from "./selection-range.js";
+import { markSelectionChanged, selectionMayExist } from "./selection-state.js";
 
 // Retain only the selected rows, separately from the viewport. Reflow must not
 // turn a small native selection into an unbounded mounted history window.
@@ -36,6 +37,7 @@ export class TrackedSelection {
   constructor(private terminal: HTMLElement) {}
 
   private matches(): boolean {
+    if (!selectionMayExist(this.terminal.ownerDocument)) return false;
     const selection = this.terminal.ownerDocument.getSelection();
     const native = this.current?.native;
     return (
@@ -49,6 +51,10 @@ export class TrackedSelection {
   }
 
   capture(core: TerminalCore, rows: Iterable<SelectedRow>): void {
+    if (!selectionMayExist(this.terminal.ownerDocument)) {
+      this.dispose();
+      return;
+    }
     const active = this.terminal.ownerDocument.activeElement;
     if (
       active &&
@@ -151,6 +157,7 @@ export class TrackedSelection {
       selection.focusNode !== focus[0] ||
       selection.focusOffset !== focus[1]
     ) {
+      markSelectionChanged(this.terminal.ownerDocument);
       selection.setBaseAndExtent(...anchor, ...focus);
     }
     current.native = this.snapshot(selection);
@@ -170,8 +177,10 @@ export class TrackedSelection {
   }
 
   private clear(): void {
-    if (this.current && this.matches())
+    if (this.current && this.matches()) {
+      markSelectionChanged(this.terminal.ownerDocument);
       this.terminal.ownerDocument.getSelection()?.removeAllRanges();
+    }
     this.dispose();
   }
 
