@@ -2122,3 +2122,150 @@ describe("WTerm", () => {
     });
   });
 });
+
+describe("visual viewport", () => {
+  let element: HTMLDivElement;
+  let observerCallback: ResizeObserverCallback | undefined;
+  let viewport: EventTarget & {
+    height: number;
+    offsetTop: number;
+    scale: number;
+  };
+
+  beforeEach(() => {
+    vi.mocked(MockedWasmBridge.load).mockResolvedValue(createMockBridge());
+    element = document.createElement("div");
+    document.body.appendChild(element);
+    vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
+      top: 0,
+      left: 0,
+      width: 400,
+      height: 424,
+      right: 400,
+      bottom: 424,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+    viewport = Object.assign(new EventTarget(), {
+      height: 424,
+      offsetTop: 0,
+      scale: 1,
+    });
+    vi.stubGlobal("visualViewport", viewport);
+    Object.defineProperty(window, "innerHeight", {
+      value: 424,
+      configurable: true,
+    });
+    Object.defineProperty(window, "visualViewport", {
+      value: viewport,
+      configurable: true,
+    });
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: ResizeObserverCallback) {
+          observerCallback = cb;
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  });
+
+  afterEach(() => {
+    element.remove();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  async function mount() {
+    const term = new WTerm(element);
+    vi.spyOn(
+      term as unknown as { _measureCharSize(): unknown },
+      "_measureCharSize",
+    ).mockReturnValue({
+      charWidth: 10,
+      rowHeight: 20,
+    });
+    await term.init();
+    observerCallback!(
+      [
+        {
+          target: element,
+          contentRect: { width: 400, height: 400 },
+        } as unknown as ResizeObserverEntry,
+      ],
+      {} as ResizeObserver,
+    );
+    return term;
+  }
+
+  const frame = () =>
+    new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+
+  it("drops rows the keyboard covers and restores them when it closes", async () => {
+    const term = await mount();
+    expect(term.rows).toBe(20);
+    // The element's content box starts below 12px of padding.
+    viewport.height = 212;
+    viewport.dispatchEvent(new Event("resize"));
+    await frame();
+    expect(term.rows).toBe(10);
+    expect(
+      element.querySelector<HTMLElement>(".term-keyboard-spacer")?.style.height,
+    ).toBe("200px");
+    viewport.height = 424;
+    viewport.dispatchEvent(new Event("resize"));
+    await frame();
+    expect(term.rows).toBe(20);
+    expect(element.querySelector(".term-keyboard-spacer")).toBeNull();
+    term.destroy();
+  });
+
+  it("keeps every row for a terminal below the fold when no keyboard is open", async () => {
+    vi.mocked(element.getBoundingClientRect).mockReturnValue({
+      top: 1000,
+      left: 0,
+      width: 400,
+      height: 424,
+      right: 400,
+      bottom: 1424,
+      x: 0,
+      y: 1000,
+      toJSON: () => ({}),
+    } as DOMRect);
+    const term = await mount();
+    viewport.dispatchEvent(new Event("resize"));
+    await frame();
+    expect(term.rows).toBe(20);
+    expect(element.querySelector(".term-keyboard-spacer")).toBeNull();
+    term.destroy();
+  });
+
+  it("ignores pinch zoom", async () => {
+    const term = await mount();
+    viewport.height = 200;
+    viewport.scale = 2;
+    viewport.dispatchEvent(new Event("resize"));
+    await frame();
+    expect(term.rows).toBe(20);
+    term.destroy();
+  });
+
+  it("stops listening after destroy", async () => {
+    const term = await mount();
+    const resize = vi.spyOn(term, "resize");
+    const remove = vi.spyOn(viewport, "removeEventListener");
+    term.destroy();
+    expect(remove.mock.calls.map(([type]) => type).sort()).toEqual([
+      "resize",
+      "scroll",
+    ]);
+    viewport.height = 200;
+    viewport.dispatchEvent(new Event("resize"));
+    await frame();
+    expect(resize).not.toHaveBeenCalled();
+  });
+});
