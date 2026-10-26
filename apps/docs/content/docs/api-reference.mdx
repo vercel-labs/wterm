@@ -233,6 +233,12 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
       <td>Suspend painting for an inactive pane. Parsing, replies, titles, bells, and core resizing continue. Mutable in all framework bindings; see <a href="/configuration#inactive-panes">Inactive panes</a>.</td>
     </tr>
     <tr>
+      <td><code>renderer</code></td>
+      <td><code>"dom" | "webgl"</code></td>
+      <td><code>"dom"</code></td>
+      <td>Paint live output with WebGL2. DOM text stays current for selection, search, and accessibility. Falls back to <code>"dom"</code> without WebGL2. Fixed at mount; see <a href="/configuration#webgl-renderer">WebGL renderer</a>.</td>
+    </tr>
+    <tr>
       <td><code>onData</code></td>
       <td><code>(data: string) =&gt; void</code></td>
       <td>—</td>

@@ -52,6 +52,17 @@ describe("WasmBridge", () => {
     expect(bridge.getScrollbackCell(offset, 0).fgRgb).toBe(0xff6400);
   });
 
+  it("keeps a surrogate pair whole across write chunk boundaries", () => {
+    // 8191 puts the pair across the edge of the first 8192-unit encode window.
+    for (const pad of [8190, 8191, 8192]) {
+      bridge.init(80, 24);
+      bridge.writeString("a".repeat(pad) + "\u{1F600}");
+      const row = bridge.getCursor().row;
+      const col = pad % 80;
+      expect(bridge.getCell(row, col).char, `offset ${pad}`).toBe(0x1f600);
+    }
+  });
+
   it("keeps 256-color cells on the palette", () => {
     bridge.writeString("\x1b[38;5;208mA");
     expect(bridge.getCell(0, 0).fg).toBe(208);

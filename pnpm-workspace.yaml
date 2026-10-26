@@ -5,6 +5,7 @@ packages:
   - "apps/*"
   - "examples/*"
   - "e2e/harness"
+  - "e2e/bench"
 
 minimumReleaseAge: 2880
 minimumReleaseAgeExclude:

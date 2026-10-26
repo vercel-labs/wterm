@@ -5,9 +5,27 @@ navTitle: "Configuration"
 
 ## Options
 
-The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onWorkingDirectory`, and `onResize` (exposed as `@data`, `@title`, `@bell`, `@clipboard-write`, `@shell-integration`, `@working-directory`, and `@resize` events in Vue).
+The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `renderer`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onWorkingDirectory`, and `onResize` (exposed as `@data`, `@title`, `@bell`, `@clipboard-write`, `@shell-integration`, `@working-directory`, and `@resize` events in Vue).
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
+
+### WebGL renderer
+
+Set `renderer: "webgl"` to paint live output on a WebGL2 canvas instead of
+updating DOM text every frame. Use it for full-screen apps that redraw the
+whole grid, such as `btop`, games, and video, and for pages with many panes.
+All terminals on a page share one WebGL2 context, so large pane grids are not
+limited by the browser's cap on live contexts.
+
+The DOM text remains the source for selection, find, copying, and screen
+readers. It catches up when output goes quiet and as soon as the pointer or
+wheel touches the terminal. While text is selected, searched, or scrolled into
+history, the terminal shows the DOM text; the canvas resumes with the next
+live output. Without WebGL2, the option falls back to `"dom"`.
+
+```ts
+const term = new WTerm(element, { renderer: "webgl" });
+```
 
 ### Inactive panes
 

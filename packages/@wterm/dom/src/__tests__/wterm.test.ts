@@ -710,6 +710,16 @@ describe("WTerm", () => {
       expect(element.querySelectorAll(".term-row")).toHaveLength(40);
     });
 
+    it("falls back to DOM rows when WebGL2 is unavailable", async () => {
+      const term = new WTerm(element, { autoResize: false, renderer: "webgl" });
+      await term.init();
+      term.write("hello");
+      await new Promise(requestAnimationFrame);
+      expect(element.querySelectorAll(".term-row").length).toBeGreaterThan(0);
+      expect(element.querySelector(".term-gpu-canvas")).toBeNull();
+      term.destroy();
+    });
+
     it("updates cols and rows", async () => {
       const term = new WTerm(element, { autoResize: false });
       await term.init();

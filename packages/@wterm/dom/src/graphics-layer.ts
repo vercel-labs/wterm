@@ -63,6 +63,7 @@ export class GraphicsLayer {
   private layer: HTMLDivElement | null = null;
   private flowSpacer: HTMLDivElement | null = null;
   private canvases = new Map<string, HTMLCanvasElement>();
+  private scratch: HTMLCanvasElement | null = null;
   private canvasAllocations = new Map<string, number>();
   private canvasBytes = 0;
   private cache = new Map<string, CachedImage>();
@@ -581,12 +582,31 @@ export class GraphicsLayer {
 
     const context = canvas.getContext("2d");
     if (!context) return false;
-    const source = document.createElement("canvas");
-    source.width = image.width;
-    source.height = image.height;
-    const sourceContext = source.getContext("2d");
+    // The core hands out its own copy of the pixels, so wrap it without another.
+    const rgba = new Uint8ClampedArray(
+      image.rgba.buffer as ArrayBuffer,
+      image.rgba.byteOffset,
+      image.rgba.byteLength,
+    );
+    const unscaled =
+      sourceX === 0 &&
+      sourceY === 0 &&
+      sourceWidth === image.width &&
+      sourceHeight === image.height &&
+      pixelWidth === image.width &&
+      pixelHeight === image.height;
+    if (unscaled && typeof ImageData !== "undefined") {
+      // A full image at its own size needs no scratch canvas or scaling pass.
+      context.putImageData(
+        new ImageData(rgba, image.width, image.height),
+        0,
+        0,
+      );
+      return true;
+    }
+    const source = this.scratchCanvas(image.width, image.height);
+    const sourceContext = source?.getContext("2d");
     if (!sourceContext) return false;
-    const rgba = new Uint8ClampedArray(image.rgba);
     const imageData =
       typeof ImageData !== "undefined"
         ? new ImageData(rgba, image.width, image.height)
@@ -600,7 +620,7 @@ export class GraphicsLayer {
     sourceContext.putImageData(imageData as ImageData, 0, 0);
     context.clearRect(0, 0, pixelWidth, pixelHeight);
     context.drawImage(
-      source,
+      source!,
       sourceX,
       sourceY,
       sourceWidth,
@@ -611,6 +631,17 @@ export class GraphicsLayer {
       pixelHeight,
     );
     return true;
+  }
+
+  /** One reusable canvas for scaling and cropping; images paint one at a time. */
+  private scratchCanvas(
+    width: number,
+    height: number,
+  ): HTMLCanvasElement | null {
+    this.scratch ??= document.createElement("canvas");
+    if (this.scratch.width !== width) this.scratch.width = width;
+    if (this.scratch.height !== height) this.scratch.height = height;
+    return this.scratch;
   }
 
   private destinationSize(
