@@ -231,7 +231,7 @@ pub const Terminal = struct {
         }
         self.grid.sanitizeWideRowWidth(row, width, Cell{});
         self.grid.dirty[row] = 1;
-        self.grid.wrapped[row] = @intFromBool(line.wrapped);
+        self.grid.wrapped[row] = line.wrapped;
     }
 
     /// Rewraps primary-screen history and rows at a new width, moving rows
@@ -276,12 +276,9 @@ pub const Terminal = struct {
                     self.cursor_col + @intFromBool(self.wrap_pending);
             }
             var len = src.cells.len;
-            if (src.wrapped) {
-                // A wide glyph that did not fit leaves a blank at the row end.
-                if (len > 0 and i + 1 < source_count and rowIsBlank(src.cells[len - 1 .. len])) {
-                    const next = self.sourceRow(i + 1, old_cols);
-                    if (next.cells.len > 0 and next.cells[0].width == cell_mod.WIDTH_WIDE) len -= 1;
-                }
+            if (src.wrapped != 0) {
+                // Only a marked padding cell is dropped; a printed space stays.
+                if (src.wrapped == WRAPPED_PADDED and len > 0) len -= 1;
             } else {
                 len = trimmedLen(src.cells);
                 line_open = false;
@@ -300,7 +297,7 @@ pub const Terminal = struct {
         var li: u32 = 0;
         while (li + 1 < starts.items.len) : (li += 1) {
             const line = cells.items[starts.items[li]..starts.items[li + 1]];
-            out.newRow(alloc, false) catch return false;
+            out.newRow(alloc, 0) catch return false;
             const is_cursor_line = li == cursor_line;
             var col: u32 = 0;
             var ci: u32 = 0;
@@ -320,7 +317,8 @@ pub const Terminal = struct {
                     cell = Cell{};
                 }
                 if (col + span > cols) {
-                    out.newRow(alloc, true) catch return false;
+                    // A wide glyph that does not fit leaves a padding cell.
+                    out.newRow(alloc, if (col < cols) WRAPPED_PADDED else WRAPPED) catch return false;
                     col = 0;
                 }
                 if (is_cursor_line and cursor_offset >= ci and cursor_offset < ci + take) {
@@ -346,7 +344,7 @@ pub const Terminal = struct {
                 // The cursor sits past the content; extend with blank rows.
                 var target = col + (cursor_offset - @as(u32, @intCast(line.len)));
                 while (target > cols) {
-                    out.newRow(alloc, true) catch return false;
+                    out.newRow(alloc, WRAPPED) catch return false;
                     target -= cols;
                 }
                 cursor_out_row = out.lastRow();
@@ -369,7 +367,9 @@ pub const Terminal = struct {
         var hr: u32 = 0;
         while (hr < grid_start) : (hr += 1) {
             const row = out.row(hr);
-            sb.push(row, trimmedLen(row), out.wrapped.items[hr] != 0);
+            // A wrapped row keeps its trailing spaces: they belong to the line.
+            const marker = out.wrapped.items[hr];
+            sb.push(row, if (marker != 0) cols else trimmedLen(row), marker);
         }
         sb.discarded +%= discarded;
 
@@ -394,7 +394,7 @@ pub const Terminal = struct {
         return true;
     }
 
-    const SourceRow = struct { cells: []const Cell, wrapped: bool };
+    const SourceRow = struct { cells: []const Cell, wrapped: u8 };
 
     /// Row `index` of history followed by the grid, oldest first.
     fn sourceRow(self: *const Terminal, index: u32, width: u16) SourceRow {
@@ -404,7 +404,7 @@ pub const Terminal = struct {
             return .{ .cells = line.cells[0..line.len], .wrapped = line.wrapped };
         }
         const row: u16 = @intCast(index - sb.count);
-        return .{ .cells = self.grid.rowConst(row)[0..width], .wrapped = self.grid.wrapped[row] != 0 };
+        return .{ .cells = self.grid.rowConst(row)[0..width], .wrapped = self.grid.wrapped[row] };
     }
 
     fn logUnhandled(self: *Terminal, final: u8, private_marker: u8) void {
@@ -641,7 +641,7 @@ pub const Terminal = struct {
                         // width survives in history as a wide cell with no
                         // continuation.
                         self.grid.sanitizeWideRowWidth(r, push_cols, Cell{});
-                        self.scrollback.?.push(self.grid.getRow(r), push_cols, self.grid.wrapped[r] != 0);
+                        self.scrollback.?.push(self.grid.getRow(r), push_cols, self.grid.wrapped[r]);
                     }
                 }
                 self.grid.scrollUp(0, old_rows, from_top, Cell{});
@@ -740,7 +740,7 @@ pub const Terminal = struct {
         }
 
         if (self.wrap_pending and self.auto_wrap) {
-            self.grid.wrapped[self.cursor_row] = 1;
+            self.grid.wrapped[self.cursor_row] = WRAPPED;
             self.cursor_col = 0;
             self.doLinefeed();
             self.wrap_pending = false;
@@ -760,7 +760,7 @@ pub const Terminal = struct {
                 const blank = self.blankCell();
                 self.grid.clearWideCellAt(self.cursor_row, self.cursor_col, blank);
                 self.grid.setCell(self.cursor_row, self.cursor_col, blank);
-                self.grid.wrapped[self.cursor_row] = 1;
+                self.grid.wrapped[self.cursor_row] = WRAPPED_PADDED;
                 self.cursor_col = 0;
                 self.doLinefeed();
             } else {
@@ -895,7 +895,7 @@ pub const Terminal = struct {
         if (self.cursor_row + 1 >= self.scroll_bottom) {
             if (!self.using_alt_screen and self.scroll_top == 0) {
                 if (self.scrollback) |sb| {
-                    sb.push(self.grid.getRow(self.scroll_top), self.cols, self.grid.wrapped[self.scroll_top] != 0);
+                    sb.push(self.grid.getRow(self.scroll_top), self.cols, self.grid.wrapped[self.scroll_top]);
                 }
             }
             self.grid.scrollUp(self.scroll_top, self.scroll_bottom, 1, self.blankCell());
@@ -1446,7 +1446,7 @@ pub const Terminal = struct {
             if (self.scrollback) |sb| {
                 var i: u16 = 0;
                 while (i < count and i < self.scroll_bottom - self.scroll_top) : (i += 1) {
-                    sb.push(self.grid.getRow(self.scroll_top + i), self.cols, self.grid.wrapped[self.scroll_top + i] != 0);
+                    sb.push(self.grid.getRow(self.scroll_top + i), self.cols, self.grid.wrapped[self.scroll_top + i]);
                 }
             }
         }
@@ -1673,6 +1673,11 @@ fn trimmedLen(cells: []const Cell) u16 {
 }
 
 /// Output rows of a reflow, each `cols` cells wide.
+/// Row markers in `Grid.wrapped` and `ScrollbackLine.wrapped`.
+const WRAPPED: u8 = 1;
+/// Wrapped, and the last cell is padding left by a wide glyph that moved on.
+const WRAPPED_PADDED: u8 = 2;
+
 const Rewrap = struct {
     cols: u16,
     cells: std.ArrayList(Cell) = .empty,
@@ -1683,9 +1688,9 @@ const Rewrap = struct {
         self.wrapped.deinit(alloc);
     }
 
-    /// Starts a row; `continues` marks the previous row as wrapping into it.
-    fn newRow(self: *Rewrap, alloc: std.mem.Allocator, continues: bool) !void {
-        if (continues) self.wrapped.items[self.wrapped.items.len - 1] = 1;
+    /// Starts a row; a nonzero `marker` records how the previous row wraps into it.
+    fn newRow(self: *Rewrap, alloc: std.mem.Allocator, marker: u8) !void {
+        if (marker != 0) self.wrapped.items[self.wrapped.items.len - 1] = marker;
         try self.cells.appendNTimes(alloc, Cell{}, self.cols);
         try self.wrapped.append(alloc, 0);
     }
@@ -2550,7 +2555,7 @@ test "scrollback reads stay correct after a pop on a wrapped ring" {
     var i: u32 = 0;
     while (i < scrollback_mod.MAX_SCROLLBACK_LINES + 10) : (i += 1) {
         row[0] = Cell{ .char = 'a' + @as(u32, @intCast(i % 26)) };
-        sb.push(&row, 1, false);
+        sb.push(&row, 1, 0);
     }
     const newest = sb.getLine(0).?.cells[0].char;
     const second = sb.getLine(1).?.cells[0].char;
@@ -3071,4 +3076,48 @@ test "a cursor saved before a shrink is clamped when restored" {
     try std.testing.expect(t.cursor_row < t.rows);
     try std.testing.expect(t.cursor_col < t.cols);
     try std.testing.expectEqual(@as(u32, 'x'), t.grid.getCell(3, 9).char);
+}
+
+test "reflow keeps spaces inside a wrapped line" {
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(10, 2);
+    t.scrollback = sb;
+    t.write("abc   defgh");
+    t.resize(5, 2);
+    t.resize(10, 2);
+    var buf: [64]u8 = undefined;
+    try testing.expectEqualStrings("abc   defg", testRowText(&t, 0, &buf));
+    try testing.expectEqualStrings("h", testRowText(&t, 1, &buf));
+}
+
+test "reflow keeps a printed space before a wide glyph" {
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(5, 3);
+    t.scrollback = sb;
+    t.write("abcd \u{4e2d}X");
+    t.resize(10, 3);
+    var buf: [64]u8 = undefined;
+    try testing.expectEqualStrings("abcd \u{4e2d}X", testRowText(&t, 0, &buf));
+}
+
+test "reflow drops only the padding a wide glyph left" {
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(5, 3);
+    t.scrollback = sb;
+    t.write("abcd\u{4e2d}X");
+    t.resize(10, 3);
+    var buf: [64]u8 = undefined;
+    try testing.expectEqualStrings("abcd\u{4e2d}X", testRowText(&t, 0, &buf));
 }
