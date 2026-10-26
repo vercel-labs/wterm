@@ -364,7 +364,20 @@ pub const Parser = struct {
     }
 };
 
-fn decodeUtf8(bytes: []const u8) u21 {
+/// Bytes in the UTF-8 sequence a lead byte starts, as the ground state reads it; 0 when not a lead.
+pub fn utf8SequenceLength(lead: u8) u8 {
+    if (lead >= 0xC0 and lead <= 0xDF) return 2;
+    if (lead >= 0xE0 and lead <= 0xEF) return 3;
+    if (lead >= 0xF0 and lead <= 0xF7) return 4;
+    return 0;
+}
+
+pub fn utf8Continuations(bytes: []const u8) bool {
+    for (bytes) |b| if (b < 0x80 or b > 0xBF) return false;
+    return true;
+}
+
+pub fn decodeUtf8(bytes: []const u8) u21 {
     if (bytes.len == 0) return 0xFFFD;
     return switch (bytes.len) {
         2 => {

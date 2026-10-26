@@ -301,9 +301,67 @@ pub const Terminal = struct {
     // -- Public API --
 
     pub fn write(self: *Terminal, data: []const u8) void {
-        for (data) |byte| {
-            self.processByte(byte);
+        var i: usize = 0;
+        while (i < data.len) {
+            if (self.parser.state == .ground) {
+                const n = self.printRun(data[i..]);
+                if (n > 0) {
+                    i += n;
+                    continue;
+                }
+            }
+            self.processByte(data[i]);
+            i += 1;
         }
+    }
+
+    /// Writes a run of printable text straight into the cursor row and returns
+    /// the bytes consumed. It stops, leaving the rest to printChar, at anything
+    /// that needs printChar's care: control bytes, partial or invalid UTF-8,
+    /// a mapped charset, a pending wrap, the last column, or a cell that is
+    /// already part of a wide pair.
+    fn printRun(self: *Terminal, data: []const u8) usize {
+        // Only plain ASCII maps code points to themselves; British and DEC
+        // graphics take the printChar path.
+        if (self.wrap_pending or self.charset.single_shift != null or
+            self.charset.slots[self.charset.gl] != .ascii) return 0;
+        std.debug.assert(self.cursor_row < self.rows);
+        const cols = self.cols;
+        const row = self.grid.getRow(self.cursor_row);
+        var col: u16 = self.cursor_col;
+        var i: usize = 0;
+        while (i < data.len) {
+            const b = data[i];
+            var cp: u21 = undefined;
+            var len: usize = 1;
+            if (b >= 0x20 and b < 0x7F) {
+                cp = b;
+            } else {
+                len = parser_mod.utf8SequenceLength(b);
+                if (len < 2 or i + len > data.len or !parser_mod.utf8Continuations(data[i + 1 .. i + len])) break;
+                cp = parser_mod.decodeUtf8(data[i .. i + len]);
+            }
+            const width: u16 = if (cp < unicode_width.first_wide) 1 else unicode_width.displayWidth(cp);
+            if (col + width >= cols) break;
+            if (row[col].width != cell_mod.WIDTH_NARROW) break;
+            if (width == 2 and row[col + 1].width != cell_mod.WIDTH_NARROW) break;
+            row[col] = .{
+                .char = cp,
+                .fg = self.current_fg,
+                .bg = self.current_bg,
+                .flags = self.current_flags,
+                .width = @intCast(width),
+                .link = self.current_link,
+            };
+            if (width == 2) row[col + 1] = self.continuationCell();
+            col += width;
+            i += len;
+        }
+        if (i > 0) {
+            self.cursor_col = col;
+            self.grid.dirty[self.cursor_row] = 1;
+        }
+        return i;
     }
 
     pub fn responsePtr(self: *const Terminal) [*]const u8 {
@@ -2353,6 +2411,50 @@ test "alternate screen exit clamps a saved cursor after shrinking" {
     try testing.expectEqual(@as(u16, 79), t.cursor_col);
     t.write("X");
     try testing.expectEqual(@as(u32, 'X'), t.grid.getCell(1, 79).char);
+}
+
+fn testFeedBytewise(t: *Terminal, data: []const u8) void {
+    for (data) |b| t.processByte(b);
+}
+
+test "printable runs match byte-at-a-time parsing" {
+    const inputs = [_][]const u8{
+        "plain ascii that runs past the last column of a narrow grid",
+        "\x1b[31;44mstyled\x1b[0m \x1b]8;;https://x.test\x07link\x1b]8;;\x07 done",
+        "\u{754C}\u{1F600}\u{E9} wide at the edge \u{8A9E}\u{8A9E}\u{8A9E}\u{8A9E}",
+        "\x1b(0lqqk\x1b(B mapped then ascii",
+        "bad \xC3 utf8 \xE2\x82 cut \xFF\xFE end",
+        "\x1b[1;9H\u{754C}\u{754C}over\x1b[1;10Hx",
+        "\u{754C}\u{754C}\x1b[1;2Hxy\x1b[2;1H\u{754C}\x1b[2;1Hz",
+        "a\u{754C}\x1b[1;1H\u{8A9E}",
+        "abc",
+    };
+    for (inputs) |input| {
+        var fast = Terminal.init(9, 4);
+        var slow = Terminal.init(9, 4);
+        // Start clean so dirty marks come only from the input.
+        fast.grid.clearDirty();
+        slow.grid.clearDirty();
+        fast.write(input);
+        testFeedBytewise(&slow, input);
+        try std.testing.expectEqual(slow.cursor_row, fast.cursor_row);
+        try std.testing.expectEqual(slow.cursor_col, fast.cursor_col);
+        try std.testing.expectEqual(slow.wrap_pending, fast.wrap_pending);
+        var r: u16 = 0;
+        while (r < 4) : (r += 1) {
+            try std.testing.expectEqual(slow.grid.dirty[r], fast.grid.dirty[r]);
+            var c: u16 = 0;
+            while (c < 9) : (c += 1) try std.testing.expectEqualDeep(slow.grid.getCell(r, c), fast.grid.getCell(r, c));
+        }
+    }
+}
+
+test "a UTF-8 sequence split across writes still decodes" {
+    var t = Terminal.init(10, 2);
+    t.write("a\xE7\x95");
+    t.write("\x8Cb");
+    try std.testing.expectEqual(@as(u32, 0x754C), t.grid.getCell(0, 1).char);
+    try std.testing.expectEqual(@as(u32, 'b'), t.grid.getCell(0, 3).char);
 }
 
 fn testExpectRowsLogical(t: *Terminal, first: u8) !void {
