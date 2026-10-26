@@ -8,6 +8,8 @@ import type {
 } from "./terminal-core.js";
 import { loadWasmModule } from "./wasm-loading.js";
 
+const DEFAULT_COLOR = 256;
+
 interface WasmExports {
   memory: WebAssembly.Memory;
   init(cols: number, rows: number): void;
@@ -42,6 +44,7 @@ interface WasmExports {
   getLinkUriLen(index: number): number;
   getLinkIdPtr(index: number): number;
   getLinkIdLen(index: number): number;
+  getColorRgb?(index: number): number;
   getHyperlinkCapacity?(): number;
   getHyperlinkCount?(): number;
   getHyperlinkRejectedCount?(): number;
@@ -139,6 +142,7 @@ export class WasmBridge implements TerminalCore {
       flags: dv.getUint8(offset + 8),
       width: dv.getUint8(offset + 9),
     };
+    this._resolveRgb(result);
     Object.assign(result, this._readLink(dv.getUint16(offset + 10, true)));
     return result;
   }
@@ -282,6 +286,7 @@ export class WasmBridge implements TerminalCore {
       flags: dv.getUint8(off + 8),
       width: dv.getUint8(off + 9),
     };
+    this._resolveRgb(result);
     Object.assign(result, this._readLink(dv.getUint16(off + 10, true)));
     return result;
   }
@@ -324,6 +329,24 @@ export class WasmBridge implements TerminalCore {
   resize(cols: number, rows: number): void {
     this.exports.resizeTerminal(cols, rows);
     this._updatePointers();
+  }
+
+  private _resolveRgb(cell: CellData): void {
+    if (cell.fg > DEFAULT_COLOR) {
+      const rgb = this._readRgb(cell.fg);
+      if (rgb !== undefined) cell.fgRgb = rgb;
+    }
+    if (cell.bg > DEFAULT_COLOR) {
+      const rgb = this._readRgb(cell.bg);
+      if (rgb !== undefined) cell.bgRgb = rgb;
+    }
+  }
+
+  private _readRgb(index: number): number | undefined {
+    const rgb = this.exports.getColorRgb?.(index);
+    if (rgb === undefined) return undefined;
+    // WASM returns u32 as a signed i32; the 0xFFFFFFFF miss marker reads as -1.
+    return rgb < 0 || rgb > 0xffffff ? undefined : rgb;
   }
 
   private _readLink(
