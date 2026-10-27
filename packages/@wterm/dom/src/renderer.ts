@@ -408,6 +408,13 @@ export class Renderer {
   private searchLayer: HTMLDivElement;
   private rowText = new WeakMap<HTMLElement, RenderedRowText>();
   private rowParts = new WeakMap<HTMLElement, RowPart[]>();
+  /**
+   * Reused for every partial row redraw. A Range stays attached to its
+   * document until it is garbage collected, and every DOM mutation updates
+   * each attached Range, so creating one per redraw makes later mutations
+   * slower in pages that collect infrequently.
+   */
+  private rowRange: Range | null = null;
   private rowBackground = new WeakMap<HTMLElement, string>();
   private selection: TrackedSelection | null = null;
   private needsSetup = false;
@@ -830,7 +837,7 @@ export class Renderer {
     } else {
       // Replace only the changed middle, retaining the native text nodes and
       // layout objects of the matching prefix and suffix. Links stay atomic.
-      const range = row.ownerDocument.createRange();
+      const range = (this.rowRange ??= row.ownerDocument.createRange());
       range.setStart(row, start);
       range.setEnd(row, oldEnd);
       range.deleteContents();
@@ -1267,5 +1274,6 @@ export class Renderer {
     this.container.innerHTML = "";
     this.rowEls = [];
     this._scrollbackRowEls = [];
+    this.rowRange = null;
   }
 }
