@@ -131,6 +131,7 @@ const cursor = bridge.getCursor();  // { row, col, visible, shape, blinking }
 | `synchronizedOutput()` | Whether synchronized output mode (2026) is active |
 | `synchronizedOutputGeneration()` | Monotonic generation for synchronized output blocks |
 | `kittyKeyboardFlags()` | Active Kitty keyboard protocol flags |
+| `modifyOtherKeys()` | `2` while xterm modifyOtherKeys level 2 is active, otherwise `0` |
 
 OSC 8 hyperlink metadata is optional so third-party `TerminalCore` implementations remain source-compatible. Cores should expose the resolved URI and an opaque semantic key rather than a private numeric index.
 

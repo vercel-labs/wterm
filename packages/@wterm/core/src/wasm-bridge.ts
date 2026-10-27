@@ -38,6 +38,7 @@ interface WasmExports {
   getSynchronizedOutput(): number;
   getSynchronizedOutputGeneration(): number;
   getKittyKeyboardFlags?(): number;
+  getModifyOtherKeys?(): number;
   getTitlePtr(): number;
   getTitleLen(): number;
   getTitleChanged(): number;
@@ -227,6 +228,10 @@ export class WasmBridge implements TerminalCore {
   synchronizedOutputGeneration(): number {
     return this.exports.getSynchronizedOutputGeneration();
   }
+  modifyOtherKeys(): 0 | 2 {
+    return this.exports.getModifyOtherKeys?.() === 2 ? 2 : 0;
+  }
+
   kittyKeyboardFlags(): number {
     return this.exports.getKittyKeyboardFlags?.() ?? 0;
   }

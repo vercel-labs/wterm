@@ -95,6 +95,18 @@ describe("GhosttyCore terminal responses", () => {
     expect(core.synchronizedOutputGeneration?.()).toBe(3);
   });
 
+  it("tracks and answers modifyOtherKeys level 2", async () => {
+    const core = await newCore();
+    expect(core.modifyOtherKeys()).toBe(0);
+    core.writeString("\x1b[?4m\x1b[>4;2m\x1b[?4m");
+    expect(core.modifyOtherKeys()).toBe(2);
+    expect(drain(core)).toEqual(["\x1b[>4;0m", "\x1b[>4;2m"]);
+    core.writeString("\x1b[>4;1m");
+    expect(core.modifyOtherKeys()).toBe(0);
+    core.writeString("\x1b[>4;2m\x1bc");
+    expect(core.modifyOtherKeys()).toBe(0);
+  });
+
   it("tracks and queries Kitty keyboard flags from the active screen", async () => {
     const core = await newCore();
     expect(core.kittyKeyboardFlags()).toBe(0);
