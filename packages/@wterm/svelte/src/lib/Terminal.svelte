@@ -43,7 +43,7 @@
 
 <script lang="ts">
   import { onMount } from "svelte";
-  import { WTerm, type TerminalCore } from "@wterm/dom";
+  import { WTerm, type TerminalCore, type WebMCPOptions } from "@wterm/dom";
 
   export let cols = 80;
   export let rows = 24;
@@ -57,6 +57,8 @@
   export let announceOutput = false;
   /** Suspend painting for an inactive pane; parsing and terminal effects continue. */
   export let renderingPaused = false;
+  /** Let in-page agents read and type into this terminal through WebMCP. */
+  export let webmcp: boolean | WebMCPOptions = false;
   export let debug = false;
   export let className = "";
   export let onData: ((data: string) => void) | undefined = undefined;
@@ -177,6 +179,7 @@
       cursorBlink,
       announceOutput,
       renderingPaused,
+      webmcp,
       debug,
       onData: hasDataHandler() ? handleData : undefined,
       onBinary: hasBinaryHandler() ? handleBinary : undefined,
@@ -226,6 +229,8 @@
   $: if (instance) {
     instance.setRenderingPaused(renderingPaused);
   }
+
+  $: instance?.setWebMCP(webmcp);
 </script>
 
 <div

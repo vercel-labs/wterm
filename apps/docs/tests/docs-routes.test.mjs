@@ -11,6 +11,7 @@ const routes = [
   "/get-started",
   "/configuration",
   "/themes",
+  "/webmcp",
   "/api-reference",
   "/react",
   "/vue",

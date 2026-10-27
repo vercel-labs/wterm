@@ -624,6 +624,10 @@ function SessionTerminal({
           maxImageWidth={maxImageWidth}
           maxImageHeight={maxImageHeight}
           core={core ?? undefined}
+          webmcp={{
+            name: session.name,
+            description: "Local shell on this machine",
+          }}
           onReady={handleReady}
           onData={handleData}
           onShellIntegration={(state) => onShell(session.id, state)}

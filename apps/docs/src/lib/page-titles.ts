@@ -4,6 +4,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "get-started": "Get Started",
   configuration: "Configuration",
   themes: "Themes",
+  webmcp: "WebMCP",
   react: "React",
   vue: "Vue",
   svelte: "Svelte",

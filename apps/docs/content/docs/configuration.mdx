@@ -5,7 +5,7 @@ navTitle: "Configuration"
 
 ## Options
 
-The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onWorkingDirectory`, and `onResize` (exposed as `@data`, `@title`, `@bell`, `@clipboard-write`, `@shell-integration`, `@working-directory`, and `@resize` events in Vue).
+The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `webmcp`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onWorkingDirectory`, and `onResize` (exposed as `@data`, `@title`, `@bell`, `@clipboard-write`, `@shell-integration`, `@working-directory`, and `@resize` events in Vue).
 
 See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
 
@@ -457,6 +457,13 @@ produce an explicit failure without starting a replacement shell. Reload must
 reattach within the 30-second server grace period. Find queries are not restored;
 normal navigation and duplicated tabs start independently.
 This behavior belongs to the local example, not `WebSocketTransport` alone.
+
+## WebMCP
+
+Set `webmcp` to `true`, or to `{ name, description, readOnly }`, to let in-page
+agents list, read, and type into the terminal through
+[WebMCP](/webmcp). It is off by default and does nothing in browsers without a
+WebMCP provider. Use `readOnly: true` for terminals agents should only watch.
 
 ## Output announcements
 
