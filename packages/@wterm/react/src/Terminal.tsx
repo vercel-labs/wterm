@@ -10,6 +10,7 @@ import {
   WTerm,
   type TerminalCore,
   type ShellIntegrationState,
+  type WebMCPOptions,
 } from "@wterm/dom";
 
 // onResize and onError are omitted from HTMLAttributes because we redefine
@@ -38,6 +39,8 @@ export interface TerminalProps extends Omit<
   announceOutput?: boolean;
   /** Suspend painting for an inactive pane; parsing and terminal effects continue. */
   renderingPaused?: boolean;
+  /** Let in-page agents read and type into this terminal through WebMCP. */
+  webmcp?: boolean | WebMCPOptions;
   /** Enable debug mode (init-only — changing after mount has no effect). */
   debug?: boolean;
   onData?: (data: string) => void;
@@ -72,6 +75,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     cursorBlink,
     announceOutput = false,
     renderingPaused = false,
+    webmcp = false,
     debug = false,
     onData,
     onBinary,
@@ -154,6 +158,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         cursorBlink,
         announceOutput,
         renderingPaused,
+        webmcp,
         debug,
         onData: callbacksRef.current.onData
           ? (data: string) => callbacksRef.current.onData?.(data)
@@ -239,6 +244,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     const el = wtermRef.current?.element;
     wtermRef.current?.setOutputAnnouncements(announceOutput);
     wtermRef.current?.setRenderingPaused(renderingPaused);
+    wtermRef.current?.setWebMCP(webmcp);
     el?.classList.toggle("cursor-blink", cursorBlink === true);
     el?.classList.toggle("cursor-steady", cursorBlink === false);
   });

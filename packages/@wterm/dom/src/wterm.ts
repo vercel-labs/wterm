@@ -18,6 +18,11 @@ import {
   type SearchOptions,
   type SearchState,
 } from "./search.js";
+import {
+  registerWebMCPTerminal,
+  type WebMCPOptions,
+  type WebMCPTerminal,
+} from "./webmcp.js";
 
 const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
 const PROGRAMMATIC_SCROLL_TOLERANCE = 1;
@@ -42,6 +47,8 @@ export interface WTermOptions {
   announceOutput?: boolean;
   /** Suspend painting for an inactive pane while continuing to parse output. */
   renderingPaused?: boolean;
+  /** Let in-page agents read and type into this terminal through WebMCP. */
+  webmcp?: boolean | WebMCPOptions;
   debug?: boolean;
   onData?: (data: string) => void;
   /** Raw input bytes, used by X10 mouse reports. */
@@ -105,6 +112,12 @@ export class WTerm {
   private _onWindowBlur: () => void;
   private _onCopy: (event: ClipboardEvent) => void;
   private _onMouseSelect: (event: MouseEvent) => void;
+  private _webmcp: WebMCPOptions | null;
+  private _unregisterWebMCP: (() => void) | null = null;
+  private _outputListeners = new Set<() => void>();
+  private _title: string | null = null;
+  private _workingDirectory: string | null = null;
+  private _shellIntegration: ShellIntegrationState | null = null;
 
   onData: ((data: string) => void) | null;
   onBinary: ((data: Uint8Array) => void) | null;
@@ -131,6 +144,7 @@ export class WTerm {
     this.autoResize = options.autoResize !== false;
     this._debugEnabled = options.debug ?? false;
     this._renderingPaused = options.renderingPaused ?? false;
+    this._webmcp = webmcpOptions(options.webmcp);
 
     this.onData = options.onData || null;
     this.onBinary = options.onBinary || null;
@@ -386,17 +400,8 @@ export class WTerm {
 
       this.input = new InputHandler(
         this.element,
-        (data, preserveScroll = false) => {
-          if (!preserveScroll) {
-            this._outputAnnouncements.input();
-            this._scrollToBottom();
-          }
-          if (this.onData) {
-            this.onData(data);
-          } else {
-            this.write(data);
-          }
-        },
+        (data, preserveScroll = false) =>
+          this._deliverInput(data, preserveScroll),
         () => this.bridge,
         () =>
           this._charWidth > 0 && this._rowHeight > 0
@@ -439,6 +444,7 @@ export class WTerm {
 
       this.input.focus();
       this._initialRender();
+      this._registerWebMCP();
       if (this.cols !== initialCols || this.rows !== initialRows)
         this.onResize?.(this.cols, this.rows);
     } catch (err) {
@@ -546,6 +552,7 @@ export class WTerm {
       }
       try {
         const state = this.bridge?.getShellIntegrationState?.() ?? null;
+        if (state !== null) this._shellIntegration = state;
         if (state !== null && !this._destroyed)
           this.onShellIntegration?.(state);
       } catch (error) {
@@ -553,6 +560,7 @@ export class WTerm {
       }
       try {
         const uri = this.bridge?.getWorkingDirectory?.() ?? null;
+        if (uri !== null) this._workingDirectory = uri || null;
         if (uri !== null && !this._destroyed) this.onWorkingDirectory?.(uri);
       } catch (error) {
         recordDeliveryError(error);
@@ -572,6 +580,7 @@ export class WTerm {
       this._scheduleRender();
     }
     drain();
+    for (const listener of this._outputListeners) listener();
     for (const query of windowSizeQueries) {
       try {
         this.onData?.(this._windowSizeResponse(query));
@@ -729,6 +738,72 @@ export class WTerm {
   /** Enable or stop polite announcements without changing terminal focus. */
   setOutputAnnouncements(enabled: boolean): void {
     if (!this._destroyed) this._outputAnnouncements.setEnabled(enabled);
+  }
+
+  /** Expose this terminal to in-page agents through WebMCP, or withdraw it. */
+  setWebMCP(options: boolean | WebMCPOptions): void {
+    if (this._destroyed) return;
+    const next = webmcpOptions(options);
+    const current = this._webmcp;
+    if (
+      next === current ||
+      (next &&
+        current &&
+        next.name === current.name &&
+        next.description === current.description &&
+        next.readOnly === current.readOnly)
+    )
+      return;
+    this._webmcp = next;
+    if (this.bridge) this._registerWebMCP();
+  }
+
+  private _registerWebMCP(): void {
+    this._unregisterWebMCP?.();
+    this._unregisterWebMCP = null;
+    if (this._webmcp && !this._destroyed)
+      this._unregisterWebMCP = registerWebMCPTerminal(
+        this._webmcpTerminal(),
+        this._webmcp,
+      );
+  }
+
+  private _webmcpTerminal(): WebMCPTerminal {
+    return {
+      element: this.element,
+      core: () => (this._destroyed ? null : this.bridge),
+      title: () => this._title,
+      workingDirectory: () => this._workingDirectory,
+      shellIntegration: () => this._shellIntegration,
+      sendText: (text) => {
+        if (!this.input) return;
+        if (/[\r\n]/.test(text) && this.bridge?.bracketedPaste())
+          this.input.sendPaste(text);
+        else this._deliverInput(text.replace(/\r?\n/g, "\r"));
+      },
+      sendKey: (key) => {
+        const sequence = this.input?.encodeKey(key) ?? null;
+        if (sequence === null) return false;
+        this._deliverInput(sequence);
+        return true;
+      },
+      onOutput: (listener) => {
+        this._outputListeners.add(listener);
+        return () => this._outputListeners.delete(listener);
+      },
+    };
+  }
+
+  private _deliverInput(data: string, preserveScroll = false): void {
+    if (!preserveScroll) {
+      this._outputAnnouncements.input();
+      this._scrollToBottom();
+    }
+    if (this.onData) {
+      this.onData(data);
+    } else {
+      this.write(data);
+    }
   }
 
   /** Pause pane painting without buffering output or stopping terminal effects. */
@@ -1124,7 +1199,9 @@ export class WTerm {
 
   private _deliverTitle(): void {
     const title = this.bridge?.getTitle() ?? null;
-    if (title !== null) this.onTitle?.(title);
+    if (title === null) return;
+    this._title = title || null;
+    this.onTitle?.(title);
   }
 
   private _drainResponses(): { hasError: boolean; error?: unknown } {
@@ -1397,6 +1474,9 @@ export class WTerm {
 
   destroy(): void {
     this._destroyed = true;
+    this._unregisterWebMCP?.();
+    this._unregisterWebMCP = null;
+    this._outputListeners.clear();
     this._textCapture.cancel();
     this._historySelection.destroy();
     this._rectangleDrag.destroy();
@@ -1451,4 +1531,16 @@ export class WTerm {
     }
     this.debug = null;
   }
+}
+
+function webmcpOptions(
+  options: boolean | WebMCPOptions | undefined,
+): WebMCPOptions | null {
+  if (!options) return null;
+  if (options === true) return {};
+  return {
+    name: options.name,
+    description: options.description,
+    readOnly: options.readOnly,
+  };
 }

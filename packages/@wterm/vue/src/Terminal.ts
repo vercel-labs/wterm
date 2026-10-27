@@ -13,6 +13,7 @@ import {
   WTerm,
   type TerminalCore,
   type ShellIntegrationState,
+  type WebMCPOptions,
 } from "@wterm/dom";
 
 /**
@@ -98,6 +99,15 @@ const Terminal = defineComponent({
     /** Suspend painting for an inactive pane; parsing and terminal effects continue. */
     renderingPaused: Boolean,
     /**
+     * Let in-page agents read and type into this terminal through WebMCP.
+     * Pass an object to name the terminal or make it read-only.
+     * @defaultValue false
+     */
+    webmcp: {
+      type: [Boolean, Object] as PropType<boolean | WebMCPOptions>,
+      default: false,
+    },
+    /**
      * Enable debug mode (init-only — changing after mount has no effect).
      * Exposes a `DebugAdapter` on the underlying `WTerm` instance.
      * @defaultValue false
@@ -165,6 +175,7 @@ const Terminal = defineComponent({
         cursorBlink: props.cursorBlink,
         announceOutput: props.announceOutput,
         renderingPaused: props.renderingPaused,
+        webmcp: props.webmcp,
         debug: props.debug,
         onData: hasDataListener
           ? (data: string) => emit("data", data)
@@ -231,6 +242,12 @@ const Terminal = defineComponent({
       () => props.renderingPaused,
       (paused) => wterm.value?.setRenderingPaused(paused),
       { flush: "post" },
+    );
+
+    watch(
+      () => props.webmcp,
+      (options) => wterm.value?.setWebMCP(options),
+      { deep: true, flush: "post" },
     );
 
     // Returning bindings from setup is the typed equivalent of defineExpose:

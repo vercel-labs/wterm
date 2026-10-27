@@ -1,0 +1,149 @@
+---
+title: "WebMCP"
+navTitle: "WebMCP"
+---
+
+[WebMCP](https://github.com/webmachinelearning/webmcp) lets agents running in the browser call tools that a page registers. Turn on `webmcp` and agents can find the page's terminals, read them, type commands, and press keys. They don't have to scrape the DOM or fake keyboard events.
+
+WebMCP is off by default. In browsers without a WebMCP provider, the option does nothing.
+
+## Enabling
+
+Pass `webmcp: true`, or an options object, when you create the terminal:
+
+```ts
+import { WTerm } from "@wterm/dom";
+
+const term = new WTerm(element, {
+  webmcp: { name: "shell", description: "Project shell" },
+  onData: (data) => socket.send(data),
+});
+await term.init();
+```
+
+The framework components take the same value as a prop, and changes apply without restarting the terminal:
+
+```tsx
+<Terminal webmcp={{ name: "shell" }} onData={send} />
+```
+
+```vue
+<Terminal :webmcp="{ name: 'shell' }" @data="send" />
+```
+
+```svelte
+<Terminal webmcp={{ name: "shell" }} onData={send} />
+```
+
+In vanilla JavaScript, call `term.setWebMCP(options)` to change the options later, or `term.setWebMCP(false)` to withdraw the terminal. Tools are registered once the terminal initializes and removed when it is destroyed.
+
+<table>
+  <thead>
+    <tr>
+      <th>Option</th>
+      <th>Type</th>
+      <th>Default</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>name</code></td>
+      <td><code>string</code></td>
+      <td><code>"terminal"</code></td>
+      <td>Name agents use to address the terminal. If another terminal on the page already uses it, a suffix is added (<code>terminal-2</code>, <code>terminal-3</code>) and a warning is logged.</td>
+    </tr>
+    <tr>
+      <td><code>description</code></td>
+      <td><code>string</code></td>
+      <td>—</td>
+      <td>What the terminal is for, returned by <code>list_terminals</code>. It helps agents pick the right terminal.</td>
+    </tr>
+    <tr>
+      <td><code>readOnly</code></td>
+      <td><code>boolean</code></td>
+      <td><code>false</code></td>
+      <td>Agents can read the terminal but cannot type into it or press keys.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Tools
+
+<table>
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>Input</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>list_terminals</code></td>
+      <td>—</td>
+      <td>Every registered terminal with its name, description, <code>readOnly</code>, <code>focused</code>, size, cursor, alternate-screen state, scrollback row count, and, when reported, title, working directory, and shell integration state.</td>
+    </tr>
+    <tr>
+      <td><code>read_terminal</code></td>
+      <td><code>terminal?</code>, <code>lines?</code>, <code>waitFor?</code>, <code>waitForIdleMs?</code>, <code>timeoutMs?</code></td>
+      <td>Plain text of the visible screen, or the last <code>lines</code> rows (up to 10,000), ending at the cursor or the last line of text and reaching into scrollback, plus the same state as <code>list_terminals</code>. It can wait first; see below.</td>
+    </tr>
+    <tr>
+      <td><code>type_in_terminal</code></td>
+      <td><code>terminal?</code>, <code>text</code>, <code>submit?</code></td>
+      <td>Types text as if the user typed it, then presses Enter if <code>submit</code> is true. Multi-line text is pasted with bracketed paste when the program has enabled it. Otherwise, newlines are sent as Enter.</td>
+    </tr>
+    <tr>
+      <td><code>press_terminal_keys</code></td>
+      <td><code>terminal?</code>, <code>keys</code></td>
+      <td>Presses up to 64 keys in order, such as <code>"Ctrl+C"</code>, <code>"Enter"</code>, <code>"Shift+Tab"</code>, <code>"ArrowUp"</code>, <code>"F5"</code>, or a single character. Modifiers are <code>Ctrl</code>, <code>Alt</code>, <code>Shift</code>, and <code>Meta</code>. Keys are encoded for the program's current modes, including application cursor keys and the Kitty keyboard protocol. If any key name is unknown, nothing is pressed.</td>
+    </tr>
+  </tbody>
+</table>
+
+Input from agents follows the same path as keyboard input. It reaches `onData`, or is echoed locally when `onData` is not set, and it scrolls the terminal to the bottom. `type_in_terminal` and `press_terminal_keys` are registered only while at least one terminal accepts input.
+
+### Waiting for output
+
+Programs answer asynchronously, so `read_terminal` can wait before it reads:
+
+- `waitFor`: wait until this exact text appears in the rows being read. Text that is already on screen counts, so pick text that only the new output will contain.
+- `waitForIdleMs`: wait until no output has arrived for this many milliseconds. With `waitFor`, the idle period starts once the text appears.
+- `timeoutMs`: the longest wait, 10,000 by default and at most 120,000. When it expires, the tool returns the current text with `timedOut: true` instead of failing.
+
+A typical agent turn types a command and then waits for it to finish:
+
+```json
+{ "tool": "type_in_terminal", "input": { "terminal": "shell", "text": "npm test", "submit": true } }
+{ "tool": "read_terminal", "input": { "terminal": "shell", "waitFor": "Tests:", "waitForIdleMs": 500, "timeoutMs": 60000 } }
+```
+
+### Results and errors
+
+Every tool returns a JSON string. When a call fails, for example because a terminal name is unknown, the terminal is read-only, or an argument is invalid, the result is `{"error": "..."}` and the tool does not throw. Browser providers drop the messages of thrown errors, so an in-band result like MCP's `isError` is the only way an agent can see what went wrong and fix its call. A wait that the agent cancels still rejects with the cancellation reason.
+
+## Several terminals
+
+All terminals in a document share one set of tools, and each tool takes a `terminal` name. You can leave the name out when the page has one terminal, or when one terminal has focus. Otherwise the error lists the available names. Give each terminal a `name` and `description` so agents can tell them apart without trial and error.
+
+## Security
+
+An agent that can call `type_in_terminal` can do anything the person at the keyboard can do. If the terminal is connected to a shell, a submitted command really runs. Enable `webmcp` only on terminals you want agents to drive, and use `readOnly: true` for terminals they should only watch, such as logs or build output.
+
+Terminal output comes from the programs running in it, so it can contain text written to mislead an agent. `list_terminals` and `read_terminal` set the `untrustedContentHint` annotation so agents treat their results as data, not instructions.
+
+## Browser support
+
+wterm registers tools with `document.modelContext` or `navigator.modelContext`, whichever provides `registerTool`. It checks for a provider when the terminal initializes, so load any WebMCP polyfill before that. Earlier drafts of the API return a handle with `unregister()` from `registerTool`, and wterm supports those as well.
+
+## Testing with agent-browser
+
+[agent-browser](https://github.com/vercel-labs/agent-browser) runs Chrome with WebMCP enabled and can call page tools directly:
+
+```bash
+agent-browser open https://my-app.localhost
+agent-browser webmcp list
+agent-browser --json webmcp invoke type_in_terminal --params '{"text":"echo hello","submit":true}'
+agent-browser --json webmcp invoke read_terminal --params '{"waitFor":"hello","waitForIdleMs":200}'
+```

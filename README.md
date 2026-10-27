@@ -34,6 +34,7 @@ wterm ("dub-term") renders to the DOM — native text selection, copy/paste, fin
 - **Named terminal input** — the editable control exposes host labels and descriptions to assistive technology and follows the host's tab order; Escape followed by Tab or Shift+Tab moves focus back to the page
 - **Terminal-aware copy** — selected text preserves explicit newlines and complete Unicode cells, includes block glyphs, and joins confirmed Ghostty soft wraps
 - **Read retained output** — capture a stable text snapshot with `readText()`; the local workspace provides a read-only output dialog with explicit refresh
+- **WebMCP** — opt in with `webmcp` to let in-page agents list terminals, read screen and scrollback text, wait for output, type commands, and press keys; read-only mode for terminals agents should only watch
 - **Optional output announcements** — bounded, polite screen-reader updates for the focused terminal, with a per-session workspace toggle
 - **Bounded WebSocket sends** — byte and message limits, ordered draining, and observable backpressure for slow or disconnected connections
 - **Local PTY flow control** — the local workspace batches small output messages, pauses fast output until the browser catches up, preserves bytes across frames, and reports rejected input

@@ -28,6 +28,7 @@ vi.mock("@wterm/dom", () => {
     this.focus = vi.fn();
     this.setOutputAnnouncements = vi.fn();
     this.setRenderingPaused = vi.fn();
+    this.setWebMCP = vi.fn();
     this.destroy = vi.fn();
     this.init = vi.fn().mockImplementation(async () => {
       this.bridge = {};
@@ -80,6 +81,26 @@ describe("Terminal component", () => {
     expect(instance.setOutputAnnouncements).toHaveBeenLastCalledWith(false);
     expect(lastWTermInstance).toBe(instance);
     expect(wrapper.attributes("announceoutput")).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it("exposes the terminal to WebMCP without replacing it or leaking an attribute", async () => {
+    const wrapper = await mountTerminal({ webmcp: { name: "shell" } });
+    const instance = lastWTermInstance;
+    const { WTerm } = await import("@wterm/dom");
+    expect(vi.mocked(WTerm).mock.calls[0][1]?.webmcp).toEqual({
+      name: "shell",
+    });
+    await wrapper.setProps({ webmcp: { name: "shell", readOnly: true } });
+    expect(instance.setWebMCP).toHaveBeenLastCalledWith({
+      name: "shell",
+      readOnly: true,
+    });
+    await wrapper.setProps({ webmcp: false });
+    expect(instance.setWebMCP).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
+    expect(wrapper.attributes("webmcp")).toBeUndefined();
     wrapper.unmount();
   });
 
