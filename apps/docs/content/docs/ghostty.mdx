@@ -355,7 +355,7 @@ retained row. Read metadata again after output, resize, or screen changes.
 Invalid positions, disposed cores, and older WASM binaries return `null`.
 See [Row Metadata](/api-reference#row-metadata) for the optional core contract.
 
-Terminal applications can query the Ghostty core's foreground and background colors with OSC 10 and OSC 11. The core starts with its configured colors and tracks later OSC color changes and resets.
+Terminal applications can query the Ghostty core's foreground and background colors with OSC 10 and OSC 11. Attached to `WTerm`, the core answers with the terminal's CSS theme colors (see [Color queries](/themes#color-queries)); headless, it starts with its configured colors. It tracks later OSC color changes and resets either way.
 
 Ghostty also exposes synchronized-output mode (`CSI ? 2026 h/l`) and its generation to the DOM renderer, so updates inside a synchronized block paint as one final frame.
 

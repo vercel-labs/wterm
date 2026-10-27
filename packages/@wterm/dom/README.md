@@ -503,6 +503,12 @@ are applied. Values are copied and can be set before `init()`. Indices 16–255 
 explicit RGB cell colors are unchanged. Application overrides take precedence;
 OSC resets return to the latest host defaults. The inline properties set by this
 method take precedence over theme classes; call it again to change those colors.
+Pass `null` to remove them and return to the CSS theme.
+
+OSC 10 and OSC 11 color queries are answered, in both cores, with the colors
+the terminal element's CSS resolves to when the query arrives, so theme classes
+and `prefers-color-scheme` changes need no extra calls. Colors set with
+`setThemeColors()` take precedence until it is called with `null`.
 
 With Ghostty, use the updated bundled WASM asset to synchronize indexed colors
 and foreground/background query replies. Older WASM assets retain their existing
