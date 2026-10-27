@@ -236,6 +236,16 @@ US, and Control+Backspace sends BS. Control+Alt printable input stays on the
 native text path in this mode so keyboard layouts using AltGr can enter
 characters.
 
+When an application enables xterm `modifyOtherKeys` level 2 (`CSI > 4 ; 2 m`)
+and Kitty keyboard mode is not negotiated, keys whose legacy encoding loses a
+modifier are sent as `CSI 27 ; modifier ; code ~`: Control and Alt with
+characters, including Control+letter, Shift with letters and Space, Shift+Tab,
+Alt+Tab, Alt+Enter, and Backspace with any modifier except Control alone. Other
+keys keep their legacy encoding, and Meta shortcuts stay with the browser.
+`CSI ? 4 m` reports the level, other `CSI > Pp m` changes return to legacy
+input, and RIS resets it. Vim enables this mode for xterm terminals to map keys
+such as Control+Shift+E apart from Control+E.
+
 Browser keyboard events do not expose every native field the protocol can carry. WTerm reports physical functional and modifier keys from `KeyboardEvent.code`, text from `KeyboardEvent.key`, and shifted alternates when available. It does not invent the base-layout alternate, cannot synthesize release events the browser never delivers, and limits associated text to the current press event.
 
 During IME composition, tentative text appears at the terminal cursor in the
