@@ -73,6 +73,7 @@ export interface GhosttyExports {
   synchronized_output(ptr: number): number;
   synchronized_output_generation(ptr: number): number;
   kitty_keyboard_flags?(ptr: number): number;
+  modify_other_keys?(ptr: number): number;
 
   graphics_generation?(ptr: number): number;
   graphics_image_count?(ptr: number): number;

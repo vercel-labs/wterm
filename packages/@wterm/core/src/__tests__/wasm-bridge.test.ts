@@ -75,6 +75,16 @@ describe("WasmBridge", () => {
     expect(bridge.getScrollbackCell(offset, 0).fgRgb).toBe(0xff6400);
   });
 
+  it("tracks and reports modifyOtherKeys level 2", () => {
+    expect(bridge.modifyOtherKeys()).toBe(0);
+    bridge.writeString("\x1b[>4;2m\x1b[?4m");
+    expect(bridge.modifyOtherKeys()).toBe(2);
+    expect(bridge.getResponse()).toBe("\x1b[>4;2m");
+    bridge.writeString("\x1b[>4m\x1b[?4m");
+    expect(bridge.modifyOtherKeys()).toBe(0);
+    expect(bridge.getResponse()).toBe("\x1b[>4;0m");
+  });
+
   it("keeps 256-color cells on the palette", () => {
     bridge.writeString("\x1b[38;5;208mA");
     expect(bridge.getCell(0, 0).fg).toBe(208);

@@ -1221,6 +1221,10 @@ When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string 
       <td><code>kittyKeyboardFlags?(): number</code></td>
       <td>Active Kitty keyboard protocol flags. Optional for third-party cores; omission keeps legacy keyboard encoding.</td>
     </tr>
+    <tr>
+      <td><code>modifyOtherKeys?(): 0 | 2</code></td>
+      <td>2 while xterm modifyOtherKeys level 2 is active. Optional for third-party cores; omission keeps legacy keyboard encoding.</td>
+    </tr>
   </tbody>
 </table>
 

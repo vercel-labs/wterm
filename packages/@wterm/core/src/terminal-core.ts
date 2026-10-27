@@ -204,6 +204,8 @@ export interface TerminalCore {
   synchronizedOutput?(): boolean;
   synchronizedOutputGeneration?(): number;
   kittyKeyboardFlags?(): number;
+  /** 2 while xterm modifyOtherKeys level 2 is active, otherwise 0. */
+  modifyOtherKeys?(): 0 | 2;
 
   // -- Side outputs --
   getTitle(): string | null;

@@ -823,7 +823,10 @@ export fn write(ptr: usize, data_ptr: [*]const u8, data_len: u32) void {
                 continue;
             }
         } else if (stream.parser.state == .ground and stream.utf8decoder.state == 0) {
-            const used = if (rem[0] == 0x1b) fastCsi(stream, rem) else fastPrint(stream, rem);
+            const used = if (rem[0] == 0x1b)
+                queryModifyKeys(state, rem) orelse fastCsi(stream, rem)
+            else
+                fastPrint(stream, rem);
             if (used > 0) {
                 rem = rem[used..];
                 continue;
@@ -833,6 +836,17 @@ export fn write(ptr: usize, data_ptr: [*]const u8, data_len: u32) void {
         rem = rem[1..];
     }
     refreshGraphicsGeneration(state);
+}
+
+/// Answers XTQMODKEYS for modifyOtherKeys (`CSI ? 4 m`), which upstream
+/// Ghostty ignores. Returns the bytes consumed, or null for anything else.
+fn queryModifyKeys(state: *State, bytes: []const u8) ?usize {
+    const query = "\x1b[?4m";
+    if (!std.mem.startsWith(u8, bytes, query)) return null;
+    state.stream.handler.queue.push(
+        if (state.terminal.flags.modify_other_keys_2) "\x1b[>4;2m" else "\x1b[>4;0m",
+    );
+    return query.len;
 }
 
 /// Dispatches a complete `ESC [ params final` with only digits and `;`, as
@@ -1343,6 +1357,11 @@ export fn synchronized_output(ptr: usize) u32 {
 export fn synchronized_output_generation(ptr: usize) u32 {
     const state = stateFromPtr(ptr);
     return state.synchronized_output_generation;
+}
+
+/// 2 while xterm modifyOtherKeys level 2 is active, otherwise 0.
+export fn modify_other_keys(ptr: usize) u32 {
+    return if (stateFromPtr(ptr).terminal.flags.modify_other_keys_2) 2 else 0;
 }
 
 export fn kitty_keyboard_flags(ptr: usize) u32 {

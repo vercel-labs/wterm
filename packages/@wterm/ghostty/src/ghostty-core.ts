@@ -451,6 +451,11 @@ export class GhosttyCore implements TerminalCore {
     return this.wasm.exports.synchronized_output_generation(this.termPtr);
   }
 
+  modifyOtherKeys(): 0 | 2 {
+    if (this._disposed || this.termPtr === 0) return 0;
+    return this.wasm.exports.modify_other_keys?.(this.termPtr) === 2 ? 2 : 0;
+  }
+
   kittyKeyboardFlags(): number {
     if (this._disposed || this.termPtr === 0) return 0;
     return this.wasm.exports.kitty_keyboard_flags?.(this.termPtr) ?? 0;

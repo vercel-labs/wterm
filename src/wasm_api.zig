@@ -134,6 +134,11 @@ export fn getSynchronizedOutputGeneration() u32 {
     return terminal.synchronized_output_generation;
 }
 
+/// 2 while xterm modifyOtherKeys level 2 is active, otherwise 0.
+export fn getModifyOtherKeys() u32 {
+    return if (terminal.modify_other_keys_2) 2 else 0;
+}
+
 export fn getKittyKeyboardFlags() u32 {
     return terminal.kittyKeyboardFlags();
 }

@@ -163,6 +163,8 @@ pub const Terminal = struct {
     alt_saved_flags: u8 = 0,
     alt_saved_link: u16 = 0,
     using_alt_screen: bool = false,
+    /// xterm modifyOtherKeys level 2 (`CSI > 4 ; 2 m`); other levels encode as legacy.
+    modify_other_keys_2: bool = false,
     primary_kitty_keyboard: KittyFlagStack = .{},
     alternate_kitty_keyboard: KittyFlagStack = .{},
 
@@ -299,6 +301,7 @@ pub const Terminal = struct {
         self.using_alt_screen = false;
         self.primary_kitty_keyboard = .{};
         self.alternate_kitty_keyboard = .{};
+        self.modify_other_keys_2 = false;
         self.title_len = 0;
         self.title_changed = false;
         self.bell_count = 0;
@@ -860,12 +863,28 @@ pub const Terminal = struct {
             self.handleKittyKeyboard();
             return;
         }
+        if (self.parser.csi_private == '?' and final == 'm' and self.parser.intermediate_count == 0) {
+            // XTQMODKEYS: only the modifyOtherKeys resource is reported.
+            if (self.parser.param_count == 1 and self.parser.getParam(0, 0) == 4) {
+                self.enqueueResponse(if (self.modify_other_keys_2) "\x1b[>4;2m" else "\x1b[>4;0m");
+            }
+            return;
+        }
         if (self.parser.csi_private == '?') {
             self.handlePrivateMode(final);
             return;
         }
         if (self.parser.csi_private == '!' and final == 'p') {
             self.softReset();
+            return;
+        }
+        if (self.parser.csi_private == '>' and final == 'm' and self.parser.intermediate_count == 0) {
+            self.setModifyKeys();
+            return;
+        }
+        if (self.parser.csi_private == '>' and final == 'n' and self.parser.intermediate_count == 0) {
+            // Disabling any modifier resource returns other keys to legacy.
+            self.modify_other_keys_2 = false;
             return;
         }
         if (self.parser.csi_private == '>') {
@@ -910,6 +929,23 @@ pub const Terminal = struct {
             '`' => self.cursorToColumn(self.parser.getParam(0, 1)),
             else => self.logUnhandled(final, 0),
         }
+    }
+
+    /// XTMODKEYS `CSI > Pp ; Pv m`. Like Ghostty, any valid resource change
+    /// leaves level 2 unless it sets modifyOtherKeys (Pp 4) to level 2.
+    fn setModifyKeys(self: *Terminal) void {
+        if (self.parser.param_count == 0) {
+            self.modify_other_keys_2 = false;
+            return;
+        }
+        if (self.parser.param_count > 2) return;
+        const resource = self.parser.getParam(0, 0);
+        switch (resource) {
+            0, 1, 2, 4 => {},
+            else => return,
+        }
+        self.modify_other_keys_2 = resource == 4 and self.parser.param_count == 2 and
+            self.parser.getParam(1, 0) == 2;
     }
 
     fn activeKittyKeyboard(self: *Terminal) *KittyFlagStack {
@@ -2705,4 +2741,29 @@ test "a cursor saved before a shrink is clamped when restored" {
     try std.testing.expect(t.cursor_row < t.rows);
     try std.testing.expect(t.cursor_col < t.cols);
     try std.testing.expectEqual(@as(u32, 'x'), t.grid.getCell(3, 9).char);
+}
+
+test "modifyOtherKeys level 2 state, query and reset" {
+    const testing = std.testing;
+    var t = Terminal.init(10, 2);
+    t.write("\x1b[?4m");
+    try testing.expectEqualStrings("\x1b[>4;0m", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    t.write("\x1b[>4;2m");
+    try testing.expect(t.modify_other_keys_2);
+    t.write("\x1b[?4m");
+    try testing.expectEqualStrings("\x1b[>4;2m", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    // Level 1, a reset, another resource or disabling all leave level 2.
+    for ([_][]const u8{ "\x1b[>4;1m", "\x1b[>4m", "\x1b[>1m", "\x1b[>4n" }) |seq| {
+        t.write("\x1b[>4;2m");
+        t.write(seq);
+        try testing.expect(!t.modify_other_keys_2);
+    }
+    // Unknown resources and too many parameters are ignored.
+    t.write("\x1b[>4;2m\x1b[>3m\x1b[>4;2;1m");
+    try testing.expect(t.modify_other_keys_2);
+    // RIS clears it.
+    t.write("\x1bc");
+    try testing.expect(!t.modify_other_keys_2);
 }
