@@ -56,6 +56,7 @@ const MAX_TIMEOUT_MS = 120_000;
 const MAX_LINES = 10_000;
 const MAX_KEYS = 64;
 const WAIT_SCAN_INTERVAL_MS = 50;
+const SUBMIT_DELAY_MS = 150;
 
 const registries = new WeakMap<Document, Registry>();
 
@@ -308,7 +309,7 @@ class Registry {
         required: ["text"],
         additionalProperties: false,
       },
-      execute: async (input) => {
+      execute: async (input, context) => {
         const entry = this.resolve(input.terminal, true);
         if (typeof input.text !== "string")
           throw new TypeError("text must be a string.");
@@ -316,7 +317,13 @@ class Registry {
           throw new TypeError("submit must be a boolean.");
         liveCore(entry);
         if (input.text) entry.terminal.sendText(input.text);
-        if (input.submit) entry.terminal.sendKey(parseKey("Enter")!);
+        if (input.submit) {
+          // Programs that detect pastes by input speed, such as agent CLIs,
+          // treat an Enter that arrives with the text as a pasted newline.
+          if (input.text) await delay(SUBMIT_DELAY_MS, context?.signal);
+          liveCore(entry);
+          entry.terminal.sendKey(parseKey("Enter")!);
+        }
         return JSON.stringify({
           terminal: entry.name,
           typed: input.text.length,
@@ -486,6 +493,21 @@ function contentRows(core: TerminalCore): number {
     }
   }
   return cursor + 1;
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
 
 /** Resolves true on timeout. */

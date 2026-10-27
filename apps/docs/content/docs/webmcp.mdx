@@ -92,7 +92,7 @@ In vanilla JavaScript, call `term.setWebMCP(options)` to change the options late
     <tr>
       <td><code>type_in_terminal</code></td>
       <td><code>terminal?</code>, <code>text</code>, <code>submit?</code></td>
-      <td>Types text as if the user typed it, then presses Enter if <code>submit</code> is true. Multi-line text is pasted with bracketed paste when the program has enabled it. Otherwise, newlines are sent as Enter.</td>
+      <td>Types text as if the user typed it, then presses Enter if <code>submit</code> is true. Enter comes 150 ms after the text, so programs that detect pastes by input speed, such as agent CLIs, don't treat it as a pasted newline. Multi-line text is pasted with bracketed paste when the program has enabled it. Otherwise, newlines are sent as Enter.</td>
     </tr>
     <tr>
       <td><code>press_terminal_keys</code></td>

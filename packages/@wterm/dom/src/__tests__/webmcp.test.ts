@@ -205,6 +205,29 @@ describe("WebMCP", () => {
     expect(onData).toHaveBeenCalledWith("\x1b[200~a\nb[201~\x1b[201~");
   });
 
+  it("presses Enter apart from the text so it is not taken as a paste", async () => {
+    const onData = vi.fn();
+    await terminal({ onData });
+    const pending = call("type_in_terminal", { text: "hello", submit: true });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onData.mock.calls).toEqual([["hello"]]);
+    await pending;
+    expect(onData.mock.calls).toEqual([["hello"], ["\r"]]);
+  });
+
+  it("does not submit when the agent cancels during the pause", async () => {
+    const onData = vi.fn();
+    await terminal({ onData });
+    const controller = new AbortController();
+    const pending = tools
+      .get("type_in_terminal")!
+      .execute({ text: "rm", submit: true }, { signal: controller.signal });
+    controller.abort(new DOMException("Cancelled", "AbortError"));
+    await expect(pending).rejects.toThrow("Cancelled");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(onData.mock.calls).toEqual([["rm"]]);
+  });
+
   it("echoes typed text locally without onData", async () => {
     await terminal();
     await call("type_in_terminal", { text: "echo" });
