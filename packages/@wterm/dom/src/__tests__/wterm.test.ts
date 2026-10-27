@@ -55,8 +55,17 @@ import { Renderer } from "../renderer.js";
 
 describe("WTerm", () => {
   let element: HTMLDivElement;
+  let initializedTerminals: Set<WTerm>;
 
   beforeEach(() => {
+    initializedTerminals = new Set();
+    const originalInit = WTerm.prototype.init;
+    vi.spyOn(WTerm.prototype, "init").mockImplementation(function (
+      this: WTerm,
+    ) {
+      initializedTerminals.add(this);
+      return originalInit.call(this);
+    });
     mockBridge = createMockBridge();
     vi.mocked(MockedWasmBridge.load).mockResolvedValue(mockBridge);
 
@@ -65,6 +74,7 @@ describe("WTerm", () => {
   });
 
   afterEach(() => {
+    for (const term of initializedTerminals) term.destroy();
     element.remove();
     vi.restoreAllMocks();
   });
@@ -599,6 +609,247 @@ describe("WTerm", () => {
         term.destroy();
       }
     });
+  });
+
+  describe("shared frame scheduling", () => {
+    let frames: Map<number, FrameRequestCallback>;
+    let terminals: WTerm[];
+    let hosts: HTMLDivElement[];
+
+    function flushFrame() {
+      const callbacks = Array.from(frames.values());
+      frames.clear();
+      for (const callback of callbacks) callback(performance.now());
+    }
+
+    async function createTerminal() {
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      hosts.push(host);
+      Object.defineProperties(host, {
+        clientHeight: { configurable: true, value: 170 },
+        scrollHeight: { configurable: true, get: () => 17432 },
+      });
+      host.scrollTop = 17262;
+      const bridge = createMockBridge();
+      vi.mocked(bridge.getScrollbackCount).mockReturnValue(1000);
+      vi.mocked(MockedWasmBridge.load).mockResolvedValueOnce(bridge);
+      const term = new WTerm(host, { autoResize: false });
+      terminals.push(term);
+      await term.init();
+      return { term, host, bridge };
+    }
+
+    beforeEach(() => {
+      frames = new Map();
+      terminals = [];
+      hosts = [];
+      let nextFrame = 0;
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(
+        (callback) => {
+          const id = ++nextFrame;
+          frames.set(id, callback);
+          return id;
+        },
+      );
+      vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation((id) => {
+        frames.delete(id);
+      });
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+        width: 8,
+        height: 17,
+      } as DOMRect);
+    });
+
+    afterEach(() => {
+      for (const term of terminals) term.destroy();
+      for (const host of hosts) host.remove();
+    });
+
+    it("shares a frame and reads every viewport before rendering, then applies scroll positions", async () => {
+      const first = await createTerminal();
+      const second = await createTerminal();
+      flushFrame();
+      const events: string[] = [];
+      const panes = [first, second];
+      let scrollHeight = 17432;
+      for (const [index, { host }] of panes.entries()) {
+        let scrollTop = 17262;
+        Object.defineProperties(host, {
+          scrollTop: {
+            configurable: true,
+            get: () => {
+              events.push(`read:${index}:scrollTop`);
+              return scrollTop;
+            },
+            set: (value: number) => {
+              events.push(`scroll:${index}`);
+              scrollTop = Math.min(value, scrollHeight - 170);
+            },
+          },
+          clientHeight: {
+            configurable: true,
+            get: () => {
+              events.push(`read:${index}:clientHeight`);
+              return 170;
+            },
+          },
+          scrollHeight: {
+            configurable: true,
+            get: () => {
+              events.push(`read:${index}:scrollHeight`);
+              return scrollHeight;
+            },
+          },
+        });
+      }
+      const originalRender = Renderer.prototype.render;
+      const render = vi
+        .spyOn(Renderer.prototype, "render")
+        .mockImplementation(function (this: Renderer, bridge, viewport) {
+          events.push(
+            `render:${panes.findIndex((pane) => pane.bridge === bridge)}`,
+          );
+          return originalRender.call(this, bridge, viewport);
+        });
+      vi.mocked(globalThis.requestAnimationFrame).mockClear();
+
+      scrollHeight = 17449;
+      vi.mocked(first.bridge.getScrollbackCount).mockReturnValue(1001);
+      vi.mocked(second.bridge.getScrollbackCount).mockReturnValue(1001);
+      first.term.write("first");
+      second.term.write("second");
+      first.term.write("more");
+
+      expect(globalThis.requestAnimationFrame).toHaveBeenCalledTimes(1);
+      expect(frames.size).toBe(1);
+      expect(events).toEqual([]);
+      events.length = 0;
+      flushFrame();
+
+      expect(render).toHaveBeenCalledTimes(2);
+      const firstRender = events.indexOf("render:0");
+      const lastRender = events.indexOf("render:1");
+      expect(events.slice(0, firstRender)).toEqual(
+        expect.arrayContaining([
+          "read:0:scrollTop",
+          "read:0:clientHeight",
+          "read:1:scrollTop",
+          "read:1:clientHeight",
+        ]),
+      );
+      expect(events.slice(firstRender, lastRender + 1)).toEqual([
+        "render:0",
+        "render:1",
+      ]);
+      expect(events.filter((event) => event.startsWith("scroll:"))).toEqual([
+        "scroll:0",
+        "scroll:1",
+      ]);
+      expect(
+        events.findIndex((event) => event.startsWith("scroll:")),
+      ).toBeGreaterThan(lastRender);
+      expect(first.host.scrollTop).toBe(17279);
+      expect(second.host.scrollTop).toBe(17279);
+      expect(frames.size).toBe(0);
+
+      scrollHeight = 17466;
+      vi.mocked(first.bridge.getScrollbackCount).mockReturnValue(1002);
+      vi.mocked(second.bridge.getScrollbackCount).mockReturnValue(1002);
+      first.term.write("grow again");
+      second.term.write("grow again");
+      flushFrame();
+
+      expect(render).toHaveBeenCalledTimes(4);
+      expect(first.host.scrollTop).toBe(17296);
+      expect(second.host.scrollTop).toBe(17296);
+      expect(frames.size).toBe(0);
+    });
+
+    it("renders a write that another terminal's callback makes mid-frame", async () => {
+      const first = await createTerminal();
+      const second = await createTerminal();
+      flushFrame();
+      first.term.write("first");
+      second.term.write("second");
+      vi.mocked(first.bridge.getResponse).mockReturnValueOnce("reply");
+      first.term.onData = () => second.term.write("late");
+      flushFrame();
+
+      const render = vi.spyOn(Renderer.prototype, "render");
+      flushFrame();
+      expect(render).toHaveBeenCalledTimes(1);
+      expect(render.mock.calls[0][0]).toBe(second.bridge);
+    });
+
+    it.each(["destroyed", "paused", "held"] as const)(
+      "removes a %s terminal without dropping another terminal's queued render",
+      async (state) => {
+        const first = await createTerminal();
+        const second = await createTerminal();
+        flushFrame();
+        const render = vi.spyOn(Renderer.prototype, "render");
+        first.term.write("cancel me");
+        second.term.write("keep me");
+
+        if (state === "destroyed") first.term.destroy();
+        else if (state === "paused") first.term.setRenderingPaused(true);
+        else {
+          vi.mocked(first.bridge.synchronizedOutput).mockReturnValue(true);
+          first.term.write("hold");
+        }
+        flushFrame();
+
+        expect(render).toHaveBeenCalledTimes(1);
+        expect(render.mock.calls[0][0]).toBe(second.bridge);
+        if (state !== "destroyed") {
+          if (state === "paused") first.term.setRenderingPaused(false);
+          else {
+            vi.mocked(first.bridge.synchronizedOutput).mockReturnValue(false);
+            first.term.write("release");
+          }
+          flushFrame();
+          expect(render).toHaveBeenCalledTimes(2);
+          expect(render.mock.calls[1][0]).toBe(first.bridge);
+        }
+        expect(frames.size).toBe(0);
+      },
+    );
+
+    it.each([
+      [0, 340],
+      [3, 289],
+      [30, 0],
+    ])(
+      "uses cached user scroll state during writes and anchors history after %i discarded rows",
+      async (discarded, expectedScrollTop) => {
+        const { term, host, bridge } = await createTerminal();
+        flushFrame();
+        host.scrollTop = 340;
+        host.dispatchEvent(new Event("scroll"));
+        flushFrame();
+        const scrollHeight = vi.spyOn(host, "scrollHeight", "get");
+        const render = vi.spyOn(Renderer.prototype, "render");
+        vi.mocked(bridge.getScrollbackDiscardedCount!).mockReturnValue(
+          discarded,
+        );
+
+        term.write("output");
+        term.write(new Uint8Array([65]));
+
+        expect(scrollHeight).not.toHaveBeenCalled();
+        expect(host.scrollTop).toBe(340);
+        flushFrame();
+
+        expect(render).toHaveBeenCalledTimes(1);
+        expect(render.mock.calls[0][1]?.scrollTop).toBe(expectedScrollTop);
+        expect(host.scrollTop).toBe(expectedScrollTop);
+        term.write("next frame");
+        flushFrame();
+        expect(host.scrollTop).toBe(expectedScrollTop);
+        expect(frames.size).toBe(0);
+      },
+    );
   });
 
   describe("resize", () => {
@@ -1850,6 +2101,7 @@ describe("WTerm", () => {
     });
 
     it("scrolls to the exact bottom when output arrives", async () => {
+      vi.mocked(mockBridge.getScrollbackCount).mockReturnValue(1);
       vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
         cb(performance.now());
         return 1;
@@ -1860,17 +2112,18 @@ describe("WTerm", () => {
       });
       Object.defineProperty(element, "scrollHeight", {
         configurable: true,
-        value: 73,
+        value: 449,
       });
-      installScrollTop(0, (value) => Math.min(value, 53));
+      installScrollTop(0, (value) => Math.min(value, 429));
 
       const term = new WTerm(element, { autoResize: false });
       await term.init();
-      element.scrollTop = 53;
+      element.scrollTop = 426;
+      element.dispatchEvent(new Event("scroll"));
 
       term.write("next");
 
-      expect(element.scrollTop).toBe(53);
+      expect(element.scrollTop).toBe(429);
     });
 
     it("attributes a scroll event after the browser reclamps by one pixel", async () => {
@@ -2088,6 +2341,7 @@ describe("WTerm", () => {
       await term.init();
       (term as unknown as { _rowHeight: number })._rowHeight = 17;
       element.scrollTop = 340;
+      element.dispatchEvent(new Event("scroll"));
       discarded = 3;
 
       term.write("rollover");
@@ -2255,6 +2509,38 @@ describe("visual viewport", () => {
     await frame();
     expect(term.rows).toBe(20);
     expect(element.querySelector(".term-keyboard-spacer")).toBeNull();
+    term.destroy();
+  });
+
+  it("follows output past the keyboard spacer to the last row", async () => {
+    const term = await mount();
+    viewport.height = 212;
+    viewport.dispatchEvent(new Event("resize"));
+    await frame();
+    expect(term.rows).toBe(10);
+    const requests: number[] = [];
+    Object.defineProperty(element, "scrollTop", {
+      configurable: true,
+      get: () => 0,
+      set: (value: number) => requests.push(value),
+    });
+    Object.defineProperty(element, "clientHeight", {
+      configurable: true,
+      value: 212,
+    });
+    term.write("output\r\n");
+    await frame();
+    const style = getComputedStyle(element);
+    const padding =
+      (parseFloat(style.paddingTop) || 0) +
+      (parseFloat(style.paddingBottom) || 0);
+    const rowHeight =
+      (term as unknown as { _rowHeight: number })._rowHeight || 17;
+    const spacer = parseFloat(
+      element.querySelector<HTMLElement>(".term-keyboard-spacer")!.style.height,
+    );
+    expect(spacer).toBeGreaterThan(0);
+    expect(requests.at(-1)).toBe(10 * rowHeight + padding + spacer - 212);
     term.destroy();
   });
 

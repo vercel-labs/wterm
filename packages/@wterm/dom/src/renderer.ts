@@ -13,6 +13,7 @@ import {
 } from "./selection.js";
 import { selectionRange, type SelectionUnit } from "./selection-range.js";
 import { rectangleSelection } from "./rectangle-selection.js";
+import { markSelectionChanged, selectionMayExist } from "./selection-state.js";
 import {
   TrackedSelection,
   MAX_TRACKED_SELECTION_ROWS,
@@ -424,7 +425,7 @@ export class Renderer {
   private prevCursorRow = -1;
   private prevCursorCol = -1;
   private prevCursorVisible = false;
-  private prevRowBg: string[] = [];
+  private rowIds: (number | null)[] = [];
 
   private _scrollbackRowEls: HTMLDivElement[] = [];
   private _scrollbackKeys: number[] = [];
@@ -491,7 +492,7 @@ export class Renderer {
     this.rowParts = new WeakMap();
     this.rowBackground = new WeakMap();
     this.rowEls = [];
-    this.prevRowBg = [];
+    this.rowIds = [];
     this._scrollbackRowEls = [];
     this._scrollbackKeys = [];
     this._scrollbackGapSpacers = [];
@@ -514,6 +515,7 @@ export class Renderer {
     for (let r = 0; r < rows; r++) {
       const rowEl = document.createElement("div");
       rowEl.className = "term-row";
+      this.rowBackground.set(rowEl, "");
       fragment.appendChild(rowEl);
       this.rowEls.push(rowEl);
     }
@@ -1006,12 +1008,7 @@ export class Renderer {
       uniformBackground && rowBackground !== DEFAULT_BG_CSS
         ? (rowBackground ?? "")
         : "";
-    if (rowIndex >= 0) {
-      if (bgCss !== (this.prevRowBg[rowIndex] ?? "")) {
-        rowEl.style.background = bgCss;
-        this.prevRowBg[rowIndex] = bgCss;
-      }
-    } else if (this.rowBackground.get(rowEl) !== bgCss) {
+    if (this.rowBackground.get(rowEl) !== bgCss) {
       rowEl.style.background = bgCss;
       this.rowBackground.set(rowEl, bgCss);
     }
@@ -1127,7 +1124,9 @@ export class Renderer {
           Math.min(scrollbackCount, firstVisible + visibleRows + overscan),
         )
       : scrollbackCount;
-    const selection = this.container.ownerDocument.getSelection();
+    const selection = selectionMayExist(this.container.ownerDocument)
+      ? this.container.ownerDocument.getSelection()
+      : null;
     const selectionInContainer =
       selection !== null &&
       !selection.isCollapsed &&
@@ -1272,6 +1271,72 @@ export class Renderer {
     }
   }
 
+  /** Reuses live row nodes and canvas bands by the core's content identity. */
+  private syncLiveRows(core: TerminalCore): Set<number> | null {
+    const ids = core.getRowId
+      ? Array.from({ length: this.rows }, (_, row) => core.getRowId!(row))
+      : [];
+    const previous = this.rowIds;
+    this.rowIds = ids.includes(null) ? [] : ids;
+    if (!this.rowIds.length) return null;
+    if (previous.length !== ids.length)
+      return new Set(ids.map((_, row) => row));
+    if (ids.every((id, row) => id === previous[row])) return null;
+
+    const oldRows = new Map<number | null, number>();
+    for (let row = 0; row < previous.length; row++)
+      oldRows.set(previous[row], row);
+    const sources = ids.map((id) => oldRows.get(id) ?? -1);
+    const retained = new Set(sources);
+    const available = this.rowEls
+      .map((_, row) => row)
+      .filter((row) => !retained.has(row))
+      .reverse();
+    const fresh = new Set<number>();
+    for (let row = 0; row < this.rows; row++) {
+      if (sources[row] < 0) {
+        sources[row] = available.pop()!;
+        fresh.add(row);
+      }
+    }
+    this.rowEls = sources.map((source) => this.rowEls[source]);
+    this.prevCursorRow = sources.indexOf(this.prevCursorRow);
+
+    const firstMoved = sources.findIndex(
+      (source, row) => !fresh.has(row) && source !== row,
+    );
+    if (firstMoved >= 0 && sources[firstMoved] > firstMoved) {
+      let next: Node = this.cellCanvas;
+      for (let row = this.rows - 1; row >= 0; row--) {
+        const element = this.rowEls[row];
+        if (element.nextSibling !== next)
+          this.container.insertBefore(element, next);
+        next = element;
+      }
+    } else {
+      let next = this._scrollbackBottomSpacer!.nextSibling;
+      for (const element of this.rowEls) {
+        if (element !== next) this.container.insertBefore(element, next);
+        next = element.nextSibling;
+      }
+    }
+
+    if (this.cellPixels && this.cellBandUsed.some(Boolean)) {
+      const pixels = this.cellPixels.slice();
+      const bandSize = this.cellImage!.width * this.cellRowHeight;
+      for (let row = 0; row < this.rows; row++) {
+        const start = sources[row] * bandSize;
+        this.cellPixels.set(
+          pixels.subarray(start, start + bandSize),
+          row * bandSize,
+        );
+      }
+      this.cellContext!.putImageData(this.cellImage!, 0, 0);
+    }
+    this.cellBandUsed = sources.map((source) => this.cellBandUsed[source]);
+    return fresh;
+  }
+
   render(core: TerminalCore, viewport?: RenderViewport): void {
     this.syncColorOverrides(core.getColorOverrides?.());
     this.viewport = viewport;
@@ -1308,6 +1373,7 @@ export class Renderer {
       scrollbackCount: core.getScrollbackCount(),
     });
     const canvasChanged = this.syncCellCanvas(viewport);
+    const freshRows = this.syncLiveRows(core);
     this.cellCanvas.style.top = `${core.getScrollbackCount() * (viewport?.rowHeight ?? 0)}px`;
 
     const cursor = core.getCursor();
@@ -1327,7 +1393,13 @@ export class Renderer {
 
     for (let r = 0; r < this.rows; r++) {
       const isDirty =
-        this.colorsChanged || resized || canvasChanged || core.isDirtyRow(r);
+        this.colorsChanged ||
+        resized ||
+        canvasChanged ||
+        freshRows?.has(r) ||
+        (this.rowIds.length
+          ? (core.isRowContentDirty?.(r) ?? core.isDirtyRow(r))
+          : core.isDirtyRow(r));
       const hadCursor = r === this.prevCursorRow && needsCursorUpdate;
       const hasCursor = r === cursor.row;
 
@@ -1441,6 +1513,7 @@ export class Renderer {
       end = edge(range.end, true);
     const native = this.container.ownerDocument.getSelection();
     if (!start || !end || !native) return false;
+    markSelectionChanged(this.container.ownerDocument);
     native.setBaseAndExtent(...start, ...end);
     this.selection?.capture(core, this.selectionRows());
     return true;

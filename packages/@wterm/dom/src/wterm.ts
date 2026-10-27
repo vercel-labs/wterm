@@ -13,6 +13,7 @@ import { TextCapture } from "./text-capture.js";
 import { OutputAnnouncements } from "./output-announcements.js";
 import { DebugAdapter } from "./debug.js";
 import { isLinkActivationModifier } from "./hyperlink.js";
+import { markSelectionChanged } from "./selection-state.js";
 import {
   SearchController,
   type SearchOptions,
@@ -21,6 +22,21 @@ import {
 
 const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
 const PROGRAMMATIC_SCROLL_TOLERANCE = 1;
+const pendingRenders = new Set<WTerm>();
+let renderFrameId: number | null = null;
+
+interface RenderFrame {
+  scrollTop: number;
+  viewportScrollTop: number;
+  clientHeight: number;
+  maxScrollTop: number;
+  rowHeight: number;
+  scrollbackCount: number;
+  discardedCount: number | undefined;
+  dirtyCount: number;
+  followOutput: boolean;
+  restoreScroll: boolean;
+}
 
 export interface WTermOptions {
   cols?: number;
@@ -77,7 +93,6 @@ export class WTerm {
   private _debugEnabled: boolean;
   private renderer: Renderer | null = null;
   private input: InputHandler | null = null;
-  private rafId: number | null = null;
   private _renderingPaused: boolean;
   private _onVisibilityChange: () => void;
   private _synchronizedOutputTimer: ReturnType<typeof setTimeout> | null = null;
@@ -87,6 +102,7 @@ export class WTerm {
   private resizeObserver: ResizeObserver | null = null;
   private _destroyed = false;
   private _shouldScrollToBottom = false;
+  private _pinnedToBottom = true;
   private _scrollbackDiscardedCount = 0;
   private _programmaticScrollTop: number | null = null;
   private _pendingResizeScrollTop: number | null = null;
@@ -208,7 +224,7 @@ export class WTerm {
       () => this.bridge,
       () =>
         this._canRender() &&
-        this.rafId === null &&
+        !pendingRenders.has(this) &&
         this._synchronizedOutputState !== "held",
     );
     this._outputAnnouncements.setEnabled(options.announceOutput ?? false);
@@ -318,7 +334,8 @@ export class WTerm {
     );
     this._onScroll = () => {
       if (this._pendingResizeScrollTop !== null) return;
-      if (this._shouldScrollToBottom && this._isScrolledToBottom()) {
+      const atBottom = this._isScrolledToBottom();
+      if (this._shouldScrollToBottom && atBottom) {
         this._programmaticScrollTop = null;
         return;
       }
@@ -465,19 +482,30 @@ export class WTerm {
 
   private _isScrolledToBottom(): boolean {
     const el = this.element;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 5;
+    this._pinnedToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 5;
+    return this._pinnedToBottom;
   }
 
   private _scrollToBottom(): void {
     this._setScrollTop(this.element.scrollHeight);
   }
 
-  private _setScrollTop(value: number): void {
-    const before = this.element.scrollTop;
-    this.element.scrollTop = value;
-    const after = this.element.scrollTop;
-    if (after === before) return;
-    this._programmaticScrollTop = after;
+  private _setScrollTop(value: number, frame?: RenderFrame): void {
+    if (!frame) {
+      const before = this.element.scrollTop;
+      this.element.scrollTop = value;
+      const after = this.element.scrollTop;
+      this._isScrolledToBottom();
+      if (after !== before) this._programmaticScrollTop = after;
+      return;
+    }
+    const maxScrollTop = frame.maxScrollTop;
+    const target = Math.max(0, Math.min(value, maxScrollTop));
+    this._pinnedToBottom = maxScrollTop - target < 5;
+    if (target !== frame.viewportScrollTop || frame.restoreScroll) {
+      this._programmaticScrollTop = target;
+    }
+    this.element.scrollTop = target;
   }
 
   /** Apply host colors without writing terminal input or restarting the session. */
@@ -519,12 +547,13 @@ export class WTerm {
 
   write(data: string | Uint8Array): void {
     if (!this.bridge || this._destroyed) return;
+    markSelectionChanged(this.element.ownerDocument);
     this._textCapture.cancel();
     this._rectangleDrag.cancel();
     this._historySelection.invalidate();
     this.renderer?.beforeMutation(this.bridge);
     if (this.debug) this.debug.traceWrite(data);
-    this._shouldScrollToBottom = this._isScrolledToBottom();
+    this._shouldScrollToBottom = this._pinnedToBottom;
     const windowSizeQueries = this._collectWindowSizeQueries(data);
     let deliveryError: unknown;
     let hasDeliveryError = false;
@@ -640,6 +669,7 @@ export class WTerm {
 
   resize(cols: number, rows: number): void {
     if (!this.bridge || this._destroyed) return;
+    markSelectionChanged(this.element.ownerDocument);
     this._textCapture.cancel();
     this._rectangleDrag.cancel();
     this._historySelection.invalidate();
@@ -845,6 +875,7 @@ export class WTerm {
       )
         return;
     }
+    markSelectionChanged(this.element.ownerDocument);
     selection.removeAllRanges();
   }
 
@@ -938,19 +969,54 @@ export class WTerm {
     if (
       !this._canRender() ||
       this._synchronizedOutputState === "held" ||
-      this.rafId != null
+      pendingRenders.has(this)
     )
       return;
-    this.rafId = requestAnimationFrame(() => {
-      this.rafId = null;
-      this._doRender();
-    });
+    pendingRenders.add(this);
+    if (renderFrameId === null) {
+      const frameId = requestAnimationFrame(WTerm._flushRenders);
+      if (pendingRenders.size > 0) renderFrameId = frameId;
+    }
   }
 
   private _cancelScheduledRender(): void {
-    if (this.rafId != null) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
+    pendingRenders.delete(this);
+    if (pendingRenders.size === 0 && renderFrameId !== null) {
+      cancelAnimationFrame(renderFrameId);
+      renderFrameId = null;
+    }
+  }
+
+  private static _flushRenders(): void {
+    renderFrameId = null;
+    const frames = new Map<WTerm, RenderFrame>();
+    const terminals = Array.from(pendingRenders);
+    for (const document of new Set(
+      terminals.map((terminal) => terminal.element.ownerDocument),
+    ))
+      markSelectionChanged(document);
+    for (const phase of ["read", "render", "measure", "scroll", "finish"]) {
+      for (const terminal of terminals) {
+        try {
+          if (phase === "read") {
+            if (!pendingRenders.delete(terminal)) continue;
+            const frame = terminal._readRender();
+            if (frame) frames.set(terminal, frame);
+            continue;
+          }
+          const frame = frames.get(terminal);
+          if (!frame) continue;
+          if (phase === "render") terminal._renderFrame(frame);
+          else if (phase === "measure") terminal._measureRenderScroll(frame);
+          else if (phase === "scroll") terminal._scrollRender(frame);
+          else terminal._finishRender();
+        } catch (error) {
+          frames.delete(terminal);
+          queueMicrotask(() => {
+            throw error;
+          });
+        }
+      }
     }
   }
 
@@ -1041,16 +1107,26 @@ export class WTerm {
   }
 
   private _doRender(): void {
+    this._cancelScheduledRender();
+    markSelectionChanged(this.element.ownerDocument);
+    const frame = this._readRender();
+    if (!frame) return;
+    this._renderFrame(frame);
+    this._measureRenderScroll(frame);
+    this._scrollRender(frame);
+    this._finishRender();
+  }
+
+  private _readRender(): RenderFrame | null {
     if (
       !this._canRender() ||
       !this.bridge ||
       !this.renderer ||
       this._synchronizedOutputState === "held"
     )
-      return;
+      return null;
 
     let dirtyCount = 0;
-    const t0 = this.debug ? performance.now() : 0;
     if (this.debug) {
       for (let r = 0; r < this.rows; r++) {
         if (this.bridge.isDirtyRow(r)) dirtyCount++;
@@ -1058,6 +1134,14 @@ export class WTerm {
     }
 
     const rowHeight = this._rowHeight || 17;
+    const viewportScrollTop = this.element.scrollTop;
+    const clientHeight = this.element.clientHeight;
+    this._pinnedToBottom =
+      this.element.scrollHeight - viewportScrollTop - clientHeight < 5;
+    const style = getComputedStyle(this.element);
+    const padding =
+      (parseFloat(style.paddingTop) || 0) +
+      (parseFloat(style.paddingBottom) || 0);
     const scrollbackCount = this.bridge.getScrollbackCount();
     const discardedCount = this.bridge.getScrollbackDiscardedCount?.();
     const discardedDelta =
@@ -1071,47 +1155,88 @@ export class WTerm {
     let scrollTop =
       this._pendingResizeScrollTop !== null
         ? this._pendingResizeScrollTop
-        : this.element.scrollTop;
+        : viewportScrollTop;
     if (!this._shouldScrollToBottom && discardedDelta > 0) {
       scrollTop = Math.max(0, scrollTop - discardedDelta * rowHeight);
-      if (this._pendingResizeScrollTop !== null) {
-        this._pendingResizeScrollTop = scrollTop;
-      } else {
-        this._setScrollTop(scrollTop);
-      }
     }
 
+    return {
+      scrollTop,
+      viewportScrollTop,
+      clientHeight,
+      maxScrollTop: Math.max(
+        0,
+        Math.round(
+          (scrollbackCount + this.rows) * rowHeight +
+            padding +
+            this._keyboardInset +
+            this._historySelection.statusHeight,
+        ) - clientHeight,
+      ),
+      rowHeight,
+      scrollbackCount,
+      discardedCount,
+      dirtyCount,
+      followOutput: this._shouldScrollToBottom,
+      restoreScroll:
+        this._pendingResizeScrollTop !== null || discardedDelta > 0,
+    };
+  }
+
+  private _renderFrame(frame: RenderFrame): void {
+    if (!this.bridge || !this.renderer) return;
+    const t0 = this.debug ? performance.now() : 0;
     this.renderer.render(this.bridge, {
-      scrollTop: this._shouldScrollToBottom
+      scrollTop: frame.followOutput
         ? Math.max(
             0,
-            (scrollbackCount + this.rows) * rowHeight -
-              this.element.clientHeight,
+            (frame.scrollbackCount + this.rows) * frame.rowHeight -
+              frame.clientHeight,
           )
-        : scrollTop,
-      clientHeight: this.element.clientHeight,
-      rowHeight,
-      scrollbackDiscardedCount: discardedCount,
+        : frame.scrollTop,
+      clientHeight: frame.clientHeight,
+      rowHeight: frame.rowHeight,
+      scrollbackDiscardedCount: frame.discardedCount,
       charWidth: this._charWidth,
     });
 
     if (this.debug) {
-      this.debug.recordRender(performance.now() - t0, dirtyCount);
+      this.debug.recordRender(performance.now() - t0, frame.dirtyCount);
     }
 
-    const hasScrollback = scrollbackCount > 0 || this.renderer.hasImageFlow;
+    const hasScrollback =
+      frame.scrollbackCount > 0 || this.renderer.hasImageFlow;
     this.element.classList.toggle("has-scrollback", hasScrollback);
+  }
 
-    if (this._shouldScrollToBottom) {
-      this._scrollToBottom();
-    } else if (this._pendingResizeScrollTop !== null) {
-      const pendingScrollTop = this._pendingResizeScrollTop;
-      this._pendingResizeScrollTop = null;
-      this._setScrollTop(pendingScrollTop);
-    } else if (!hasScrollback && this.element.scrollTop !== 0) {
-      this._setScrollTop(0);
+  private _measureRenderScroll(frame: RenderFrame): void {
+    if (this.renderer?.hasImageFlow) {
+      frame.maxScrollTop = Math.max(
+        0,
+        this.element.scrollHeight - frame.clientHeight,
+      );
     }
+  }
 
+  private _scrollRender(frame: RenderFrame): void {
+    this._pendingResizeScrollTop = null;
+    if (frame.followOutput) {
+      this._setScrollTop(frame.maxScrollTop, frame);
+    } else if (frame.restoreScroll) {
+      this._setScrollTop(frame.scrollTop, frame);
+    } else if (!frame.scrollbackCount && !this.renderer?.hasImageFlow) {
+      this._setScrollTop(0, frame);
+    }
+  }
+
+  private _finishRender(): void {
+    if (
+      !this.bridge ||
+      !this.renderer ||
+      !this._canRender() ||
+      this._synchronizedOutputState === "held"
+    )
+      return;
     this.input?.syncInputPosition();
     if (this._searchReveal) {
       this._searchReveal = false;
@@ -1362,6 +1487,7 @@ export class WTerm {
   private _lastContainerRect: DOMRectReadOnly | null = null;
   /** Reserves the part of the element the keyboard covers, below the grid. */
   private _keyboardSpacer: HTMLDivElement | null = null;
+  private _keyboardInset = 0;
   private _visualViewport: VisualViewport | null = null;
   private _visualViewportFrame = 0;
 
@@ -1402,6 +1528,7 @@ export class WTerm {
 
   /** Keeps the grid's last row above the keyboard while the element scrolls to the bottom. */
   private _setKeyboardInset(px: number): void {
+    this._keyboardInset = Math.max(0, px);
     if (px <= 0) {
       this._keyboardSpacer?.remove();
       this._keyboardSpacer = null;
