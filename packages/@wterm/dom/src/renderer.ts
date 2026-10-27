@@ -1273,16 +1273,13 @@ export class Renderer {
 
   /** Reuses live row nodes and canvas bands by the core's content identity. */
   private syncLiveRows(core: TerminalCore): Set<number> | null {
-    if (!core.getRowId) {
-      this.rowIds = [];
-      return null;
-    }
-    const ids = Array.from({ length: this.rows }, (_, row) =>
-      core.getRowId!(row),
-    );
+    const ids = core.getRowId
+      ? Array.from({ length: this.rows }, (_, row) => core.getRowId!(row))
+      : [];
     const previous = this.rowIds;
-    this.rowIds = ids;
-    if (ids.some((id) => id === null) || previous.length !== ids.length)
+    this.rowIds = ids.includes(null) ? [] : ids;
+    if (!this.rowIds.length) return null;
+    if (previous.length !== ids.length)
       return new Set(ids.map((_, row) => row));
     if (ids.every((id, row) => id === previous[row])) return null;
 
