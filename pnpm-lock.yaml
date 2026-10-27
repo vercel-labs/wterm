@@ -136,22 +136,6 @@ importers:
         specifier: ^6.0.2
         version: 6.0.2
 
-  e2e/bench:
-    dependencies:
-      '@wterm/core':
-        specifier: workspace:*
-        version: link:../../packages/@wterm/core
-      '@wterm/dom':
-        specifier: workspace:*
-        version: link:../../packages/@wterm/dom
-      '@wterm/ghostty':
-        specifier: workspace:*
-        version: link:../../packages/@wterm/ghostty
-    devDependencies:
-      vite:
-        specifier: ^8.3.0
-        version: 8.3.0(@types/node@26.6.2)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.1)
-
   e2e/harness:
     dependencies:
       '@wterm/core':
@@ -7901,7 +7885,7 @@ packages:
   phase@0.5.4:
     resolution: {integrity: sha512-3nCOrMZ/dW1q0nLCbVZBcGW/60TEApcoBPCT7s8SsQ2I0/rHLeSMkxlPhaGfW/yEKgkLkCfmd+YGss65ZwR77Q==}
     engines: {node: 24.x}
-    deprecated: 'phase is now the scan tool; the runtime library moved to @usephase/core and @usephase/react. Run: npx @usephase/codemod@latest migrate-phase-to-usephase .'
+    deprecated: phase is now the scan tool; the runtime library moved to @usephase/core and @usephase/react
     peerDependencies:
       react: '>=18'
     peerDependenciesMeta:
@@ -13463,7 +13447,7 @@ snapshots:
       obug: 2.2.1
       std-env: 4.2.0
       tinyrainbow: 3.1.1
-      vitest: 5.0.2(@opentelemetry/api@1.9.0)(@types/node@26.6.2)(@vitest/coverage-v8@5.0.2)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.13.3(@types/node@26.6.2)(typescript@7.0.2))(vite@8.3.0(@types/node@26.6.2)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.1))
+      vitest: 5.0.2(@opentelemetry/api@1.9.0)(@types/node@26.6.2)(@vitest/coverage-v8@5.0.2)(jsdom@29.0.2(@noble/hashes@1.8.0))(msw@2.13.3(@types/node@26.6.2)(typescript@6.0.2))(vite@8.3.0(@types/node@26.6.2)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.1))
 
   '@vitest/istanbul-lib-coverage@1.0.1': {}
 
@@ -13527,7 +13511,7 @@ snapshots:
       '@vue/shared': 3.5.32
       estree-walker: 2.0.2
       magic-string: 0.30.21
-      postcss: 8.5.28
+      postcss: 8.5.26
       source-map-js: 1.2.1
 
   '@vue/compiler-ssr@3.5.32':
@@ -18940,8 +18924,8 @@ snapshots:
 
   tinyglobby@0.2.16:
     dependencies:
-      fdir: 6.5.0(picomatch@4.0.7)
-      picomatch: 4.0.7
+      fdir: 6.5.0(picomatch@4.0.4)
+      picomatch: 4.0.4
 
   tinyglobby@0.2.17:
     dependencies:
