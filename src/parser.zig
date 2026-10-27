@@ -46,6 +46,8 @@ pub const Parser = struct {
     osc_data: [MAX_OSC]u8 = undefined,
     osc_len: u16 = 0,
     osc_truncated: bool = false,
+    /// The OSC ended with BEL rather than ST, so replies end the same way.
+    osc_bel: bool = false,
     apc_len: u16 = 0,
     apc_truncated: bool = false,
 
@@ -59,6 +61,7 @@ pub const Parser = struct {
         if (byte == 0x1B) {
             if (self.state == .osc_string) {
                 self.state = .escape;
+                self.osc_bel = false;
                 return .osc_dispatch;
             }
             if (self.state == .apc_string or self.state == .apc_escape) {
@@ -312,6 +315,7 @@ pub const Parser = struct {
     fn handleOscString(self: *Parser, byte: u8) Action {
         if (byte == 0x07) {
             self.state = .ground;
+            self.osc_bel = true;
             return .osc_dispatch;
         }
         if (byte >= 0x20 and byte != 0x7F) {

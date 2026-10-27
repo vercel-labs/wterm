@@ -128,6 +128,9 @@ pub const Terminal = struct {
     saved_bg: u16 = cell_mod.DEFAULT_COLOR,
     saved_flags: u8 = 0,
 
+    /// Host theme defaults reported to OSC 10 and OSC 11 queries.
+    theme_fg: u32 = 0xd4d4d4,
+    theme_bg: u32 = 0x1e1e1e,
     current_fg: u16 = cell_mod.DEFAULT_COLOR,
     current_bg: u16 = cell_mod.DEFAULT_COLOR,
     current_flags: u8 = 0,
@@ -1293,6 +1296,23 @@ pub const Terminal = struct {
         }
     }
 
+    fn reportThemeColor(self: *Terminal, number: u8, rgb: u32) void {
+        var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
+        const channel = struct {
+            fn get(value: u32, shift: u5) u16 {
+                return @as(u16, @intCast((value >> shift) & 0xff)) * 257;
+            }
+        };
+        const out = std.fmt.bufPrint(&buf, "\x1b]{d};rgb:{x:0>4}/{x:0>4}/{x:0>4}{s}", .{
+            number,
+            channel.get(rgb, 16),
+            channel.get(rgb, 8),
+            channel.get(rgb, 0),
+            if (self.parser.osc_bel) "\x07" else "\x1b\\",
+        }) catch return;
+        self.enqueueResponse(out);
+    }
+
     // -- Tab stops --
 
     fn clearTabStop(self: *Terminal, mode: u16) void {
@@ -1406,6 +1426,19 @@ pub const Terminal = struct {
     fn handleOsc(self: *Terminal) void {
         if (self.parser.osc_len < 2) return;
         const data = self.parser.osc_data[0..self.parser.osc_len];
+
+        // OSC 10 and 11 report the theme foreground and background. Each `?`
+        // queries the next color, as in `OSC 10 ; ? ; ?`.
+        if (data.len >= 3 and data[0] == '1' and (data[1] == '0' or data[1] == '1') and data[2] == ';') {
+            var number: u8 = if (data[1] == '0') 10 else 11;
+            var it = std.mem.splitScalar(u8, data[3..], ';');
+            while (it.next()) |param| : (number += 1) {
+                if (number > 11) break;
+                if (!std.mem.eql(u8, param, "?")) continue;
+                self.reportThemeColor(number, if (number == 10) self.theme_fg else self.theme_bg);
+            }
+            return;
+        }
 
         if ((data[0] == '0' or data[0] == '2') and data[1] == ';') {
             const title = data[2..];
@@ -2705,4 +2738,23 @@ test "a cursor saved before a shrink is clamped when restored" {
     try std.testing.expect(t.cursor_row < t.rows);
     try std.testing.expect(t.cursor_col < t.cols);
     try std.testing.expectEqual(@as(u32, 'x'), t.grid.getCell(3, 9).char);
+}
+
+test "OSC 10 and 11 report the theme colors with the query's terminator" {
+    var t = Terminal.init(10, 2);
+    t.theme_fg = 0x112233;
+    t.theme_bg = 0xfafafa;
+    t.write("\x1b]10;?\x07");
+    try std.testing.expectEqualStrings("\x1b]10;rgb:1111/2222/3333\x07", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    t.write("\x1b]11;?\x1b\\");
+    try std.testing.expectEqualStrings("\x1b]11;rgb:fafa/fafa/fafa\x1b\\", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    // One OSC can query both, and setting a color is not answered.
+    t.write("\x1b]10;?;?\x07\x1b]10;#ffffff\x07");
+    try std.testing.expectEqualStrings("\x1b]10;rgb:1111/2222/3333\x07", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try std.testing.expectEqualStrings("\x1b]11;rgb:fafa/fafa/fafa\x07", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try std.testing.expectEqual(@as(u8, 0), t.responseLen());
 }
