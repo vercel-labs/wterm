@@ -50,15 +50,21 @@ function rgbToCSS(packed: number): string {
 function colorToCSS(index: number): string | null {
   if (index === DEFAULT_COLOR) return null;
   if (index < 16) return `var(--term-color-${index})`;
+  return rgbToCSS(paletteRgb(index));
+}
+
+/** Packed RGB for xterm palette indices 16-255. */
+function paletteRgb(index: number): number {
   if (index < 232) {
     const n = index - 16;
-    const r = Math.floor(n / 36) * 51;
-    const g = (Math.floor(n / 6) % 6) * 51;
-    const b = (n % 6) * 51;
-    return `rgb(${r},${g},${b})`;
+    return (
+      ((Math.floor(n / 36) * 51) << 16) |
+      (((Math.floor(n / 6) % 6) * 51) << 8) |
+      ((n % 6) * 51)
+    );
   }
   const level = (index - 232) * 10 + 8;
-  return `rgb(${level},${level},${level})`;
+  return (level << 16) | (level << 8) | level;
 }
 
 const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
@@ -69,16 +75,7 @@ function cellColorPixel(
 ): number | undefined {
   if (rgb === undefined) {
     if (index < 16 || index > 255) return undefined;
-    if (index < 232) {
-      const offset = index - 16;
-      rgb =
-        ((Math.floor(offset / 36) * 51) << 16) |
-        (((Math.floor(offset / 6) % 6) * 51) << 8) |
-        ((offset % 6) * 51);
-    } else {
-      const level = (index - 232) * 10 + 8;
-      rgb = (level << 16) | (level << 8) | level;
-    }
+    rgb = paletteRgb(index);
   }
   return LITTLE_ENDIAN
     ? (0xff000000 |
