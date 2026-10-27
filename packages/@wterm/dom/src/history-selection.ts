@@ -35,6 +35,11 @@ export class HistorySelection {
     return this.pending || this.text !== null;
   }
 
+  /** Height the sticky status line adds to the terminal's scroll height. */
+  get statusHeight(): number {
+    return this.status.offsetHeight;
+  }
+
   getText(): string | null {
     this.onSelectionChange();
     return this.text;

@@ -1169,7 +1169,8 @@ export class WTerm {
         Math.round(
           (scrollbackCount + this.rows) * rowHeight +
             padding +
-            this._keyboardInset,
+            this._keyboardInset +
+            this._historySelection.statusHeight,
         ) - clientHeight,
       ),
       rowHeight,
