@@ -997,24 +997,21 @@ export class WTerm {
       markSelectionChanged(document);
     for (const phase of ["read", "render", "measure", "scroll", "finish"]) {
       for (const terminal of terminals) {
-        if (!pendingRenders.has(terminal)) continue;
         try {
           if (phase === "read") {
+            if (!pendingRenders.delete(terminal)) continue;
             const frame = terminal._readRender();
             if (frame) frames.set(terminal, frame);
-            else pendingRenders.delete(terminal);
             continue;
           }
-          const frame = frames.get(terminal)!;
+          const frame = frames.get(terminal);
+          if (!frame) continue;
           if (phase === "render") terminal._renderFrame(frame);
           else if (phase === "measure") terminal._measureRenderScroll(frame);
           else if (phase === "scroll") terminal._scrollRender(frame);
-          else {
-            pendingRenders.delete(terminal);
-            terminal._finishRender();
-          }
+          else terminal._finishRender();
         } catch (error) {
-          pendingRenders.delete(terminal);
+          frames.delete(terminal);
           queueMicrotask(() => {
             throw error;
           });
@@ -1232,7 +1229,13 @@ export class WTerm {
   }
 
   private _finishRender(): void {
-    if (!this.bridge || !this.renderer || !this._canRender()) return;
+    if (
+      !this.bridge ||
+      !this.renderer ||
+      !this._canRender() ||
+      this._synchronizedOutputState === "held"
+    )
+      return;
     this.input?.syncInputPosition();
     if (this._searchReveal) {
       this._searchReveal = false;

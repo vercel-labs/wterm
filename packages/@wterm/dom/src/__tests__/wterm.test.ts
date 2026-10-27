@@ -766,6 +766,22 @@ describe("WTerm", () => {
       expect(frames.size).toBe(0);
     });
 
+    it("renders a write that another terminal's callback makes mid-frame", async () => {
+      const first = await createTerminal();
+      const second = await createTerminal();
+      flushFrame();
+      first.term.write("first");
+      second.term.write("second");
+      vi.mocked(first.bridge.getResponse).mockReturnValueOnce("reply");
+      first.term.onData = () => second.term.write("late");
+      flushFrame();
+
+      const render = vi.spyOn(Renderer.prototype, "render");
+      flushFrame();
+      expect(render).toHaveBeenCalledTimes(1);
+      expect(render.mock.calls[0][0]).toBe(second.bridge);
+    });
+
     it.each(["destroyed", "paused", "held"] as const)(
       "removes a %s terminal without dropping another terminal's queued render",
       async (state) => {
