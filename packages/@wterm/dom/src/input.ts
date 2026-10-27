@@ -936,6 +936,11 @@ export class InputHandler {
   }
 
   private keyToSequence(e: KeyboardEvent): string | null {
+    if (this.getBridge()?.modifyOtherKeys?.() === 2) {
+      const other = modifyOtherKeysSequence(e);
+      if (other !== null) return other;
+    }
+
     if (e.ctrlKey && !e.altKey && !e.metaKey) {
       const control = legacyControlByte(e.key);
       if (control !== null) return control;
@@ -969,4 +974,38 @@ export class InputHandler {
 
     return null;
   }
+}
+
+/**
+ * xterm modifyOtherKeys level 2: keys whose legacy encoding loses their
+ * modifiers become `CSI 27 ; modifier ; code ~`. Like xterm, and unlike
+ * Ghostty's encoder, Ctrl+letter is encoded too: applications that confirm
+ * level 2 with XTQMODKEYS, such as Vim, then stop reading raw control bytes.
+ * Keys with Meta stay with the browser.
+ */
+function modifyOtherKeysSequence(e: KeyboardEvent): string | null {
+  if (e.metaKey) return null;
+  const modifier =
+    1 + Number(e.shiftKey) + 2 * Number(e.altKey) + 4 * Number(e.ctrlKey);
+  if (modifier === 1) return null;
+  const only = (shift: boolean, alt: boolean, ctrl: boolean) =>
+    e.shiftKey === shift && e.altKey === alt && e.ctrlKey === ctrl;
+  switch (e.key) {
+    case "Tab":
+      return only(true, false, false) || only(false, true, false)
+        ? `\x1b[27;${modifier};9~`
+        : null;
+    case "Enter":
+      return only(false, true, false) ? "\x1b[27;3;13~" : null;
+    case "Backspace":
+      return only(false, false, true) ? null : `\x1b[27;${modifier};127~`;
+  }
+  const chars = Array.from(e.key);
+  if (chars.length !== 1) return null;
+  const code = chars[0].codePointAt(0)!;
+  // xterm's ModifyOtherKeys: control-range characters, any modifier besides
+  // Shift, or Shift+Space.
+  const encode =
+    (code >= 0x40 && code <= 0x7f) || e.altKey || e.ctrlKey || code === 0x20;
+  return encode ? `\x1b[27;${modifier};${code}~` : null;
 }
