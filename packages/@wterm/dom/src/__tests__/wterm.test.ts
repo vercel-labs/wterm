@@ -2205,6 +2205,40 @@ describe("visual viewport", () => {
   const frame = () =>
     new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
+  function mockCellCanvas() {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      width: 10,
+      height: 20,
+    } as DOMRect);
+    const context = {
+      createImageData: vi.fn((width: number, height: number) => ({
+        width,
+        height,
+        data: new Uint8ClampedArray(width * height * 4),
+      })),
+      putImageData: vi.fn(),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      context as unknown as CanvasRenderingContext2D,
+    );
+    const bridge = createMockBridge();
+    vi.mocked(bridge.getCursor).mockReturnValue({
+      row: 0,
+      col: 0,
+      visible: false,
+    });
+    vi.mocked(bridge.getCell).mockImplementation((row, col) => ({
+      char: row === 0 && col < 2 ? 0x2580 : 32,
+      fg: 256,
+      bg: 256,
+      flags: 0,
+      fgRgb: col === 0 ? 0xff0000 : 0x0000ff,
+      bgRgb: 0x445566,
+    }));
+    vi.mocked(MockedWasmBridge.load).mockResolvedValue(bridge);
+    return { bridge, context };
+  }
+
   it("drops rows the keyboard covers and restores them when it closes", async () => {
     const term = await mount();
     expect(term.rows).toBe(20);
@@ -2267,5 +2301,106 @@ describe("visual viewport", () => {
     viewport.dispatchEvent(new Event("resize"));
     await frame();
     expect(resize).not.toHaveBeenCalled();
+  });
+
+  it("repaints the canvas when cell width changes without changing the grid or text", async () => {
+    const { bridge } = mockCellCanvas();
+    let cellWidth = 10;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        const width = this.textContent === "W" ? cellWidth : 400;
+        return { width, height: 20 } as DOMRect;
+      },
+    );
+    const term = new WTerm(element, { autoResize: false });
+    await term.init();
+    await frame();
+    const canvas =
+      element.querySelector<HTMLCanvasElement>(".term-cell-canvas")!;
+    const grid = element.querySelector(".term-grid");
+    const rows = Array.from(element.querySelectorAll(".term-row"));
+    const text = rows.map((row) => row.textContent);
+    const dimensions = [term.cols, term.rows];
+    expect(canvas.width).toBe(term.cols * 10);
+    expect(canvas.hidden).toBe(false);
+    vi.mocked(bridge.resize).mockClear();
+    cellWidth = 12;
+    observerCallback!([], {} as ResizeObserver);
+    await frame();
+    expect(canvas.width).toBe(term.cols * 12);
+    expect(canvas.style.width).toBe(`${term.cols * 12}px`);
+    expect(canvas.hidden).toBe(false);
+    expect([term.cols, term.rows]).toEqual(dimensions);
+    expect(bridge.resize).not.toHaveBeenCalled();
+    expect(element.querySelector(".term-grid")).toBe(grid);
+    const currentRows = Array.from(element.querySelectorAll(".term-row"));
+    expect(currentRows.map((row) => row.textContent)).toEqual(text);
+    term.destroy();
+  });
+
+  it("immediately prints colored DOM blocks and restores the canvas on the next frame", async () => {
+    const { context } = mockCellCanvas();
+    const term = new WTerm(element, { autoResize: false });
+    await term.init();
+    await frame();
+    const canvas =
+      element.querySelector<HTMLCanvasElement>(".term-cell-canvas")!;
+    expect(canvas.hidden).toBe(false);
+    expect(element.querySelector(".term-canvas-run")?.textContent).toContain(
+      "▀▀",
+    );
+    window.dispatchEvent(new Event("beforeprint"));
+    const blocks = element.querySelectorAll<HTMLElement>(".term-block");
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].textContent).toBe("▀");
+    expect(blocks[1].textContent).toBe("▀");
+    expect(blocks[0].style.color).toBe("rgb(255, 0, 0)");
+    expect(blocks[1].style.color).toBe("rgb(0, 0, 255)");
+    expect(blocks[0].getAttribute("style")).toContain("rgb(255,0,0)");
+    expect(blocks[1].getAttribute("style")).toContain("rgb(0,0,255)");
+    expect(blocks[0].getAttribute("style")).toContain("rgb(68,85,102)");
+    expect(blocks[1].getAttribute("style")).toContain("rgb(68,85,102)");
+    expect(element.querySelector(".term-canvas-run")).toBeNull();
+    expect(canvas.hidden).toBe(true);
+    expect(element.classList.contains("term-print-canvas")).toBe(false);
+    context.putImageData.mockClear();
+    window.dispatchEvent(new Event("afterprint"));
+    await frame();
+    expect(canvas.hidden).toBe(false);
+    expect(canvas.width).toBe(term.cols * 10);
+    expect(context.putImageData).toHaveBeenCalled();
+    expect(element.querySelector(".term-canvas-run")?.textContent).toContain(
+      "▀▀",
+    );
+    expect(element.querySelector(".term-block")).toBeNull();
+    term.destroy();
+  });
+
+  it("retains the painted canvas while printing a paused screen", async () => {
+    const { bridge, context } = mockCellCanvas();
+    const term = new WTerm(element, { autoResize: false });
+    await term.init();
+    await frame();
+    const run = element.querySelector(".term-canvas-run")!;
+    const image = context.createImageData.mock.results[0].value;
+    term.setRenderingPaused(true);
+    vi.mocked(bridge.getCell).mockReturnValue({
+      char: 0x58,
+      fg: 256,
+      bg: 256,
+      flags: 0,
+      fgRgb: 0x00ff00,
+      bgRgb: 0xffffff,
+    });
+    term.write("held output");
+    window.dispatchEvent(new Event("beforeprint"));
+    await frame();
+    expect(element.classList.contains("term-print-canvas")).toBe(true);
+    expect(element.querySelector(".term-canvas-run")).toBe(run);
+    expect(run.textContent).toContain("▀▀");
+    expect(Array.from(image.data.slice(0, 4))).toEqual([255, 0, 0, 255]);
+    window.dispatchEvent(new Event("afterprint"));
+    expect(element.classList.contains("term-print-canvas")).toBe(false);
+    term.destroy();
   });
 });
