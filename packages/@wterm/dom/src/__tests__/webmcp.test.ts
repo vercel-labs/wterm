@@ -187,6 +187,41 @@ describe("WebMCP", () => {
     await expect(pending).rejects.toThrow("Cancelled");
   });
 
+  it("ends pending calls when their terminal is withdrawn", async () => {
+    const onData = vi.fn();
+    const wt = await terminal({ onData, webmcp: { name: "secret" } });
+    await terminal({ webmcp: { name: "other" } });
+    wt.write("before");
+    const read = call("read_terminal", {
+      terminal: "secret",
+      waitFor: "after",
+    });
+    const typed = call("type_in_terminal", {
+      terminal: "secret",
+      text: "rm",
+      submit: true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    wt.setWebMCP(false);
+    wt.write(" after");
+    const unavailable = { error: 'Terminal "secret" is no longer available.' };
+    expect(await read).toEqual(unavailable);
+    expect(await typed).toEqual(unavailable);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(onData.mock.calls).toEqual([["rm"]]);
+    expect(tools.has("read_terminal")).toBe(true);
+  });
+
+  it("ends pending calls when their terminal is destroyed", async () => {
+    const wt = await terminal({ webmcp: { name: "gone" } });
+    await terminal({ webmcp: { name: "other" } });
+    const read = call("read_terminal", { terminal: "gone", waitFor: "x" });
+    wt.destroy();
+    expect(await read).toEqual({
+      error: 'Terminal "gone" is no longer available.',
+    });
+  });
+
   it("types text through onData as user input", async () => {
     const onData = vi.fn();
     const wt = await terminal({ onData });

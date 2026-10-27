@@ -35,7 +35,7 @@ The framework components take the same value as a prop, and changes apply withou
 <Terminal webmcp={{ name: "shell" }} onData={send} />
 ```
 
-In vanilla JavaScript, call `term.setWebMCP(options)` to change the options later, or `term.setWebMCP(false)` to withdraw the terminal. Tools are registered once the terminal initializes and removed when it is destroyed.
+In vanilla JavaScript, call `term.setWebMCP(options)` to change the options later, or `term.setWebMCP(false)` to withdraw the terminal. Tools are registered once the terminal initializes and removed when it is destroyed. Withdrawing or destroying a terminal also ends any call still in progress for it, so a waiting `read_terminal` cannot return output written afterwards.
 
 <table>
   <thead>

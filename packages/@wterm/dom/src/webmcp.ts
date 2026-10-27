@@ -49,6 +49,8 @@ interface Entry {
   terminal: WebMCPTerminal;
   description: string | undefined;
   readOnly: boolean;
+  /** Aborted when the terminal is withdrawn, ending calls already in progress. */
+  withdrawn: AbortController;
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -112,12 +114,16 @@ class Registry {
       terminal,
       description: options.description?.trim() || undefined,
       readOnly: options.readOnly === true,
+      withdrawn: new AbortController(),
     };
     this.terminals.set(name, entry);
     this.sync();
     return () => {
       if (this.terminals.get(name) !== entry) return;
       this.terminals.delete(name);
+      entry.withdrawn.abort(
+        new Error(`Terminal "${name}" is no longer available.`),
+      );
       this.sync();
     };
   }
@@ -273,7 +279,7 @@ class Registry {
                 entry.terminal,
                 read,
                 { waitFor, idleMs, timeoutMs },
-                context?.signal,
+                callSignal(entry, context?.signal),
               );
         const core = liveCore(entry);
         return JSON.stringify({
@@ -320,7 +326,8 @@ class Registry {
         if (input.submit) {
           // Programs that detect pastes by input speed, such as agent CLIs,
           // treat an Enter that arrives with the text as a pasted newline.
-          if (input.text) await delay(SUBMIT_DELAY_MS, context?.signal);
+          if (input.text)
+            await delay(SUBMIT_DELAY_MS, callSignal(entry, context?.signal));
           liveCore(entry);
           entry.terminal.sendKey(parseKey("Enter")!);
         }
@@ -441,7 +448,10 @@ function isFocused(terminal: WebMCPTerminal): boolean {
   return active !== null && terminal.element.contains(active);
 }
 
+// Calls keep their resolved entry, so every read and keystroke checks that the
+// terminal has not been withdrawn since the call began.
 function liveCore(entry: Entry): TerminalCore {
+  if (entry.withdrawn.signal.aborted) throw entry.withdrawn.signal.reason;
   const core = entry.terminal.core();
   if (!core)
     throw new Error(`Terminal "${entry.name}" is no longer available.`);
@@ -493,6 +503,13 @@ function contentRows(core: TerminalCore): number {
     }
   }
   return cursor + 1;
+}
+
+/** Ends when the agent cancels the call or the terminal is withdrawn. */
+function callSignal(entry: Entry, signal?: AbortSignal): AbortSignal {
+  return signal
+    ? AbortSignal.any([signal, entry.withdrawn.signal])
+    : entry.withdrawn.signal;
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
