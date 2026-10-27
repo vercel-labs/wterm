@@ -21,6 +21,29 @@ import {
 
 const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
 const PROGRAMMATIC_SCROLL_TOLERANCE = 1;
+const TEXT_SYNC_IDLE_MS = 150;
+
+function findQueryPrefix(data: string | Uint8Array, from: number): number {
+  if (typeof data === "string") return data.indexOf("\x1b[1", from);
+  for (
+    let i = data.indexOf(0x1b, from);
+    i >= 0;
+    i = data.indexOf(0x1b, i + 1)
+  ) {
+    if (data[i + 1] === 0x5b && data[i + 2] === 0x31) return i;
+  }
+  return -1;
+}
+
+/** Query state for an `ESC` or `ESC [` that ends the data. */
+function trailingQueryState(data: string | Uint8Array): 0 | 1 | 2 {
+  const at = (i: number) =>
+    typeof data === "string" ? data.charCodeAt(i) : data[i];
+  const n = data.length;
+  if (n >= 1 && at(n - 1) === 0x1b) return 1;
+  if (n >= 2 && at(n - 2) === 0x1b && at(n - 1) === 0x5b) return 2;
+  return 0;
+}
 
 export interface WTermOptions {
   cols?: number;
@@ -42,6 +65,12 @@ export interface WTermOptions {
   announceOutput?: boolean;
   /** Suspend painting for an inactive pane while continuing to parse output. */
   renderingPaused?: boolean;
+  /**
+   * `"webgl"` paints live output on a WebGL2 canvas and keeps the DOM text for
+   * selection, search and accessibility, updating it when output goes idle.
+   * Falls back to `"dom"` when WebGL2 is unavailable. Defaults to `"dom"`.
+   */
+  renderer?: "dom" | "webgl";
   debug?: boolean;
   onData?: (data: string) => void;
   /** Raw input bytes, used by X10 mouse reports. */
@@ -86,6 +115,13 @@ export class WTerm {
   private _rendererNeedsSetup = false;
   private resizeObserver: ResizeObserver | null = null;
   private _destroyed = false;
+  private _rendererOption: "dom" | "webgl";
+  private _textSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Selection and wheel scrolling start from current DOM text. */
+  private _onTextNeeded = (): void => {
+    this._syncText();
+    this.renderer?.yieldToDom();
+  };
   private _shouldScrollToBottom = false;
   private _scrollbackDiscardedCount = 0;
   private _programmaticScrollTop: number | null = null;
@@ -124,6 +160,14 @@ export class WTerm {
     this._initialColsExplicit = options.cols !== undefined;
     this._initialRowsExplicit = options.rows !== undefined;
     this.wasmUrl = options.wasmUrl;
+    this._rendererOption = options.renderer ?? "dom";
+    if (this._rendererOption === "webgl") {
+      element.addEventListener("mousedown", this._onTextNeeded, true);
+      element.addEventListener("wheel", this._onTextNeeded, {
+        capture: true,
+        passive: true,
+      });
+    }
     this.maxImageWidth = options.maxImageWidth;
     this.maxImageHeight = options.maxImageHeight;
     this.cols = options.cols || 80;
@@ -381,6 +425,7 @@ export class WTerm {
         colorHost: this.element,
         maxImageWidth: this.maxImageWidth,
         maxImageHeight: this.maxImageHeight,
+        renderer: this._rendererOption,
       });
       this.renderer.setup(this.cols, this.rows);
 
@@ -922,6 +967,21 @@ export class WTerm {
     }
   }
 
+  /** Brings the DOM text current once GPU-painted output goes quiet. */
+  private _scheduleTextSync(): void {
+    if (this._textSyncTimer !== null) clearTimeout(this._textSyncTimer);
+    this._textSyncTimer = setTimeout(() => {
+      this._textSyncTimer = null;
+      this._syncText();
+    }, TEXT_SYNC_IDLE_MS);
+  }
+
+  private _syncText(): void {
+    if (!this.renderer?.textStale || this._destroyed) return;
+    this.renderer.requestText();
+    this._doRender();
+  }
+
   private _scheduleRender(): void {
     if (
       !this._canRender() ||
@@ -1068,7 +1128,9 @@ export class WTerm {
       rowHeight,
       scrollbackDiscardedCount: discardedCount,
       charWidth: this._charWidth,
+      live: this._shouldScrollToBottom,
     });
+    if (this.renderer.textStale) this._scheduleTextSync();
 
     if (this.debug) {
       this.debug.recordRender(performance.now() - t0, dirtyCount);
@@ -1156,15 +1218,18 @@ export class WTerm {
     let index = 0;
     while (index < data.length) {
       if (state === 0) {
-        // Skip ordinary output in bulk. ASCII queries can be recognized in
+        // Skip ordinary output in bulk, jumping straight to `ESC [ 1`: SGR-heavy
+        // output has an ESC every few bytes. ASCII queries can be recognized in
         // raw bytes without allocating or decoding a copy of every write.
-        index =
-          typeof data === "string"
-            ? data.indexOf("\x1b", index)
-            : data.indexOf(0x1b, index);
-        if (index < 0) break;
-        state = 1;
-        index++;
+        const found = findQueryPrefix(data, index);
+        if (found < 0) {
+          // A prefix cut by the end of this write resumes in the next one.
+          state = trailingQueryState(data);
+          index = data.length;
+          break;
+        }
+        state = 3;
+        index = found + 3;
         continue;
       }
       const code =
@@ -1406,6 +1471,10 @@ export class WTerm {
     this._windowSizeQueryState = 0;
     this._cancelScheduledRender();
     this._cancelSynchronizedOutputFallback();
+    if (this._textSyncTimer !== null) clearTimeout(this._textSyncTimer);
+    this._textSyncTimer = null;
+    this.element.removeEventListener("mousedown", this._onTextNeeded, true);
+    this.element.removeEventListener("wheel", this._onTextNeeded, true);
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this._visualViewportFrame)
       cancelAnimationFrame(this._visualViewportFrame);

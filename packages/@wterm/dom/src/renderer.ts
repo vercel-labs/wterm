@@ -1,10 +1,12 @@
 import type {
   CellData,
+  CursorState,
   TerminalCore,
   TerminalPosition,
   TerminalColorOverrides,
 } from "@wterm/core";
 import { GraphicsLayer, type GraphicsLayerOptions } from "./graphics-layer.js";
+import { GpuGrid, type GpuCursor, type GpuPalette } from "./gpu-renderer.js";
 import {
   getSelectionText,
   offsetAtCell,
@@ -38,6 +40,8 @@ export interface RenderViewport {
   scrollbackDiscardedCount?: number;
   charWidth?: number;
   selectedRows?: { start: number; end: number };
+  /** Following live output at the bottom; lets the GPU path paint the grid. */
+  live?: boolean;
 }
 
 function rgbToCSS(packed: number): string {
@@ -415,6 +419,21 @@ export class Renderer {
   private painted = false;
   private colorHost: HTMLElement;
   private viewport: RenderViewport | undefined;
+  private gpu: GpuGrid | null = null;
+  private gpuWanted = false;
+  private gpuShown = false;
+  /** Every GPU row must be rebuilt: the DOM path painted frames the GPU missed. */
+  private gpuAllDirty = true;
+  /** Grid rows whose DOM text lags the GPU frame. */
+  private staleRows = new Set<number>();
+  private staleScrollback = false;
+  private forceText = false;
+  private searchActive = false;
+  private gpuPalette: GpuPalette | null = null;
+  private gpuCursor: GpuCursor | null = null;
+  private gpuCoreCursor: CursorState | null = null;
+  private hostObserver: MutationObserver | null = null;
+  private blinkTimer: ReturnType<typeof setInterval> | null = null;
 
   get hasImageFlow(): boolean {
     return (
@@ -425,9 +444,13 @@ export class Renderer {
 
   constructor(
     container: HTMLElement,
-    options: GraphicsLayerOptions & { colorHost?: HTMLElement } = {},
+    options: GraphicsLayerOptions & {
+      colorHost?: HTMLElement;
+      renderer?: "dom" | "webgl";
+    } = {},
   ) {
     this.container = container;
+    this.gpuWanted = options.renderer === "webgl";
     this.colorHost = options.colorHost ?? container;
     this.graphics = new GraphicsLayer(container, options);
     this.searchLayer = document.createElement("div");
@@ -468,6 +491,10 @@ export class Renderer {
     this.container.appendChild(fragment);
     this.searchLayer.replaceChildren();
     this.container.appendChild(this.searchLayer);
+    if (this.gpu) this.container.appendChild(this.gpu.canvas);
+    this.gpuAllDirty = true;
+    this.staleRows.clear();
+    this.staleScrollback = false;
     this.graphics.setup();
     this.prevCursorRow = -1;
     this.prevCursorCol = -1;
@@ -1020,7 +1047,9 @@ export class Renderer {
     }
   }
 
-  private syncColorOverrides(colors: TerminalColorOverrides = {}): void {
+  /** Applies application color overrides; true when any changed. */
+  private syncColorOverrides(colors: TerminalColorOverrides = {}): boolean {
+    let changed = false;
     for (const [key, property] of [
       ["foreground", "--term-app-fg"],
       ["background", "--term-app-bg"],
@@ -1029,13 +1058,16 @@ export class Renderer {
       const value = colors[key];
       const css = value === undefined ? "" : rgbToCSS(value);
       if (this.colorHost.style.getPropertyValue(property) === css) continue;
+      changed = true;
       if (css) this.colorHost.style.setProperty(property, css);
       else this.colorHost.style.removeProperty(property);
     }
+    return changed;
   }
 
   render(core: TerminalCore, viewport?: RenderViewport): void {
-    this.syncColorOverrides(core.getColorOverrides?.());
+    if (this.syncColorOverrides(core.getColorOverrides?.()))
+      this.gpuPalette = null;
     this.viewport = viewport;
     this.selection ??= new TrackedSelection(
       this.container.parentElement ?? this.container,
@@ -1050,6 +1082,17 @@ export class Renderer {
       this.needsSetup = false;
       resized = true;
     }
+
+    const gpuEligible = this._gpuEligible(core, viewport, positions !== null);
+    if (
+      gpuEligible &&
+      !this.forceText &&
+      this._gpuFrame(core, viewport!, resized)
+    )
+      return;
+    // A text-only render leaves the matching GPU frame on screen; any other
+    // DOM frame, including one the GPU path declined, shows the DOM text.
+    if (!gpuEligible || !this.forceText) this._hideGpu();
 
     this.syncScrollback(
       core,
@@ -1077,7 +1120,11 @@ export class Renderer {
       cursorVisible !== this.prevCursorVisible;
 
     for (let r = 0; r < this.rows; r++) {
-      const isDirty = this.colorsChanged || resized || core.isDirtyRow(r);
+      const isDirty =
+        this.colorsChanged ||
+        resized ||
+        core.isDirtyRow(r) ||
+        this.staleRows.has(r);
       const hadCursor = r === this.prevCursorRow && needsCursorUpdate;
       const hasCursor = r === cursor.row;
 
@@ -1103,6 +1150,12 @@ export class Renderer {
     this.prevCursorVisible = cursorVisible;
 
     core.clearDirty();
+    this.staleRows.clear();
+    this.staleScrollback = false;
+    this.forceText = false;
+    // Newly mounted history moves the live rows; keep the canvas over them.
+    if (this.gpuShown) this._placeGpuCanvas();
+    this.gpuAllDirty = true;
     this.colorsChanged = false;
     this.selection.afterRender(this.selectionRows(), positions);
     this.painted = true;
@@ -1255,11 +1308,246 @@ export class Renderer {
 
   /** Replaces decorations only, preserving native text selection. */
   setSearchDecorations(decorations: DocumentFragment): void {
+    this.searchActive = decorations.firstChild !== null;
     if (!decorations.firstChild && !this.searchLayer.firstChild) return;
     this.searchLayer.replaceChildren(decorations);
   }
 
+  /** DOM text lags the painted GPU frame; a text render brings it current. */
+  get textStale(): boolean {
+    return this.staleRows.size > 0 || this.staleScrollback;
+  }
+
+  /** The next render rebuilds DOM text even when the GPU path could paint. */
+  requestText(): void {
+    this.forceText = true;
+  }
+
+  /** Shows the DOM text until the GPU path is eligible again, e.g. for selection. */
+  yieldToDom(): void {
+    this._hideGpu();
+    this.gpuAllDirty = true;
+  }
+
+  /** The GPU path can show this frame: live output with nothing that needs DOM. */
+  private _gpuEligible(
+    core: TerminalCore,
+    viewport: RenderViewport | undefined,
+    selecting: boolean,
+  ): boolean {
+    return (
+      this.gpuWanted &&
+      !selecting &&
+      !this.searchActive &&
+      viewport?.live === true &&
+      !!viewport.charWidth &&
+      !!viewport.rowHeight &&
+      GpuGrid.fits(
+        this.cols,
+        this.rows,
+        viewport.charWidth,
+        viewport.rowHeight,
+      ) &&
+      !this.hasImageFlow &&
+      // Image positions follow the DOM scrollback, which the GPU path defers.
+      ((core.getGraphicsState?.()?.placements.length ?? 0) === 0 ||
+        core.getScrollbackCount() === this._renderedScrollbackCount)
+    );
+  }
+
+  private _gpuFrame(
+    core: TerminalCore,
+    viewport: RenderViewport,
+    resized: boolean,
+  ): boolean {
+    if (!this.gpu) {
+      this.gpu = GpuGrid.create();
+      if (!this.gpu) {
+        this.gpuWanted = false;
+        return false;
+      }
+      // Hidden until a GPU frame paints it; a declined first frame keeps DOM.
+      this.gpu.canvas.hidden = true;
+      this.container.appendChild(this.gpu.canvas);
+      this._observeHost();
+    }
+    if (this.gpu.contextLost) {
+      this.gpu.destroy();
+      this.gpu = null;
+      this.gpuWanted = false;
+      return false;
+    }
+    if (this.colorsChanged || !this.gpuPalette)
+      this.gpuPalette = this._readPalette();
+    const style = getComputedStyle(this.container);
+    const reconfigured = this.gpu.configure(
+      this.cols,
+      this.rows,
+      {
+        charWidth: viewport.charWidth ?? 0,
+        rowHeight: viewport.rowHeight,
+        fontFamily: style.fontFamily,
+        fontSize: parseFloat(style.fontSize),
+      },
+      this.gpuPalette,
+    );
+    const all =
+      this.gpuAllDirty || reconfigured || resized || this.colorsChanged;
+    for (let r = 0; r < this.rows; r++) {
+      if (all || core.isDirtyRow(r)) {
+        this.gpu.updateRow(core, r);
+        this.staleRows.add(r);
+      }
+    }
+    // Filling the atlas clears it, leaving rows built earlier this frame
+    // pointing at freed slots: rebuild every row against the fresh atlas.
+    if (this.gpu.atlasStale) {
+      this.gpu.acknowledgeAtlas();
+      for (let r = 0; r < this.rows; r++) this.gpu.updateRow(core, r);
+      // More distinct glyphs on screen than the atlas holds: paint this
+      // frame as DOM text and rebuild the GPU rows on the next one.
+      if (this.gpu.atlasStale) {
+        this.gpu.acknowledgeAtlas();
+        this.staleRows.clear();
+        this.gpuAllDirty = true;
+        return false;
+      }
+    }
+    if (core.getScrollbackCount() !== this._renderedScrollbackCount)
+      this.staleScrollback = true;
+    const cursor = core.getCursor();
+    this.gpuCoreCursor = cursor;
+    this._applyGpuCursor();
+    core.clearDirty();
+    this.gpuAllDirty = false;
+    this.colorsChanged = false;
+    this.prevCursorRow = -1;
+    this.gpu.draw();
+    this.graphics.reconcile(core, {
+      scrollTop: viewport.scrollTop,
+      clientHeight: viewport.clientHeight,
+      rowHeight: viewport.rowHeight,
+      charWidth: viewport.charWidth ?? 0,
+      overscanRows: viewport.overscanRows ?? DEFAULT_SCROLLBACK_OVERSCAN_ROWS,
+      scrollbackCount: core.getScrollbackCount(),
+    });
+    this._placeGpuCanvas();
+
+    if (!this.gpuShown) {
+      this.gpu.canvas.hidden = false;
+      this.container.classList.add("term-gpu-active");
+      this.gpuShown = true;
+    }
+    this.painted = true;
+    return true;
+  }
+
+  /** Cursor focus and blink from the host, as the CSS reads them. */
+  private _applyGpuCursor(): void {
+    const cursor = this.gpuCoreCursor;
+    if (!this.gpu || !cursor) return;
+    const host = this.container.parentElement;
+    // Mirrors the CSS: solid and blinking only while the terminal has focus.
+    const focused = host?.matches(".focused, :active") ?? false;
+    const blinking =
+      focused &&
+      ((host?.classList.contains("cursor-blink") ?? false) ||
+        (!(host?.classList.contains("cursor-steady") ?? false) &&
+          cursor.blinking === true));
+    this.gpuCursor = {
+      row: cursor.row,
+      col: cursor.col,
+      shape: cursor.shape ?? "block",
+      visible: cursor.visible,
+      focused,
+    };
+    this._syncBlink(blinking);
+    this.gpu.setCursor(this._blinkedCursor(blinking));
+  }
+
+  /** Focus and blink classes change without output; redraw the cursor then. */
+  private _observeHost(): void {
+    const host = this.container.parentElement;
+    if (!host || this.hostObserver) return;
+    this.hostObserver = new MutationObserver(() => {
+      if (!this.gpu || !this.gpuShown) return;
+      this._applyGpuCursor();
+      this.gpu.draw();
+    });
+    this.hostObserver.observe(host, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+  }
+
+  /** The cursor with the CSS blink phase applied: on for the first half second. */
+  private _blinkedCursor(blinking: boolean): GpuCursor | null {
+    const c = this.gpuCursor;
+    if (!c || !blinking) return c;
+    return { ...c, visible: c.visible && performance.now() % 1000 < 500 };
+  }
+
+  private _syncBlink(blinking: boolean): void {
+    if (!blinking) {
+      if (this.blinkTimer !== null) clearInterval(this.blinkTimer);
+      this.blinkTimer = null;
+      return;
+    }
+    this.blinkTimer ??= setInterval(() => {
+      if (!this.gpu || !this.gpuShown) return;
+      this.gpu.setCursor(this._blinkedCursor(true));
+      this.gpu.draw();
+    }, 500);
+  }
+
+  private _placeGpuCanvas(): void {
+    const first = this.rowEls[0];
+    if (!first || !this.gpu) return;
+    const transform = `translate(${first.offsetLeft}px, ${first.offsetTop}px)`;
+    if (this.gpu.canvas.style.transform !== transform)
+      this.gpu.canvas.style.transform = transform;
+  }
+
+  private _hideGpu(): void {
+    this._syncBlink(false);
+    if (!this.gpuShown || !this.gpu) return;
+    this.gpu.canvas.hidden = true;
+    this.container.classList.remove("term-gpu-active");
+    this.gpuShown = false;
+  }
+
+  /** Resolves the theme's CSS colors to RGB for the GPU path. */
+  private _readPalette(): GpuPalette {
+    const probe = document.createElement("span");
+    probe.style.display = "none";
+    this.colorHost.appendChild(probe);
+    const read = (name: string, fallback: string) => {
+      probe.style.color = `var(${name}, ${fallback})`;
+      const m = getComputedStyle(probe).color.match(/\d+(\.\d+)?/g);
+      return m ? (Number(m[0]) << 16) | (Number(m[1]) << 8) | Number(m[2]) : 0;
+    };
+    const palette = {
+      // Application overrides win over the theme, as in the CSS.
+      fg: read("--term-app-fg", "var(--term-fg, #e5e5e5)"),
+      bg: read("--term-app-bg", "var(--term-bg, #000)"),
+      cursor: read(
+        "--term-app-cursor",
+        "var(--term-cursor, var(--term-app-fg, var(--term-fg, #e5e5e5)))",
+      ),
+      ansi: Array.from({ length: 16 }, (_, i) =>
+        read(`--term-color-${i}`, "#000"),
+      ),
+    };
+    probe.remove();
+    return palette;
+  }
+
   destroy(): void {
+    this.hostObserver?.disconnect();
+    this.hostObserver = null;
+    this._syncBlink(false);
+    this.gpu?.destroy();
+    this.gpu = null;
     this.syncColorOverrides();
     this.painted = false;
     this.selection?.dispose();

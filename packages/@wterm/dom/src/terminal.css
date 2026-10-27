@@ -315,7 +315,9 @@
 }
 
 .wterm:is(.focused, :active) .term-grid[data-cursor-shape="bar"] .term-cursor,
-.wterm:is(.focused, :active) .term-grid[data-cursor-shape="underline"] .term-cursor {
+.wterm:is(.focused, :active)
+  .term-grid[data-cursor-shape="underline"]
+  .term-cursor {
   background: var(--term-cell-bg, transparent);
   color: var(--term-cell-fg, inherit);
   box-shadow: var(--term-cursor-shadow);
@@ -436,4 +438,13 @@
   --term-color-13: #a626a4;
   --term-color-14: #0184bc;
   --term-color-15: #ffffff;
+}
+
+.term-gpu-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  /* Above the grid rows, below images, search marks and selection. */
+  z-index: 0;
 }

@@ -120,8 +120,22 @@ export class WasmBridge implements TerminalCore {
   }
 
   writeString(str: string, afterChunk?: () => void): void {
-    const encoded = this.encoder.encode(str);
-    this.writeRaw(encoded, afterChunk);
+    // Encode straight into the input buffer: no intermediate byte array.
+    let index = 0;
+    while (index < str.length) {
+      // A window of 8192 units never fits a trailing lone surrogate (at least
+      // 8191 bytes plus 3), so encodeInto stops before splitting a pair.
+      const buf = new Uint8Array(this.memory.buffer, this.writeBufferPtr, 8192);
+      const { read, written } = this.encoder.encodeInto(
+        str.substring(index, index + 8192),
+        buf,
+      );
+      this.exports.writeBytes(written);
+      // Escape sequences can swap the active screen and its backing storage.
+      this._updatePointers();
+      index += read;
+      afterChunk?.();
+    }
   }
 
   writeRaw(data: Uint8Array, afterChunk?: () => void): void {

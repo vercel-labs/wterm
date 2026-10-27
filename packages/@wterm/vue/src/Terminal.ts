@@ -89,6 +89,8 @@ const Terminal = defineComponent({
     maxImageWidth: Number,
     /** Maximum rendered Kitty image height in CSS pixels. */
     maxImageHeight: Number,
+    /** Paints live output with WebGL2; DOM text stays for selection, search and accessibility. Fixed at mount. */
+    renderer: String as PropType<"dom" | "webgl">,
     /**
      * Force blinking on/off; omit to follow the terminal application's request.
      */
@@ -162,6 +164,7 @@ const Terminal = defineComponent({
         autoResize: props.autoResize,
         maxImageWidth: props.maxImageWidth,
         maxImageHeight: props.maxImageHeight,
+        renderer: props.renderer,
         cursorBlink: props.cursorBlink,
         announceOutput: props.announceOutput,
         renderingPaused: props.renderingPaused,
