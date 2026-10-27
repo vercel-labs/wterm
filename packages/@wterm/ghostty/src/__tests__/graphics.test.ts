@@ -96,6 +96,51 @@ describe("GhosttyCore Kitty graphics", () => {
     );
   });
 
+  it("decodes a bulk payload split at any point", async () => {
+    const pixels = Array.from({ length: 16 * 16 * 3 }, (_, i) => (i * 7) & 255);
+    const data = Buffer.from(pixels).toString("base64");
+    const bytes = new TextEncoder().encode(
+      `\x1b_Ga=T,f=24,s=16,v=16,i=9,c=2,r=1;${data}\x1b\\`,
+    );
+    const whole = await newCore();
+    whole.writeRaw(bytes);
+    const expected = whole.getGraphicsImage(9, 1)?.rgba;
+    expect(expected).toHaveLength(16 * 16 * 4);
+
+    const cuts = [
+      ...Array.from({ length: 40 }, (_, i) => i + 1),
+      bytes.length >> 1,
+      bytes.length - 3,
+      bytes.length - 2,
+      bytes.length - 1,
+    ];
+    for (const cut of cuts) {
+      const core = await newCore();
+      core.writeRaw(bytes.subarray(0, cut));
+      core.writeRaw(bytes.subarray(cut));
+      expect(core.getGraphicsImage(9, 1)?.rgba, `cut at ${cut}`).toEqual(
+        expected,
+      );
+    }
+  });
+
+  it("aborts a payload at CAN the same way per byte and in bulk", async () => {
+    const bytes = new TextEncoder().encode(
+      `\x1b_Ga=T,f=24,s=1,v=1,i=3,c=1,r=1;AAA\x18AA\x1b\\` +
+        rgbImage(4, [1, 2, 3]),
+    );
+    const bulk = await newCore();
+    bulk.writeRaw(bytes);
+    const stepped = await newCore();
+    for (let i = 0; i < bytes.length; i++)
+      stepped.writeRaw(bytes.subarray(i, i + 1));
+
+    const ids = (core: Awaited<ReturnType<typeof newCore>>) =>
+      core.getGraphicsState()?.images.map((image) => image.imageId);
+    expect(ids(bulk)).toEqual(ids(stepped));
+    expect(ids(bulk)).toEqual([4]);
+  });
+
   it("refreshes graphics snapshots lazily after writes", async () => {
     const core = await newCore();
     const getGraphicsState = vi.spyOn(core, "getGraphicsState");

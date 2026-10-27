@@ -1,8 +1,27 @@
 # Changelog
 
-## 0.5.5
+## 0.5.6
 
 <!-- release:start -->
+
+### Improvements
+
+- **Built-in core scrolling:** advance full-screen scrolls without copying the grid on every line (#242).
+- **Terminal output throughput:** write eligible ASCII and UTF-8 runs directly into the current row while preserving parser fallbacks (#243).
+
+### Bug Fixes
+
+- **Truecolor output:** preserve exact RGB foreground and background colors in the built-in core, with palette fallback when the color table is full (#239).
+- **Restored cursor bounds:** clamp saved cursor positions after resizing to prevent writes outside the grid (#248).
+- **iOS keyboard visibility:** resize auto-sized terminals to keep the cursor row above the software keyboard (#244).
+
+### Contributors
+
+- @Railly
+
+<!-- release:end -->
+
+## 0.5.5
 
 ### Documentation
 
@@ -11,8 +30,6 @@
 ### Contributors
 
 - @Railly
-
-<!-- release:end -->
 
 ## 0.5.4
 
