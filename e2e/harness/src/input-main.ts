@@ -2,7 +2,12 @@ import { WasmBridge } from "@wterm/core";
 import { WTerm } from "@wterm/dom";
 import { GhosttyCore } from "@wterm/ghostty";
 import ghosttyWasm from "@wterm/ghostty/ghostty-vt.wasm?url";
-import { InputRun, type InputSession } from "./input";
+import {
+  INPUT_SCHEDULERS,
+  InputRun,
+  type InputScheduler,
+  type InputSession,
+} from "./input";
 import {
   INPUT_COLS,
   INPUT_ROWS,
@@ -21,8 +26,14 @@ const frame = () =>
 
 function api() {
   return {
-    start(workload: InputWorkload, probes: number) {
+    start(
+      workload: InputWorkload,
+      probes: number,
+      scheduler: InputScheduler = "frame",
+    ) {
       if (run) throw new Error("Reload before running again");
+      if (!INPUT_SCHEDULERS.includes(scheduler))
+        throw new Error("Invalid input scheduler");
       if (
         !INPUT_WORKLOADS.includes(workload) ||
         !Number.isInteger(probes) ||
@@ -31,7 +42,7 @@ function api() {
       )
         throw new Error("Invalid input workload or sample count");
       status.textContent = "Running";
-      run = new InputRun(sessions, workload, probes);
+      run = new InputRun(sessions, workload, probes, scheduler);
     },
     progress: () => run!.progress(),
     finish: () => {
