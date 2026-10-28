@@ -92,6 +92,27 @@ pub const Parser = struct {
         };
     }
 
+    /// Consumes CSI digits and separators, leaving other bytes for feed.
+    pub fn feedCsiParams(self: *Parser, data: []const u8) usize {
+        var offset: usize = 0;
+        while (offset < data.len) {
+            const byte = data[offset];
+            if (byte >= '0' and byte <= '9') {
+                if (self.param_count == 0) self.param_count = 1;
+                const index = self.param_count - 1;
+                var value = self.params[index];
+                while (offset < data.len and data[offset] >= '0' and data[offset] <= '9') : (offset += 1) {
+                    value = value *| 10 +| @as(u16, data[offset] - '0');
+                }
+                if (!self.params_full) self.params[index] = value;
+            } else if (byte == ';' or byte == ':') {
+                _ = self.handleCsiParam(byte);
+                offset += 1;
+            } else break;
+        }
+        return offset;
+    }
+
     fn enterEscape(self: *Parser) void {
         self.state = .escape;
         self.intermediate_count = 0;
@@ -404,6 +425,69 @@ pub fn decodeUtf8(bytes: []const u8) u21 {
         },
         else => 0xFFFD,
     };
+}
+
+test "bulk CSI parameters match bytewise parsing across every split" {
+    const testing = @import("std").testing;
+    const inputs = [_][]const u8{
+        "m",
+        ";m",
+        "1;;3;m",
+        "38;2;12;34;56;48;2;78;90;123m",
+        "38;5;255;48;5;16m",
+        "4:0;38:2::12:34:56m\x1b[4;0m",
+        "65534;65535;65536;999999999999m",
+        "0;" ** 15 ++ "1;2m",
+        "0;" ** 15 ++ "1:2m",
+        "12?3>4m",
+        "<1;2=3m",
+        "!p",
+        "12\x073m",
+        "1\x182m",
+        "1\x1a2m",
+        "12\x1b[3m",
+        "5 q",
+        "1$2mX",
+        "1\x7f2mX",
+        "1\x802mX",
+    };
+    for (inputs) |input| {
+        for (0..input.len + 1) |split| {
+            var fast = Parser{};
+            var slow = Parser{};
+            for ("\x1b[") |byte| {
+                _ = fast.feed(byte);
+                _ = slow.feed(byte);
+            }
+            for ([_][]const u8{ input[0..split], input[split..] }) |chunk| {
+                var offset: usize = 0;
+                while (offset < chunk.len) {
+                    if (fast.state == .csi_param) {
+                        const count = fast.feedCsiParams(chunk[offset..]);
+                        for (chunk[offset .. offset + count]) |byte| {
+                            try testing.expectEqual(Action.none, slow.feed(byte));
+                        }
+                        offset += count;
+                    }
+                    try testing.expectEqualDeep(slow.params, fast.params);
+                    try testing.expectEqualDeep(slow.subparam, fast.subparam);
+                    try testing.expectEqual(slow.param_count, fast.param_count);
+                    try testing.expectEqual(slow.params_full, fast.params_full);
+                    if (offset < chunk.len) {
+                        const byte = chunk[offset];
+                        try testing.expectEqual(slow.feed(byte), fast.feed(byte));
+                        try testing.expectEqual(slow.print_char, fast.print_char);
+                        try testing.expectEqual(slow.execute_byte, fast.execute_byte);
+                        offset += 1;
+                    }
+                }
+                try testing.expectEqual(slow.state, fast.state);
+                try testing.expectEqual(slow.csi_private, fast.csi_private);
+                try testing.expectEqual(slow.intermediate_count, fast.intermediate_count);
+                try testing.expectEqualDeep(slow.intermediates, fast.intermediates);
+            }
+        }
+    }
 }
 
 test "OSC marks payloads that exceed the collection buffer as truncated" {

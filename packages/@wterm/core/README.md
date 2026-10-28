@@ -38,6 +38,11 @@ const term = new WTerm(el, { core });
 
 ## API
 
+### Live row identity
+
+`TerminalCore.getRowId?(row)` and `isRowContentDirty?(row)` let the DOM
+renderer reuse rows that only scrolled. Custom cores can omit them.
+
 ### Terminal row metadata
 
 `TerminalCore` optionally exposes `getRowMetadata(row)` for zero-based live
