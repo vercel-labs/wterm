@@ -383,6 +383,7 @@ export class WTerm {
         this.bridge = await WasmBridge.load(this.wasmUrl);
       }
       if (this._destroyed) return this;
+      this.bridge.setUpdateListener?.(this._onCoreUpdate);
       const initialCols = this.cols;
       const initialRows = this.rows;
       this._setRowHeight();
@@ -563,41 +564,8 @@ export class WTerm {
       deliveryError = error;
     };
     const drain = () => {
-      const result = this._drainResponses();
+      const result = this._deliverCoreEffects();
       if (result.hasError) recordDeliveryError(result.error);
-      const bells = this.bridge?.getBellCount?.() ?? 0;
-      if (bells > 0) {
-        try {
-          this.onBell?.(bells);
-        } catch (error) {
-          recordDeliveryError(error);
-        }
-      }
-      // Titles, like replies and bells, must reach the host even without paint.
-      try {
-        this._deliverTitle();
-      } catch (error) {
-        recordDeliveryError(error);
-      }
-      try {
-        const text = this.bridge?.getClipboardWrite?.() ?? null;
-        if (text !== null && !this._destroyed) this.onClipboardWrite?.(text);
-      } catch (error) {
-        recordDeliveryError(error);
-      }
-      try {
-        const state = this.bridge?.getShellIntegrationState?.() ?? null;
-        if (state !== null && !this._destroyed)
-          this.onShellIntegration?.(state);
-      } catch (error) {
-        recordDeliveryError(error);
-      }
-      try {
-        const uri = this.bridge?.getWorkingDirectory?.() ?? null;
-        if (uri !== null && !this._destroyed) this.onWorkingDirectory?.(uri);
-      } catch (error) {
-        recordDeliveryError(error);
-      }
     };
     if (typeof data === "string") {
       this.bridge.writeString(data, drain);
@@ -622,6 +590,81 @@ export class WTerm {
     }
     if (hasDeliveryError) throw deliveryError;
   }
+
+  /**
+   * Hands replies, bells, titles, clipboard writes, shell state and the
+   * working directory to the host. Returns the first host callback error.
+   */
+  private _deliverCoreEffects(): { hasError: boolean; error?: unknown } {
+    let hasError = false;
+    let firstError: unknown;
+    const record = (error: unknown) => {
+      if (hasError) return;
+      hasError = true;
+      firstError = error;
+    };
+    const result = this._drainResponses();
+    if (result.hasError) record(result.error);
+    const bells = this.bridge?.getBellCount?.() ?? 0;
+    if (bells > 0) {
+      try {
+        this.onBell?.(bells);
+      } catch (error) {
+        record(error);
+      }
+    }
+    // Titles, like replies and bells, must reach the host even without paint.
+    try {
+      this._deliverTitle();
+    } catch (error) {
+      record(error);
+    }
+    try {
+      const text = this.bridge?.getClipboardWrite?.() ?? null;
+      if (text !== null && !this._destroyed) this.onClipboardWrite?.(text);
+    } catch (error) {
+      record(error);
+    }
+    try {
+      const state = this.bridge?.getShellIntegrationState?.() ?? null;
+      if (state !== null && !this._destroyed) this.onShellIntegration?.(state);
+    } catch (error) {
+      record(error);
+    }
+    try {
+      const uri = this.bridge?.getWorkingDirectory?.() ?? null;
+      if (uri !== null && !this._destroyed) this.onWorkingDirectory?.(uri);
+    } catch (error) {
+      record(error);
+    }
+    return { hasError, error: firstError };
+  }
+
+  /** New state from a core that applies writes asynchronously. */
+  private _onCoreUpdate = (): void => {
+    if (!this.bridge || this._destroyed) return;
+    // The core changed, as after a write: stale captures and drags end.
+    this._textCapture.cancel();
+    this._rectangleDrag.cancel();
+    this.renderer?.beforeMutation(this.bridge);
+    this._historySelection.invalidate();
+    const result = this._deliverCoreEffects();
+    const synchronized = this.bridge.synchronizedOutput?.() ?? false;
+    const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
+    this._updateSynchronizedOutput(synchronized, generation);
+    this._invalidateSearch();
+    if (this._synchronizedOutputState !== "held") {
+      this._setupRendererIfNeeded();
+      this._scheduleRender();
+    }
+    if (result.hasError) {
+      // There is no write call to throw from; surface it like an event handler.
+      const error = result.error;
+      queueMicrotask(() => {
+        throw error;
+      });
+    }
+  };
 
   /** Fit the grid to the current element and font metrics. */
   fit(): void {
@@ -1564,6 +1607,7 @@ export class WTerm {
 
   destroy(): void {
     this._destroyed = true;
+    this.bridge?.setUpdateListener?.(null);
     this._textCapture.cancel();
     this._historySelection.destroy();
     this._rectangleDrag.destroy();

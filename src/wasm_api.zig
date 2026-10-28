@@ -223,6 +223,10 @@ export fn getScrollbackCount() u32 {
     return scrollback.count;
 }
 
+export fn getScrollbackClearCount() u32 {
+    return scrollback.clears;
+}
+
 export fn getScrollbackDiscardedCount() u32 {
     return scrollback.discarded;
 }
