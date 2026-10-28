@@ -231,6 +231,8 @@ export interface TerminalCore {
   // -- Scrollback --
   getScrollbackCount(): number;
   getScrollbackDiscardedCount?(): number;
+  /** Lines of history to keep; extra lines are dropped from the oldest end. */
+  setScrollbackLines?(lines: number): void;
   getScrollbackCell(offset: number, col: number): CellData;
   getScrollbackLineLen(offset: number): number;
   /** Offset zero is the newest history row. Null means unavailable or out of range. */

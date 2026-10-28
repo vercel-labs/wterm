@@ -526,6 +526,8 @@ const State = struct {
     rejected_images: u32,
     evicted_images: u32,
     positions: PositionTracker,
+    /// History limit in lines; null keeps the byte budget passed to init.
+    scrollback_lines: ?u32,
 };
 
 fn stateFromPtr(ptr: usize) *State {
@@ -769,6 +771,7 @@ export fn init(
     state.rejected_images = 0;
     state.evicted_images = 0;
     state.positions = .{};
+    state.scrollback_lines = null;
     state.stream = .initAlloc(allocator, .init(
         allocator,
         &state.terminal,
@@ -801,7 +804,32 @@ export fn deinit(ptr: usize) void {
 export fn resize(ptr: usize, cols: u16, rows: u16) void {
     const state = stateFromPtr(ptr);
     state.terminal.resize(allocator, cols, rows) catch {};
+    // Rows per page depend on the width, so the byte budget follows it.
+    if (state.scrollback_lines) |lines| applyScrollbackLines(state, lines);
     refreshGraphicsGeneration(state);
+}
+
+/// Keep `lines` rows of history. Ghostty budgets scrollback in bytes and
+/// prunes whole pages, so this converts lines to standard pages at the current
+/// width; rows retained past the limit are reported as discarded.
+export fn set_scrollback_lines(ptr: usize, lines: u32) void {
+    const state = stateFromPtr(ptr);
+    state.scrollback_lines = lines;
+    applyScrollbackLines(state, lines);
+}
+
+fn applyScrollbackLines(state: *State, lines: u32) void {
+    const page = vt.page;
+    const cap = page.std_capacity.adjust(.{ .cols = state.terminal.cols }) catch return;
+    // The budget covers every page, the active area's included, and pruning
+    // drops a whole page before the next one fills: two spare pages keep at
+    // least `lines` rows of history at all times.
+    const history = std.math.divCeil(usize, lines, cap.rows) catch return;
+    const active = std.math.divCeil(usize, state.terminal.rows, cap.rows) catch return;
+    const pages = if (lines == 0) 0 else history + active + 2;
+    const bytes = pages *| page.Page.layout(page.std_capacity).total_size;
+    const primary = state.terminal.screens.get(.primary) orelse return;
+    primary.pages.explicit_max_size = bytes;
 }
 
 // -- Data input -------------------------------------------------
@@ -1556,21 +1584,33 @@ export fn get_scrollback_row_wraps(ptr: usize, offset: u32) i32 {
     return rowWrapFlags(pin);
 }
 
-export fn get_scrollback_count(ptr: usize) u32 {
-    const state = stateFromPtr(ptr);
+/// History rows Ghostty retains, which may exceed `scrollback_lines`.
+fn retainedHistory(state: *State) usize {
     const screen: *Screen = state.terminal.screens.active;
     var total: usize = 0;
     var node_ = screen.pages.pages.first;
     while (node_) |node| : (node_ = node.next) {
         total += node.data.size.rows;
     }
-    if (total <= state.terminal.rows) return 0;
-    return @intCast(total - state.terminal.rows);
+    return total -| state.terminal.rows;
+}
+
+/// Rows retained past the line limit, hidden from the oldest end.
+fn hiddenHistory(state: *State, retained: usize) usize {
+    const lines = state.scrollback_lines orelse return 0;
+    return retained -| lines;
+}
+
+export fn get_scrollback_count(ptr: usize) u32 {
+    const state = stateFromPtr(ptr);
+    const retained = retainedHistory(state);
+    return @intCast(retained - hiddenHistory(state, retained));
 }
 
 export fn get_scrollback_discarded_count(ptr: usize) u32 {
     const state = stateFromPtr(ptr);
-    return @intCast(state.terminal.screens.active.pages.discardedRows());
+    const discarded = state.terminal.screens.active.pages.discardedRows();
+    return @truncate(discarded +| hiddenHistory(state, retainedHistory(state)));
 }
 
 /// Write one scrollback row into a JS-provided buffer, using the same cell

@@ -16,7 +16,8 @@ export type ToWorker =
   | { t: "load"; wasmUrl?: string }
   | { t: "init"; cols: number; rows: number }
   | { t: "write"; data: string | Uint8Array }
-  | { t: "resize"; cols: number; rows: number };
+  | { t: "resize"; cols: number; rows: number }
+  | { t: "scrollbackLines"; lines: number };
 
 export interface CoreModes {
   cursorKeysApp: boolean;

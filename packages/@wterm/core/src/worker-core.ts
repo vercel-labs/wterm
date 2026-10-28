@@ -220,6 +220,13 @@ export class WorkerCore implements TerminalCore {
     this.post({ t: "resize", cols, rows });
   }
 
+  /** Lines of history to keep; extra lines are dropped from the oldest end. */
+  setScrollbackLines(lines: number): void {
+    if (!Number.isInteger(lines) || lines < 0 || lines > 0xffffffff)
+      throw new RangeError(`Invalid scrollback line count: ${lines}`);
+    this.post({ t: "scrollbackLines", lines });
+  }
+
   writeString(str: string): void {
     this.post({ t: "write", data: str });
   }

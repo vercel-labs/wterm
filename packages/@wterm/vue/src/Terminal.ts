@@ -97,6 +97,8 @@ const Terminal = defineComponent({
     announceOutput: Boolean,
     /** Suspend painting for an inactive pane; parsing and terminal effects continue. */
     renderingPaused: Boolean,
+    /** Lines of history the core keeps; omit for the core's default. */
+    scrollbackLines: Number,
     /**
      * Enable debug mode (init-only — changing after mount has no effect).
      * Exposes a `DebugAdapter` on the underlying `WTerm` instance.
@@ -165,6 +167,7 @@ const Terminal = defineComponent({
         cursorBlink: props.cursorBlink,
         announceOutput: props.announceOutput,
         renderingPaused: props.renderingPaused,
+        scrollbackLines: props.scrollbackLines,
         debug: props.debug,
         onData: hasDataListener
           ? (data: string) => emit("data", data)
@@ -224,6 +227,14 @@ const Terminal = defineComponent({
     watch(
       () => props.announceOutput,
       (enabled) => wterm.value?.setOutputAnnouncements(enabled),
+      { flush: "post" },
+    );
+
+    watch(
+      () => props.scrollbackLines,
+      (lines) => {
+        if (lines !== undefined) wterm.value?.setScrollbackLines(lines);
+      },
       { flush: "post" },
     );
 

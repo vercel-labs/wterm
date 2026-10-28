@@ -57,6 +57,8 @@
   export let announceOutput = false;
   /** Suspend painting for an inactive pane; parsing and terminal effects continue. */
   export let renderingPaused = false;
+  /** Lines of history the core keeps; omit for the core's default. */
+  export let scrollbackLines: number | undefined = undefined;
   export let debug = false;
   export let className = "";
   export let onData: ((data: string) => void) | undefined = undefined;
@@ -177,6 +179,7 @@
       cursorBlink,
       announceOutput,
       renderingPaused,
+      scrollbackLines,
       debug,
       onData: hasDataHandler() ? handleData : undefined,
       onBinary: hasBinaryHandler() ? handleBinary : undefined,
@@ -225,6 +228,10 @@
 
   $: if (instance) {
     instance.setRenderingPaused(renderingPaused);
+  }
+
+  $: if (instance && scrollbackLines !== undefined) {
+    instance.setScrollbackLines(scrollbackLines);
   }
 </script>
 
