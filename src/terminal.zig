@@ -2361,7 +2361,7 @@ test "scrollback reads stay correct after a pop on a wrapped ring" {
     // that treats "count < max" as "never wrapped" lands on the wrong line.
     var row: [grid_mod.MAX_COLS]Cell = undefined;
     var i: u32 = 0;
-    while (i < scrollback_mod.MAX_SCROLLBACK_LINES + 10) : (i += 1) {
+    while (i < scrollback_mod.DEFAULT_SCROLLBACK_LINES + 10) : (i += 1) {
         row[0] = Cell{ .char = 'a' + @as(u32, @intCast(i % 26)) };
         sb.push(&row, 1);
     }

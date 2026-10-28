@@ -526,6 +526,8 @@ const State = struct {
     rejected_images: u32,
     evicted_images: u32,
     positions: PositionTracker,
+    /// History limit in lines; null keeps the byte budget passed to init.
+    scrollback_lines: ?u32,
 };
 
 fn stateFromPtr(ptr: usize) *State {
@@ -673,6 +675,7 @@ fn graphicsPlacements(state: *State, buf: [*]u8, max_records: u32) u32 {
     var count: usize = 0;
     var it = activeStorage(state).placements.iterator();
     const screen = state.terminal.screens.active;
+    const hidden = hiddenRows(state);
     while (it.next()) |entry| {
         if (count == capacity) break;
         const placement = entry.value_ptr;
@@ -683,13 +686,16 @@ fn graphicsPlacements(state: *State, buf: [*]u8, max_records: u32) u32 {
         const point = screen.pages.pointFromPin(.screen, pin.*) orelse continue;
         const image = activeStorage(state).imageById(entry.key_ptr.image_id) orelse continue;
         const coord = point.coord();
+        // Placements anchored in rows hidden past the line limit are gone
+        // for the host, like those in discarded rows.
+        if (coord.y < hidden) continue;
         const placement_id = entry.key_ptr.placement_id.id;
         const placement_tag: u32 = @intFromEnum(entry.key_ptr.placement_id.tag);
         const offset = count * GRAPHICS_PLACEMENT_RECORD_BYTES;
         writeU32(buf, offset, image.id);
         writeU32(buf, offset + 4, placement_id);
         writeU32(buf, offset + 8, imageVersionFor(state, image.id));
-        writeU32(buf, offset + 12, coord.y);
+        writeU32(buf, offset + 12, @intCast(coord.y - hidden));
         writeU32(buf, offset + 16, coord.x);
         writeU32(buf, offset + 20, placement.x_offset);
         writeU32(buf, offset + 24, placement.y_offset);
@@ -769,6 +775,7 @@ export fn init(
     state.rejected_images = 0;
     state.evicted_images = 0;
     state.positions = .{};
+    state.scrollback_lines = null;
     state.stream = .initAlloc(allocator, .init(
         allocator,
         &state.terminal,
@@ -801,7 +808,32 @@ export fn deinit(ptr: usize) void {
 export fn resize(ptr: usize, cols: u16, rows: u16) void {
     const state = stateFromPtr(ptr);
     state.terminal.resize(allocator, cols, rows) catch {};
+    // Rows per page depend on the width, so the byte budget follows it.
+    if (state.scrollback_lines) |lines| applyScrollbackLines(state, lines);
     refreshGraphicsGeneration(state);
+}
+
+/// Keep `lines` rows of history. Ghostty budgets scrollback in bytes and
+/// prunes whole pages, so this converts lines to standard pages at the current
+/// width; rows retained past the limit are reported as discarded.
+export fn set_scrollback_lines(ptr: usize, lines: u32) void {
+    const state = stateFromPtr(ptr);
+    state.scrollback_lines = lines;
+    applyScrollbackLines(state, lines);
+}
+
+fn applyScrollbackLines(state: *State, lines: u32) void {
+    const page = vt.page;
+    const cap = page.std_capacity.adjust(.{ .cols = state.terminal.cols }) catch return;
+    // The budget covers every page, the active area's included, and pruning
+    // drops a whole page before the next one fills: two spare pages keep at
+    // least `lines` rows of history at all times.
+    const history = std.math.divCeil(usize, lines, cap.rows) catch return;
+    const active = std.math.divCeil(usize, state.terminal.rows, cap.rows) catch return;
+    const pages = if (lines == 0) 0 else history + active + 2;
+    const bytes = pages *| page.Page.layout(page.std_capacity).total_size;
+    const primary = state.terminal.screens.get(.primary) orelse return;
+    primary.pages.explicit_max_size = bytes;
 }
 
 // -- Data input -------------------------------------------------
@@ -1460,7 +1492,9 @@ export fn find_prompt(ptr: usize, row: u32, direction: i32) f64 {
     if (state.terminal.screens.active_key != .primary or
         (direction != -1 and direction != 1)) return -1;
     const pages = &state.terminal.screens.active.pages;
-    const origin = pages.pin(.{ .screen = .{ .y = row, .x = 0 } }) orelse return -1;
+    const hidden = hiddenRows(state);
+    const native_row = std.math.add(usize, row, hidden) catch return -1;
+    const origin = pages.pin(.{ .screen = .{ .y = @intCast(native_row), .x = 0 } }) orelse return -1;
     const start = if (direction < 0)
         origin.up(1) orelse return -1
     else next: {
@@ -1484,7 +1518,9 @@ export fn find_prompt(ptr: usize, row: u32, direction: i32) f64 {
         prompt = prior;
     }
     const point = pages.pointFromPin(.screen, prompt) orelse return -1;
-    return @floatFromInt(point.screen.y);
+    // A prompt in rows hidden past the line limit is gone for the host.
+    if (point.screen.y < hidden) return -1;
+    return @floatFromInt(point.screen.y - hidden);
 }
 
 fn promptContinues(pin: vt.Pin) bool {
@@ -1498,7 +1534,8 @@ export fn track_position(ptr: usize, row: u32, col: u32) u32 {
     const tracker = &state.positions;
     if (tracker.next_id == std.math.maxInt(u32) or col >= state.terminal.cols) return 0;
     const screen = state.terminal.screens.active;
-    const pin = screen.pages.pin(.{ .screen = .{ .y = row, .x = @intCast(col) } }) orelse return 0;
+    const native_row = std.math.add(usize, row, hiddenRows(state)) catch return 0;
+    const pin = screen.pages.pin(.{ .screen = .{ .y = @intCast(native_row), .x = @intCast(col) } }) orelse return 0;
     for (&tracker.entries) |*slot| {
         if (slot.* != null) continue;
         const tracked = screen.pages.trackPin(pin) catch return 0;
@@ -1516,8 +1553,11 @@ export fn resolve_position(ptr: usize, id: u32) f64 {
         if (entry.id != id) continue;
         if (entry.pin.garbage or entry.screen != state.terminal.screens.active) return -1;
         const pt = entry.screen.pages.pointFromPin(.screen, entry.pin.*) orelse return -1;
+        // Rows hidden past the line limit read as discarded.
+        const hidden = hiddenRows(state);
+        if (pt.screen.y < hidden) return -1;
         // Both integers fit exactly in an IEEE double (u32 row and u16 col).
-        return @floatFromInt(@as(u64, pt.screen.y) * 65536 + pt.screen.x);
+        return @floatFromInt(@as(u64, pt.screen.y - hidden) * 65536 + pt.screen.x);
     };
     return -1;
 }
@@ -1556,21 +1596,39 @@ export fn get_scrollback_row_wraps(ptr: usize, offset: u32) i32 {
     return rowWrapFlags(pin);
 }
 
-export fn get_scrollback_count(ptr: usize) u32 {
-    const state = stateFromPtr(ptr);
+/// History rows Ghostty retains, which may exceed `scrollback_lines`.
+fn retainedHistory(state: *State) usize {
     const screen: *Screen = state.terminal.screens.active;
     var total: usize = 0;
     var node_ = screen.pages.pages.first;
     while (node_) |node| : (node_ = node.next) {
         total += node.data.size.rows;
     }
-    if (total <= state.terminal.rows) return 0;
-    return @intCast(total - state.terminal.rows);
+    return total -| state.terminal.rows;
+}
+
+/// Rows retained past the line limit, hidden from the oldest end.
+fn hiddenHistory(state: *State, retained: usize) usize {
+    const lines = state.scrollback_lines orelse return 0;
+    return retained -| lines;
+}
+
+/// Native screen rows before the first row the host can see. Host rows and
+/// prompts are counted from there, as the reported scrollback is.
+fn hiddenRows(state: *State) usize {
+    return hiddenHistory(state, retainedHistory(state));
+}
+
+export fn get_scrollback_count(ptr: usize) u32 {
+    const state = stateFromPtr(ptr);
+    const retained = retainedHistory(state);
+    return @intCast(retained - hiddenHistory(state, retained));
 }
 
 export fn get_scrollback_discarded_count(ptr: usize) u32 {
     const state = stateFromPtr(ptr);
-    return @intCast(state.terminal.screens.active.pages.discardedRows());
+    const discarded = state.terminal.screens.active.pages.discardedRows();
+    return @truncate(discarded +| hiddenHistory(state, retainedHistory(state)));
 }
 
 /// Write one scrollback row into a JS-provided buffer, using the same cell

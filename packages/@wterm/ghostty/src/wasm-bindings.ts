@@ -22,6 +22,8 @@ export interface GhosttyExports {
   ): number;
   deinit(ptr: number): void;
   resize(ptr: number, cols: number, rows: number): void;
+  /** Keep at least this many rows of history at the current width. */
+  set_scrollback_lines?(ptr: number, lines: number): void;
 
   // Data input
   write(ptr: number, data_ptr: number, data_len: number): void;

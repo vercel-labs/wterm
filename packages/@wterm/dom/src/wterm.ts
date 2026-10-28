@@ -45,6 +45,11 @@ const THEME_PROPERTIES = [
   ...Array.from({ length: 16 }, (_, index) => `--term-color-${index}`),
 ];
 
+function assertScrollbackLines(lines: number): void {
+  if (!Number.isInteger(lines) || lines < 0 || lines > 0xffffffff)
+    throw new RangeError(`Invalid scrollback line count: ${lines}`);
+}
+
 /** Whether the data may hold an OSC 10 or OSC 11 color query. */
 function mayQueryThemeColors(data: string | Uint8Array): boolean {
   if (typeof data === "string")
@@ -119,6 +124,8 @@ export interface WTermOptions {
    */
   core?: TerminalCore;
   wasmUrl?: string;
+  /** Lines of history the core keeps (default: the core's own, 1000 for the built-in core). */
+  scrollbackLines?: number;
   autoResize?: boolean;
   /** Maximum rendered Kitty image width in CSS pixels. */
   maxImageWidth?: number;
@@ -159,6 +166,7 @@ export class WTerm {
   private _initialColsExplicit: boolean;
   private _initialRowsExplicit: boolean;
   private _themeColors: TerminalThemeColors | null = null;
+  private _scrollbackLines: number | null = null;
   /** Colors last read from CSS and handed to the core, to skip repeat updates. */
   private _cssThemeKey: string | null = null;
   private wasmUrl: string | undefined;
@@ -216,6 +224,10 @@ export class WTerm {
     this._initialColsExplicit = options.cols !== undefined;
     this._initialRowsExplicit = options.rows !== undefined;
     this.wasmUrl = options.wasmUrl;
+    if (options.scrollbackLines !== undefined) {
+      assertScrollbackLines(options.scrollbackLines);
+      this._scrollbackLines = options.scrollbackLines;
+    }
     this.maxImageWidth = options.maxImageWidth;
     this.maxImageHeight = options.maxImageHeight;
     this.cols = options.cols || 80;
@@ -469,6 +481,7 @@ export class WTerm {
         }
       }
       this.bridge.init(this.cols, this.rows);
+      if (this._scrollbackLines !== null) this._applyScrollbackLines();
       if (this._themeColors) this.bridge.setThemeColors?.(this._themeColors);
       else this._syncCssThemeColors();
       this.cols = this.bridge.getCols();
@@ -582,6 +595,23 @@ export class WTerm {
       this._programmaticScrollTop = target;
     }
     this.element.scrollTop = target;
+  }
+
+  /** Change how many lines of history the core keeps, dropping the oldest. */
+  setScrollbackLines(lines: number): void {
+    assertScrollbackLines(lines);
+    if (this._destroyed || lines === this._scrollbackLines) return;
+    this._scrollbackLines = lines;
+    if (!this.bridge) return;
+    this._applyScrollbackLines();
+    this._invalidateSearch();
+    this._scheduleRender();
+  }
+
+  private _applyScrollbackLines(): void {
+    if (!this.bridge?.setScrollbackLines)
+      throw new Error("This terminal core cannot change its scrollback");
+    this.bridge.setScrollbackLines(this._scrollbackLines!);
   }
 
   /**

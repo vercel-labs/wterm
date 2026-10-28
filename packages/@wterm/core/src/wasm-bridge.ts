@@ -60,6 +60,7 @@ interface WasmExports {
   getScrollbackLineLen(offset: number): number;
   setThemeColors?(foreground: number, background: number): void;
   getScrollbackClearCount?(): number;
+  setScrollbackLines?(lines: number): number;
   getResponsePtr(): number;
   getResponseLen(): number;
   clearResponse(): void;
@@ -163,6 +164,14 @@ export class WasmBridge implements TerminalCore {
   /** Theme defaults reported to OSC 10 and OSC 11 queries. */
   setThemeColors(colors: TerminalThemeColors): void {
     this.exports.setThemeColors?.(colors.foreground, colors.background);
+  }
+
+  /** Lines of history to keep; extra lines are dropped from the oldest end. */
+  setScrollbackLines(lines: number): void {
+    assertScrollbackLines(lines);
+    const set = this.exports.setScrollbackLines;
+    if (!set) throw new Error("This WASM build cannot change its scrollback");
+    if (!set(lines)) throw new Error("Could not allocate the scrollback");
   }
 
   /** Times the history was cleared, as by CSI 3 J or reinitialization. */
@@ -467,4 +476,10 @@ export class WasmBridge implements TerminalCore {
     this.linkCache.set(index, value);
     return value;
   }
+}
+
+/** Throws unless `lines` is a whole number of lines a core can count. */
+function assertScrollbackLines(lines: number): void {
+  if (!Number.isInteger(lines) || lines < 0 || lines > 0xffffffff)
+    throw new RangeError(`Invalid scrollback line count: ${lines}`);
 }

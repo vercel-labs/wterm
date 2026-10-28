@@ -162,7 +162,8 @@ onMount(() => {
 | Option | Type | Description |
 |---|---|---|
 | `wasmPath` | `string` | Custom path to the ghostty-vt WASM binary |
-| `scrollbackLimit` | `number` | Scrollback budget in bytes, not lines (default: 10000). ghostty allocates history in pages, so the retained row count depends on the terminal width |
+| `scrollbackLines` | `number` | Lines of history to keep (default: 1000). Ghostty stores history in pages, so up to a few pages of extra rows stay allocated but are not reported |
+| `scrollbackLimit` | `number` | Scrollback budget in bytes instead of lines. Ignored when `scrollbackLines` is set; the retained row count depends on the terminal width |
 | `foregroundColor` | `string` | Foreground reported by OSC 10 in `#RRGGBB` format (default: `#d4d4d4`) |
 | `backgroundColor` | `string` | Background reported by OSC 11 in `#RRGGBB` format (default: `#1e1e1e`) |
 | `imageStorageLimit` | `number` | Maximum decoded Kitty image bytes per screen (default: 32 MiB; `0` disables graphics) |
