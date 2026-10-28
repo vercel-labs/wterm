@@ -257,7 +257,8 @@ acknowledgments, PTY flow control, or session recovery.
 `TerminalThemeColors` describes opaque 24-bit integer `foreground`, `background`,
 and `cursor` colors plus exactly 16 `palette` entries. The optional
 `TerminalCore.setThemeColors(colors)` updates host defaults without parsing bytes,
-resetting state, or replacing application overrides. Ghostty implements this hook;
+resetting state, or replacing application overrides. Both the built-in core and
+Ghostty implement this hook and answer OSC 10/11 queries with these defaults;
 other cores remain compatible without it. Use `WTerm.setThemeColors()` for an
 attached browser terminal so CSS and live/retained rendering update together.
 

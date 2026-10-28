@@ -225,6 +225,7 @@ are applied. Values are copied and can be set before `init()`. Indices 16–255 
 explicit RGB cell colors are unchanged. Application overrides take precedence;
 OSC resets return to the latest host defaults. The inline properties set by this
 method take precedence over theme classes; call it again to change those colors.
+Pass `null` to remove them and return to the CSS theme.
 
 With Ghostty, use the updated bundled WASM asset to synchronize indexed colors
 and foreground/background query replies. Older WASM assets retain their existing
@@ -248,10 +249,21 @@ Updates follow normal rendering, including synchronized output and paused
 panes. Destroying the terminal removes its overrides. The built-in core and
 older Ghostty WASM binaries retain CSS theme defaults.
 
-Ghostty color-query responses use its configured `foregroundColor` and
-`backgroundColor` defaults; pass values matching your CSS theme. CSS changes
-do not automatically update those headless defaults; use `setThemeColors()` to
-keep them synchronized. See [Ghostty options](/ghostty).
+## Color queries
+
+Applications ask for the default foreground and background with OSC `10` and
+`11` (`printf '\e]11;?\a'`). Both cores answer with the colors the terminal
+element's CSS resolves to when the query arrives: `--term-fg` and `--term-bg`,
+including theme classes, `prefers-color-scheme` rules and colors written in any
+CSS color space. Replies end with the query's own terminator, BEL or ST.
+
+Colors set with `setThemeColors()` take precedence until it is called with
+`null`. A Ghostty application's own OSC `10`/`11` color changes are reported
+until it resets them. A query split across two `write()` calls is answered
+with the colors read at the previous query or at `init()`.
+
+Headless Ghostty cores, which have no CSS, answer with their `foregroundColor`
+and `backgroundColor` options. See [Ghostty options](/ghostty).
 
 ## Font and cell alignment
 
