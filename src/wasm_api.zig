@@ -64,6 +64,12 @@ export fn getDirtyPtr() [*]const u8 {
     return @ptrCast(terminal.grid.dirty.ptr);
 }
 
+/// Return the live row identity, or zero for an invalid row or exhausted identities.
+export fn getRowId(row: u32) u32 {
+    if (row >= terminal.rows) return 0;
+    return terminal.grid.row_ids[row];
+}
+
 export fn clearDirty() void {
     terminal.grid.clearDirty();
 }

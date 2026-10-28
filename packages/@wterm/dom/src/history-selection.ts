@@ -2,6 +2,7 @@ import type { TerminalCore } from "@wterm/core";
 
 import { scanText } from "./text-capture.js";
 import type { RectangleSelection } from "./rectangle-selection.js";
+import { markSelectionChanged, selectionMayExist } from "./selection-state.js";
 
 const owners = new WeakMap<Document, HistorySelection>();
 
@@ -32,6 +33,11 @@ export class HistorySelection {
 
   get active(): boolean {
     return this.pending || this.text !== null;
+  }
+
+  /** Height the sticky status line adds to the terminal's scroll height. */
+  get statusHeight(): number {
+    return this.status.offsetHeight;
   }
 
   getText(): string | null {
@@ -87,13 +93,19 @@ export class HistorySelection {
 
   private claim(): void {
     const doc = this.element.ownerDocument;
+    markSelectionChanged(doc);
     owners.get(doc)?.clear();
     this.clear();
     owners.set(doc, this);
     // Removing a collapsed textarea caret makes Chromium scroll it back into
     // view on the next key event, overriding the terminal's scroll position.
-    const native = doc.getSelection();
-    if (native && !native.isCollapsed) native.removeAllRanges();
+    if (selectionMayExist(doc)) {
+      const native = doc.getSelection();
+      if (native && !native.isCollapsed) {
+        markSelectionChanged(doc);
+        native.removeAllRanges();
+      }
+    }
   }
 
   /** WTerm calls this only once its current frame has painted. */
@@ -167,6 +179,7 @@ export class HistorySelection {
   private onSelectionChange = () => {
     if (!this.active) return;
     const doc = this.element.ownerDocument;
+    markSelectionChanged(doc);
     const active = doc.activeElement;
     if (
       active &&
@@ -178,8 +191,7 @@ export class HistorySelection {
         return;
       }
     }
-    const selection = doc.getSelection();
-    if (selection && !selection.isCollapsed) this.clear();
+    if (selectionMayExist(doc)) this.clear();
   };
 
   destroy(): void {

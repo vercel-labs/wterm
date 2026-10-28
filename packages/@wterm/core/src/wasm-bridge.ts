@@ -20,6 +20,7 @@ interface WasmExports {
   writeBytes(len: number): void;
   getGridPtr(): number;
   getDirtyPtr(): number;
+  getRowId?(row: number): number;
   clearDirty(): void;
   getCursorRow(): number;
   getCursorCol(): number;
@@ -85,6 +86,8 @@ export class WasmBridge implements TerminalCore {
     number,
     { linkUri: string; linkId?: string; linkKey: string }
   >();
+
+  private clearedRowIds = new Uint32Array(0);
 
   private get dv(): DataView {
     if (this._dvBuffer !== this.memory.buffer) {
@@ -173,13 +176,37 @@ export class WasmBridge implements TerminalCore {
   }
 
   isDirtyRow(row: number): boolean {
+    if (this.isRowContentDirty(row)) return true;
+    const id = this.getRowId(row);
+    return id === null
+      ? this.exports.getRowId !== undefined
+      : id !== this.clearedRowIds[row];
+  }
+
+  isRowContentDirty(row: number): boolean {
     return (
       new Uint8Array(this.memory.buffer, this.dirtyPtr, this.getRows())[row] !==
       0
     );
   }
 
+  getRowId(row: number): number | null {
+    if (!Number.isInteger(row) || row < 0 || row >= this.getRows()) return null;
+    const id = this.exports.getRowId?.(row) ?? 0;
+    return id === 0 ? null : id >>> 0;
+  }
+
   clearDirty(): void {
+    const getRowId = this.exports.getRowId;
+    if (getRowId) {
+      const rows = this.getRows();
+      if (this.clearedRowIds.length !== rows) {
+        this.clearedRowIds = new Uint32Array(rows);
+      }
+      for (let row = 0; row < rows; row++) {
+        this.clearedRowIds[row] = getRowId(row);
+      }
+    }
     this.exports.clearDirty();
   }
 

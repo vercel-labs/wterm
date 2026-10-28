@@ -1,6 +1,7 @@
 import type { TerminalCore } from "@wterm/core";
 import { InputAccessibility } from "./input-accessibility.js";
 import { isLinkActivationModifier } from "./hyperlink.js";
+import { markSelectionChanged } from "./selection-state.js";
 import {
   encodeKittyKey,
   KITTY_REPORT_ALL,
@@ -440,10 +441,12 @@ export class InputHandler {
         this.onData("\x15");
       } else if (e.key === "a") {
         e.preventDefault();
-        const sel = window.getSelection();
+        const doc = this.element.ownerDocument;
+        const sel = doc.getSelection();
         if (sel) {
-          const range = document.createRange();
+          const range = doc.createRange();
           range.selectNodeContents(this.element);
+          markSelectionChanged(doc);
           sel.removeAllRanges();
           sel.addRange(range);
         }
