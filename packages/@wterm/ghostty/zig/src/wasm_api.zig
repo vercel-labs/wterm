@@ -675,6 +675,7 @@ fn graphicsPlacements(state: *State, buf: [*]u8, max_records: u32) u32 {
     var count: usize = 0;
     var it = activeStorage(state).placements.iterator();
     const screen = state.terminal.screens.active;
+    const hidden = hiddenRows(state);
     while (it.next()) |entry| {
         if (count == capacity) break;
         const placement = entry.value_ptr;
@@ -685,13 +686,16 @@ fn graphicsPlacements(state: *State, buf: [*]u8, max_records: u32) u32 {
         const point = screen.pages.pointFromPin(.screen, pin.*) orelse continue;
         const image = activeStorage(state).imageById(entry.key_ptr.image_id) orelse continue;
         const coord = point.coord();
+        // Placements anchored in rows hidden past the line limit are gone
+        // for the host, like those in discarded rows.
+        if (coord.y < hidden) continue;
         const placement_id = entry.key_ptr.placement_id.id;
         const placement_tag: u32 = @intFromEnum(entry.key_ptr.placement_id.tag);
         const offset = count * GRAPHICS_PLACEMENT_RECORD_BYTES;
         writeU32(buf, offset, image.id);
         writeU32(buf, offset + 4, placement_id);
         writeU32(buf, offset + 8, imageVersionFor(state, image.id));
-        writeU32(buf, offset + 12, coord.y);
+        writeU32(buf, offset + 12, @intCast(coord.y - hidden));
         writeU32(buf, offset + 16, coord.x);
         writeU32(buf, offset + 20, placement.x_offset);
         writeU32(buf, offset + 24, placement.y_offset);
@@ -1488,7 +1492,9 @@ export fn find_prompt(ptr: usize, row: u32, direction: i32) f64 {
     if (state.terminal.screens.active_key != .primary or
         (direction != -1 and direction != 1)) return -1;
     const pages = &state.terminal.screens.active.pages;
-    const origin = pages.pin(.{ .screen = .{ .y = row, .x = 0 } }) orelse return -1;
+    const hidden = hiddenRows(state);
+    const native_row = std.math.add(usize, row, hidden) catch return -1;
+    const origin = pages.pin(.{ .screen = .{ .y = @intCast(native_row), .x = 0 } }) orelse return -1;
     const start = if (direction < 0)
         origin.up(1) orelse return -1
     else next: {
@@ -1512,7 +1518,9 @@ export fn find_prompt(ptr: usize, row: u32, direction: i32) f64 {
         prompt = prior;
     }
     const point = pages.pointFromPin(.screen, prompt) orelse return -1;
-    return @floatFromInt(point.screen.y);
+    // A prompt in rows hidden past the line limit is gone for the host.
+    if (point.screen.y < hidden) return -1;
+    return @floatFromInt(point.screen.y - hidden);
 }
 
 fn promptContinues(pin: vt.Pin) bool {
@@ -1526,7 +1534,8 @@ export fn track_position(ptr: usize, row: u32, col: u32) u32 {
     const tracker = &state.positions;
     if (tracker.next_id == std.math.maxInt(u32) or col >= state.terminal.cols) return 0;
     const screen = state.terminal.screens.active;
-    const pin = screen.pages.pin(.{ .screen = .{ .y = row, .x = @intCast(col) } }) orelse return 0;
+    const native_row = std.math.add(usize, row, hiddenRows(state)) catch return 0;
+    const pin = screen.pages.pin(.{ .screen = .{ .y = @intCast(native_row), .x = @intCast(col) } }) orelse return 0;
     for (&tracker.entries) |*slot| {
         if (slot.* != null) continue;
         const tracked = screen.pages.trackPin(pin) catch return 0;
@@ -1544,8 +1553,11 @@ export fn resolve_position(ptr: usize, id: u32) f64 {
         if (entry.id != id) continue;
         if (entry.pin.garbage or entry.screen != state.terminal.screens.active) return -1;
         const pt = entry.screen.pages.pointFromPin(.screen, entry.pin.*) orelse return -1;
+        // Rows hidden past the line limit read as discarded.
+        const hidden = hiddenRows(state);
+        if (pt.screen.y < hidden) return -1;
         // Both integers fit exactly in an IEEE double (u32 row and u16 col).
-        return @floatFromInt(@as(u64, pt.screen.y) * 65536 + pt.screen.x);
+        return @floatFromInt(@as(u64, pt.screen.y - hidden) * 65536 + pt.screen.x);
     };
     return -1;
 }
@@ -1599,6 +1611,12 @@ fn retainedHistory(state: *State) usize {
 fn hiddenHistory(state: *State, retained: usize) usize {
     const lines = state.scrollback_lines orelse return 0;
     return retained -| lines;
+}
+
+/// Native screen rows before the first row the host can see. Host rows and
+/// prompts are counted from there, as the reported scrollback is.
+fn hiddenRows(state: *State) usize {
+    return hiddenHistory(state, retainedHistory(state));
 }
 
 export fn get_scrollback_count(ptr: usize) u32 {

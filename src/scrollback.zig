@@ -44,14 +44,15 @@ pub const Scrollback = struct {
         if (limit == self.limit) return true;
         const kept = @min(self.count, limit);
         const capacity = if (limit == 0) 0 else @max(kept, @min(limit, INITIAL_SLOTS));
-        if (!self.moveTo(capacity, kept)) return false;
+        if (!self.moveTo(capacity, kept, limit)) return false;
         self.limit = limit;
         return true;
     }
 
     /// Replace the ring with `capacity` slots holding the newest `kept` lines,
-    /// oldest first, and free every other line.
-    fn moveTo(self: *Scrollback, capacity: u32, kept: u32) bool {
+    /// oldest first, and free every other line. Only a ring of `limit` slots
+    /// wraps; a full smaller ring grows on the next push.
+    fn moveTo(self: *Scrollback, capacity: u32, kept: u32, limit: u32) bool {
         const lines = grid_mod.allocator.alloc(ScrollbackLine, capacity) catch return false;
         var i: u32 = 0;
         while (i < kept) : (i += 1) lines[i] = self.lines[self.slot(kept - 1 - i)];
@@ -67,7 +68,7 @@ pub const Scrollback = struct {
         if (self.lines.len != 0) grid_mod.allocator.free(self.lines);
         self.lines = lines;
         self.count = kept;
-        self.write_pos = if (kept == capacity and capacity != 0) 0 else kept;
+        self.write_pos = if (kept == limit and limit != 0) 0 else kept;
         return true;
     }
 
@@ -85,7 +86,7 @@ pub const Scrollback = struct {
         if (self.write_pos == self.lines.len) {
             // Not wrapped yet and out of slots: grow toward the limit.
             const capacity = @min(self.limit, @max(INITIAL_SLOTS, self.count *| 2));
-            if (!self.moveTo(capacity, self.count)) return;
+            if (!self.moveTo(capacity, self.count, self.limit)) return;
         }
         var line = &self.lines[self.write_pos];
         if (line.capacity < len) {
@@ -184,4 +185,16 @@ test "the ring grows toward its limit and wraps at it" {
         try testing.expectEqual(@as(u32, 199) - @as(u32, @intCast(offset)), sb.getLine(@intCast(offset)).?.cells[0].char);
     _ = sb.pop();
     try testing.expectEqual(@as(u32, 198), sb.getLine(0).?.cells[0].char);
+}
+
+test "raising the limit past a full ring keeps growing instead of overwriting" {
+    var sb: Scrollback = .{ .limit = 100 };
+    defer _ = sb.setLimit(0);
+    var i: u32 = 0;
+    while (i < 100) : (i += 1) pushChar(&sb, i);
+    try testing.expect(sb.setLimit(500));
+    while (i < 300) : (i += 1) pushChar(&sb, i);
+    try testing.expectEqual(@as(u32, 300), sb.count);
+    for (0..300) |offset|
+        try testing.expectEqual(@as(u32, 299) - @as(u32, @intCast(offset)), sb.getLine(@intCast(offset)).?.cells[0].char);
 }

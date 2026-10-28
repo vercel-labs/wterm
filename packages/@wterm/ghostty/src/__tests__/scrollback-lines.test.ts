@@ -42,6 +42,16 @@ function text(core: GhosttyCore, offset: number): string {
   return line.trimEnd();
 }
 
+/** Text of a host row, counted from the oldest reported history row. */
+function row(core: GhosttyCore, index: number): string {
+  const history = core.getScrollbackCount();
+  if (index < history) return text(core, history - 1 - index);
+  let line = "";
+  for (let col = 0; col < core.getCols(); col++)
+    line += String.fromCodePoint(core.getCell(index - history, col).char);
+  return line.trimEnd();
+}
+
 function write(core: GhosttyCore, lines: number, from = 0): void {
   let text = "";
   for (let i = from; i < from + lines; i++) text += `line ${i}\r\n`;
@@ -96,5 +106,55 @@ describe("GhosttyCore scrollbackLines", () => {
       ).rejects.toThrow(RangeError);
     const core = await filled({}, 0);
     expect(() => core.setScrollbackLines(-1)).toThrow(RangeError);
+  });
+
+  it("finds prompts in host rows once rows are hidden past the limit", async () => {
+    const core = await filled({ scrollbackLines: 100 }, 0);
+    let output = "";
+    for (let i = 0; i < 1000; i++)
+      output += i % 10 === 0 ? `\x1b]133;A\x07$ cmd ${i}\r\n` : `out ${i}\r\n`;
+    core.writeString(output);
+    const last = core.getScrollbackCount() + core.getRows() - 1;
+    const prompt = core.findPrompt(last, -1);
+    expect(prompt).not.toBeNull();
+    expect(row(core, prompt!)).toBe("$ cmd 990");
+    const earlier = core.findPrompt(prompt!, -1)!;
+    expect(row(core, earlier)).toBe("$ cmd 980");
+    // The oldest reported prompt has nothing before it the host can see.
+    let oldest = earlier;
+    for (
+      let next = core.findPrompt(oldest, -1);
+      next !== null;
+      next = core.findPrompt(oldest, -1)
+    )
+      oldest = next;
+    expect(oldest).toBeGreaterThanOrEqual(0);
+    expect(row(core, oldest)).toMatch(/^\$ cmd /);
+  });
+
+  it("tracks positions in host rows once rows are hidden past the limit", async () => {
+    const core = await filled({ scrollbackLines: 100 }, 2000);
+    const tracked = core.trackPosition({ row: 50, col: 0 })!;
+    const before = row(core, 50);
+    write(core, 30, 2000);
+    const position = tracked.resolve();
+    expect(position).not.toBeNull();
+    expect(row(core, position!.row)).toBe(before);
+    write(core, 2000, 2030);
+    expect(tracked.resolve()).toBeNull();
+  });
+
+  it("places images in host rows once rows are hidden past the limit", async () => {
+    const core = await filled({ scrollbackLines: 100 }, 2000);
+    const pixel = Buffer.from([255, 0, 0]).toString("base64");
+    core.writeString(
+      `img \x1b_Ga=T,f=24,s=1,v=1,i=5,c=1,r=1;${pixel}\x1b\\\r\n`,
+    );
+    write(core, 30, 2000);
+    const placement = core.getGraphicsState()?.placements[0];
+    expect(placement).toBeDefined();
+    expect(row(core, placement!.row)).toMatch(/^img/);
+    write(core, 2000, 2030);
+    expect(core.getGraphicsState()?.placements ?? []).toHaveLength(0);
   });
 });
