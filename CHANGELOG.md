@@ -7,6 +7,8 @@
 ### New Features
 
 - **Grapheme clusters:** the built-in core keeps ZWJ emoji, flags, and combining marks in one cell instead of splitting them across cells, and widens emoji presentation and flag pairs to two cells. `WasmBridge` exposes the full cluster as `CellData.chars` (#241).
+- **WorkerCore:** `@wterm/core/worker` runs the built-in core in a Web Worker so parsing leaves the main thread, and many busy terminals can use more than one CPU core. Opt in with `WorkerCore.load()`; replies and other effects of a write arrive one message later (#252).
+- **Theme color queries:** OSC 10 and OSC 11 queries are answered with the foreground and background the page's CSS shows at query time, so apps like Vim and Neovim pick a matching light or dark theme. `setThemeColors()` overrides them and `setThemeColors(null)` returns to CSS (#253).
 
 ### Improvements
 
