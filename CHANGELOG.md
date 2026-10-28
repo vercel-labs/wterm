@@ -1,8 +1,29 @@
 # Changelog
 
-## 0.5.6
+## 0.5.7
 
 <!-- release:start -->
+
+### New Features
+
+- **Grapheme clusters:** the built-in core keeps ZWJ emoji, flags, and combining marks in one cell instead of splitting them across cells, and widens emoji presentation and flag pairs to two cells. `WasmBridge` exposes the full cluster as `CellData.chars` (#241).
+- **WorkerCore:** `@wterm/core/worker` runs the built-in core in a Web Worker so parsing leaves the main thread, and many busy terminals can use more than one CPU core. Opt in with `WorkerCore.load()`; replies and other effects of a write arrive one message later (#252).
+- **Theme color queries:** OSC 10 and OSC 11 queries are answered with the foreground and background the page's CSS shows at query time, so apps like Vim and Neovim pick a matching light or dark theme. `setThemeColors()` overrides them and `setThemeColors(null)` returns to CSS (#253).
+
+### Improvements
+
+- **Canvas cell painting:** block characters and cell backgrounds paint into one canvas behind the text rows instead of one styled span per cell. Dense truecolor output keeps up: 16 terminals playing Doom go from about 6.6 to 36 frames per second each, and chafa video at 160x50 goes from 14.5 to 60 frames per second (#256).
+- **Shared render frame:** all terminals on a page render in one animation frame that reads layout before any writes, and rows that only scrolled are moved instead of rebuilt. 64 terminals streaming colored `ls` go from 12.7 to 15.9 frames per second each, and style recalculation drops from 18% to 6% of main-thread time. Custom cores can opt in with the optional `getRowId` and `isRowContentDirty` methods (#257).
+- **Ghostty write fast paths:** `@wterm/ghostty` handles Kitty image payloads, plain CSI sequences, and plain UTF-8 text before the byte-by-byte parser, and cell reads no longer touch WASM memory per cell (#251).
+
+### Contributors
+
+- @Railly
+- @lahfir
+
+<!-- release:end -->
+
+## 0.5.6
 
 ### Improvements
 
@@ -18,8 +39,6 @@
 ### Contributors
 
 - @Railly
-
-<!-- release:end -->
 
 ## 0.5.5
 
