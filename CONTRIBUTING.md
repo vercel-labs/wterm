@@ -12,7 +12,7 @@ For larger changes, open an issue to discuss the approach before starting work.
 
 ## Pull requests
 
-See the [development instructions](README.md#development) for setup and common
+See the [development instructions](docs/development.md) for setup and common
 commands. Keep changes focused and describe the problem they solve. Add or
 update tests when behavior changes, update relevant documentation, and run the
 checks appropriate to your change before opening a pull request.

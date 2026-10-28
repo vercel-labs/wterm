@@ -1,395 +1,64 @@
-# wterm
+<div align="center">
 
-<p>
-  <a href="https://vercel.com/labs#active-experiments"><img alt="Vercel Labs Experiment" src="https://img.shields.io/badge/LABS-EXPERIMENT-0a0a0a.svg?style=for-the-badge&amp;logo=Vercel&amp;labelColor=000000" height="28"></a>
-  <a href="https://www.npmjs.com/package/@wterm/core"><img alt="npm version: @wterm/core" src="https://img.shields.io/npm/v/%40wterm%2Fcore.svg?style=for-the-badge&amp;labelColor=000000" height="28"></a>
-  <a href="https://github.com/vercel-labs/wterm/blob/main/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/github/license/vercel-labs/wterm.svg?style=for-the-badge&amp;labelColor=000000" height="28"></a>
-  <a href="https://www.npmjs.com/package/@wterm/core"><img alt="npm downloads per month: @wterm/core" src="https://img.shields.io/npm/dm/%40wterm%2Fcore.svg?style=for-the-badge&amp;labelColor=000000&amp;label=npm%20downloads" height="28"></a>
-</p>
+# wterm
 
 A terminal emulator for the web.
 
-wterm ("dub-term") renders to the DOM — native text selection, copy/paste, find, and accessibility work directly on the mounted rows. The core is written in Zig and compiled to WASM for near-native performance.
+[![labs](https://img.shields.io/badge/vercel-labs-000000?style=flat-square&logo=vercel&labelColor=000000)](https://vercel.com/labs#active-experiments)
+[![npm](https://img.shields.io/npm/v/%40wterm%2Fcore?style=flat-square&labelColor=000000&color=333333)](https://www.npmjs.com/package/@wterm/core)
+[![downloads](https://img.shields.io/npm/dm/%40wterm%2Fcore?style=flat-square&labelColor=000000&color=333333)](https://www.npmjs.com/package/@wterm/core)
+[![license](https://img.shields.io/github/license/vercel-labs/wterm?style=flat-square&labelColor=000000&color=333333)](LICENSE)
+
+[wterm.dev](https://wterm.dev)
+
+</div>
+
+wterm ("dub-term") renders terminal rows as DOM text, so selection, copy and paste, browser find and screen readers work as they do on any page. Parsing runs in WASM: a small built-in Zig core, or [libghostty](packages/@wterm/ghostty) for full VT compatibility, images and shell integration.
+
+## Install
+
+```sh
+npm i @wterm/dom
+```
+
+## Quick start
+
+```js
+import { WTerm } from "@wterm/dom";
+import "@wterm/dom/css";
+
+const term = new WTerm(document.getElementById("terminal"), {
+  onData: (data) => socket.send(data),
+});
+await term.init();
+socket.onmessage = (event) => term.write(event.data);
+```
+
+React, Vue and Svelte: `npm i @wterm/react`, `@wterm/vue` or `@wterm/svelte`.
 
 ## Packages
 
-| Package | Description |
-|---|---|
-| [`@wterm/core`](packages/@wterm/core) | Headless WASM bridge, `TerminalCore` interface, WebSocket transport |
-| [`@wterm/dom`](packages/@wterm/dom) | DOM renderer, input handler — vanilla JS terminal |
-| [`@wterm/react`](packages/@wterm/react) | React component + `useTerminal` hook (TypeScript) |
-| [`@wterm/vue`](packages/@wterm/vue) | Vue 3 component + template ref API |
-| [`@wterm/svelte`](packages/@wterm/svelte) | Svelte component + callback API |
-| [`@wterm/ghostty`](packages/@wterm/ghostty) | Full-featured VT emulation core powered by libghostty |
-| [`@wterm/just-bash`](packages/@wterm/just-bash) | In-browser Bash shell powered by just-bash 3 |
-| [`@wterm/markdown`](packages/@wterm/markdown) | Render Markdown in the terminal |
+| Package | |
+| --- | --- |
+| [`@wterm/dom`](packages/@wterm/dom) | Renderer and input, no framework |
+| [`@wterm/react`](packages/@wterm/react) · [`vue`](packages/@wterm/vue) · [`svelte`](packages/@wterm/svelte) | Components |
+| [`@wterm/core`](packages/@wterm/core) | Built-in WASM core, `WorkerCore`, `TerminalCore` interface, WebSocket transport |
+| [`@wterm/ghostty`](packages/@wterm/ghostty) | libghostty core |
+| [`@wterm/just-bash`](packages/@wterm/just-bash) | Bash in the browser |
+| [`@wterm/markdown`](packages/@wterm/markdown) | Markdown in the terminal |
 
-## Features
+## Develop
 
-- **Pluggable cores** — built-in lightweight Zig core or opt-in [libghostty](packages/@wterm/ghostty) backend for full VT compliance
-- **Lower idle memory** — Ghostty allocates terminal pages as needed, reducing memory reserved by idle terminals and alternate screens
-- **Shared WASM loading** — both cores reuse compiled modules while keeping separate terminal memory; the built-in binary loads only when selected and is decoded once, and supported browsers compile separately served binaries during download
-- **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to a ~26 KB `.wasm` binary (release build)
-- **DOM rendering** — native text selection, clipboard, browser find, and screen reader support for mounted rows
-- **Worker core** — `WorkerCore` parses off the main thread so many busy panes use more than one CPU core
-- **Named terminal input** — the editable control exposes host labels and descriptions to assistive technology and follows the host's tab order; Escape followed by Tab or Shift+Tab moves focus back to the page
-- **Terminal-aware copy** — selected text preserves explicit newlines and complete Unicode cells, includes block glyphs, and joins confirmed Ghostty soft wraps
-- **Read retained output** — capture a stable text snapshot with `readText()`; the local workspace provides a read-only output dialog with explicit refresh
-- **Optional output announcements** — bounded, polite screen-reader updates for the focused terminal, with a per-session workspace toggle
-- **Bounded WebSocket sends** — byte and message limits, ordered draining, and observable backpressure for slow or disconnected connections
-- **Local PTY flow control** — the local workspace batches small output messages, pauses fast output until the browser catches up, preserves bytes across frames, and reports rejected input
-- **Local session reconnection** — brief connection interruptions resume the same shell and terminal state in the existing page, with bounded output replay, input delivery acknowledgments, duplicate suppression, and no automatic input retries
-- **Local reload recovery** — restores split layouts, pane sizes, zoom, and the focused terminal alongside saved shells within documented storage and session limits
-- **Local appearance settings** — persistent light/dark/system appearance and font size across panes, with live updates that preserve shells
-- **Shell command state** — Ghostty forwards OSC 133 prompt, running, and completion state to hosts and per-session workspace indicators
-- **Shell directories** — Ghostty forwards OSC 7 directory reports; the local workspace displays the reported host and path for nested and remote shells
-- **Prompt navigation** — jump between shell prompts in retained Ghostty history, including after reflow, with workspace controls and configurable shortcuts
-- **Workspace keyboard shortcuts** — discover and customize session, split, focus, zoom, and Find bindings, with persistent settings and conflict checks
-- **Live host colors** — `setThemeColors()` synchronizes CSS and supported core defaults while preserving application color overrides
-- **Local split panes** — view up to four shells side by side or stacked, with adjustable dividers, directional focus, and reversible pane zoom
-- **Inactive pane rendering** — skip paints for hidden sessions and hidden browser documents while output and terminal replies continue
-- **Full-history Select All** — Cmd+A or Ctrl+Shift+A selects retained history and the active screen without mounting extra rows
-- **Word and line selection** — double-click paths and words or triple-click logical lines, including confirmed soft wraps and unmounted history
-- **Rectangular selection** — Alt/Option-drag copies columns from logs and tables, preserving selected spaces and complete Unicode cells
-- **Selection preservation** — Ghostty native selections follow scrolling and reflow while their text remains intact; selected history is mounted separately from the viewport
-- **Native hyperlinks** — OSC 8 links remain attached to their exact cells through viewport and scrollback, with safe HTTP(S) anchors
-- **Dirty-row tracking** — only touched rows are re-rendered each frame via `requestAnimationFrame`; partial redraws reuse unchanged cell spans, and text changes reuse text nodes when styles and column widths match
-- **Frame-direct scheduling** — writes queue their render on the next animation frame without an extra timer hop
-- **Synchronized output** — mode 2026 blocks paint atomically with a bounded recovery deadline; the built-in core answers private-mode status queries so applications can detect support
-- **Terminal queries** — the built-in core answers operating-status and cursor-position reports, plus primary device attributes for supported VT100 features
-- **Themes** — CSS custom properties with built-in Default, Solarized Dark, Monokai, and Light themes
-- **Cell backgrounds** — colored and reversed cells stay within their columns; uniformly colored rows fill the available width
-- **Aligned terminal text and borders** — glyph overhang preserves column positions, fractional row heights retain host typography, and common box-drawing strokes connect across cells
-- **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly
-- **Underline styles and colors** — Ghostty preserves single, double, curly, dotted, and dashed underlines in the viewport and scrollback
-- **Application colors** — Ghostty foreground, background, and cursor overrides with theme-preserving resets; inverse cells use the actual defaults
-- **Application-controlled cursors** — block, bar, and underline shapes with terminal-requested blinking and a host override
-- **Window titles** — OSC 0/2 title changes reach `onTitle` with either the built-in or Ghostty core
-- **Application clipboard requests** — Ghostty OSC 52 writes reach an opt-in host callback; the local workspace offers text review and explicit Copy
-- **Bell events** — BEL reaches `onBell(count)` through either core, leaving sound or visual alerts to the host app
-- **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window; small scrolls reuse the mounted overscan window, and overlapping history rows keep their content and DOM
-- **Full-history Find** — time-sliced plain-text search, match counts, highlights, and next/previous navigation across retained output; Ghostty searches across soft wraps
-- **Row-wrap metadata** — the Ghostty core exposes soft-wrap relationships in the live screen and retained history, including after reflow
-- **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws and column insertions/deletions aligned
-- **DEC line drawing** — character-set switches used by tmux and other TUIs produce borders and symbols instead of literal letters
-- **Grapheme strings** — the Ghostty core preserves combining marks and ZWJ emoji through the DOM renderer and scrollback
-- **Kitty terminal images** — Ghostty-backed terminals render direct PNG/RGB/RGBA graphics in a scroll-aware canvas overlay with configurable display bounds; implicit image placements keep following prompts visually below the image
-- **24-bit color** — full RGB SGR support
-- **Auto-resize** — vanilla terminals measure omitted dimensions before core initialization to avoid an unnecessary initial resize; reported dimensions keep connected PTYs aligned
-- **Wide grids** — the built-in core grows its cell storage as needed, up to 1024 columns and 512 rows
-- **Framework bindings** — React, Vue 3, and Svelte components
-- **In-browser Bash shell** — optional just-bash adapter with Unicode-aware line editing, Ctrl+R history search and Ctrl+S navigation to newer matches, cursor-aware tab completion, Home/End and Delete editing, word-wise cursor movement and erasure, Ctrl+U/Ctrl+K deletion before/after the cursor, Ctrl+Y restoration, and Ctrl+C command interruption
-- **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
-- **Mouse and focus reporting** — DOM input for X10, UTF-8 (1005), SGR (1006), urxvt (1015), and SGR pixel (1016) clicks, drags, wheel events, and pointer motion
-- **Mouse-aware scrollback** — clicks and wheel gestures on history remain available for selection and scrolling while an application tracks the mouse
-- **Kitty keyboard protocol**: negotiated key disambiguation, event types, alternate keys, all-key reporting, associated text, and native AltGr character input
-- **Modified navigation keys** — xterm-style Shift, Alt, and Control sequences for arrows, navigation, and function keys outside Kitty keyboard mode
-- **Legacy control keys** — Ctrl+Space, Ctrl+/, Ctrl+?, and Ctrl+Backspace send their terminal control bytes when the browser delivers those shortcuts
-- **IME composition** — tentative text appears at the terminal cursor; only committed text reaches the connected application
-- **Touch input** — a cursor-aligned input target supports soft keyboards, native paste, and held Backspace on touch-first devices
-
-## Development
-
-### Prerequisites
-
-- [Zig](https://ziglang.org/) 0.16.0+
-- [Node.js](https://nodejs.org/) 24+
-- [pnpm](https://pnpm.io/) 11+
-
-### Setup
-
-```bash
+```sh
 pnpm install
-```
-
-### Build the WASM binary
-
-```bash
-zig build
-```
-
-For a release build:
-
-```bash
-zig build -Doptimize=ReleaseSmall
-```
-
-The built binary is committed at `packages/@wterm/core/wasm/wterm.wasm` and CI fails if it does not match the Zig sources, so rebuild and commit it with any change under `src/`.
-
-### Build and verify Ghostty WASM
-
-The Ghostty adapter uses Zig 0.15.2, Bash, and Python 3. Its build runs in fresh
-caches under `/tmp` and leaves the shared Zig cache untouched. CI rebuilds it
-and requires a byte-for-byte match with the committed artifact on every PR.
-The adapter includes the upstream fix that zero-initializes new terminal
-pages when the WASM allocator reuses memory.
-
-```bash
-pnpm --filter @wterm/ghostty rebuild-wasm
-pnpm --filter @wterm/ghostty check-wasm
-```
-
-On macOS 26, use `rebuild-wasm:docker` or `check-wasm:docker`; Docker and CI
-verify the pinned Linux compiler archive's SHA-256. Check mode leaves the
-committed binary unchanged. See the [Ghostty build instructions](packages/@wterm/ghostty/README.md#rebuilding-the-wasm).
-
-### Regenerate the Unicode width table
-
-`src/unicode_width_table.zig` holds the East Asian Width ranges the core uses to decide cell width. It is generated, not hand-edited. Run this when Unicode publishes a new version, after bumping `UNICODE_VERSION` in the script:
-
-```bash
-node scripts/gen-unicode-width.mjs
-```
-
-### Build all packages
-
-```bash
 pnpm build
+pnpm test
 ```
 
-### Run the documentation
-
-The docs use Geistdocs with content in `apps/docs/content/docs`. Existing URLs stay at the site root, including `/get-started`, `/react`, and `/api-reference`. The homepage's interactive terminal uses `@wterm/ghostty` with just-bash. Its greeting renders with the page while the interactive terminal starts, and its Default preset follows the site's light, dark, or system theme, including in fullscreen. Ask AI keeps the wterm chat interface.
-
-```bash
-pnpm exec turbo run build --filter='@wterm/docs^...'
-pnpm --filter @wterm/docs dev
-```
-
-Portless prints the local URL for `docs.wterm.localhost`. Documentation search, per-page Markdown (`/react.md`), `/llms.txt`, and `/sitemap.md` share the same content source. Compatible browsers expose the read-only WebMCP tools `search_docs` and `read_current_page`; ordinary browsers need no experimental features. Configuration lives in `apps/docs/src/lib/geistdocs/config.tsx`.
-
-With the server running, verify the public route contract with Node.js, using the exact URL printed by Portless:
-
-```bash
-NODE_EXTRA_CA_CERTS="$HOME/.portless/ca.pem" DOCS_TEST_URL=https://docs.wterm.localhost:1355 node --test apps/docs/tests/docs-routes.test.mjs
-```
-
-CI also checks the production build with `pnpm --filter @wterm/docs test:routes`. This starts an isolated loopback server on an available port, runs the route suite, and shuts the server down. Build the docs first with `pnpm --filter @wterm/docs build`. Running the suite without a URL fails rather than silently skipping it.
-
-After installing Playwright's Chromium, Firefox, and WebKit browsers, run `pnpm --filter @wterm/docs test:terminal` against the production build to check the homepage greeting before JavaScript, delayed startup, theme changes, fullscreen, and load failures. It owns the same isolated server lifecycle and runs in CI.
-
-For responsive browser checks, install `agent-browser` separately and run `DOCS_TEST_URL=https://docs.wterm.localhost:1355 pnpm --filter @wterm/docs test:responsive`. It checks narrow, intermediate, and desktop widths in both themes, top/middle/bottom scroll positions, and chat opening/closing without making model requests. Screenshots and measurements go to `apps/docs/test-results/docs-responsive`, or `DOCS_ARTIFACT_DIR` when set. This optional browser check is separate from the dependency-free Node route suite in CI.
-
-The header uses the shared Geistdocs OSS navbar, including its product menus. The custom wterm Ask AI launcher uses the primary button style and floats centered below 640px, or at the lower right on wider screens. On mobile it aligns vertically with the footer theme controls and respects the device safe area. On wider screens its base right and bottom margins are 80% of the footer theme control's right inset. As that control approaches the viewport, the launcher gradually recovers its full right inset so their right edges align at the footer. The bottom margin increases when needed to leave at least 16px above the theme control. It returns to its base position when scrolling away and disappears while chat is open. It does not replace or modify the shared header. The mobile docs menu and sticky table-of-contents button remain separate. The existing chat modes remain: a full-screen sheet below 640px and a resizable side panel on wider screens. The side panel leaves at least 320px for the documentation and header. Responsive checks close chat with its explicit Close panel button; Escape in the mobile terminal remains a known issue.
-
-To test WebMCP with [agent-browser](https://github.com/vercel-labs/agent-browser), use a separate browser session and the local URL printed by Portless:
-
-```bash
-export AGENT_BROWSER_SESSION=wterm-webmcp-test
-agent-browser --headed open https://docs.wterm.localhost:1355
-agent-browser webmcp list
-agent-browser --json webmcp invoke search_docs --params '{"query":"WebSocketTransport"}'
-agent-browser open https://docs.wterm.localhost:1355/react
-agent-browser --json webmcp invoke read_current_page --params '{}'
-```
-
-Both invocations should report `data.status: "completed"`. Reading after navigation should return the React documentation, not the homepage. The tools are read-only; they do not navigate automatically, run terminal commands, or send data to a model.
-
-The full search payload includes highlighting and page/heading/text matches for agents and the search UI. For a compact manual view with `jq`:
-
-```bash
-agent-browser --json webmcp invoke search_docs --params '{"query":"WebSocketTransport"}' |
-  jq -er 'if .success and .data.status == "completed" then .data.output[] | select(.type == "page" or .type == "heading") | [.content, .url] | @tsv else error("WebMCP search failed") end'
-```
-
-When finished, run `agent-browser close` to close only the test session.
-
-Ask AI still requires the KV rate-limit configuration and model access; it returns 503 when KV is not configured. Search and WebMCP do not require model credentials.
-
-### Run the vanilla demo
-
-Serve the `web/` directory with any static file server:
-
-```bash
-cd web && python3 -m http.server 8000
-```
-
-For Kitty image support, use the Ghostty example instead. It loads
-`@wterm/ghostty`, which provides the graphics-capable core; the built-in core
-consumes unsupported Kitty APC payloads safely but does not decode images.
-
-```bash
-pnpm --filter ghostty-example dev
-```
-
-All terminal graphics are transient browser/WASM memory. Direct media is
-accepted only within the Ghostty image budget (32 MiB by default), with a
-32 MiB hard cap per image and 4,096 resident image/placement records per
-screen; the DOM overlay separately caps visible canvas backing stores at 32 MiB
-and bounds each canvas to the terminal pixel area. Set `imageStorageLimit: 0`
-to disable Ghostty graphics. File paths, shared memory, URLs, Sixel,
-iTerm2, animation, and virtual placements are not loaded.
-
-Kitty graphics clients can use the Ghostty example's browser terminal
-directly; `WTerm` reports the viewport and cell pixel sizes required by
-commands such as `kitten icat --transfer-mode=stream image.png`.
-Pixel-size queries can span text and byte writes; ordinary byte output does not
-need a decoded string copy for query detection.
-The local shell example also forwards the browser viewport dimensions to its
-PTY, which lets `kitten icat --detect-support` work from that embedded shell.
-
-### Run the Next.js example
-
-All dev servers use [portless](https://github.com/vercel-labs/portless) to avoid hardcoded ports. Each app is served at a `.localhost` URL (e.g. `nextjs-example.wterm.localhost`).
-
-```bash
-cp web/wterm.wasm examples/nextjs/public/
-pnpm --filter nextjs dev
-```
-
-### Run the Svelte example
-
-The Svelte example uses `@wterm/svelte` with an in-browser `just-bash` shell,
-theme switching, and imperative terminal controls:
-
-```bash
-pnpm --filter svelte-example dev
-```
-
-It opens at `svelte-example.wterm.localhost` through Portless.
-
-### Run Zig tests
-
-```bash
-zig build test
-```
-
-### Run PTY and terminal replay tests
-
-On macOS or Linux, test both cores against a real `/bin/sh` PTY and recorded
-Neovim/tmux output in Chromium, Firefox, and WebKit:
-
-```bash
-pnpm exec playwright install chromium firefox webkit
-pnpm test:pty
-```
-
-The runner builds the terminal packages and owns an isolated server on an
-available loopback port. Tests cover browser keyboard input, shell execution,
-resize, and exit. Replay cases check Unicode, styles, alternate screens,
-history, and synchronized output. JSON timing reports, a combined `baseline.json`,
-and failure traces are saved under `e2e/test-results/pty/`. CI runs the suite
-and uploads those artifacts. Playback uses checked-in bytes; Neovim and tmux
-are only needed to regenerate the recordings.
-Linux requires a C++/Python toolchain for the permitted `node-pty` native build.
-
-### Measure terminal output load
-
-Run repeatable plain-text, ANSI-colored, and full-screen redraw workloads for
-both cores in Chromium, Firefox, and WebKit:
-
-```bash
-pnpm bench:terminal
-WTERM_LOAD_PROFILE=stress pnpm bench:terminal --project chromium --repeat-each 3
-```
-
-The default smoke profile writes 1 MiB per case; `stress` writes 100 MiB,
-rounded up to a complete record. Reports under `e2e/test-results/load/` include
-write/render timings, frame intervals, event-loop delays, sampled memory and DOM
-size, workload hashes, and environment metadata. CI runs the smoke profile and
-uploads the reports. These are instrumented browser measurements with a fixed
-chunk schedule, not native-terminal throughput or physical display latency.
-See the [harness documentation](e2e/harness/README.md#output-load-measurements)
-for measurement boundaries and comparison guidance.
-
-### Check sustained output
-
-Verify each batch of output before history discards it, check rendered text, and
-sample resources after history starts pruning:
-
-```bash
-pnpm bench:stability
-WTERM_STABILITY_PROFILE=soak pnpm bench:stability --project chromium --grep 'ghostty sustained output'
-```
-
-The short profile runs both engines in all three browsers. The `soak` profile
-measures at least 30 minutes and 100 MiB per case after warmup. Runs fail on text
-loss, stalled rendering, mounted-row overflow, or WASM capacity growth after
-warmup. Bounded reports go to `e2e/test-results/stability/`; CI runs the short
-profile and uploads them. JS heap observations include instrumentation and
-ordinary garbage collection and do not establish leak freedom or process-memory
-limits. See the [harness documentation](e2e/harness/README.md#sustained-output-and-resource-checks)
-for the workload and measurement boundaries.
-
-### Measure input responsiveness
-
-Measure native browser keyboard input with synchronous local echo while one or
-eight sessions receive ANSI scrolling or screen redraws, alongside an idle case:
-
-```bash
-pnpm bench:input
-WTERM_INPUT_PROFILE=measure pnpm bench:input --project chromium --repeat-each 3
-```
-
-The smoke profile checks 16 echoes per case; `measure` collects 256. Reports in
-`e2e/test-results/input/` contain dispatch-to-DOM and dispatch-to-frame timings,
-per-session output throughput and render counts, resource snapshots, and source
-metadata. CI checks echo completion and inactive-pane rendering without hardware
-timing thresholds. These local-echo measurements exclude input delivery before
-browser dispatch, network/PTY latency, and physical presentation. See the
-[harness documentation](e2e/harness/README.md#input-responsiveness-measurements).
-
-### Measure PTY input latency
-
-Measure trusted keyboard input through a real PTY while one or eight Ghostty
-terminals receive idle, ANSI, or redraw output:
-
-```bash
-pnpm bench:pty-input
-WTERM_PTY_INPUT_PROFILE=measure pnpm bench:pty-input --project firefox --repeat-each 3
-```
-
-Reports under `e2e/test-results/pty-input/` include driver-request-to-echo timings
-that include browser input queueing, plus browser-dispatch timings, PTY throughput,
-queue bounds, and environment metadata. Driver timings include automation overhead;
-frame callbacks indicate a paint opportunity, not physical presentation. See the
-[harness documentation](e2e/harness/README.md#pty-input-latency) for the fixture and
-measurement boundaries.
-
-### Measure history search
-
-Search a fully retained Ghostty history with sparse matches and a no-match query:
-
-```bash
-pnpm bench:search
-WTERM_SEARCH_PROFILE=stress pnpm bench:search --project chromium --repeat-each 3
-```
-
-The smoke profile retains 10,000 lines; `stress` retains 100,000. Reports under
-`e2e/test-results/search/` record first results, completion, highlight-frame
-opportunities, frame/task delays, retained history, and source/environment
-metadata, including hashes of the search scanner, Ghostty bindings, and WASM.
-CI checks correctness and cancellation without speed thresholds.
-See the [harness documentation](e2e/harness/README.md#history-search-measurements)
-for the fixed corpus and measurement boundaries.
-
-### Use the interactive harness
-
-For interactive checks, run `pnpm --filter @internal/pty-harness dev` after the
-package build above. Portless prints the URL for `pty-harness.wterm.localhost`.
-The harness includes core switching and a round-trip probe. Timing callbacks
-measure frame opportunities, not physical display latency. See the
-[harness README](e2e/harness/README.md) for setup and measurement details.
-
-### Probe the public libghostty API
-
-With Zig 0.16.0 and the Playwright browsers installed, build a pinned, unpatched
-upstream WASM artifact and exercise its public C API in Node and all three
-browser engines:
-
-```bash
-pnpm test:libghostty
-```
-
-The isolated [libghostty experiment](experiments/libghostty/README.md) covers
-render state, terminal effects, retained history, snapshots, and application
-recordings. It documents the compatibility gaps that keep the shipped adapter
-on v1.3.1. Generated binaries and reports stay in its ignored `dist/` directory.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for reporting issues and submitting pull requests.
-
-## License
+## More
+
+- [docs/features.md](docs/features.md): everything the terminal supports
+- [docs/development.md](docs/development.md): WASM builds, examples, docs site, test and measurement suites
+- [CONTRIBUTING.md](CONTRIBUTING.md) · [CHANGELOG.md](CHANGELOG.md)
 
 Apache-2.0

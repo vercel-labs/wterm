@@ -1,0 +1,63 @@
+# Features
+
+- **Pluggable cores** — built-in lightweight Zig core or opt-in [libghostty](../packages/@wterm/ghostty) backend for full VT compliance
+- **Lower idle memory** — Ghostty allocates terminal pages as needed, reducing memory reserved by idle terminals and alternate screens
+- **Shared WASM loading** — both cores reuse compiled modules while keeping separate terminal memory; the built-in binary loads only when selected and is decoded once, and supported browsers compile separately served binaries during download
+- **Zig + WASM core** — VT100/VT220/xterm escape sequence parser compiled to WASM
+- **DOM rendering** — native text selection, clipboard, browser find, and screen reader support for mounted rows
+- **Worker core** — `WorkerCore` parses off the main thread so many busy panes use more than one CPU core
+- **Named terminal input** — the editable control exposes host labels and descriptions to assistive technology and follows the host's tab order; Escape followed by Tab or Shift+Tab moves focus back to the page
+- **Terminal-aware copy** — selected text preserves explicit newlines and complete Unicode cells, includes block glyphs, and joins confirmed Ghostty soft wraps
+- **Read retained output** — capture a stable text snapshot with `readText()`; the local workspace provides a read-only output dialog with explicit refresh
+- **Optional output announcements** — bounded, polite screen-reader updates for the focused terminal, with a per-session workspace toggle
+- **Bounded WebSocket sends** — byte and message limits, ordered draining, and observable backpressure for slow or disconnected connections
+- **Local PTY flow control** — the local workspace batches small output messages, pauses fast output until the browser catches up, preserves bytes across frames, and reports rejected input
+- **Local session reconnection** — brief connection interruptions resume the same shell and terminal state in the existing page, with bounded output replay, input delivery acknowledgments, duplicate suppression, and no automatic input retries
+- **Local reload recovery** — restores split layouts, pane sizes, zoom, and the focused terminal alongside saved shells within documented storage and session limits
+- **Local appearance settings** — persistent light/dark/system appearance and font size across panes, with live updates that preserve shells
+- **Shell command state** — Ghostty forwards OSC 133 prompt, running, and completion state to hosts and per-session workspace indicators
+- **Shell directories** — Ghostty forwards OSC 7 directory reports; the local workspace displays the reported host and path for nested and remote shells
+- **Prompt navigation** — jump between shell prompts in retained Ghostty history, including after reflow, with workspace controls and configurable shortcuts
+- **Workspace keyboard shortcuts** — discover and customize session, split, focus, zoom, and Find bindings, with persistent settings and conflict checks
+- **Live host colors** — `setThemeColors()` synchronizes CSS and supported core defaults while preserving application color overrides
+- **Local split panes** — view up to four shells side by side or stacked, with adjustable dividers, directional focus, and reversible pane zoom
+- **Inactive pane rendering** — skip paints for hidden sessions and hidden browser documents while output and terminal replies continue
+- **Full-history Select All** — Cmd+A or Ctrl+Shift+A selects retained history and the active screen without mounting extra rows
+- **Word and line selection** — double-click paths and words or triple-click logical lines, including confirmed soft wraps and unmounted history
+- **Rectangular selection** — Alt/Option-drag copies columns from logs and tables, preserving selected spaces and complete Unicode cells
+- **Selection preservation** — Ghostty native selections follow scrolling and reflow while their text remains intact; selected history is mounted separately from the viewport
+- **Native hyperlinks** — OSC 8 links remain attached to their exact cells through viewport and scrollback, with safe HTTP(S) anchors
+- **Dirty-row tracking** — only touched rows are re-rendered each frame via `requestAnimationFrame`; partial redraws reuse unchanged cell spans, and text changes reuse text nodes when styles and column widths match
+- **Frame-direct scheduling** — writes queue their render on the next animation frame without an extra timer hop
+- **Synchronized output** — mode 2026 blocks paint atomically with a bounded recovery deadline; the built-in core answers private-mode status queries so applications can detect support
+- **Terminal queries** — the built-in core answers operating-status and cursor-position reports, plus primary device attributes for supported VT100 features
+- **Themes** — CSS custom properties with built-in Default, Solarized Dark, Monokai, and Light themes
+- **Cell backgrounds** — colored and reversed cells stay within their columns; uniformly colored rows fill the available width
+- **Aligned terminal text and borders** — glyph overhang preserves column positions, fractional row heights retain host typography, and common box-drawing strokes connect across cells
+- **Alternate screen buffer** — `vim`, `less`, `htop`, and similar apps work correctly
+- **Underline styles and colors** — Ghostty preserves single, double, curly, dotted, and dashed underlines in the viewport and scrollback
+- **Application colors** — Ghostty foreground, background, and cursor overrides with theme-preserving resets; inverse cells use the actual defaults
+- **Application-controlled cursors** — block, bar, and underline shapes with terminal-requested blinking and a host override
+- **Window titles** — OSC 0/2 title changes reach `onTitle` with either the built-in or Ghostty core
+- **Application clipboard requests** — Ghostty OSC 52 writes reach an opt-in host callback; the local workspace offers text review and explicit Copy
+- **Bell events** — BEL reaches `onBell(count)` through either core, leaving sound or visual alerts to the host app
+- **Windowed scrollback history** — configurable ring buffer with a bounded visible DOM window; small scrolls reuse the mounted overscan window, and overlapping history rows keep their content and DOM
+- **Full-history Find** — time-sliced plain-text search, match counts, highlights, and next/previous navigation across retained output; Ghostty searches across soft wraps
+- **Row-wrap metadata** — the Ghostty core exposes soft-wrap relationships in the live screen and retained history, including after reflow
+- **Wide Unicode cells** — CJK, fullwidth, and emoji codepoints keep cursor-addressed redraws and column insertions/deletions aligned
+- **DEC line drawing** — character-set switches used by tmux and other TUIs produce borders and symbols instead of literal letters
+- **Grapheme strings** — the Ghostty core preserves combining marks and ZWJ emoji through the DOM renderer and scrollback
+- **Kitty terminal images** — Ghostty-backed terminals render direct PNG/RGB/RGBA graphics in a scroll-aware canvas overlay with configurable display bounds; implicit image placements keep following prompts visually below the image
+- **24-bit color** — full RGB SGR support
+- **Auto-resize** — vanilla terminals measure omitted dimensions before core initialization to avoid an unnecessary initial resize; reported dimensions keep connected PTYs aligned
+- **Wide grids** — the built-in core grows its cell storage as needed, up to 1024 columns and 512 rows
+- **Framework bindings** — React, Vue 3, and Svelte components
+- **In-browser Bash shell** — optional just-bash adapter with Unicode-aware line editing, Ctrl+R history search and Ctrl+S navigation to newer matches, cursor-aware tab completion, Home/End and Delete editing, word-wise cursor movement and erasure, Ctrl+U/Ctrl+K deletion before/after the cursor, Ctrl+Y restoration, and Ctrl+C command interruption
+- **WebSocket transport** — connect to a PTY backend with binary framing and reconnection
+- **Mouse and focus reporting** — DOM input for X10, UTF-8 (1005), SGR (1006), urxvt (1015), and SGR pixel (1016) clicks, drags, wheel events, and pointer motion
+- **Mouse-aware scrollback** — clicks and wheel gestures on history remain available for selection and scrolling while an application tracks the mouse
+- **Kitty keyboard protocol**: negotiated key disambiguation, event types, alternate keys, all-key reporting, associated text, and native AltGr character input
+- **Modified navigation keys** — xterm-style Shift, Alt, and Control sequences for arrows, navigation, and function keys outside Kitty keyboard mode
+- **Legacy control keys** — Ctrl+Space, Ctrl+/, Ctrl+?, and Ctrl+Backspace send their terminal control bytes when the browser delivers those shortcuts
+- **IME composition** — tentative text appears at the terminal cursor; only committed text reaches the connected application
+- **Touch input** — a cursor-aligned input target supports soft keyboards, native paste, and held Backspace on touch-first devices
