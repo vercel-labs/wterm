@@ -11,6 +11,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./worker": {
+      "types": "./dist/worker-core.d.ts",
+      "import": "./dist/worker-core.js",
+      "default": "./dist/worker-core.js"
+    },
     "./wasm": "./wasm/wterm.wasm"
   },
   "files": [

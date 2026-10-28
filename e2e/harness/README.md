@@ -280,10 +280,20 @@ are smoke data only, and even 256 samples offer limited evidence about the tail.
 | --- | --- |
 | `keyDispatchToDOMMs` | Capture-phase browser key dispatch to observation of the matching echo in DOM |
 | `keyDispatchToFrameMs` | Same dispatch to a subsequent animation callback after that DOM observation |
+| `keyDispatchToAfterPaintMs` | Same dispatch to the first task after that frame's rendering update |
 | `sessions[].writeMs` | Synchronous background-output writes, excluding echo writes |
 | `sessions[].renderMs` | Renderer calls during measurement, including echo rendering; inactive sessions must have zero calls |
 | `sessions[].deliveredMiBPerSecond` | Actual submitted background bytes per elapsed wall time, separately for every session |
 | `resources` | Before/after WASM capacity, optional JS heap, mounted rows, DOM elements, and retained history counts |
+
+The after-paint boundary is a message posted from the frame callback, so it runs
+once the browser has finished style, layout, and paint for that frame. It excludes
+compositor, GPU, and display time. The Event Timing API was not used: it reports
+only events over 16 ms, rounded to 8 ms.
+
+`WTERM_INPUT_SCHEDULERS=frame,sync` runs each case once per scheduler. `frame`
+(default) keeps WTerm's frame-paced rendering; `sync` renders the echo inside the
+`onData` handler. Reports carry `schemaVersion: 2` and the `scheduler` used.
 
 Timings include observer and harness overhead. They exclude OS/driver delivery,
 time waiting in the browser's input queue **before dispatch**, PTY/network delay,

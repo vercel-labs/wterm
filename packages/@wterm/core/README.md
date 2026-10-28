@@ -36,6 +36,20 @@ const core = await GhosttyCore.load();
 const term = new WTerm(el, { core });
 ```
 
+### Worker core
+
+`WorkerCore` runs the built-in core in a Web Worker, so parsing leaves the main thread and many busy terminals can use more than one CPU core. Pair it with `renderer: "webgl"` for pages with many panes of heavy output.
+
+```ts
+import { WorkerCore } from "@wterm/core/worker";
+import { WTerm } from "@wterm/dom";
+
+const core = await WorkerCore.load();
+const term = new WTerm(el, { core, renderer: "webgl" });
+```
+
+Writes return before they are parsed. Cells, replies, titles and bells arrive with the next update from the worker, which the DOM wrapper picks up through `TerminalCore.setUpdateListener`. Each `WorkerCore` owns one worker; call `dispose()` when the terminal is gone. Debug tooling sees no unhandled sequences from a worker core. It is a separate entry point so applications that do not use it never bundle a worker. The worker uses code splitting: with Vite, set `worker: { format: "es" }`. Bundlers that do not resolve `new Worker(new URL(..., import.meta.url))` can pass their own `worker` running `@wterm/core`'s `core-worker.js`.
+
 ## API
 
 ### Live row identity
@@ -243,7 +257,8 @@ acknowledgments, PTY flow control, or session recovery.
 `TerminalThemeColors` describes opaque 24-bit integer `foreground`, `background`,
 and `cursor` colors plus exactly 16 `palette` entries. The optional
 `TerminalCore.setThemeColors(colors)` updates host defaults without parsing bytes,
-resetting state, or replacing application overrides. Ghostty implements this hook;
+resetting state, or replacing application overrides. Both the built-in core and
+Ghostty implement this hook and answer OSC 10/11 queries with these defaults;
 other cores remain compatible without it. Use `WTerm.setThemeColors()` for an
 attached browser terminal so CSS and live/retained rendering update together.
 

@@ -38,6 +38,78 @@ interface RenderFrame {
   restoreScroll: boolean;
 }
 
+const THEME_PROPERTIES = [
+  "--term-fg",
+  "--term-bg",
+  "--term-cursor",
+  ...Array.from({ length: 16 }, (_, index) => `--term-color-${index}`),
+];
+
+/** Whether the data may hold an OSC 10 or OSC 11 color query. */
+function mayQueryThemeColors(data: string | Uint8Array): boolean {
+  if (typeof data === "string")
+    return data.includes("\x1b]10;") || data.includes("\x1b]11;");
+  for (let i = data.indexOf(0x1b); i >= 0; i = data.indexOf(0x1b, i + 1)) {
+    if (
+      data[i + 1] === 0x5d &&
+      data[i + 2] === 0x31 &&
+      (data[i + 3] === 0x30 || data[i + 3] === 0x31) &&
+      data[i + 4] === 0x3b
+    )
+      return true;
+  }
+  return false;
+}
+
+/** Resolves the theme custom properties on `element` to 24-bit RGB values. */
+function readCssThemeColors(element: HTMLElement): TerminalThemeColors | null {
+  const probe = element.ownerDocument.createElement("span");
+  probe.style.display = "none";
+  element.appendChild(probe);
+  try {
+    const values: number[] = [];
+    for (const property of THEME_PROPERTIES) {
+      probe.style.color = `var(${property})`;
+      const rgb = parseCssColor(getComputedStyle(probe).color);
+      if (rgb === null) return null;
+      values.push(rgb);
+    }
+    return {
+      foreground: values[0],
+      background: values[1],
+      cursor: values[2],
+      palette: values.slice(3),
+    };
+  } finally {
+    probe.remove();
+  }
+}
+
+/** 0xRRGGBB for a computed CSS color, or null when it cannot be read. */
+function parseCssColor(color: string | undefined): number | null {
+  if (typeof color !== "string") return null;
+  const rgb = color.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/);
+  if (rgb)
+    return (
+      (Math.round(Number(rgb[1])) << 16) |
+      (Math.round(Number(rgb[2])) << 8) |
+      Math.round(Number(rgb[3]))
+    );
+  // Modern color spaces (oklch, color(), ...) resolve through a canvas.
+  try {
+    const context = document.createElement("canvas").getContext("2d", {
+      willReadFrequently: true,
+    });
+    if (!context) return null;
+    context.fillStyle = color;
+    context.fillRect(0, 0, 1, 1);
+    const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+    return (r << 16) | (g << 8) | b;
+  } catch {
+    return null;
+  }
+}
+
 export interface WTermOptions {
   cols?: number;
   rows?: number;
@@ -87,6 +159,8 @@ export class WTerm {
   private _initialColsExplicit: boolean;
   private _initialRowsExplicit: boolean;
   private _themeColors: TerminalThemeColors | null = null;
+  /** Colors last read from CSS and handed to the core, to skip repeat updates. */
+  private _cssThemeKey: string | null = null;
   private wasmUrl: string | undefined;
   private maxImageWidth: number | undefined;
   private maxImageHeight: number | undefined;
@@ -383,6 +457,7 @@ export class WTerm {
         this.bridge = await WasmBridge.load(this.wasmUrl);
       }
       if (this._destroyed) return this;
+      this.bridge.setUpdateListener?.(this._onCoreUpdate);
       const initialCols = this.cols;
       const initialRows = this.rows;
       this._setRowHeight();
@@ -395,6 +470,7 @@ export class WTerm {
       }
       this.bridge.init(this.cols, this.rows);
       if (this._themeColors) this.bridge.setThemeColors?.(this._themeColors);
+      else this._syncCssThemeColors();
       this.cols = this.bridge.getCols();
       this.rows = this.bridge.getRows();
 
@@ -508,8 +584,22 @@ export class WTerm {
     this.element.scrollTop = target;
   }
 
-  /** Apply host colors without writing terminal input or restarting the session. */
-  setThemeColors(colors: TerminalThemeColors): void {
+  /**
+   * Apply host colors without writing terminal input or restarting the session.
+   * Pass `null` to drop them and answer color queries from the page's CSS again.
+   */
+  setThemeColors(colors: TerminalThemeColors | null): void {
+    if (colors === null) {
+      if (this._destroyed) return;
+      this._themeColors = null;
+      for (const property of THEME_PROPERTIES)
+        this.element.style.removeProperty(property);
+      this._cssThemeKey = null;
+      this._syncCssThemeColors();
+      this.renderer?.invalidateColors();
+      this._scheduleRender();
+      return;
+    }
     const values = [
       colors.foreground,
       colors.background,
@@ -529,15 +619,9 @@ export class WTerm {
     const copy = { ...colors, palette: [...colors.palette] };
     this.bridge?.setThemeColors?.(copy);
     this._themeColors = copy;
-    const properties = [
-      "--term-fg",
-      "--term-bg",
-      "--term-cursor",
-      ...colors.palette.map((_, index) => `--term-color-${index}`),
-    ];
     values.forEach((value, index) =>
       this.element.style.setProperty(
-        properties[index],
+        THEME_PROPERTIES[index],
         `#${value.toString(16).padStart(6, "0")}`,
       ),
     );
@@ -554,6 +638,8 @@ export class WTerm {
     this.renderer?.beforeMutation(this.bridge);
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._pinnedToBottom;
+    // Answer theme color queries with the colors the page shows right now.
+    if (mayQueryThemeColors(data)) this._syncCssThemeColors();
     const windowSizeQueries = this._collectWindowSizeQueries(data);
     let deliveryError: unknown;
     let hasDeliveryError = false;
@@ -563,41 +649,8 @@ export class WTerm {
       deliveryError = error;
     };
     const drain = () => {
-      const result = this._drainResponses();
+      const result = this._deliverCoreEffects();
       if (result.hasError) recordDeliveryError(result.error);
-      const bells = this.bridge?.getBellCount?.() ?? 0;
-      if (bells > 0) {
-        try {
-          this.onBell?.(bells);
-        } catch (error) {
-          recordDeliveryError(error);
-        }
-      }
-      // Titles, like replies and bells, must reach the host even without paint.
-      try {
-        this._deliverTitle();
-      } catch (error) {
-        recordDeliveryError(error);
-      }
-      try {
-        const text = this.bridge?.getClipboardWrite?.() ?? null;
-        if (text !== null && !this._destroyed) this.onClipboardWrite?.(text);
-      } catch (error) {
-        recordDeliveryError(error);
-      }
-      try {
-        const state = this.bridge?.getShellIntegrationState?.() ?? null;
-        if (state !== null && !this._destroyed)
-          this.onShellIntegration?.(state);
-      } catch (error) {
-        recordDeliveryError(error);
-      }
-      try {
-        const uri = this.bridge?.getWorkingDirectory?.() ?? null;
-        if (uri !== null && !this._destroyed) this.onWorkingDirectory?.(uri);
-      } catch (error) {
-        recordDeliveryError(error);
-      }
     };
     if (typeof data === "string") {
       this.bridge.writeString(data, drain);
@@ -622,6 +675,107 @@ export class WTerm {
     }
     if (hasDeliveryError) throw deliveryError;
   }
+
+  /**
+   * Hands the core the theme colors the page's CSS resolves to, unless the
+   * host set explicit colors with setThemeColors().
+   */
+  private _syncCssThemeColors(): void {
+    if (this._themeColors || !this.bridge?.setThemeColors || this._destroyed)
+      return;
+    let colors: TerminalThemeColors | null;
+    try {
+      colors = readCssThemeColors(this.element);
+    } catch {
+      // Detection is best effort; the core keeps its previous colors.
+      return;
+    }
+    if (!colors) return;
+    const key = [
+      colors.foreground,
+      colors.background,
+      colors.cursor,
+      ...colors.palette,
+    ].join();
+    if (key === this._cssThemeKey) return;
+    this._cssThemeKey = key;
+    this.bridge.setThemeColors(colors);
+  }
+
+  /**
+   * Hands replies, bells, titles, clipboard writes, shell state and the
+   * working directory to the host. Returns the first host callback error.
+   */
+  private _deliverCoreEffects(): { hasError: boolean; error?: unknown } {
+    let hasError = false;
+    let firstError: unknown;
+    const record = (error: unknown) => {
+      if (hasError) return;
+      hasError = true;
+      firstError = error;
+    };
+    const result = this._drainResponses();
+    if (result.hasError) record(result.error);
+    const bells = this.bridge?.getBellCount?.() ?? 0;
+    if (bells > 0) {
+      try {
+        this.onBell?.(bells);
+      } catch (error) {
+        record(error);
+      }
+    }
+    // Titles, like replies and bells, must reach the host even without paint.
+    try {
+      this._deliverTitle();
+    } catch (error) {
+      record(error);
+    }
+    try {
+      const text = this.bridge?.getClipboardWrite?.() ?? null;
+      if (text !== null && !this._destroyed) this.onClipboardWrite?.(text);
+    } catch (error) {
+      record(error);
+    }
+    try {
+      const state = this.bridge?.getShellIntegrationState?.() ?? null;
+      if (state !== null && !this._destroyed) this.onShellIntegration?.(state);
+    } catch (error) {
+      record(error);
+    }
+    try {
+      const uri = this.bridge?.getWorkingDirectory?.() ?? null;
+      if (uri !== null && !this._destroyed) this.onWorkingDirectory?.(uri);
+    } catch (error) {
+      record(error);
+    }
+    return { hasError, error: firstError };
+  }
+
+  /** New state from a core that applies writes asynchronously. */
+  private _onCoreUpdate = (): void => {
+    if (!this.bridge || this._destroyed) return;
+    // The core changed, as after a write: stale captures and drags end.
+    this._textCapture.cancel();
+    this._rectangleDrag.cancel();
+    this.renderer?.beforeMutation(this.bridge);
+    this._historySelection.invalidate();
+    const result = this._deliverCoreEffects();
+    const synchronized = this.bridge.synchronizedOutput?.() ?? false;
+    const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
+    this._updateSynchronizedOutput(synchronized, generation);
+    this._invalidateSearch();
+    if (this._synchronizedOutputState !== "held") {
+      this._setupRendererIfNeeded();
+      this._scheduleRender();
+    }
+    if (result.hasError) {
+      // There is no write call to throw from; surface it like an event handler.
+      const error = result.error;
+      queueMicrotask(() => {
+        throw error;
+      });
+    }
+  };
 
   /** Fit the grid to the current element and font metrics. */
   fit(): void {
@@ -1564,6 +1718,7 @@ export class WTerm {
 
   destroy(): void {
     this._destroyed = true;
+    this.bridge?.setUpdateListener?.(null);
     this._textCapture.cancel();
     this._historySelection.destroy();
     this._rectangleDrag.destroy();
