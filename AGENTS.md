@@ -40,6 +40,8 @@ For any user-facing change (new feature, option, API change, bug fix, etc.), upd
 - **Example READMEs**: Each example under `examples/` must have a `README.md` covering what it does, setup steps, how it works, and key files.
 - **Code examples in docs**: Ensure import paths match the current package structure (e.g. `@wterm/dom` for vanilla JS, `@wterm/react` for React).
 
+Use the `technical-writer` skill (`.agents/skills/technical-writer/SKILL.md`) when you write or edit prose for this repo, including docs pages, READMEs, changelog entries, commit messages, PR descriptions, and issues.
+
 ## Releasing
 
 Releases are manual, single-PR affairs. The maintainer controls the changelog voice and format. All `@wterm/*` packages share a single version number.
