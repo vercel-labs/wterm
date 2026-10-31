@@ -8,7 +8,7 @@ Shell adapter for [wterm](https://github.com/vercel-labs/wterm), powered by [jus
 npm install @wterm/just-bash just-bash
 ```
 
-`just-bash` is a peer dependency.
+`just-bash` 3 is a peer dependency.
 
 ## Usage
 
@@ -81,11 +81,16 @@ new BashShell(options?: ShellOptions)
 
 ### Features
 
-- Line editing with backspace
-- Command history (up/down arrows)
-- Tab completion (files + commands)
-- Ctrl+C to cancel, Ctrl+L to clear
-- Directory-aware prompt updates
+- Line editing with Backspace, Delete, Home/End, and word-wise cursor movement (Option/Alt+arrows, Ctrl+arrows, Alt+B/F)
+- Erase the previous word with Option/Alt+Backspace or Ctrl+W; erase before or after the cursor with Ctrl+U or Ctrl+K
+- Ctrl+Y restores the text erased by those shortcuts, including consecutive erasures
+- Unicode-aware editing for emoji, combining marks, and wide characters
+- Command history (up/down arrows) that restores your unfinished command and cursor position
+- Ctrl+R to search command history from newest to oldest; during a search, Ctrl+S moves toward newer matches, Enter runs a match, Escape opens it for editing, and Ctrl+G restores your unfinished command
+- Tab completion for files and commands at the cursor, including earlier words in a command
+- Ctrl+C to cancel input or interrupt a running command, Ctrl+L to clear the screen
+- Each submitted command executes once
+- Directory-aware prompt updates after every command, including nonzero exits
 
 ## License
 

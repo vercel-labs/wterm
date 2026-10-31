@@ -1,8 +1,221 @@
 # Changelog
 
-## 0.3.2
+## 0.5.7
 
 <!-- release:start -->
+
+### New Features
+
+- **Grapheme clusters:** the built-in core keeps ZWJ emoji, flags, and combining marks in one cell instead of splitting them across cells, and widens emoji presentation and flag pairs to two cells. `WasmBridge` exposes the full cluster as `CellData.chars` (#241).
+- **WorkerCore:** `@wterm/core/worker` runs the built-in core in a Web Worker so parsing leaves the main thread, and many busy terminals can use more than one CPU core. Opt in with `WorkerCore.load()`; replies and other effects of a write arrive one message later (#252).
+- **Theme color queries:** OSC 10 and OSC 11 queries are answered with the foreground and background the page's CSS shows at query time, so apps like Vim and Neovim pick a matching light or dark theme. `setThemeColors()` overrides them and `setThemeColors(null)` returns to CSS (#253).
+
+### Improvements
+
+- **Canvas cell painting:** block characters and cell backgrounds paint into one canvas behind the text rows instead of one styled span per cell. Dense truecolor output keeps up: 16 terminals playing Doom go from about 6.6 to 36 frames per second each, and chafa video at 160x50 goes from 14.5 to 60 frames per second (#256).
+- **Shared render frame:** all terminals on a page render in one animation frame that reads layout before any writes, and rows that only scrolled are moved instead of rebuilt. 64 terminals streaming colored `ls` go from 12.7 to 15.9 frames per second each, and style recalculation drops from 18% to 6% of main-thread time. Custom cores can opt in with the optional `getRowId` and `isRowContentDirty` methods (#257).
+- **Ghostty write fast paths:** `@wterm/ghostty` handles Kitty image payloads, plain CSI sequences, and plain UTF-8 text before the byte-by-byte parser, and cell reads no longer touch WASM memory per cell (#251).
+
+### Contributors
+
+- @Railly
+- @lahfir
+
+<!-- release:end -->
+
+## 0.5.6
+
+### Improvements
+
+- **Built-in core scrolling:** advance full-screen scrolls without copying the grid on every line (#242).
+- **Terminal output throughput:** write eligible ASCII and UTF-8 runs directly into the current row while preserving parser fallbacks (#243).
+
+### Bug Fixes
+
+- **Truecolor output:** preserve exact RGB foreground and background colors in the built-in core, with palette fallback when the color table is full (#239).
+- **Restored cursor bounds:** clamp saved cursor positions after resizing to prevent writes outside the grid (#248).
+- **iOS keyboard visibility:** resize auto-sized terminals to keep the cursor row above the software keyboard (#244).
+
+### Contributors
+
+- @Railly
+
+## 0.5.5
+
+### Documentation
+
+- Updated **WebMCP integration** in the docs site with the Geistdocs MCP adapter and route-contract coverage (#190)
+
+### Contributors
+
+- @Railly
+
+## 0.5.4
+
+### Bug Fixes
+
+- **Glyph rendering:** preserve italic and fallback glyph overhang without shifting adjacent terminal columns.
+- **Cursor appearance:** keep the cursor active while the mouse is pressed inside the terminal, preserving native text selection.
+- **Row spacing:** preserve fractional CSS row heights during terminal initialization.
+
+### Contributors
+
+- @ctate
+
+## 0.5.3
+
+### Improvements
+
+- **History scrolling:** reuse unchanged history content and keep the mounted row window during small scrolls, reducing repeated rendering and layout work.
+- **Terminal redraws:** preserve unchanged cell spans and update existing text nodes when styles and column widths match, reducing work for Unicode output while preserving selection, links, and text decorations.
+- **Startup memory:** allocate Ghostty screen pages as needed and measure auto-sized terminal hosts before creating the grid, avoiding unused pages and unnecessary initial resizes.
+- **WASM loading:** stream compilation where supported and reuse compiled modules across terminals for both cores, while keeping each terminal's state and memory independent.
+- **Built-in WASM downloads:** import the embedded binary only on first use. With code splitting, Ghostty and custom-URL applications skip its JavaScript chunk; applications using the built-in core must deploy all generated assets.
+
+### Bug Fixes
+
+- **Scrollback spacing:** update spacer heights when the row height changes, even when the same history rows remain mounted.
+
+### Contributors
+
+- @ctate
+
+## 0.5.2
+
+### New Features
+
+- **Local workspace controls:** view up to four shells in adjustable split panes, zoom and focus panes, and save appearance, font size, and custom keyboard shortcuts.
+- **Local session recovery:** resume briefly disconnected shells with output replay and input delivery acknowledgments, and restore sessions, split layouts, and focus after reload when saved output and server sessions remain available. Recovery uses bounded storage and a 30-second server grace period.
+- **Shell integration:** expose Ghostty shell command state, exit codes, and working-directory reports; show them in the local workspace and navigate between retained shell prompts.
+- **Rectangular selection:** Alt/Option-drag selects columns from logs and tables, preserving selected spaces and complete Unicode cells when copied.
+- **Application clipboard requests:** forward Ghostty OSC 52 writes to an opt-in host callback; the local workspace offers a text preview and explicit Copy action.
+
+### Improvements
+
+- **Terminal responsiveness:** pause painting for inactive panes, reuse unchanged scrollback rows, reduce query-scanning and full-history search work, and batch local PTY output with browser acknowledgments and bounded queues.
+- **Terminal appearance:** preserve Ghostty underline styles and colors, honor application foreground, background, and cursor overrides, and update host theme colors without restarting terminals.
+- **Build and performance checks:** verify reproducible Ghostty WASM builds and add sustained-output, history-search, and keyboard-to-echo measurements, including real PTYs under output load.
+
+### Bug Fixes
+
+- **Ghostty page initialization:** clear reused WASM page memory so new terminal pages do not inherit stale state from earlier contents.
+
+### Contributors
+
+- @ctate
+
+## 0.5.1
+
+### New Features
+
+- **Terminal history search and selection:** search retained output, navigate matches, select all history or by word and logical line, preserve selections across scrolling and reflow, and copy selected terminal text faithfully.
+- **Accessible output and navigation:** add opt-in terminal output announcements, a stable text view of retained output, accessible naming for terminal input, and Escape then Tab navigation out of terminal input.
+- **Expanded terminal interaction:** report X10, UTF-8/urxvt, SGR pixel-coordinate, and any-motion mouse events; expose terminal bell events and IME preedit; and support application cursor shapes and blinking.
+- **Just-Bash editing and history:** add Ctrl-R/Ctrl-S history search, Ctrl-C interruption, Ctrl-Y restoration of erased input, completion at the cursor, and common navigation, deletion, word movement, and Unicode grapheme editing.
+
+### Improvements
+
+- **Terminal compatibility:** answer more device, status, and DEC private-mode queries; grow built-in grids on demand; expose Ghostty row-wrap metadata and OSC window titles; and render DEC line-drawing characters with connected box-drawing strokes.
+- **Documentation and validation:** move the docs site to Geistdocs 2 Labs and add real-PTY, cross-browser workload, and public Ghostty WebAssembly API coverage.
+
+### Bug Fixes
+
+- **Keyboard, pointer, and touch input:** preserve AltGr text in Kitty mode, encode legacy control and navigation modifiers, keep scrollback usable with mouse tracking, prevent raw key leakage during IME composition, and keep touch input usable on iOS.
+- **Rendering and sizing:** fix wide-character editing and right-edge printing, align fallback glyphs to terminal columns, prevent edge-cell backgrounds from repainting rows, and report applied grid dimensions.
+- **Shell behavior:** prevent duplicate command execution and restore the current draft after history navigation.
+- **Homepage terminal startup:** keep startup and theme synchronization working together.
+
+### Contributors
+
+- @ctate
+- @Railly
+
+## 0.5.0
+
+### New Features
+
+- **Svelte support:** added `@wterm/svelte` with a Svelte 5 `<Terminal />` component, callbacks, imperative controls, SSR-safe initialization, and shared DOM/core exports, plus documentation and an example.
+
+### Bug Fixes
+
+- **Focused cursor visibility:** cell foreground and background styles are now overridable by the cursor rule, keeping the focused cursor visible over colored, wide, block, and blank cells.
+
+### Contributors
+
+- @ctate
+- @jaredevans
+
+## 0.4.1
+
+### New Features
+
+- **Local terminal workspace:** the local example now supports multiple independent shell sessions with an accessible sidebar for creating, switching, and closing sessions, plus live working-directory labels.
+- **Kitty image sizing and geometry:** DOM terminals answer Kitty pixel-geometry queries, configurable image bounds preserve aspect ratio, and the local PTY forwards browser dimensions so Kitty clients can detect image support.
+
+### Improvements
+
+- **Implicit image flow:** auto-sized Kitty images align with the terminal content and reserve their rendered height, keeping following shell prompts visible below the image.
+- **Local example core switching:** built-in and Ghostty terminal sessions share the workspace while the Ghostty route enables bounded Kitty image rendering.
+
+### Contributors
+
+- @ctate
+
+## 0.4.0
+
+### New Features
+
+- **Kitty keyboard protocol:** the built-in and Ghostty cores negotiate Kitty keyboard reporting, while the DOM renderer encodes browser keyboard events using the active terminal state.
+- **Kitty terminal images:** Ghostty-backed terminals render bounded direct PNG, RGB, and RGBA graphics through the optional terminal graphics API and a scroll-aware canvas overlay.
+
+### Bug Fixes
+
+- **Fractional scroll ownership:** the DOM renderer preserves follow mode when browser reclamping changes the scroll position during terminal updates.
+
+### Contributors
+
+- @ctate
+- @Railly
+
+## 0.3.4
+
+### New Features
+
+- **Native OSC 8 hyperlinks:** the built-in and Ghostty cores preserve hyperlink metadata through rendering, scrollback, reflow and resets. The DOM renderer exposes safe absolute HTTP(S) links as native anchors, with Command-click activation on macOS and Control-click on Windows/Linux while plain clicks remain terminal-owned (#116)
+
+### Bug Fixes
+
+- **Complete Ghostty grapheme strings:** combining marks and ZWJ sequences now cross the WASM boundary as complete clusters in both the viewport and scrollback instead of being truncated to a base codepoint (#111)
+- **Ghostty theme color responses:** OSC 10 and OSC 11 queries now return the configured foreground and background colors with the original BEL or ST terminator (#113)
+- **Atomic Ghostty synchronized output:** Ghostty exposes DEC mode `?2026` state and block generations so the DOM scheduler holds intermediate frames and paints the completed burst once (#114)
+- **Bounded scrollback DOM:** history rows are virtualized with viewport overscan, preserving native selection and the visible history position across rollover and resize while keeping mounted rows bounded (#115, #61)
+
+### Improvements
+
+- **Direct animation-frame scheduling:** normal writes request an animation frame without an intermediate timer while retaining one pending render per frame and synchronized-output cancellation semantics (#112)
+
+### Contributors
+
+- @Railly
+
+## 0.3.3
+
+### Bug Fixes
+
+- **Pixel-aligned block gradients** — vertical fractional block glyphs now snap their gradient stops to whole pixels, preventing horizontal rules from jogging between cells at fractional row-height boundaries (#104, #81)
+- **Ordered terminal query responses** — the built-in core queues every response instead of overwriting a single pending value, and the DOM adapter drains them in order even when writes arrive in chunks or an `onData` callback throws (#105)
+- **Atomic synchronized output** — DEC mode `?2026` now holds intermediate paints and exposes one completed frame, with a fixed one-second recovery ceiling for unterminated blocks and generation-aware deadlines for consecutive blocks (#106, #57)
+- **Browser mouse and focus reporting** — the DOM adapter now emits SGR press, drag, release and wheel events for modes `1000`, `1002` and `1006`, reports focus for mode `1004`, and preserves native Shift selection (#107, #55)
+- **Viewport history across vertical resize** — shrinking pushes only the rows above the cursor into scrollback, growing refills from the newest history, and wrapped rings are indexed from their write position. Growing now consumes restored scrollback rows, so `getLine` offsets can shift across a resize and hosts retaining an offset must re-read it (#108, #43, #89)
+- **Terminal responses in `@wterm/ghostty`** — DA1, DSR operating status, CPR and DECRQM queries now produce ordered responses through a bounded FIFO instead of being silently dropped (#109)
+
+### Contributors
+
+- @ivebenfreed
+- @Ramalama2
+- @Railly
+
+## 0.3.2
 
 ### Bug Fixes
 
@@ -24,8 +237,6 @@
 - @ctate
 - @njbrake
 - @Railly
-
-<!-- release:end -->
 
 ## 0.3.1
 

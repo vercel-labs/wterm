@@ -1,4 +1,5 @@
 import type { Bash, NetworkConfig } from "just-bash";
+import stringWidth from "string-width";
 
 export type { NetworkConfig } from "just-bash";
 
@@ -16,16 +17,57 @@ function defaultPrompt(cwd: string): string {
   return `\x1b[1;32muser@wterm\x1b[0m:\x1b[1;34m${display}\x1b[0m$ `;
 }
 
+const WORD_LEFT_SEQUENCES = new Set(["\x1b[1;3D", "\x1b[1;5D", "\x1bb"]);
+const WORD_RIGHT_SEQUENCES = new Set(["\x1b[1;3C", "\x1b[1;5C", "\x1bf"]);
+const WORD_ERASE_SEQUENCES = new Set(["\x1b\x7f", "\x1b\b", "\x17"]);
+const HOME_SEQUENCES = new Set(["\x1b[H", "\x1bOH"]);
+const END_SEQUENCES = new Set(["\x1b[F", "\x1bOF"]);
+const SEARCH_EDIT_SEQUENCES = new Set([
+  "\x1b[D",
+  "\x1b[C",
+  "\x01",
+  "\x05",
+  ...HOME_SEQUENCES,
+  ...END_SEQUENCES,
+  ...WORD_LEFT_SEQUENCES,
+  ...WORD_RIGHT_SEQUENCES,
+]);
+const PRINTABLE_TEXT = /^[^\p{Cc}]+$/u;
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+interface HistorySearch {
+  query: string;
+  index: number;
+  direction: -1 | 1;
+  draft: { line: string; cursor: number };
+}
+
+function previousGraphemeStart(line: string, cursor: number): number {
+  return graphemes.segment(line).containing(cursor - 1)?.index ?? 0;
+}
+
+function nextGraphemeEnd(line: string, cursor: number): number {
+  const next = graphemes.segment(line).containing(cursor);
+  return next ? next.index + next.segment.length : line.length;
+}
+
 export class BashShell {
   private _bash: Bash | null = null;
   private _write: ((data: string) => void) | null = null;
   private _cwd: string;
   private _line = "";
+  // UTF-16 offset in _line; terminal cursor motion uses cell widths.
   private _cursor = 0;
   private _buffer = "";
   private _history: string[] = [];
   private _historyPos = -1;
+  private _historyDraft: { line: string; cursor: number } | null = null;
+  private _historySearch: HistorySearch | null = null;
+  private _killBuffer = "";
+  private _lastActionWasKill = false;
+  private _inputRevision = 0;
   private _busy = false;
+  private _execAbort: AbortController | null = null;
 
   private _files: Record<string, string>;
   private _env: Record<string, string>;
@@ -57,6 +99,13 @@ export class BashShell {
     return this._bash;
   }
 
+  private _updateCwd(env?: Record<string, string>): void {
+    const cwd = env?.PWD;
+    if (cwd?.startsWith("/")) {
+      this._cwd = cwd;
+    }
+  }
+
   async attach(write: (data: string) => void): Promise<void> {
     this._write = write;
 
@@ -74,8 +123,30 @@ export class BashShell {
   }
 
   async handleInput(data: string): Promise<void> {
-    if (!this._write || this._busy) return;
+    if (!this._write) return;
+    if (this._busy) {
+      if (
+        data === "\x03" &&
+        this._execAbort &&
+        !this._execAbort.signal.aborted
+      ) {
+        this._write("^C\r\n");
+        this._execAbort.abort();
+      }
+      return;
+    }
+    this._inputRevision++;
     const write = this._write;
+    if (!WORD_ERASE_SEQUENCES.has(data) && data !== "\x15" && data !== "\x0b") {
+      this._lastActionWasKill = false;
+    }
+
+    if (this._historySearch && (await this._handleHistorySearchInput(data)))
+      return;
+    if (data === "\x12") {
+      this._startHistorySearch();
+      return;
+    }
 
     if (data === "\t") {
       await this._tabComplete();
@@ -96,33 +167,39 @@ export class BashShell {
 
       const cmd = this._buffer + cur;
       this._buffer = "";
+      this._historyPos = -1;
+      this._historyDraft = null;
 
       if (cmd.trim() && this._bash) {
         this._history.push(cmd);
-        this._historyPos = -1;
+        const abort = new AbortController();
+        this._execAbort = abort;
         this._busy = true;
 
         try {
-          const wrapped = `cd ${JSON.stringify(this._cwd)} && ${cmd}`;
-          const result = await this._bash.exec(wrapped);
-          if (result.stdout) {
-            write(result.stdout.replace(/\n/g, "\r\n"));
-            if (!result.stdout.endsWith("\n")) write("\r\n");
+          const result = await this._bash.exec(cmd, {
+            cwd: this._cwd,
+            env: { PWD: this._cwd },
+            signal: abort.signal,
+          });
+          if (!abort.signal.aborted) {
+            if (result.stdout) {
+              write(result.stdout.replace(/\n/g, "\r\n"));
+              if (!result.stdout.endsWith("\n")) write("\r\n");
+            }
+            if (result.stderr) {
+              write(`\x1b[31m${result.stderr.replace(/\n/g, "\r\n")}\x1b[0m`);
+              if (!result.stderr.endsWith("\n")) write("\r\n");
+            }
           }
-          if (result.stderr) {
-            write(`\x1b[31m${result.stderr.replace(/\n/g, "\r\n")}\x1b[0m`);
-            if (!result.stderr.endsWith("\n")) write("\r\n");
-          }
-          const pwdResult = await this._bash.exec(
-            `cd ${JSON.stringify(this._cwd)} 2>/dev/null; ${cmd} >/dev/null 2>&1; pwd`,
-          );
-          const lines = pwdResult.stdout?.trim().split("\n") ?? [];
-          const lastLine = lines[lines.length - 1]?.trim();
-          if (lastLine?.startsWith("/")) this._cwd = lastLine;
+          this._updateCwd(result.env);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : "Unknown error";
-          write(`\x1b[31m${msg}\x1b[0m\r\n`);
+          if (!abort.signal.aborted) {
+            const msg = err instanceof Error ? err.message : "Unknown error";
+            write(`\x1b[31m${msg}\x1b[0m\r\n`);
+          }
         } finally {
+          this._execAbort = null;
           this._busy = false;
         }
       }
@@ -130,67 +207,90 @@ export class BashShell {
       write(this._prompt(this._cwd));
     } else if (data === "\x7f" || data === "\b") {
       if (this._cursor > 0) {
-        const tail = this._line.slice(this._cursor);
-        this._line = this._line.slice(0, this._cursor - 1) + tail;
-        this._cursor--;
-        write("\b" + tail + "\x1b[K");
-        if (tail.length > 0) write(`\x1b[${tail.length}D`);
+        this._eraseBeforeCursor(
+          previousGraphemeStart(this._line, this._cursor),
+        );
+      }
+    } else if (WORD_ERASE_SEQUENCES.has(data)) {
+      this._recordKill(
+        this._eraseBeforeCursor(this._wordBoundary(-1)),
+        "backward",
+      );
+    } else if (data === "\x1b[3~") {
+      if (this._cursor < this._line.length) {
+        const tail = this._line.slice(
+          nextGraphemeEnd(this._line, this._cursor),
+        );
+        this._line = this._line.slice(0, this._cursor) + tail;
+        write(tail + "\x1b[K");
+        this._moveCells(stringWidth(tail), "D");
       }
     } else if (data === "\x1b[A") {
       if (!this._history.length) return;
-      if (this._historyPos < 0) this._historyPos = this._history.length;
+      if (this._historyPos < 0) {
+        this._historyDraft = { line: this._line, cursor: this._cursor };
+        this._historyPos = this._history.length;
+      }
       if (this._historyPos > 0) {
         this._historyPos--;
-        const entry = this._history[this._historyPos];
-        write(`\r${this._prompt(this._cwd)}\x1b[K${entry}`);
-        this._line = entry;
-        this._cursor = entry.length;
+        this._showLine(this._history[this._historyPos]);
       }
     } else if (data === "\x1b[B") {
       if (this._historyPos < 0) return;
       this._historyPos++;
       if (this._historyPos >= this._history.length) {
         this._historyPos = -1;
-        write(`\r${this._prompt(this._cwd)}\x1b[K`);
-        this._line = "";
-        this._cursor = 0;
+        const draft = this._historyDraft;
+        this._historyDraft = null;
+        this._showLine(draft?.line ?? "", draft?.cursor ?? 0);
       } else {
-        const entry = this._history[this._historyPos];
-        write(`\r${this._prompt(this._cwd)}\x1b[K${entry}`);
-        this._line = entry;
-        this._cursor = entry.length;
+        this._showLine(this._history[this._historyPos]);
       }
     } else if (data === "\x1b[D") {
       if (this._cursor > 0) {
-        this._cursor--;
-        write("\x1b[D");
+        const start = previousGraphemeStart(this._line, this._cursor);
+        const width = stringWidth(this._line.slice(start, this._cursor));
+        this._cursor = start;
+        this._moveCells(width, "D", true);
       }
     } else if (data === "\x1b[C") {
       if (this._cursor < this._line.length) {
-        this._cursor++;
-        write("\x1b[C");
+        const end = nextGraphemeEnd(this._line, this._cursor);
+        const width = stringWidth(this._line.slice(this._cursor, end));
+        this._cursor = end;
+        this._moveCells(width, "C", true);
       }
+    } else if (WORD_LEFT_SEQUENCES.has(data)) {
+      this._moveWord(-1);
+    } else if (WORD_RIGHT_SEQUENCES.has(data)) {
+      this._moveWord(1);
     } else if (data === "\x15") {
-      if (this._line.length > 0) {
-        if (this._cursor > 0) write(`\x1b[${this._cursor}D`);
+      this._recordKill(this._eraseBeforeCursor(0), "backward");
+    } else if (data === "\x0b") {
+      const removed = this._line.slice(this._cursor);
+      this._recordKill(removed, "forward");
+      if (removed) {
+        this._line = this._line.slice(0, this._cursor);
         write("\x1b[K");
-        this._line = "";
-        this._cursor = 0;
       }
-    } else if (data === "\x01") {
+    } else if (data === "\x19") {
+      if (this._killBuffer) this._insertText(this._killBuffer);
+    } else if (data === "\x01" || HOME_SEQUENCES.has(data)) {
       if (this._cursor > 0) {
-        write(`\x1b[${this._cursor}D`);
+        this._moveCells(stringWidth(this._line.slice(0, this._cursor)), "D");
         this._cursor = 0;
       }
-    } else if (data === "\x05") {
+    } else if (data === "\x05" || END_SEQUENCES.has(data)) {
       if (this._cursor < this._line.length) {
-        write(`\x1b[${this._line.length - this._cursor}C`);
+        this._moveCells(stringWidth(this._line.slice(this._cursor)), "C");
         this._cursor = this._line.length;
       }
     } else if (data === "\x03") {
       this._line = "";
       this._cursor = 0;
       this._buffer = "";
+      this._historyPos = -1;
+      this._historyDraft = null;
       write("^C\r\n");
       write(this._prompt(this._cwd));
     } else if (data === "\x0c") {
@@ -198,22 +298,289 @@ export class BashShell {
       write(this._prompt(this._cwd));
       write(this._line);
       if (this._cursor < this._line.length) {
-        write(`\x1b[${this._line.length - this._cursor}D`);
+        this._moveCells(stringWidth(this._line.slice(this._cursor)), "D");
       }
-    } else if (data.length === 1 && data >= " ") {
-      const tail = this._line.slice(this._cursor);
-      this._line = this._line.slice(0, this._cursor) + data + tail;
-      this._cursor++;
-      if (tail.length === 0) {
-        write(data);
-      } else {
-        write(data + tail + "\x1b[K");
-        write(`\x1b[${tail.length}D`);
-      }
+    } else if (data.startsWith("\x1b[") || data.startsWith("\x1bO")) {
+      // Ignore unsupported functional keys instead of inserting their escape suffix.
+      return;
+    } else if (PRINTABLE_TEXT.test(data)) {
+      this._insertText(data);
     } else if (data.length > 1) {
       for (const ch of data) {
         await this.handleInput(ch);
       }
+    }
+  }
+
+  private _moveCells(
+    width: number,
+    direction: "C" | "D",
+    shortSingleStep = false,
+  ): void {
+    if (width > 0) {
+      const count = shortSingleStep && width === 1 ? "" : width;
+      this._write?.(`\x1b[${count}${direction}`);
+    }
+  }
+
+  private _insertText(text: string): void {
+    const write = this._write;
+    if (!write) return;
+    const tail = this._line.slice(this._cursor);
+    this._line = this._line.slice(0, this._cursor) + text + tail;
+    this._cursor += text.length;
+    if (tail.length === 0) {
+      write(text);
+    } else {
+      write(text + tail + "\x1b[K");
+      this._moveCells(stringWidth(tail), "D");
+    }
+  }
+
+  private _eraseBeforeCursor(start: number): string {
+    if (start === this._cursor) return "";
+    const write = this._write;
+    if (!write) return "";
+    const removed = this._line.slice(start, this._cursor);
+    const removedWidth = stringWidth(removed);
+    const tail = this._line.slice(this._cursor);
+    this._line = this._line.slice(0, start) + tail;
+    this._cursor = start;
+    const moveLeft =
+      removedWidth === 1
+        ? "\b"
+        : removedWidth > 0
+          ? `\x1b[${removedWidth}D`
+          : "";
+    write(moveLeft + tail + "\x1b[K");
+    this._moveCells(stringWidth(tail), "D");
+    return removed;
+  }
+
+  private _recordKill(text: string, direction: "backward" | "forward"): void {
+    if (!text) {
+      this._lastActionWasKill = false;
+      return;
+    }
+    if (this._lastActionWasKill) {
+      this._killBuffer =
+        direction === "backward"
+          ? text + this._killBuffer
+          : this._killBuffer + text;
+    } else {
+      this._killBuffer = text;
+    }
+    this._lastActionWasKill = true;
+  }
+
+  private _showLine(line: string, cursor = line.length): void {
+    this._line = line;
+    this._cursor = cursor;
+    this._write?.(`\r${this._prompt(this._cwd)}\x1b[K${line}`);
+    this._moveCells(stringWidth(line.slice(cursor)), "D");
+  }
+
+  private _findHistoryMatch(
+    query: string,
+    from: number,
+    direction: -1 | 1,
+  ): number {
+    for (
+      let index = from;
+      index >= 0 && index < this._history.length;
+      index += direction
+    ) {
+      if (this._history[index].includes(query)) return index;
+    }
+    return -1;
+  }
+
+  private _historySearchBoundary(direction: -1 | 1): number {
+    return direction === -1 ? this._history.length - 1 : 0;
+  }
+
+  private _moveHistorySearch(direction: -1 | 1): void {
+    const search = this._historySearch;
+    if (!search) return;
+    const changedDirection = search.direction !== direction;
+    search.direction = direction;
+    const from =
+      search.index < 0
+        ? this._historySearchBoundary(direction)
+        : search.index + direction;
+    const match = this._findHistoryMatch(search.query, from, direction);
+    if (match >= 0) search.index = match;
+    if (match >= 0 || changedDirection) this._renderHistorySearch();
+  }
+
+  private _startHistorySearch(): void {
+    if (!this._history.length || this._buffer) return;
+    this._historySearch = {
+      query: "",
+      index: this._history.length - 1,
+      direction: -1,
+      draft: { line: this._line, cursor: this._cursor },
+    };
+    this._renderHistorySearch();
+  }
+
+  private _renderHistorySearch(): void {
+    const search = this._historySearch;
+    if (!search) return;
+    const direction =
+      search.direction === -1 ? "reverse-i-search" : "forward-i-search";
+    const status = search.index < 0 ? `failed ${direction}` : direction;
+    const command =
+      search.index < 0 ? "" : this._history[search.index].replace(/\n/g, "\\n");
+    this._write?.("\r\x1b[K(" + status + ")`" + search.query + "': " + command);
+  }
+
+  private _acceptHistorySearch(): boolean {
+    const search = this._historySearch;
+    if (!search || search.index < 0) return false;
+    this._historySearch = null;
+    this._historyPos = -1;
+    this._historyDraft = null;
+    this._showLine(this._history[search.index]);
+    return true;
+  }
+
+  private _cancelHistorySearch(): void {
+    const search = this._historySearch;
+    if (!search) return;
+    this._historySearch = null;
+    this._showLine(search.draft.line, search.draft.cursor);
+  }
+
+  private async _handleHistorySearchInput(data: string): Promise<boolean> {
+    const search = this._historySearch;
+    if (!search) return false;
+
+    if (data === "\x03") {
+      this._historySearch = null;
+      return false;
+    }
+    if (data === "\x12" || data === "\x13") {
+      this._moveHistorySearch(data === "\x12" ? -1 : 1);
+      return true;
+    }
+    if (data === "\x07") {
+      this._cancelHistorySearch();
+      return true;
+    }
+    if (data === "\x1b") {
+      if (!this._acceptHistorySearch()) this._cancelHistorySearch();
+      return true;
+    }
+    if (SEARCH_EDIT_SEQUENCES.has(data)) {
+      if (!this._acceptHistorySearch()) this._cancelHistorySearch();
+      await this.handleInput(data);
+      return true;
+    }
+    if (data === "\r") {
+      if (this._acceptHistorySearch()) await this.handleInput("\r");
+      return true;
+    }
+    if (data === "\x7f" || data === "\b") {
+      if (search.query) {
+        search.query = search.query.slice(
+          0,
+          previousGraphemeStart(search.query, search.query.length),
+        );
+        const from =
+          search.index < 0
+            ? this._historySearchBoundary(search.direction)
+            : search.index;
+        search.index = this._findHistoryMatch(
+          search.query,
+          from,
+          search.direction,
+        );
+        this._renderHistorySearch();
+      }
+      return true;
+    }
+    if (data === "\x15") {
+      search.query = "";
+      search.index = this._historySearchBoundary(search.direction);
+      this._renderHistorySearch();
+      return true;
+    }
+    if (data === "\x0c") {
+      this._write?.("\x1b[2J\x1b[H");
+      this._renderHistorySearch();
+      return true;
+    }
+    if (PRINTABLE_TEXT.test(data)) {
+      search.query += data;
+      const from =
+        search.index < 0
+          ? this._historySearchBoundary(search.direction)
+          : search.index;
+      search.index = this._findHistoryMatch(
+        search.query,
+        from,
+        search.direction,
+      );
+      this._renderHistorySearch();
+      return true;
+    }
+    if (!data.startsWith("\x1b") && data.length > 1) {
+      for (const ch of data) await this.handleInput(ch);
+    }
+    return true;
+  }
+
+  private _moveWord(direction: -1 | 1): void {
+    const start = this._cursor;
+    this._cursor = this._wordBoundary(direction);
+    const width = stringWidth(
+      this._line.slice(
+        Math.min(start, this._cursor),
+        Math.max(start, this._cursor),
+      ),
+    );
+    this._moveCells(width, direction === -1 ? "D" : "C");
+  }
+
+  private _wordBoundary(direction: -1 | 1): number {
+    const segments = [...graphemes.segment(this._line)];
+    let index = segments.findIndex((segment) => segment.index >= this._cursor);
+    if (index < 0) index = segments.length;
+    const isWhitespace = (segment: string) => /^\s+$/u.test(segment);
+
+    if (direction === -1) {
+      while (index > 0 && isWhitespace(segments[index - 1].segment)) index--;
+      while (index > 0 && !isWhitespace(segments[index - 1].segment)) index--;
+    } else {
+      while (index < segments.length && isWhitespace(segments[index].segment))
+        index++;
+      while (index < segments.length && !isWhitespace(segments[index].segment))
+        index++;
+    }
+
+    return segments[index]?.index ?? this._line.length;
+  }
+
+  private _insertCompletion(completion: string): void {
+    if (!completion) return;
+    const suffix = /^\S*/u.exec(this._line.slice(this._cursor))?.[0] ?? "";
+    let overlap = 0;
+    for (const { index, segment } of graphemes.segment(suffix)) {
+      const length = index + segment.length;
+      if (
+        length <= completion.length &&
+        completion.endsWith(suffix.slice(0, length))
+      ) {
+        overlap = length;
+      }
+    }
+
+    const insertion = completion.slice(0, completion.length - overlap);
+    if (insertion) this._insertText(insertion);
+    if (overlap > 0) {
+      this._cursor += overlap;
+      this._moveCells(stringWidth(suffix.slice(0, overlap)), "C");
     }
   }
 
@@ -223,7 +590,9 @@ export class BashShell {
     if (!bash || !write) return;
 
     const line = this._line;
-    const parts = line.split(/\s+/);
+    const cursor = this._cursor;
+    const revision = this._inputRevision;
+    const parts = line.slice(0, cursor).split(/\s+/);
     const word = parts[parts.length - 1] ?? "";
     const isFirst = parts.length <= 1;
 
@@ -258,6 +627,7 @@ export class BashShell {
     } catch {
       return;
     }
+    if (this._inputRevision !== revision) return;
 
     if (isFirst && !word.includes("/")) {
       try {
@@ -276,26 +646,25 @@ export class BashShell {
       }
     }
 
+    if (this._inputRevision !== revision) return;
     if (candidates.length === 0) return;
 
     if (candidates.length === 1) {
       const completion = candidates[0].slice(prefix.length);
-      if (completion) {
-        this._line += completion;
-        this._cursor += completion.length;
-        write(completion);
-      }
+      this._insertCompletion(completion);
       try {
-        const full = word + completion;
-        const testPath = full.startsWith("/") ? full : `${this._cwd}/${full}`;
+        const testPath = `${dir.replace(/\/$/, "")}/${candidates[0]}`;
         const stat = await bash.exec(
           `test -d ${JSON.stringify(testPath)} && echo DIR`,
           { cwd: this._cwd },
         );
-        if (stat.stdout?.trim() === "DIR" && !this._line.endsWith("/")) {
-          this._line += "/";
-          this._cursor++;
-          write("/");
+        if (this._inputRevision !== revision) return;
+        if (
+          stat.stdout?.trim() === "DIR" &&
+          this._line[this._cursor - 1] !== "/" &&
+          this._line[this._cursor] !== "/"
+        ) {
+          this._insertText("/");
         }
       } catch {
         /* ignore */
@@ -309,15 +678,14 @@ export class BashShell {
       }
       const partialCompletion = common.slice(prefix.length);
       if (partialCompletion) {
-        this._line += partialCompletion;
-        this._cursor += partialCompletion.length;
-        write(partialCompletion);
+        this._insertCompletion(partialCompletion);
       } else {
         write("\r\n");
         write(candidates.join("  ").replace(/\n/g, "\r\n"));
         write("\r\n");
         write(this._prompt(this._cwd));
         write(this._line);
+        this._moveCells(stringWidth(this._line.slice(this._cursor)), "D");
       }
     }
   }

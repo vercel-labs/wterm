@@ -1,6 +1,7 @@
 pub const MAX_PARAMS: u8 = 16;
 pub const MAX_INTERMEDIATES: u8 = 2;
 pub const MAX_OSC: u16 = 512;
+pub const MAX_APC: u16 = 16384;
 
 pub const Action = enum {
     none,
@@ -9,6 +10,7 @@ pub const Action = enum {
     csi_dispatch,
     esc_dispatch,
     osc_dispatch,
+    unsupported_apc,
 };
 
 pub const State = enum {
@@ -20,6 +22,8 @@ pub const State = enum {
     csi_intermediate,
     csi_ignore,
     osc_string,
+    apc_string,
+    apc_escape,
 };
 
 pub const Parser = struct {
@@ -41,6 +45,11 @@ pub const Parser = struct {
     // OSC collected data
     osc_data: [MAX_OSC]u8 = undefined,
     osc_len: u16 = 0,
+    osc_truncated: bool = false,
+    /// The OSC ended with BEL rather than ST, so replies end the same way.
+    osc_bel: bool = false,
+    apc_len: u16 = 0,
+    apc_truncated: bool = false,
 
     // UTF-8 decoder
     utf8_buf: [4]u8 = undefined,
@@ -52,7 +61,12 @@ pub const Parser = struct {
         if (byte == 0x1B) {
             if (self.state == .osc_string) {
                 self.state = .escape;
+                self.osc_bel = false;
                 return .osc_dispatch;
+            }
+            if (self.state == .apc_string or self.state == .apc_escape) {
+                self.state = .apc_escape;
+                return .none;
             }
             self.enterEscape();
             return .none;
@@ -73,7 +87,30 @@ pub const Parser = struct {
             .csi_intermediate => self.handleCsiIntermediate(byte),
             .csi_ignore => self.handleCsiIgnore(byte),
             .osc_string => self.handleOscString(byte),
+            .apc_string => self.handleApcString(byte),
+            .apc_escape => self.handleApcEscape(byte),
         };
+    }
+
+    /// Consumes CSI digits and separators, leaving other bytes for feed.
+    pub fn feedCsiParams(self: *Parser, data: []const u8) usize {
+        var offset: usize = 0;
+        while (offset < data.len) {
+            const byte = data[offset];
+            if (byte >= '0' and byte <= '9') {
+                if (self.param_count == 0) self.param_count = 1;
+                const index = self.param_count - 1;
+                var value = self.params[index];
+                while (offset < data.len and data[offset] >= '0' and data[offset] <= '9') : (offset += 1) {
+                    value = value *| 10 +| @as(u16, data[offset] - '0');
+                }
+                if (!self.params_full) self.params[index] = value;
+            } else if (byte == ';' or byte == ':') {
+                _ = self.handleCsiParam(byte);
+                offset += 1;
+            } else break;
+        }
+        return offset;
     }
 
     fn enterEscape(self: *Parser) void {
@@ -166,6 +203,13 @@ pub const Parser = struct {
         if (byte == ']') {
             self.state = .osc_string;
             self.osc_len = 0;
+            self.osc_truncated = false;
+            return .none;
+        }
+        if (byte == '_') {
+            self.state = .apc_string;
+            self.apc_len = 0;
+            self.apc_truncated = false;
             return .none;
         }
         if (byte >= 0x20 and byte <= 0x2F) {
@@ -235,7 +279,7 @@ pub const Parser = struct {
             }
             return .none;
         }
-        if (byte == '?' or byte == '>' or byte == '!') {
+        if (byte == '?' or byte == '>' or byte == '<' or byte == '=' or byte == '!') {
             self.csi_private = byte;
             return .none;
         }
@@ -292,15 +336,41 @@ pub const Parser = struct {
     fn handleOscString(self: *Parser, byte: u8) Action {
         if (byte == 0x07) {
             self.state = .ground;
+            self.osc_bel = true;
             return .osc_dispatch;
         }
-        if (byte >= 0x20 and byte <= 0x7E) {
+        if (byte >= 0x20 and byte != 0x7F) {
             if (self.osc_len < MAX_OSC) {
                 self.osc_data[self.osc_len] = byte;
                 self.osc_len += 1;
+            } else {
+                self.osc_truncated = true;
             }
         }
         return .none;
+    }
+
+    fn handleApcString(self: *Parser, byte: u8) Action {
+        if (byte >= 0x20 and byte != 0x7F) {
+            if (self.apc_len < MAX_APC) {
+                self.apc_len += 1;
+            } else {
+                self.apc_truncated = true;
+            }
+        }
+        return .none;
+    }
+
+    fn handleApcEscape(self: *Parser, byte: u8) Action {
+        if (byte == '\\') {
+            self.state = .ground;
+            return .unsupported_apc;
+        }
+        self.state = .ground;
+        // An ESC that is not followed by ST starts a fresh escape sequence;
+        // reprocess its following byte so malformed APC data cannot swallow
+        // an ordinary CSI/ESC command.
+        return self.handleEscape(byte);
     }
 
     // -- Helpers --
@@ -319,7 +389,20 @@ pub const Parser = struct {
     }
 };
 
-fn decodeUtf8(bytes: []const u8) u21 {
+/// Bytes in the UTF-8 sequence a lead byte starts, as the ground state reads it; 0 when not a lead.
+pub fn utf8SequenceLength(lead: u8) u8 {
+    if (lead >= 0xC0 and lead <= 0xDF) return 2;
+    if (lead >= 0xE0 and lead <= 0xEF) return 3;
+    if (lead >= 0xF0 and lead <= 0xF7) return 4;
+    return 0;
+}
+
+pub fn utf8Continuations(bytes: []const u8) bool {
+    for (bytes) |b| if (b < 0x80 or b > 0xBF) return false;
+    return true;
+}
+
+pub fn decodeUtf8(bytes: []const u8) u21 {
     if (bytes.len == 0) return 0xFFFD;
     return switch (bytes.len) {
         2 => {
@@ -342,4 +425,108 @@ fn decodeUtf8(bytes: []const u8) u21 {
         },
         else => 0xFFFD,
     };
+}
+
+test "bulk CSI parameters match bytewise parsing across every split" {
+    const testing = @import("std").testing;
+    const inputs = [_][]const u8{
+        "m",
+        ";m",
+        "1;;3;m",
+        "38;2;12;34;56;48;2;78;90;123m",
+        "38;5;255;48;5;16m",
+        "4:0;38:2::12:34:56m\x1b[4;0m",
+        "65534;65535;65536;999999999999m",
+        "0;" ** 15 ++ "1;2m",
+        "0;" ** 15 ++ "1:2m",
+        "12?3>4m",
+        "<1;2=3m",
+        "!p",
+        "12\x073m",
+        "1\x182m",
+        "1\x1a2m",
+        "12\x1b[3m",
+        "5 q",
+        "1$2mX",
+        "1\x7f2mX",
+        "1\x802mX",
+    };
+    for (inputs) |input| {
+        for (0..input.len + 1) |split| {
+            var fast = Parser{};
+            var slow = Parser{};
+            for ("\x1b[") |byte| {
+                _ = fast.feed(byte);
+                _ = slow.feed(byte);
+            }
+            for ([_][]const u8{ input[0..split], input[split..] }) |chunk| {
+                var offset: usize = 0;
+                while (offset < chunk.len) {
+                    if (fast.state == .csi_param) {
+                        const count = fast.feedCsiParams(chunk[offset..]);
+                        for (chunk[offset .. offset + count]) |byte| {
+                            try testing.expectEqual(Action.none, slow.feed(byte));
+                        }
+                        offset += count;
+                    }
+                    try testing.expectEqualDeep(slow.params, fast.params);
+                    try testing.expectEqualDeep(slow.subparam, fast.subparam);
+                    try testing.expectEqual(slow.param_count, fast.param_count);
+                    try testing.expectEqual(slow.params_full, fast.params_full);
+                    if (offset < chunk.len) {
+                        const byte = chunk[offset];
+                        try testing.expectEqual(slow.feed(byte), fast.feed(byte));
+                        try testing.expectEqual(slow.print_char, fast.print_char);
+                        try testing.expectEqual(slow.execute_byte, fast.execute_byte);
+                        offset += 1;
+                    }
+                }
+                try testing.expectEqual(slow.state, fast.state);
+                try testing.expectEqual(slow.csi_private, fast.csi_private);
+                try testing.expectEqual(slow.intermediate_count, fast.intermediate_count);
+                try testing.expectEqualDeep(slow.intermediates, fast.intermediates);
+            }
+        }
+    }
+}
+
+test "OSC marks payloads that exceed the collection buffer as truncated" {
+    const testing = @import("std").testing;
+    var parser = Parser{};
+    _ = parser.feed(0x1b);
+    _ = parser.feed(']');
+    var i: usize = 0;
+    while (i < MAX_OSC + 1) : (i += 1) {
+        _ = parser.feed('x');
+    }
+    try testing.expect(parser.osc_truncated);
+    try testing.expectEqual(MAX_OSC, parser.osc_len);
+}
+
+test "unsupported APC is consumed across split writes and resumes text" {
+    const testing = @import("std").testing;
+    var parser = Parser{};
+    for ([_]u8{ 0x1b, '_' }) |byte| try testing.expectEqual(Action.none, parser.feed(byte));
+    for ("Gf=100;QUJD") |byte| try testing.expectEqual(Action.none, parser.feed(byte));
+    try testing.expectEqual(Action.none, parser.feed(0x1b));
+    try testing.expectEqual(Action.unsupported_apc, parser.feed('\\'));
+    try testing.expectEqual(Action.print, parser.feed('X'));
+    try testing.expectEqual(@as(u21, 'X'), parser.print_char);
+}
+
+test "cancelled and oversized APC payloads do not leak bytes" {
+    const testing = @import("std").testing;
+    var parser = Parser{};
+    for ([_]u8{ 0x1b, '_' }) |byte| _ = parser.feed(byte);
+    for (0..MAX_APC + 100) |_| _ = parser.feed('A');
+    try testing.expect(parser.apc_truncated);
+    _ = parser.feed(0x18);
+    try testing.expectEqual(State.ground, parser.state);
+    try testing.expectEqual(Action.print, parser.feed('Z'));
+
+    for ([_]u8{ 0x1b, '_' }) |byte| _ = parser.feed(byte);
+    _ = parser.feed('G');
+    _ = parser.feed(0x1a);
+    try testing.expectEqual(State.ground, parser.state);
+    try testing.expectEqual(Action.print, parser.feed('Y'));
 }

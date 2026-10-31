@@ -27,9 +27,211 @@ describe("WasmBridge", () => {
       expect(bridge.getCols()).toBe(80);
       expect(bridge.getRows()).toBe(24);
     });
+
+    it("initializes a grid wider and taller than 256 cells", () => {
+      bridge.init(320, 300);
+      expect(bridge.getCols()).toBe(320);
+      expect(bridge.getRows()).toBe(300);
+      bridge.writeString("\x1b[300;320HZ");
+      expect(bridge.getCell(299, 319).char).toBe(90);
+    });
+  });
+
+  it("reads grapheme clusters from visible and scrollback cells", () => {
+    const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
+    bridge.writeString(`${family}x e\u0301z`);
+    expect(bridge.getCell(0, 0)).toMatchObject({
+      char: 0x1f468,
+      chars: family,
+      width: 2,
+    });
+    expect(bridge.getCell(0, 2).char).toBe(0x78);
+    expect(bridge.getCell(0, 4).chars).toBe("e\u0301");
+    expect(bridge.getCell(0, 5).char).toBe(0x7a);
+
+    bridge.writeString("\r\n".repeat(24));
+    const offset = bridge.getScrollbackCount() - 1;
+    expect(bridge.getScrollbackCell(offset, 0).chars).toBe(family);
+  });
+
+  it("leaves single code point cells without chars", () => {
+    bridge.writeString("A\u4e2d");
+    expect(bridge.getCell(0, 0).chars).toBeUndefined();
+    expect(bridge.getCell(0, 1)).toMatchObject({ char: 0x4e2d, width: 2 });
+  });
+
+  it("keeps exact truecolor values in visible and scrollback cells", () => {
+    bridge.writeString(
+      "\x1b[38;2;255;100;0mA\x1b[0m \x1b[48;2;10;20;30mB\x1b[0m",
+    );
+    expect(bridge.getCell(0, 0).fgRgb).toBe(0xff6400);
+    expect(bridge.getCell(0, 0).bgRgb).toBeUndefined();
+    expect(bridge.getCell(0, 2).bgRgb).toBe(0x0a141e);
+    expect(bridge.getCell(0, 2).fgRgb).toBeUndefined();
+
+    bridge.writeString("\r\n".repeat(24));
+    expect(bridge.getScrollbackCount()).toBeGreaterThan(0);
+    const offset = bridge.getScrollbackCount() - 1;
+    expect(bridge.getScrollbackCell(offset, 0).fgRgb).toBe(0xff6400);
+  });
+
+  it("keeps 256-color cells on the palette", () => {
+    bridge.writeString("\x1b[38;5;208mA");
+    expect(bridge.getCell(0, 0).fg).toBe(208);
+    expect(bridge.getCell(0, 0).fgRgb).toBeUndefined();
+  });
+
+  it("exposes any-motion mouse tracking from the committed WASM", () => {
+    expect(bridge.mouseEncoding()).toBe("x10");
+    bridge.writeString("\x1b[?1003h\x1b[?1006h");
+    expect(bridge.mouseTracking()).toBe(1003);
+    expect(bridge.mouseSgr()).toBe(true);
+    expect(bridge.mouseEncoding()).toBe("sgr");
+
+    bridge.writeString("\x1b[?1006l");
+    expect(bridge.mouseEncoding()).toBe("x10");
+
+    bridge.writeString("\x1b[?1003l");
+    expect(bridge.mouseTracking()).toBe(0);
+  });
+
+  it("exposes active extended mouse encoding from the committed WASM", () => {
+    bridge.writeString("\x1b[?1002h\x1b[?1005h");
+    expect(bridge.mouseTracking()).toBe(1002);
+    expect(bridge.mouseEncoding()).toBe("utf8");
+    expect(bridge.mouseSgr()).toBe(false);
+
+    bridge.writeString("\x1b[?1015h");
+    expect(bridge.mouseEncoding()).toBe("urxvt");
+    bridge.writeString("\x1b[?1016h");
+    expect(bridge.mouseEncoding()).toBe("sgr-pixels");
+    bridge.writeString("\x1b[?1016l");
+    expect(bridge.mouseEncoding()).toBe("x10");
   });
 
   describe("writeString / getCell", () => {
+    it("exposes OSC 8 metadata only on covered cells", () => {
+      bridge.writeString(
+        "\x1b]8;id=docs;https://example.com/docs\x07LINK\x1b]8;;\x1b\\ plain",
+      );
+
+      for (let col = 0; col < 4; col++) {
+        expect(bridge.getCell(0, col)).toMatchObject({
+          linkUri: "https://example.com/docs",
+          linkId: "docs",
+          linkKey: "e\u0000docs\u0000https://example.com/docs",
+        });
+      }
+      expect(bridge.getCell(0, 4).linkUri).toBeUndefined();
+    });
+
+    it("keeps implicit OSC 8 identities distinct", () => {
+      bridge.writeString(
+        "\x1b]8;;https://example.com\x1b\\A\x1b]8;;\x1b\\" +
+          "\x1b]8;;https://example.com\x1b\\B\x1b]8;;\x1b\\",
+      );
+
+      expect(bridge.getCell(0, 0).linkKey).toBeDefined();
+      expect(bridge.getCell(0, 1).linkKey).toBeDefined();
+      expect(bridge.getCell(0, 0).linkKey).not.toBe(
+        bridge.getCell(0, 1).linkKey,
+      );
+    });
+
+    it("clears OSC 8 metadata on overwrite and erase", () => {
+      bridge.writeString("\x1b]8;;https://example.com\x1b\\LINK\x1b]8;;\x1b\\");
+      bridge.writeString("\rX\x1b[K");
+
+      expect(bridge.getCell(0, 0).linkUri).toBeUndefined();
+      expect(bridge.getCell(0, 1).linkUri).toBeUndefined();
+    });
+
+    it("keeps erased cells unlinked while an OSC 8 link remains active", () => {
+      bridge.writeString("\x1b]8;;https://example.com\x1b\\LINK");
+      bridge.writeString("\r\x1b[K");
+
+      expect(bridge.getCell(0, 0).linkUri).toBeUndefined();
+      expect(bridge.getCell(0, 1).linkUri).toBeUndefined();
+      bridge.writeString("Z");
+      expect(bridge.getCell(0, 0).linkUri).toBe("https://example.com");
+    });
+
+    it("does not alias hyperlink destinations after RIS", () => {
+      bridge.writeString("\x1b]8;;https://a.example\x1b\\A\x1b]8;;\x1b\\");
+      expect(bridge.getCell(0, 0).linkUri).toBe("https://a.example");
+
+      bridge.writeString("\x1bc");
+      bridge.writeString("\x1b]8;;https://b.example\x1b\\B\x1b]8;;\x1b\\");
+
+      expect(bridge.getCell(0, 0).linkUri).toBe("https://b.example");
+    });
+
+    it("reports hyperlink identity saturation to the host", () => {
+      bridge.init(2, 2);
+      for (let index = 0; index < 1025; index++) {
+        bridge.writeString(
+          `\x1b]8;;https://example.com/${index}\x1b\\X\x1b]8;;\x1b\\\r\n`,
+        );
+      }
+
+      const state = (
+        bridge as unknown as {
+          getResourceState?: () => {
+            hyperlinks: {
+              capacity: number;
+              used: number;
+              rejected: number;
+              saturated: boolean;
+            };
+          };
+        }
+      ).getResourceState?.();
+
+      expect(state?.hyperlinks).toEqual({
+        capacity: 1024,
+        used: 1024,
+        rejected: 1,
+        saturated: true,
+      });
+    });
+
+    it("preserves hyperlink saturation state across RIS and clears it on init", () => {
+      bridge.init(2, 2);
+      for (let index = 0; index < 1025; index++) {
+        bridge.writeString(
+          `\x1b]8;;https://example.com/${index}\x1b\\X\x1b]8;;\x1b\\\r\n`,
+        );
+      }
+
+      bridge.writeString("\x1bc");
+      expect(bridge.getResourceState().hyperlinks).toMatchObject({
+        used: 1024,
+        rejected: 1,
+        saturated: true,
+      });
+
+      bridge.init(2, 2);
+      expect(bridge.getResourceState().hyperlinks).toEqual({
+        capacity: 1024,
+        used: 0,
+        rejected: 0,
+        saturated: false,
+      });
+    });
+
+    it("returns no resource state when an older WASM lacks the exports", () => {
+      const internals = bridge as unknown as {
+        exports: Record<string, WebAssembly.ExportValue>;
+      };
+      const exportsWithoutResourceState = { ...internals.exports };
+      delete exportsWithoutResourceState.getHyperlinkCapacity;
+      delete exportsWithoutResourceState.getHyperlinkCount;
+      delete exportsWithoutResourceState.getHyperlinkRejectedCount;
+      internals.exports = exportsWithoutResourceState;
+
+      expect(bridge.getResourceState()).toEqual({});
+    });
+
     it("writes a character to the grid", () => {
       bridge.writeString("A");
       const cell = bridge.getCell(0, 0);
@@ -101,6 +303,70 @@ describe("WasmBridge", () => {
   });
 
   describe("dirty rows", () => {
+    it("distinguishes moved rows from content changes without breaking position dirtiness", () => {
+      bridge.init(4, 3);
+      bridge.writeString("A\r\nB\r\nC");
+      const ids = [0, 1, 2].map((row) => bridge.getRowId(row));
+      expect(ids.every((id) => id !== null)).toBe(true);
+      bridge.clearDirty();
+      bridge.writeString("\r\nD");
+
+      expect(bridge.getRowId(0)).toBe(ids[1]);
+      expect(bridge.getRowId(1)).toBe(ids[2]);
+      expect(ids).not.toContain(bridge.getRowId(2));
+      expect([0, 1, 2].map((row) => bridge.isDirtyRow(row))).toEqual([
+        true,
+        true,
+        true,
+      ]);
+      expect([0, 1, 2].map((row) => bridge.isRowContentDirty(row))).toEqual([
+        false,
+        false,
+        true,
+      ]);
+      expect([0, 1, 2].map((row) => bridge.getCell(row, 0).char)).toEqual([
+        66, 67, 68,
+      ]);
+      bridge.clearDirty();
+      expect([0, 1, 2].map((row) => bridge.isDirtyRow(row))).toEqual([
+        false,
+        false,
+        false,
+      ]);
+      bridge.writeString("\x1b[2;1HX\x1b[3;1H\r\nE");
+      expect([0, 1, 2].map((row) => bridge.isRowContentDirty(row))).toEqual([
+        true,
+        false,
+        true,
+      ]);
+    });
+
+    it("returns null for older WASM and unavailable or invalid row identities", () => {
+      const internals = bridge as unknown as {
+        exports: Record<string, WebAssembly.ExportValue>;
+      };
+      const exportsWithoutRowIds = { ...internals.exports };
+      delete exportsWithoutRowIds.getRowId;
+      internals.exports = exportsWithoutRowIds;
+      expect(bridge.getRowId(0)).toBeNull();
+      bridge.clearDirty();
+      expect(bridge.isDirtyRow(0)).toBe(false);
+      bridge.writeString("A");
+      expect(bridge.isDirtyRow(0)).toBe(true);
+
+      internals.exports = { ...exportsWithoutRowIds, getRowId: () => 0 };
+      expect(bridge.getRowId(0)).toBeNull();
+      bridge.clearDirty();
+      bridge.writeString("\x1b[24;1H\r\n");
+      expect(bridge.isRowContentDirty(0)).toBe(false);
+      expect(bridge.isDirtyRow(0)).toBe(true);
+      internals.exports = { ...exportsWithoutRowIds, getRowId: () => -1 };
+      expect(bridge.getRowId(0)).toBe(0xffffffff);
+      for (const row of [-1, 24, 0.5, NaN, Infinity]) {
+        expect(bridge.getRowId(row)).toBeNull();
+      }
+    });
+
     it("marks rows dirty after writing", () => {
       bridge.writeString("text");
       expect(bridge.isDirtyRow(0)).toBe(true);
@@ -118,6 +384,22 @@ describe("WasmBridge", () => {
       bridge.resize(40, 12);
       expect(bridge.getCols()).toBe(40);
       expect(bridge.getRows()).toBe(12);
+    });
+
+    it("resizes beyond the former grid capacity", () => {
+      bridge.resize(320, 300);
+      expect(bridge.getCols()).toBe(320);
+      expect(bridge.getRows()).toBe(300);
+      bridge.clearDirty();
+      bridge.writeString("\x1b[300;320HZ");
+      expect(bridge.getCell(299, 319).char).toBe(90);
+      expect(bridge.isDirtyRow(299)).toBe(true);
+    });
+
+    it("reports the applied size when a request exceeds the new limit", () => {
+      bridge.resize(1200, 600);
+      expect(bridge.getCols()).toBe(1024);
+      expect(bridge.getRows()).toBe(512);
     });
 
     it("preserves content after resize", () => {
@@ -175,6 +457,123 @@ describe("WasmBridge", () => {
       bridge.writeString("\x1b[?1049l");
       expect(bridge.usingAltScreen()).toBe(false);
     });
+
+    it("reads the active grid across alternate-screen switches", () => {
+      bridge.init(320, 3);
+      bridge.writeString("\x1b[1;300HP\x1b[?1049h\x1b[1;300HA");
+      expect(bridge.getCell(0, 299).char).toBe(65);
+
+      bridge.resize(400, 4);
+      bridge.writeString("\x1b[4;399HZ");
+      expect(bridge.getCell(3, 398).char).toBe(90);
+
+      bridge.writeString("\x1b[?1049l");
+      expect(bridge.getCell(0, 299).char).toBe(80);
+      expect(bridge.getCell(3, 398).char).toBe(32);
+    });
+
+    it("tracks synchronized output mode", () => {
+      expect(bridge.synchronizedOutput()).toBe(false);
+      bridge.writeString("\x1b[?2026h");
+      expect(bridge.synchronizedOutput()).toBe(true);
+      bridge.writeString("\x1b[?2026l");
+      expect(bridge.synchronizedOutput()).toBe(false);
+    });
+  });
+
+  describe("terminal responses", () => {
+    it("returns operating status in order with other replies", () => {
+      bridge.writeString("\x1b[5n\x1b[c\x1b[6n\x1b[5n\x1b[?5n\x1b[5;6n");
+      expect(bridge.getResponse()).toBe("\x1b[0n");
+      expect(bridge.getResponse()).toBe("\x1b[?1;2c");
+      expect(bridge.getResponse()).toBe("\x1b[1;1R");
+      expect(bridge.getResponse()).toBe("\x1b[0n");
+      expect(bridge.getResponse()).toBeNull();
+    });
+
+    it("returns primary device attributes in order with other replies", () => {
+      bridge.writeString("\x1b[c\x1b[6n\x1b[0c\x1b[?c\x1b[>c");
+      expect(bridge.getResponse()).toBe("\x1b[?1;2c");
+      expect(bridge.getResponse()).toBe("\x1b[1;1R");
+      expect(bridge.getResponse()).toBe("\x1b[?1;2c");
+      expect(bridge.getResponse()).toBeNull();
+    });
+
+    it("returns DEC private-mode reports through the committed WASM", () => {
+      bridge.writeString("\x1b[?2026$p\x1b[?2026h\x1b[?2026$p");
+      expect(bridge.getResponse()).toBe("\x1b[?2026;2$y");
+      expect(bridge.getResponse()).toBe("\x1b[?2026;1$y");
+
+      bridge.writeString("\x1b[?1000h\x1b[?1002h\x1b[?1000$p\x1b[?1002$p");
+      expect(bridge.getResponse()).toBe("\x1b[?1000;1$y");
+      expect(bridge.getResponse()).toBe("\x1b[?1002;1$y");
+
+      bridge.writeString("\x1b[?7777$p");
+      expect(bridge.getResponse()).toBe("\x1b[?7777;0$y");
+      expect(bridge.getResponse()).toBeNull();
+    });
+
+    it("tracks Kitty keyboard flags per screen with Ghostty-compatible resets", () => {
+      expect(bridge.kittyKeyboardFlags()).toBe(0);
+      bridge.writeString("\x1b[>6u\x1b[?u");
+      expect(bridge.kittyKeyboardFlags()).toBe(6);
+      expect(bridge.getResponse()).toBe("\x1b[?6u");
+
+      bridge.writeString("\x1b[?1049h\x1b[>9u\x1b[!p");
+      expect(bridge.kittyKeyboardFlags()).toBe(9);
+      bridge.writeString("\x1b[?1049l");
+      expect(bridge.kittyKeyboardFlags()).toBe(6);
+
+      bridge.writeString("\x1b[=1;3u");
+      expect(bridge.kittyKeyboardFlags()).toBe(6);
+      bridge.writeString("\x1b[<u");
+      expect(bridge.kittyKeyboardFlags()).toBe(0);
+      bridge.writeString("\x1bc");
+      expect(bridge.kittyKeyboardFlags()).toBe(0);
+    });
+
+    it("wraps the Kitty stack and bounds oversized pops", () => {
+      bridge.writeString("\x1b[>1u".repeat(9));
+      expect(bridge.kittyKeyboardFlags()).toBe(1);
+      bridge.writeString("\x1b[<10u");
+      expect(bridge.kittyKeyboardFlags()).toBe(0);
+    });
+
+    it("treats an older WASM without Kitty state as legacy", () => {
+      const internals = bridge as unknown as {
+        exports: Record<string, WebAssembly.ExportValue>;
+      };
+      const exportsWithoutKitty = { ...internals.exports };
+      delete exportsWithoutKitty.getKittyKeyboardFlags;
+      internals.exports = exportsWithoutKitty;
+
+      expect(bridge.kittyKeyboardFlags()).toBe(0);
+    });
+
+    it("dequeues consecutive CPR responses in order", () => {
+      bridge.writeString("\x1b[1G\x1b[6n\x1b[2G\x1b[6n");
+      expect(bridge.getResponse()).toBe("\x1b[1;1R");
+      expect(bridge.getResponse()).toBe("\x1b[1;2R");
+      expect(bridge.getResponse()).toBeNull();
+    });
+
+    it("clears queued responses on init", () => {
+      bridge.writeString("\x1b[6n\x1b[6n");
+      bridge.init(80, 24);
+      expect(bridge.getResponse()).toBeNull();
+    });
+
+    it("allows responses to drain between internal write chunks", () => {
+      const responses: string[] = [];
+      bridge.writeString("\x1b[6n".repeat(2049), () => {
+        let response: string | null;
+        while ((response = bridge.getResponse()) !== null) {
+          responses.push(response);
+        }
+      });
+
+      expect(responses).toHaveLength(2049);
+    });
   });
 
   describe("title", () => {
@@ -186,6 +585,23 @@ describe("WasmBridge", () => {
       bridge.writeString("\x1b]0;My Title\x07");
       const title = bridge.getTitle();
       expect(title).toBe("My Title");
+    });
+  });
+
+  describe("bell", () => {
+    it("counts BEL controls and clears the count when read", () => {
+      expect(bridge.getBellCount()).toBe(0);
+      bridge.writeString("a\x07\x07b");
+      expect(bridge.getBellCount()).toBe(2);
+      expect(bridge.getBellCount()).toBe(0);
+    });
+
+    it("does not count BEL used to terminate OSC and clears pending bells on init", () => {
+      bridge.writeString("\x1b]2;title\x07");
+      expect(bridge.getBellCount()).toBe(0);
+      bridge.writeString("\x07");
+      bridge.init(80, 24);
+      expect(bridge.getBellCount()).toBe(0);
     });
   });
 
@@ -212,6 +628,27 @@ describe("WasmBridge", () => {
       }
     });
 
+    it("retains history cells beyond column 256", () => {
+      bridge.init(320, 2);
+      bridge.writeString("\x1b[1;300HQ\x1b[2;1H\n");
+      expect(bridge.getScrollbackCount()).toBe(1);
+      expect(bridge.getScrollbackLineLen(0)).toBe(320);
+      expect(bridge.getScrollbackCell(0, 299).char).toBe(81);
+    });
+
+    it("keeps OSC 8 metadata after a row enters scrollback", () => {
+      bridge.writeString(
+        "\x1b]8;;https://example.com/history\x1b\\LINK\x1b]8;;\x1b\\\r\n",
+      );
+      for (let i = 0; i < 30; i++) bridge.writeString(`line ${i}\r\n`);
+
+      const offset = bridge.getScrollbackCount() - 1;
+      expect(bridge.getScrollbackCell(offset, 0).linkUri).toBe(
+        "https://example.com/history",
+      );
+      expect(bridge.getScrollbackCell(offset, 4).linkUri).toBeUndefined();
+    });
+
     it("returns scrollback line length", () => {
       for (let i = 0; i < 30; i++) {
         bridge.writeString(`AB\r\n`);
@@ -221,6 +658,16 @@ describe("WasmBridge", () => {
         const len = bridge.getScrollbackLineLen(0);
         expect(len).toBeGreaterThan(0);
       }
+    });
+
+    it("counts rows discarded after the scrollback ring fills", () => {
+      bridge.init(2, 2);
+      bridge.writeString(
+        Array.from({ length: 1005 }, (_, index) => `${index}\r\n`).join(""),
+      );
+
+      expect(bridge.getScrollbackCount()).toBe(1000);
+      expect(bridge.getScrollbackDiscardedCount()).toBeGreaterThan(0);
     });
   });
 });

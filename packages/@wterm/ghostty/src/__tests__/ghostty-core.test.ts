@@ -23,6 +23,14 @@ vi.mock("../wasm-bindings.js", async () => {
     memory: state.memory,
     init: () => 1,
     resize: () => {},
+    update: () => {},
+    get_viewport: (_ptr: number, bufPtr: number) => {
+      if (state.line)
+        new Uint8Array(state.memory.buffer, bufPtr, state.line.length).set(
+          state.line,
+        );
+      return state.lineLen;
+    },
     // 0 is treated as an allocation failure by ghostty-core.ts, so the
     // fake pointer must be nonzero.
     alloc_buffer: () => 64,
@@ -39,6 +47,11 @@ vi.mock("../wasm-bindings.js", async () => {
       );
       return state.lineLen;
     },
+    mouse_tracking: () => 1002,
+    mouse_sgr: () => 1,
+    mouse_encoding: () => 2,
+    focus_events: () => 1,
+    kitty_keyboard_flags: () => 31,
   };
 
   return {
@@ -52,6 +65,18 @@ vi.mock("../wasm-bindings.js", async () => {
 
 const { GhosttyCore } = await import("../ghostty-core.js");
 const { CELL_BYTES } = await import("../wasm-bindings.js");
+
+it("reports unknown row metadata when an older WASM binary omits the exports", async () => {
+  const core = await GhosttyCore.load();
+  core.init(80, 24);
+  expect(core.getColorOverrides()).toEqual({});
+  expect(core.getShellIntegrationState()).toBeNull();
+  expect(core.getWorkingDirectory()).toBeNull();
+  expect(core.findPrompt(0, -1)).toBeNull();
+  expect(core.getRowMetadata(0)).toBeNull();
+  expect(core.getScrollbackRowMetadata(0)).toBeNull();
+  core.dispose();
+});
 
 /** Build one raw scrollback cell matching the 16-byte wasm_api.zig layout. */
 function buildCellBytes(opts: {
@@ -84,6 +109,19 @@ describe("GhosttyCore.getScrollbackCell", () => {
   beforeEach(() => {
     state.line = null;
     state.lineLen = 0;
+  });
+
+  it("retains legacy single underlines when older WASM omits v2 exports", async () => {
+    state.line = buildCellBytes({ codepoint: 65, colorFlags: 0, flags: 8 });
+    state.lineLen = 1;
+    const core = await GhosttyCore.load();
+    core.init(80, 24);
+    const cell = core.getScrollbackCell(0, 0);
+    expect(cell.flags & 8).toBe(8);
+    expect(cell.underlineStyle).toBeUndefined();
+    expect(cell.underlineRgb).toBeUndefined();
+    expect(core.getCell(0, 0)).toEqual(cell);
+    core.dispose();
   });
 
   it("does not set fgRgb/bgRgb when colorFlags === 0 (falls back to defaults)", async () => {
@@ -119,5 +157,48 @@ describe("GhosttyCore.getScrollbackCell", () => {
     expect(cell.char).toBe(66);
     expect(cell.fgRgb).toBe((10 << 16) | (20 << 8) | 30);
     expect(cell.bgRgb).toBe((40 << 16) | (50 << 8) | 60);
+  });
+});
+
+describe("GhosttyCore input modes", () => {
+  it("exposes mouse and focus state", async () => {
+    const core = await GhosttyCore.load();
+    core.init(80, 24);
+
+    expect(core.mouseTracking()).toBe(1002);
+    expect(core.mouseSgr()).toBe(true);
+    expect(core.mouseEncoding()).toBe("sgr");
+    expect(core.focusEvents()).toBe(true);
+    expect(core.kittyKeyboardFlags()).toBe(31);
+  });
+
+  it("treats an older WASM without Kitty state as legacy", async () => {
+    const core = await GhosttyCore.load();
+    core.init(80, 24);
+    const internals = core as unknown as {
+      wasm: {
+        exports: Record<string, WebAssembly.ExportValue>;
+      };
+    };
+    delete internals.wasm.exports.kitty_keyboard_flags;
+
+    expect(core.kittyKeyboardFlags()).toBe(0);
+  });
+
+  it("does not infer X10 from an older WASM without mouse encoding state", async () => {
+    const core = await GhosttyCore.load();
+    core.init(80, 24);
+    const internals = core as unknown as {
+      wasm: { exports: Record<string, WebAssembly.ExportValue> };
+    };
+    const originalEncoding = internals.wasm.exports.mouse_encoding!;
+    const originalSgr = internals.wasm.exports.mouse_sgr!;
+    delete internals.wasm.exports.mouse_encoding;
+
+    expect(core.mouseEncoding()).toBe("sgr");
+    internals.wasm.exports.mouse_sgr = () => 0;
+    expect(core.mouseEncoding()).toBeNull();
+    internals.wasm.exports.mouse_encoding = originalEncoding;
+    internals.wasm.exports.mouse_sgr = originalSgr;
   });
 });

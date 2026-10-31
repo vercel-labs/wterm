@@ -4,19 +4,19 @@ packages:
   - "packages/@internal/*"
   - "apps/*"
   - "examples/*"
+  - "e2e/harness"
 
 minimumReleaseAge: 2880
+minimumReleaseAgeExclude:
+  - "@vercel/geistdocs@1.28.1"
 
 allowBuilds:
   "@mongodb-js/zstd": false
   "cpu-features": false
   "esbuild": false
   "msw": false
-  "node-pty": false
+  "node-pty": true
   "node-liblzma": false
   "sharp": false
   "ssh2": false
   "unrs-resolver": false
-
-patchedDependencies:
-  "next-themes@0.4.6": "patches/next-themes@0.4.6.patch"

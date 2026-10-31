@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>wterm PTY harness</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>wterm PTY harness</h1>
+          <p>A fresh local shell for checking terminal behavior.</p>
+        </div>
+        <label
+          >Core
+          <select id="core">
+            <option value="builtin">Built-in</option>
+            <option value="ghostty">Ghostty</option>
+          </select></label
+        >
+      </header>
+      <div class="toolbar">
+        <button id="probe" disabled>Run round trip</button>
+        <button id="restart">New session</button>
+        <button id="download">Download report</button>
+        <span id="status" role="status">Loading terminal…</span>
+      </div>
+      <div class="terminal-scroll">
+        <div id="terminal" aria-label="Terminal"></div>
+      </div>
+      <details open>
+        <summary>Timing samples</summary>
+        <p>
+          Write time includes synchronous terminal work. Frame timings use
+          animation callbacks; they do not measure pixels appearing on the
+          display.
+        </p>
+        <pre id="metrics">Waiting for output…</pre>
+      </details>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

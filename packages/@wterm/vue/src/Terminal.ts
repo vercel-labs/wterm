@@ -9,7 +9,11 @@ import {
   watch,
   type PropType,
 } from "vue";
-import { WTerm, type TerminalCore } from "@wterm/dom";
+import {
+  WTerm,
+  type TerminalCore,
+  type ShellIntegrationState,
+} from "@wterm/dom";
 
 /**
  * Vue wrapper around {@link WTerm} from `@wterm/dom`. Creates a `WTerm` in
@@ -81,11 +85,18 @@ const Terminal = defineComponent({
      * @defaultValue false
      */
     autoResize: Boolean,
+    /** Maximum rendered Kitty image width in CSS pixels. */
+    maxImageWidth: Number,
+    /** Maximum rendered Kitty image height in CSS pixels. */
+    maxImageHeight: Number,
     /**
-     * Toggles the `cursor-blink` class on the root element.
-     * @defaultValue false
+     * Force blinking on/off; omit to follow the terminal application's request.
      */
-    cursorBlink: Boolean,
+    cursorBlink: { type: Boolean, default: undefined },
+    /** Politely announce terminal text changes while input has focus. */
+    announceOutput: Boolean,
+    /** Suspend painting for an inactive pane; parsing and terminal effects continue. */
+    renderingPaused: Boolean,
     /**
      * Enable debug mode (init-only — changing after mount has no effect).
      * Exposes a `DebugAdapter` on the underlying `WTerm` instance.
@@ -102,10 +113,20 @@ const Terminal = defineComponent({
      * terminal (e.g. keystrokes or paste).
      */
     data: (_data: string) => true,
+    /** Raw X10 mouse reports for transports that accept bytes. */
+    binary: (_data: Uint8Array) => true,
     /**
      * Forwards `WTerm`'s `onTitle` callback.
      */
     title: (_title: string) => true,
+    /** Shell-reported OSC 7 URI; empty resets it. */
+    workingDirectory: (_uri: string) => true,
+    /** Forwards `WTerm`'s `onBell` callback with the number of BEL controls. */
+    bell: (_count: number) => true,
+    /** Application clipboard request; the host decides whether to accept it. */
+    clipboardWrite: (_text: string) => true,
+    /** Latest shell-reported OSC 133 state. */
+    shellIntegration: (_state: ShellIntegrationState) => true,
     /**
      * Forwards `WTerm`'s `onResize` callback with the new column and row
      * counts.
@@ -131,6 +152,7 @@ const Terminal = defineComponent({
       if (!el) return;
 
       const hasDataListener = !!getCurrentInstance()?.vnode.props?.onData;
+      const hasBinaryListener = !!getCurrentInstance()?.vnode.props?.onBinary;
 
       const wt = new WTerm(el, {
         cols: props.cols,
@@ -138,12 +160,24 @@ const Terminal = defineComponent({
         core: props.core,
         wasmUrl: props.wasmUrl,
         autoResize: props.autoResize,
+        maxImageWidth: props.maxImageWidth,
+        maxImageHeight: props.maxImageHeight,
         cursorBlink: props.cursorBlink,
+        announceOutput: props.announceOutput,
+        renderingPaused: props.renderingPaused,
         debug: props.debug,
         onData: hasDataListener
           ? (data: string) => emit("data", data)
           : undefined,
+        onBinary: hasBinaryListener
+          ? (data: Uint8Array) => emit("binary", data)
+          : undefined,
         onTitle: (title: string) => emit("title", title),
+        onWorkingDirectory: (uri: string) => emit("workingDirectory", uri),
+        onBell: (count: number) => emit("bell", count),
+        onClipboardWrite: (text: string) => emit("clipboardWrite", text),
+        onShellIntegration: (state: ShellIntegrationState) =>
+          emit("shellIntegration", state),
         onResize: (c: number, r: number) => emit("resize", c, r),
       });
 
@@ -180,10 +214,23 @@ const Terminal = defineComponent({
     watch(
       () => props.cursorBlink,
       (blink) => {
-        const wt = wterm.value;
-        if (!wt) return;
-        wt.element.classList.toggle("cursor-blink", blink);
+        const el = wterm.value?.element;
+        el?.classList.toggle("cursor-blink", blink === true);
+        el?.classList.toggle("cursor-steady", blink === false);
       },
+      { flush: "post" },
+    );
+
+    watch(
+      () => props.announceOutput,
+      (enabled) => wterm.value?.setOutputAnnouncements(enabled),
+      { flush: "post" },
+    );
+
+    watch(
+      () => props.renderingPaused,
+      (paused) => wterm.value?.setRenderingPaused(paused),
+      { flush: "post" },
     );
 
     // Returning bindings from setup is the typed equivalent of defineExpose:
@@ -231,9 +278,8 @@ const Terminal = defineComponent({
       style: this.autoResize
         ? undefined
         : { height: `${this.rows * 17 + 24}px` },
-      role: "textbox",
+      role: "group",
       "aria-label": "Terminal",
-      "aria-multiline": "true",
       "aria-roledescription": "terminal",
     });
   },

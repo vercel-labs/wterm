@@ -1,6 +1,6 @@
 {
   "name": "@wterm/dom",
-  "version": "0.3.2",
+  "version": "0.5.7",
   "description": "DOM renderer, input handler, and orchestrator for wterm",
   "type": "module",
   "main": "dist/index.js",
@@ -37,8 +37,8 @@
   },
   "devDependencies": {
     "@internal/ts": "workspace:*",
-    "jsdom": "^29.0.2",
-    "typescript": "^6.0.2"
+    "jsdom": "^30.1.1",
+    "typescript": "^7.0.2"
   },
   "keywords": [
     "terminal",

@@ -129,9 +129,9 @@ describe("GhosttyCore scrollback readback", () => {
     for (const key of Object.keys(wasm.exports)) {
       exports[key] = wasm.exports[key];
     }
-    const real = wasm.exports.get_scrollback_line;
+    const real = wasm.exports.get_scrollback_line_v2;
     let calls = 0;
-    exports.get_scrollback_line = (...args: unknown[]) => {
+    exports.get_scrollback_line_v2 = (...args: unknown[]) => {
       calls++;
       return real(...args);
     };
@@ -174,6 +174,18 @@ describe("GhosttyCore scrollback readback", () => {
     expect(rowText(core, 0)).toBe(`line-${EXPECTED_COUNT + 1}`);
     expect(rowText(core, 0)).not.toBe(before);
     expect(rowText(core, 1)).toBe(before);
+  });
+
+  it("counts rows discarded from the oldest end", async () => {
+    const core = await GhosttyCore.load({
+      wasmPath: WASM_URL,
+      scrollbackLimit: 4096,
+    });
+    core.init(COLS, ROWS);
+    fill(core, 5000);
+
+    expect(core.getScrollbackCount()).toBeGreaterThan(0);
+    expect(core.getScrollbackDiscardedCount()).toBeGreaterThan(0);
   });
 });
 

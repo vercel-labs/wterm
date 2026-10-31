@@ -1,0 +1,152 @@
+---
+title: "Core / Advanced"
+navTitle: "Core / Advanced"
+---
+
+`@wterm/core` provides the headless terminal engine and WebSocket transport. Use it when you need direct access to the WASM bridge for a custom renderer, headless testing, or a server-connected terminal without the DOM layer.
+
+With `@wterm/dom`, terminal applications can enable mouse tracking (modes 1000, 1002, and 1003) in X10, UTF-8 (1005), SGR (1006), urxvt (1015), or SGR pixel (1016) encoding, plus focus reporting (mode 1004). UTF-8, SGR, urxvt, SGR pixel, and focus reports reach `onData`; raw X10 reports reach `onBinary` when provided. SGR pixel reports use 1-based CSS pixels relative to the visible grid. Mode 1003 reports unpressed pointer motion once per cell in cell formats and once per CSS pixel in 1016.
+
+## Install
+
+```bash
+npm install @wterm/core
+```
+
+## WasmBridge
+
+Low-level interface to the Zig/WASM terminal state machine. The bridge manages a virtual terminal grid in WASM memory — you write data in and read cells, cursor state, and scrollback out.
+
+### Loading
+
+```ts
+import { WasmBridge } from "@wterm/core";
+
+// Use the embedded WASM binary (default, zero-config)
+const bridge = await WasmBridge.load();
+
+// Or fetch from a URL (useful for CDN caching)
+const bridge = await WasmBridge.load("/wterm.wasm");
+```
+
+When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string inlined in the package. Pass a URL when you want to serve the binary separately for caching or CDN use. The grid grows as needed, up to 1024 columns and 512 rows.
+
+See the full [WasmBridge](/api-reference#wasmbridge) reference for all methods, types, and scrollback APIs.
+
+The built-in core answers DEC private-mode status queries through `getResponse()`. For example, `\x1b[?2026$p` receives `\x1b[?2026;2$y` when synchronized output is off and `\x1b[?2026;1$y` when it is on. It also reports supported mouse, focus, cursor, bracketed-paste, and alternate-screen modes; unrecognized modes return status `0`. Drain responses and send them back to a connected application. `WTerm` does this through `onData`.
+
+The built-in core also answers primary device-attributes queries (`CSI c`, including `CSI 0 c`) with `\x1b[?1;2c`, identifying VT100 advanced-video support. It does not claim secondary or private device attributes.
+
+Operating-status queries (`CSI 5 n`) receive `\x1b[0n` when the built-in core is ready. Cursor-position queries (`CSI 6 n`) receive `\x1b[row;colR`. These replies share the `getResponse()` queue with device-attribute replies and preserve query order; unsupported or malformed status requests receive no reply.
+
+`getBellCount()` reads and clears pending BEL controls. A BEL used to terminate
+an OSC sequence does not count. The DOM wrapper forwards the count through
+`onBell`, leaving the alert behavior to the host.
+
+### Example
+
+Headless usage — load the bridge, write data, and read cells back:
+
+```ts
+import { WasmBridge } from "@wterm/core";
+
+const bridge = await WasmBridge.load();
+bridge.init(80, 24);
+
+bridge.writeString("Hello, world!\r\n");
+bridge.writeString("\x1b[1;31mRed bold text\x1b[0m");
+
+for (let col = 0; col < 13; col++) {
+  const cell = bridge.getCell(0, col);
+  process.stdout.write(String.fromCodePoint(cell.char));
+}
+// → "Hello, world!"
+
+const cursor = bridge.getCursor();
+// → { row: 1, col: 13, visible: true }
+```
+
+Wide single-codepoint characters such as CJK, fullwidth forms, and emoji expose `width: 2` on the leading cell and `width: 0` on the continuation cell. Custom renderers should skip continuation cells.
+
+The built-in core also implements the optional `getRowId(row)` and
+`isRowContentDirty(row)` methods, which let the DOM renderer reuse rows that
+only scrolled. Custom cores can omit them.
+
+Character insertion (`ICH`) and deletion (`DCH`) shift exactly the requested number of columns from the cursor, up to the right edge. If an edit splits a wide character, its remaining cells become spaces with the current background color. With automatic wrapping disabled (`CSI ? 7 l`), a wide character that cannot fit at the right edge leaves the row unchanged. In a one-column terminal, wide characters are consumed as spaces with normal cursor and wrapping behavior.
+
+Cores that preserve multi-codepoint graphemes expose the complete string as `chars`. Render `chars` when present and fall back to `String.fromCodePoint(char)` otherwise.
+
+### DEC line drawing
+
+The built-in core translates DEC Special Graphics sequences used by tmux and other TUIs into Unicode cells. For example:
+
+```ts
+bridge.writeString("\x1b(0lqqk\x1b(B"); // ┌──┐
+```
+
+`ESC (` through `ESC +` designate G0 through G3. The supported sets are ASCII (`B`), British (`A`, mapping `#` to `£`), and DEC Special Graphics (`0`). SI/SO select G0/G1; `ESC n` and `ESC o` select G2/G3. `ESC N` and `ESC O` use G2/G3 for the next printed character only. Unsupported designations are ignored.
+
+Character-set state is preserved by cursor save/restore and restored when returning from the alternate screen with `CSI ? 1049 l`. Soft and full resets restore the built-in core's default ASCII sets. Mapping changes printable ASCII only; UTF-8 text keeps its original codepoints. Custom renderers receive the translated Unicode characters through `getCell()` and `getScrollbackCell()`.
+
+### Optional terminal graphics
+
+The `TerminalCore` contract has optional `getGraphicsState()` and
+`getGraphicsImage()` methods. A graphics provider returns copied metadata and
+tightly packed RGBA pixels for direct terminal images, along with pinned
+placements in retained-row coordinates. Existing cores remain compatible when
+these methods are absent. The built-in `WasmBridge` consumes unsupported 7-bit
+Kitty APC payloads safely but does not decode or advertise image data; use the
+Ghostty core for rendering Kitty PNG/RGB/RGBA output.
+
+## WebSocketTransport
+
+Connect to a PTY backend over WebSocket with automatic reconnection and bounded
+send buffering. Defaults allow 1 MiB across the transport and socket buffers and
+1,024 queued messages. `onBackpressure` reports when producers should pause;
+`send()` throws `RangeError` before accepting a message that would exceed a
+limit. Report that rejected input to the user. Explicit close discards unsent
+data, and bytes already handed to the socket are never replayed.
+
+See the full [WebSocketTransport](/api-reference#websockettransport) reference for all options, methods, and properties.
+
+### Example
+
+Connecting a terminal to a remote shell via WebSocket:
+
+```ts
+import { WTerm, WebSocketTransport } from "@wterm/dom";
+import "@wterm/dom/css";
+
+const term = new WTerm(document.getElementById("terminal"), {
+  cols: 80,
+  rows: 24,
+});
+await term.init();
+
+const ws = new WebSocketTransport({
+  url: "ws://localhost:8080/pty",
+  onData: (data) => term.write(data),
+  onOpen: () => console.log("connected"),
+  onClose: () => console.log("disconnected"),
+});
+
+ws.connect();
+term.onData = (data) => {
+  try {
+    ws.send(data);
+  } catch (error) {
+    console.error("Input was not sent", error); // Show this in your app's UI.
+  }
+};
+```
+
+For a full working example with a Node.js PTY server, see the [Local Shell example](https://github.com/vercel-labs/wterm/tree/main/examples/local).
+It uses its own client/server protocol: binary PTY output plus JSON input,
+resize, and consumption acknowledgments. A bounded output window pauses the
+PTY when the browser falls behind, and parsing yields between batches. Small
+PTY reads are collected into frames up to 16 KiB using a four-millisecond
+timer, reducing WebSocket message overhead during output bursts. Full frames
+can send immediately when credit is available; normal exit drains the final
+batch. Collecting bytes remain subject to the same queue limits. The
+workspace reports rejected input and connection failures. This protocol
+requires both halves of the example; it is not built into `WebSocketTransport`.

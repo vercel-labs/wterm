@@ -4,7 +4,9 @@ import "@wterm/dom/css";
 
 const container = document.getElementById("terminal")!;
 
-const term = new WTerm(container);
+const term = new WTerm(container, {
+  debug: new URLSearchParams(location.search).has("debug"),
+});
 
 term.init().then(() => {
   const shell = new BashShell({

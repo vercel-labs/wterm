@@ -39,7 +39,7 @@ function App() {
 }
 ```
 
-The WASM binary is embedded in the package — no extra setup required. To serve it separately instead, pass `wasmUrl`.
+The WASM binary is embedded in the package — no extra setup required. To serve it separately instead, pass `wasmUrl`. The built-in core shares compilation across terminals while keeping their memory independent. Custom URLs are cached; use versioned URLs when updating the binary. See [WASM loading](../core/README.md#wasmbridge) for cache limits and streaming behavior.
 
 ## `<Terminal>` Props
 
@@ -50,14 +50,29 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 | `wasmUrl` | `string` | — | Optional URL to serve the WASM binary separately (embedded by default) |
 | `theme` | `string` | — | Theme name (e.g. `"solarized-dark"`, `"monokai"`, `"light"`) |
 | `autoResize` | `boolean` | `false` | Auto-resize based on container dimensions |
-| `cursorBlink` | `boolean` | `false` | Enable cursor blinking animation |
+| `maxImageWidth` | `number` | — | Maximum rendered Kitty image width in CSS pixels; images scale down proportionally |
+| `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels; images scale down proportionally |
+| `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
+| `announceOutput` | `boolean` | `false` | Politely announce bounded terminal text changes while input has focus; updates without restarting |
+| `renderingPaused` | `boolean` | `false` | Suspend painting for an inactive pane while parsing and terminal effects continue; mutable without restarting |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the underlying `WTerm` instance for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
+| `onBinary` | `(data: Uint8Array) => void` | — | Called with raw X10 mouse reports for a binary-capable transport. Without it, only ASCII-safe X10 reports reach `onData`. |
 | `onTitle` | `(title: string) => void` | — | Called when the terminal title changes |
-| `onResize` | `(cols: number, rows: number) => void` | — | Called on resize |
-| `onReady` | `(wt: WTerm) => void` | — | Called after WASM is loaded and the terminal is initialized |
+| `onBell` | `(count: number) => void` | — | Called with pending BEL count as output is written; the host controls any alert |
+| `onClipboardWrite` | `(text: string) => void` | — | Application clipboard-write request; the host chooses whether to accept it |
+| `onShellIntegration` | `(state: ShellIntegrationState) => void` | — | Latest shell-reported command state; requires OSC 133 and a supporting core |
+| `onWorkingDirectory` | `(uri: string) => void` | — | Shell-reported OSC 7 URI; empty clears it. Requires a supporting core. |
+| `onResize` | `(cols: number, rows: number) => void` | — | Called after resize with the grid dimensions applied by the core |
+| `onReady` | `(wt: WTerm) => void` | — | Called after WASM is loaded and the terminal is initialized; `wt.cols` and `wt.rows` report its applied grid size |
 
 Standard `div` props (`className`, `style`, `id`, etc.) are forwarded to the container element.
+
+The component delegates rendering to `@wterm/dom`, so passing a graphics-capable
+core such as `@wterm/ghostty` renders direct Kitty PNG/RGB/RGBA output. Use
+`maxImageWidth` and/or `maxImageHeight` to constrain oversized images while
+preserving their aspect ratio. Image canvases are decorative and
+`aria-hidden`; they are pointer-transparent and never replace the text rows.
 
 ## `useTerminal` Hook
 
@@ -102,6 +117,75 @@ Switch themes via the `theme` prop:
 ```
 
 Built-in: `solarized-dark`, `monokai`, `light`. Define custom themes with CSS custom properties.
+
+## Reading output
+
+Call `await instance.readText({ signal })` on the WTerm instance to capture retained history and the active screen without changing selection. Show the returned string in a labelled, read-only text area. Snapshots remain stable during new output; pending captures are cancellable and bounded. See [Reading terminal output](../dom/README.md#reading-terminal-output) for cancellation and resource limits.
+
+## Input accessibility
+
+Use `<Terminal aria-label="Build shell" aria-describedby="shell-help" />` to name and describe the actual input. `aria-labelledby` and `aria-description` are also supported, and prop changes stay synchronized. The host defaults to a group; the native textarea is the editable control. `tabIndex={-1}` excludes input from page tab entry; the imperative `focus()` method still focuses it. Press Escape, then Tab to move focus out of the terminal, or Escape, then Shift+Tab to move backward. See the [DOM input accessibility contract](../dom/README.md#input-accessibility) for host tab-order ownership and output limits.
+
+## Selection and copy
+
+Native Copy uses terminal line and cell semantics, joining Ghostty soft wraps while preserving explicit newlines and complete Unicode cells. Call `getSelectionText()` on the underlying WTerm instance to read the same text without accessing the clipboard. It returns `null` when no supported terminal selection exists. See [selection behavior and limits](../dom/README.md#selecting-and-copying-text).
+
+With the current Ghostty WASM binary, selections follow output scrolling and resize/reflow while their text remains intact. Overwritten or discarded text, resets, and screen switches clear the selection. The linked reference describes preservation limits and pending-frame behavior.
+
+Use `await instance.selectAll()` to select all retained history and the active screen, then read `instance.getSelectionText()`. Cmd+A or Ctrl+Shift+A invokes the same action while terminal input is focused. Capture is cancellable and bounded; output or resize clears it. Call `instance.clearSelection()` to cancel. See the linked selection reference for limits and copy shortcuts.
+
+Double-click words or paths and triple-click logical lines. Use `instance.selectWord({ row, col })` or `instance.selectLine(row)` for the same selection from host controls; coordinates start at the oldest retained row. Ghostty joins confirmed soft wraps, including unmounted history. See the linked selection reference for boundaries, limits, and mouse-reporting behavior.
+
+Alt/Option-drag selects rectangular columns; Shift+Alt selects inside mouse-reporting applications. Use `instance.selectRectangle(start, end)` with inclusive retained-row/cell corners, then read `instance.getSelectionText()`. Rectangles preserve selected spaces and physical row breaks, clear on output or resize, and keep scrolling bounded. See [rectangular selection](../dom/README.md#rectangular-selection) for copy shortcuts and limits.
+
+## Terminal search
+
+Use the underlying `WTerm` instance to call `search(query, { caseSensitive })`, `findNext()`, `findPrevious()`, `getSearchState()`, and `clearSearch()`. Set its `onSearchChange` callback to update your Find controls. Access the instance through `onReady` or `ref.current.instance`. Search includes unmounted retained history; Ghostty also joins soft wraps. See the [search semantics and limits](../dom/README.md#terminal-search).
+
+## Output announcements
+
+Set the reactive `announceOutput` prop to `true` to opt into polite announcements
+while terminal input has focus. It defaults to `false` and can be toggled without
+replacing the terminal. Announcements summarize changed text, are batched and
+bounded, and stop when focus leaves input. See the [DOM announcement contract](../dom/README.md#output-announcements)
+for pause/resume behavior, capture bounds, and redraw semantics.
+
+## Inactive panes
+
+Set the reactive `renderingPaused` prop for inactive panes. Toggling it keeps
+the same terminal and core: output, history, replies, titles, and bells continue
+while painting stops. Resuming schedules the latest state on the next eligible
+frame. Hidden browser documents also pause painting. Hosts still control pane
+visibility, focus, `inert`, and `aria-hidden`; CSS visibility alone does not set
+this option. New searches, `readText()`, and Select All wait for painting to resume.
+
+
+Ghostty clipboard writes are requests only: review the text and handle browser permissions before copying. No clipboard access occurs automatically. See [Application clipboard requests](../dom/README.md#application-clipboard-requests).
+
+## Working directories
+
+With Ghostty, `onWorkingDirectory(uri)` receives raw OSC 7 directory reports, including
+while rendering is paused. An empty string clears the value.
+Treat the URI as untrusted metadata. See
+[Working directories](https://wterm.dev/configuration#working-directories) for
+the contract, limits, and shell setup.
+
+## Shell integration
+
+With Ghostty and a shell that emits OSC 133 markers, `onShellIntegration(state)`
+receives the latest `{ phase, exitCode }` as output is parsed, including in hidden
+panes and synchronized output. `phase` is `unknown`, `prompt`, `input`, `running`,
+or `complete`. The last reported exit code survives prompt redraws until the
+next command starts; absent or invalid codes are `null`. A terminal reset
+reports `unknown` and clears the code. Multiple markers in a parser chunk
+coalesce into one current-state snapshot, so this callback is not a command log.
+The built-in core, custom cores without the optional hook, and older Ghostty
+binaries do not report shell state. Shell configuration is owned by the host.
+See [Shell integration](https://wterm.dev/configuration#shell-integration).
+
+Call `scrollToPrompt(-1)` or `scrollToPrompt(1)` on the underlying `WTerm`
+instance to navigate retained prompts without changing focus or sending input.
+See [prompt navigation](../dom/README.md#shell-integration) for behavior and limits.
 
 ## License
 

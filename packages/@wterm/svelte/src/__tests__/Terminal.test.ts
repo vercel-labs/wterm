@@ -1,0 +1,505 @@
+import { cleanup, render } from "@testing-library/svelte";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { tick } from "svelte";
+import Terminal from "../lib/Terminal.svelte";
+
+let lastWTermInstance: any = null;
+
+vi.mock("@wterm/dom", () => {
+  const mockWTerm = vi.fn().mockImplementation(function (
+    this: any,
+    element: HTMLElement,
+    options: any,
+  ) {
+    this.element = element;
+    this.bridge = null;
+    this.cols = options?.cols ?? 80;
+    this.rows = options?.rows ?? 24;
+    this.onData = options?.onData ?? null;
+    this.onBinary = options?.onBinary ?? null;
+    this.onTitle = options?.onTitle ?? null;
+    this.onWorkingDirectory = options?.onWorkingDirectory ?? null;
+    this.onBell = options?.onBell ?? null;
+    this.onClipboardWrite = options?.onClipboardWrite ?? null;
+    this.onShellIntegration = options?.onShellIntegration ?? null;
+    this.onResize = options?.onResize ?? null;
+    this.autoResize = options?.autoResize !== false;
+    this.write = vi.fn();
+    this.resize = vi.fn((cols: number, rows: number) => {
+      this.cols = cols;
+      this.rows = rows;
+    });
+    this.focus = vi.fn();
+    this.setOutputAnnouncements = vi.fn();
+    this.setRenderingPaused = vi.fn();
+    this.destroy = vi.fn();
+    this.init = vi.fn().mockImplementation(async () => {
+      this.bridge = {};
+      return this;
+    });
+    lastWTermInstance = this;
+  });
+
+  return {
+    WTerm: mockWTerm,
+    Renderer: vi.fn(),
+    InputHandler: vi.fn(),
+  };
+});
+
+describe("Terminal component", () => {
+  beforeEach(() => {
+    lastWTermInstance = null;
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("renders an accessible terminal element", () => {
+    const { getByRole } = render(Terminal);
+    const element = getByRole("group");
+
+    expect(element.getAttribute("aria-label")).toBe("Terminal");
+    expect(element.hasAttribute("aria-multiline")).toBe(false);
+    expect(element.getAttribute("aria-roledescription")).toBe("terminal");
+  });
+
+  it("toggles output announcements without replacing the terminal", async () => {
+    const result = render(Terminal, { props: { announceOutput: true } });
+    await tick();
+    const instance = lastWTermInstance;
+    const { WTerm } = await import("@wterm/dom");
+    expect(vi.mocked(WTerm).mock.calls[0][1]?.announceOutput).toBe(true);
+    await result.rerender({ announceOutput: false });
+    expect(instance.setOutputAnnouncements).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
+    expect(instance.element.hasAttribute("announceOutput")).toBe(false);
+  });
+
+  it("pauses painting without replacing the terminal or leaking an attribute", async () => {
+    const result = render(Terminal, { props: { renderingPaused: true } });
+    await tick();
+    const instance = lastWTermInstance;
+    const { WTerm } = await import("@wterm/dom");
+    expect(vi.mocked(WTerm).mock.calls[0][1]?.renderingPaused).toBe(true);
+    await result.rerender({ renderingPaused: false });
+    expect(instance.setRenderingPaused).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
+    expect(instance.element.hasAttribute("renderingPaused")).toBe(false);
+  });
+
+  it("forwards classes and styles", () => {
+    const { getByRole } = render(Terminal, {
+      props: {
+        class: "custom",
+        style: "background: purple",
+        theme: "dark",
+      },
+    });
+    const element = getByRole("group");
+
+    expect(element.classList.contains("wterm")).toBe(true);
+    expect(element.classList.contains("custom")).toBe(true);
+    expect(element.classList.contains("theme-dark")).toBe(true);
+    expect(element.style.background).toBe("purple");
+    expect(element.style.height).toBe("432px");
+  });
+
+  it("updates host input labels and tab order without restarting the terminal", async () => {
+    const { rerender, getByRole } = render(Terminal, {
+      props: {
+        "aria-label": "Build shell",
+        "aria-describedby": "help",
+        tabindex: 0,
+      },
+    });
+    const host = getByRole("group", { name: "Build shell" });
+    const instance = lastWTermInstance;
+    await rerender({
+      "aria-label": "Test shell",
+      "aria-labelledby": "heading",
+      "aria-describedby": undefined,
+      tabindex: -1,
+    });
+    expect(host.getAttribute("aria-label")).toBe("Test shell");
+    expect(host.getAttribute("aria-labelledby")).toBe("heading");
+    expect(host.hasAttribute("aria-describedby")).toBe(false);
+    expect(host.getAttribute("tabindex")).toBe("-1");
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
+  });
+
+  it("creates and initializes WTerm on mount", async () => {
+    const { WTerm } = await import("@wterm/dom");
+    render(Terminal);
+    await Promise.resolve();
+    await tick();
+
+    expect(WTerm).toHaveBeenCalled();
+    expect(lastWTermInstance.init).toHaveBeenCalled();
+  });
+
+  it("passes terminal options to WTerm", async () => {
+    const { WTerm } = await import("@wterm/dom");
+    render(Terminal, {
+      props: {
+        cols: 120,
+        rows: 40,
+        autoResize: true,
+        maxImageWidth: 800,
+        maxImageHeight: 600,
+        debug: true,
+      },
+    });
+
+    expect(WTerm).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({
+        cols: 120,
+        rows: 40,
+        autoResize: true,
+        maxImageWidth: 800,
+        maxImageHeight: 600,
+        debug: true,
+      }),
+    );
+  });
+
+  it("calls the ready callback", async () => {
+    const onReady = vi.fn();
+    render(Terminal, { props: { onReady } });
+
+    await Promise.resolve();
+
+    expect(onReady).toHaveBeenCalledWith(lastWTermInstance);
+  });
+
+  it("forwards input through onData", async () => {
+    const onData = vi.fn();
+    render(Terminal, { props: { onData } });
+    await Promise.resolve();
+
+    lastWTermInstance.onData("hello");
+
+    expect(onData).toHaveBeenCalledWith("hello");
+  });
+
+  it("forwards raw mouse bytes and follows onBinary prop changes", async () => {
+    const first = vi.fn();
+    const next = vi.fn();
+    const bytes = Uint8Array.of(27, 91, 77, 32, 132, 33);
+    const result = render(Terminal, { props: { onBinary: first } });
+    await Promise.resolve();
+
+    lastWTermInstance.onBinary(bytes);
+    expect(first).toHaveBeenCalledWith(bytes);
+
+    await result.rerender({ onBinary: next });
+    lastWTermInstance.onBinary(bytes);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(bytes);
+
+    await result.rerender({ onBinary: undefined });
+    expect(lastWTermInstance.onBinary).toBeNull();
+  });
+
+  it("updates the WTerm input handler when onData changes", async () => {
+    const result = render(Terminal);
+    await Promise.resolve();
+
+    expect(lastWTermInstance.onData).toBeNull();
+
+    const onData = vi.fn();
+    await result.rerender({ onData });
+
+    expect(lastWTermInstance.onData).toBeTypeOf("function");
+    lastWTermInstance.onData("hello");
+    expect(onData).toHaveBeenCalledWith("hello");
+
+    await result.rerender({ onData: undefined });
+    expect(lastWTermInstance.onData).toBeNull();
+  });
+
+  it("applies callback changes made while initialization is pending", async () => {
+    const { WTerm } = await import("@wterm/dom");
+    let resolveInit!: () => void;
+    const pendingInit = new Promise<void>((resolve) => {
+      resolveInit = resolve;
+    });
+
+    (WTerm as any).mockImplementationOnce(function (
+      this: any,
+      element: HTMLElement,
+      options: any,
+    ) {
+      this.element = element;
+      this.bridge = null;
+      this.cols = options?.cols ?? 80;
+      this.rows = options?.rows ?? 24;
+      this.onData = options?.onData ?? null;
+      this.onTitle = options?.onTitle ?? null;
+      this.onResize = options?.onResize ?? null;
+      this.write = vi.fn();
+      this.resize = vi.fn();
+      this.focus = vi.fn();
+      this.setOutputAnnouncements = vi.fn();
+      this.setRenderingPaused = vi.fn();
+      this.destroy = vi.fn();
+      this.init = vi.fn(() =>
+        pendingInit.then(() => {
+          this.bridge = {};
+          return this;
+        }),
+      );
+      lastWTermInstance = this;
+    });
+
+    const result = render(Terminal);
+    const onData = vi.fn();
+    await result.rerender({ onData });
+
+    expect(lastWTermInstance.onData).toBeNull();
+    resolveInit();
+    await Promise.resolve();
+    await Promise.resolve();
+    await tick();
+
+    expect(lastWTermInstance.onData).toBeTypeOf("function");
+    lastWTermInstance.onData("hello");
+    expect(onData).toHaveBeenCalledWith("hello");
+  });
+
+  it("exposes imperative methods through bind:this", async () => {
+    const { component } = render(Terminal);
+    await Promise.resolve();
+
+    (component as any).write("test data");
+    (component as any).resize(120, 40);
+    (component as any).focus();
+
+    expect(lastWTermInstance.write).toHaveBeenCalledWith("test data");
+    expect(lastWTermInstance.resize).toHaveBeenCalledWith(120, 40);
+    expect(lastWTermInstance.focus).toHaveBeenCalled();
+  });
+
+  it("supports Svelte 5 callback-style event props", async () => {
+    const ondata = vi.fn();
+    const ontitle = vi.fn();
+    const onbell = vi.fn();
+    const onresize = vi.fn();
+    render(Terminal, { props: { ondata, ontitle, onbell, onresize } });
+    await Promise.resolve();
+
+    lastWTermInstance.onData("hello");
+    lastWTermInstance.onTitle("my title");
+    lastWTermInstance.onBell(2);
+    lastWTermInstance.onResize(100, 30);
+
+    expect(ondata).toHaveBeenCalledWith("hello");
+    expect(ontitle).toHaveBeenCalledWith("my title");
+    expect(onbell).toHaveBeenCalledWith(2);
+    expect(onresize).toHaveBeenCalledWith(100, 30);
+  });
+
+  it("forwards clipboard requests through both callback styles", async () => {
+    const onClipboardWrite = vi.fn();
+    const onclipboardwrite = vi.fn();
+    render(Terminal, { props: { onClipboardWrite, onclipboardwrite } });
+    await Promise.resolve();
+    lastWTermInstance.onClipboardWrite("copied");
+    lastWTermInstance.onClipboardWrite("");
+    expect(onClipboardWrite.mock.calls).toEqual([["copied"], [""]]);
+    expect(onclipboardwrite.mock.calls).toEqual([["copied"], [""]]);
+  });
+
+  it("forwards shell state through both callback styles", async () => {
+    const onShellIntegration = vi.fn(),
+      onshellintegration = vi.fn();
+    render(Terminal, { props: { onShellIntegration, onshellintegration } });
+    await Promise.resolve();
+    const state = { phase: "input", exitCode: 7 };
+    lastWTermInstance.onShellIntegration(state);
+    expect(onShellIntegration).toHaveBeenCalledExactlyOnceWith(state);
+    expect(onshellintegration).toHaveBeenCalledExactlyOnceWith(state);
+  });
+
+  it("forwards directory reports through both callback styles and updates without remounting", async () => {
+    const onWorkingDirectory = vi.fn(),
+      onworkingdirectory = vi.fn(),
+      next = vi.fn();
+    const result = render(Terminal, {
+      props: { onWorkingDirectory, onworkingdirectory },
+    });
+    await Promise.resolve();
+    const instance = lastWTermInstance;
+    instance.onWorkingDirectory("file://remote/work");
+    await result.rerender({
+      onWorkingDirectory: next,
+      onworkingdirectory: undefined,
+    });
+    instance.onWorkingDirectory("");
+    expect(onWorkingDirectory).toHaveBeenCalledExactlyOnceWith(
+      "file://remote/work",
+    );
+    expect(onworkingdirectory).toHaveBeenCalledExactlyOnceWith(
+      "file://remote/work",
+    );
+    expect(next).toHaveBeenCalledExactlyOnceWith("");
+    expect(lastWTermInstance).toBe(instance);
+  });
+
+  it("forwards title, bell, and resize callbacks", async () => {
+    const onTitle = vi.fn();
+    const onBell = vi.fn();
+    const onResize = vi.fn();
+    render(Terminal, { props: { onTitle, onBell, onResize } });
+    await Promise.resolve();
+
+    lastWTermInstance.onTitle("my title");
+    lastWTermInstance.onBell(3);
+    lastWTermInstance.onResize(100, 30);
+
+    expect(onTitle).toHaveBeenCalledWith("my title");
+    expect(onBell).toHaveBeenCalledWith(3);
+    expect(onResize).toHaveBeenCalledWith(100, 30);
+  });
+
+  it("syncs dimensions and cursor blinking when props change", async () => {
+    const result = render(Terminal, {
+      props: { cols: 80, rows: 24, cursorBlink: false },
+    });
+    await Promise.resolve();
+    lastWTermInstance.element.classList.add("focused", "has-scrollback");
+
+    await result.rerender({ cols: 120, rows: 40, cursorBlink: true });
+
+    expect(lastWTermInstance.resize).toHaveBeenCalledWith(120, 40);
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      true,
+    );
+    await result.rerender({ cursorBlink: false });
+    expect(lastWTermInstance.element.classList.contains("cursor-steady")).toBe(
+      true,
+    );
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      false,
+    );
+    await result.rerender({ cursorBlink: undefined });
+    expect(lastWTermInstance.element.classList.contains("cursor-steady")).toBe(
+      false,
+    );
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      false,
+    );
+    expect(lastWTermInstance.element.classList.contains("focused")).toBe(true);
+    expect(lastWTermInstance.element.classList.contains("has-scrollback")).toBe(
+      true,
+    );
+  });
+
+  it("destroys WTerm on unmount", async () => {
+    const { unmount } = render(Terminal);
+    await Promise.resolve();
+    const instance = lastWTermInstance;
+
+    unmount();
+
+    expect(instance.destroy).toHaveBeenCalled();
+  });
+
+  it("does not call ready after unmount while initialization is pending", async () => {
+    const { WTerm } = await import("@wterm/dom");
+    let resolveInit!: () => void;
+    const pendingInit = new Promise<void>((resolve) => {
+      resolveInit = resolve;
+    });
+
+    (WTerm as any).mockImplementationOnce(function (
+      this: any,
+      element: HTMLElement,
+      options: any,
+    ) {
+      this.element = element;
+      this.bridge = null;
+      this.cols = options?.cols ?? 80;
+      this.rows = options?.rows ?? 24;
+      this.onData = options?.onData ?? null;
+      this.onTitle = options?.onTitle ?? null;
+      this.onResize = options?.onResize ?? null;
+      this.write = vi.fn();
+      this.resize = vi.fn();
+      this.focus = vi.fn();
+      this.setOutputAnnouncements = vi.fn();
+      this.setRenderingPaused = vi.fn();
+      this.destroy = vi.fn();
+      this.init = vi.fn(() =>
+        pendingInit.then(() => {
+          this.bridge = {};
+          return this;
+        }),
+      );
+      lastWTermInstance = this;
+    });
+
+    const onReady = vi.fn();
+    const { unmount } = render(Terminal, { props: { onReady } });
+    unmount();
+    resolveInit();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onReady).not.toHaveBeenCalled();
+  });
+
+  it("allows overriding the default accessibility attributes", () => {
+    const { container } = render(Terminal, {
+      props: {
+        role: "application",
+        "aria-label": "Shell",
+        "aria-multiline": "false",
+        "aria-roledescription": "shell",
+      } as any,
+    });
+    const element = container.querySelector(".wterm")!;
+
+    expect(element.getAttribute("role")).toBe("application");
+    expect(element.getAttribute("aria-label")).toBe("Shell");
+    expect(element.getAttribute("aria-multiline")).toBe("false");
+    expect(element.getAttribute("aria-roledescription")).toBe("shell");
+  });
+
+  it("calls the error callback", async () => {
+    const { WTerm } = await import("@wterm/dom");
+    (WTerm as any).mockImplementationOnce(function (
+      this: any,
+      element: HTMLElement,
+    ) {
+      this.element = element;
+      this.bridge = null;
+      this.cols = 80;
+      this.rows = 24;
+      this.onData = null;
+      this.onTitle = null;
+      this.onResize = null;
+      this.write = vi.fn();
+      this.resize = vi.fn();
+      this.focus = vi.fn();
+      this.setOutputAnnouncements = vi.fn();
+      this.setRenderingPaused = vi.fn();
+      this.destroy = vi.fn();
+      this.init = vi.fn().mockRejectedValue(new Error("WASM failed"));
+      lastWTermInstance = this;
+    });
+
+    const onError = vi.fn();
+    render(Terminal, { props: { onError } });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onError).toHaveBeenCalledWith(expect.any(Error));
+  });
+});

@@ -1,0 +1,289 @@
+---
+title: "Themes"
+navTitle: "Themes"
+---
+
+wterm uses CSS custom properties for all visual styling, making it easy to switch between built-in themes or create your own.
+
+On this site's homepage, **Default** follows your site theme: light, dark, or
+system. The greeting and interactive terminal use the same colors, including in
+fullscreen. Selecting Solarized, Monokai, or Light keeps that terminal preset
+independent of the site theme. This site-specific Default does not change the
+package's default dark palette described below.
+
+The [local shell workspace](https://github.com/vercel-labs/wterm/tree/main/examples/local)
+has an **Appearance** dialog with System, Dark, and Light choices and a 10–32 px
+font-size control. Settings apply to all panes and persist in the same browser.
+System follows OS changes; switching appearance preserves existing shells.
+
+## Using a Theme
+
+### React
+
+Pass the theme name via the `theme` prop:
+
+```tsx
+<Terminal theme="monokai" />
+```
+
+### Vue
+
+Same `theme` prop:
+
+```vue
+<Terminal theme="monokai" />
+```
+
+### Svelte
+
+Pass the theme name through the `theme` prop:
+
+```svelte
+<Terminal theme="monokai" />
+```
+
+### Vanilla JS
+
+Add the theme class to the terminal element:
+
+```js
+const term = new WTerm(document.getElementById("terminal"));
+term.element.classList.add("theme-monokai");
+await term.init();
+```
+
+## Built-in Themes
+
+### Default
+
+The default dark theme, inspired by VS Code's Dark+ palette.
+
+<table>
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Background</td><td><code>#1e1e1e</code></td></tr>
+    <tr><td>Foreground</td><td><code>#d4d4d4</code></td></tr>
+    <tr><td>Cursor</td><td><code>#aeafad</code></td></tr>
+  </tbody>
+</table>
+
+### Solarized Dark
+
+The classic Solarized Dark color scheme by Ethan Schoonover.
+
+```tsx
+<Terminal theme="solarized-dark" />
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Background</td><td><code>#002b36</code></td></tr>
+    <tr><td>Foreground</td><td><code>#839496</code></td></tr>
+    <tr><td>Cursor</td><td><code>#93a1a1</code></td></tr>
+  </tbody>
+</table>
+
+### Monokai
+
+Based on the Monokai color scheme.
+
+```tsx
+<Terminal theme="monokai" />
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Background</td><td><code>#272822</code></td></tr>
+    <tr><td>Foreground</td><td><code>#f8f8f2</code></td></tr>
+    <tr><td>Cursor</td><td><code>#f8f8f0</code></td></tr>
+  </tbody>
+</table>
+
+### Light
+
+A clean light theme inspired by Atom's One Light.
+
+```tsx
+<Terminal theme="light" />
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Background</td><td><code>#fafafa</code></td></tr>
+    <tr><td>Foreground</td><td><code>#383a42</code></td></tr>
+    <tr><td>Cursor</td><td><code>#526eff</code></td></tr>
+  </tbody>
+</table>
+
+## Custom Themes
+
+Create a custom theme by defining a CSS class that overrides the wterm custom properties:
+
+```css
+.wterm.theme-tokyo-night {
+  --term-bg: #1a1b26;
+  --term-fg: #c0caf5;
+  --term-cursor: #f7768e;
+
+  --term-color-0: #15161e;
+  --term-color-1: #f7768e;
+  --term-color-2: #9ece6a;
+  --term-color-3: #e0af68;
+  --term-color-4: #7aa2f7;
+  --term-color-5: #bb9af7;
+  --term-color-6: #7dcfff;
+  --term-color-7: #a9b1d6;
+  --term-color-8: #414868;
+  --term-color-9: #f7768e;
+  --term-color-10: #9ece6a;
+  --term-color-11: #e0af68;
+  --term-color-12: #7aa2f7;
+  --term-color-13: #bb9af7;
+  --term-color-14: #7dcfff;
+  --term-color-15: #c0caf5;
+}
+```
+
+Then apply it the same way as a built-in theme:
+
+```tsx
+<Terminal theme="tokyo-night" />
+```
+
+## CSS Custom Properties Reference
+
+<table>
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><code>--term-bg</code></td><td>Terminal background color</td></tr>
+    <tr><td><code>--term-fg</code></td><td>Default text color</td></tr>
+    <tr><td><code>--term-cursor</code></td><td>Cursor color</td></tr>
+    <tr><td><code>--term-font-family</code></td><td>Font stack (default: Menlo, Consolas, DejaVu Sans Mono, Courier New, monospace)</td></tr>
+    <tr><td><code>--term-font-size</code></td><td>Font size (default: <code>14px</code>)</td></tr>
+    <tr><td><code>--term-line-height</code></td><td>Line height multiplier (default: <code>1.2</code>)</td></tr>
+    <tr><td><code>--term-color-0</code> … <code>--term-color-7</code></td><td>Standard ANSI colors (black, red, green, yellow, blue, magenta, cyan, white)</td></tr>
+    <tr><td><code>--term-color-8</code> … <code>--term-color-15</code></td><td>Bright ANSI colors</td></tr>
+  </tbody>
+</table>
+
+Colors beyond the 16-color palette (indices 16–255 and true-color RGB) are computed by the renderer and do not use custom properties.
+
+## Updating host colors
+
+Use `wt.setThemeColors(colors)` to update a running terminal's foreground,
+background, cursor, and 16 ANSI colors together. The method sets the corresponding
+CSS custom properties and forwards the defaults to a supporting core. It repaints
+live and retained rows without writing escape sequences, restarting the parser,
+or clearing application color overrides. Painting still respects synchronized
+output, hidden pages, and paused panes.
+
+```ts
+wt.setThemeColors({
+  foreground: 0x383a42,
+  background: 0xfafafa,
+  cursor: 0x526fff,
+  palette: [
+    0x383a42, 0xe45649, 0x50a14f, 0xc18401,
+    0x4078f2, 0xa626a4, 0x0184bc, 0xa0a1a7,
+    0x4f525e, 0xe45649, 0x50a14f, 0xc18401,
+    0x4078f2, 0xa626a4, 0x0184bc, 0xffffff,
+  ],
+});
+```
+
+`TerminalThemeColors` uses opaque integer RGB values from `0` to `0xffffff`
+and exactly 16 palette entries; invalid values throw `RangeError` before changes
+are applied. Values are copied and can be set before `init()`. Indices 16–255 and
+explicit RGB cell colors are unchanged. Application overrides take precedence;
+OSC resets return to the latest host defaults. The inline properties set by this
+method take precedence over theme classes; call it again to change those colors.
+Pass `null` to remove them and return to the CSS theme.
+
+With Ghostty, use the updated bundled WASM asset to synchronize indexed colors
+and foreground/background query replies. Older WASM assets retain their existing
+engine defaults. Custom cores may implement the optional
+`TerminalCore.setThemeColors()` hook; without it only the CSS defaults update.
+Framework users can call the same method on the WTerm instance from `onReady`
+or their imperative handle's `instance`.
+
+## Application color changes
+
+Ghostty applications can set the default foreground, background, and cursor
+colors with OSC `10`, `11`, and `12`. OSC `110`, `111`, and `112` reset the
+corresponding color to the current CSS theme, including theme changes made
+while an override was active. Explicit SGR cell colors are unaffected. Inverse
+cells swap the actual foreground/background, including default colors, in both
+cores.
+
+Application overrides are separate from `--term-fg`, `--term-bg`, and
+`--term-cursor`; the renderer never overwrites these host theme properties.
+Updates follow normal rendering, including synchronized output and paused
+panes. Destroying the terminal removes its overrides. The built-in core and
+older Ghostty WASM binaries retain CSS theme defaults.
+
+## Color queries
+
+Applications ask for the default foreground and background with OSC `10` and
+`11` (`printf '\e]11;?\a'`). Both cores answer with the colors the terminal
+element's CSS resolves to when the query arrives: `--term-fg` and `--term-bg`,
+including theme classes, `prefers-color-scheme` rules and colors written in any
+CSS color space. Replies end with the query's own terminator, BEL or ST.
+
+Colors set with `setThemeColors()` take precedence until it is called with
+`null`. A Ghostty application's own OSC `10`/`11` color changes are reported
+until it resets them. A query split across two `write()` calls is answered
+with the colors read at the previous query or at `init()`.
+
+Headless Ghostty cores, which have no CSS, answer with their `foregroundColor`
+and `backgroundColor` options. See [Ghostty options](/ghostty).
+
+## Font and cell alignment
+
+Choose a monospace font with `--term-font-family` and set its size with
+`--term-font-size`. wterm measures the font's cell width and uses it for text,
+backgrounds, and cursors. Braille, box drawing, and other fallback glyphs stay
+within their assigned columns even when the fallback font has wider glyphs.
+Wide characters occupy two cells; oversized glyphs are clipped to their cells.
+Common light, heavy, and rounded box-drawing characters connect across cell
+edges even when the font's glyphs fall short. They remain selectable as text.
+
+Cell widths update when fonts load or the font size changes, including when
+`autoResize` is disabled. Native selection and OSC 8 link text are preserved.
+This behavior is shared by both cores and all framework components.
+
+## Cell backgrounds
+
+Colored and reversed cells keep their backgrounds within their columns,
+including the last column and rows in scrollback. A complete row with one
+shared, opaque background extends that color to the container's right edge,
+keeping full-width status bars filled. Mixed, dim, or hidden cells do not
+repaint neighboring cells or other rows. This behavior is shared by both cores
+and all framework components.

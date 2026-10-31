@@ -1,0 +1,476 @@
+---
+title: "Ghostty Core"
+navTitle: "Ghostty Core"
+---
+
+The `@wterm/ghostty` package provides a full-featured terminal emulation core powered by [libghostty](https://ghostty.org) built directly from upstream source. It implements the same `TerminalCore` interface as wterm's built-in Zig core, so it's a drop-in replacement. When your bundler supports code splitting, Ghostty-backed terminals do not download the built-in core's embedded binary.
+
+## Why use it?
+
+wterm ships with a lightweight built-in core (~26 KB WASM) that covers basic VT100/VT220/xterm escape sequences. For apps that need comprehensive terminal emulation — full Unicode grapheme clusters, all SGR attributes, terminal modes, and more — `@wterm/ghostty` provides all of that via Ghostty's battle-tested VT parser.
+
+Ghostty's native OSC 8 metadata is preserved through the active viewport, scrollback, and reflow. The DOM renderer resolves it into safe HTTP and HTTPS anchors without exposing Ghostty's page-local numeric IDs.
+
+Ghostty allocates terminal pages as needed, reducing initial memory use for idle terminals and alternate screens. The configured history budget still controls retained output. Freed pages can be reused, but WebAssembly linear memory does not shrink after clearing history or resetting a screen.
+
+`getColorOverrides()` exposes application-requested default foreground,
+background, and cursor colors from OSC 10/11/12. The DOM renderer applies them
+to live cells, retained history, the terminal background, and cursor shapes.
+OSC 110/111/112 restores the current CSS theme without rewriting host theme
+variables. Explicit SGR colors remain unchanged. Serve the current WASM binary;
+older binaries return an empty snapshot and retain their CSS defaults.
+
+Ghostty preserves single, double, curly, dotted, and dashed underlines through
+`CellData.underlineStyle`, with resolved colors in `underlineRgb`. The DOM
+renderer displays them in the viewport and scrollback, including after reflow.
+SGR `4:1` through `4:5` select the styles; `4` selects single and `21` selects
+double. SGR `58` sets an indexed or RGB underline color, `59` restores the
+foreground color, and `24` or `4:0` removes the underline. SGR `0` resets both.
+Strikethrough stays solid and follows the text color. Apps serving an older
+WASM file retain single underlines; serve the binary shipped with the package
+to enable the additional styles and colors.
+
+Ghostty's cursor shape and blink state also reach the DOM renderer. Applications
+can switch between block, bar, and underline cursors; the wrapper's optional
+`cursorBlink` setting can force blinking on or off. See
+[cursor appearance](/configuration#cursor-appearance) for the shared behavior.
+
+Shells and applications can set the window title with OSC 0 or OSC 2. The
+Ghostty core forwards the latest complete title to `WTerm`'s `onTitle`
+callback, including an empty title that clears it. As with the built-in core,
+the callback runs as output is written, including while painting is paused.
+Several changes within a parsed chunk may coalesce to the latest complete
+title. Ghostty ignores titles longer than 255 bytes.
+
+BEL controls reach the shared `onBell(count)` callback as output is written.
+The BEL that terminates an OSC title does not count as a bell.
+
+With mouse tracking enabled, `mouseEncoding()` exposes Ghostty's active wire
+format. The DOM layer sends UTF-8 (1005), SGR (1006), urxvt (1015), and SGR
+pixel (1016) reports through `onData`; X10 reports use `onBinary` when provided.
+Mode 1003 sends unpressed pointer motion once per cell for cell formats and
+once per CSS pixel for 1016. Pixel coordinates are 1-based and relative to the
+visible grid.
+
+Ghostty-backed terminals also render direct Kitty Graphics Protocol PNG, RGB,
+and RGBA data through the optional graphics contract. The DOM layer draws
+bounded, transient canvas overlays for pinned placements and follows scrollback,
+resize, and primary/alternate screen changes. Non-direct media is rejected
+before file or shared-memory access; Sixel, iTerm2/OSC 1337, animation, virtual
+Unicode placements, and persistence are outside the supported boundary. The
+common auto-sized Kitty placement also reserves its rendered height in the
+visual DOM flow, keeping a following shell prompt below the image.
+
+## Install
+
+```bash
+npm install @wterm/ghostty
+```
+
+## Usage
+
+Load the Ghostty core and pass it to `WTerm` via the `core` option. Everything else stays the same.
+
+### Vanilla JS
+
+```ts
+import { WTerm } from "@wterm/dom";
+import { GhosttyCore } from "@wterm/ghostty";
+import "@wterm/dom/css";
+
+const core = await GhosttyCore.load();
+const term = new WTerm(document.getElementById("terminal"), {
+  core,
+  onTitle(title) {
+    document.title = title || "Terminal";
+  },
+});
+await term.init();
+```
+
+### React
+
+```tsx
+import { Terminal } from "@wterm/react";
+import { GhosttyCore } from "@wterm/ghostty";
+import "@wterm/dom/css";
+
+const core = await GhosttyCore.load();
+
+function App() {
+  return <Terminal core={core} />;
+}
+```
+
+### Vue
+
+```vue
+<script setup lang="ts">
+import { Terminal } from "@wterm/vue";
+import { GhosttyCore } from "@wterm/ghostty";
+
+const core = await GhosttyCore.load();
+</script>
+
+<template>
+  <Terminal :core="core" />
+</template>
+```
+
+### Svelte
+
+```svelte
+<script lang="ts">
+import { onMount } from "svelte";
+import { Terminal } from "@wterm/svelte";
+import { GhosttyCore } from "@wterm/ghostty";
+
+let core: GhosttyCore | undefined;
+
+onMount(() => {
+  void GhosttyCore.load().then((loaded) => {
+    core = loaded;
+  });
+});
+</script>
+
+{#if core}
+  <Terminal {core} />
+{/if}
+```
+
+For large Kitty images, pass display limits to the terminal wrapper. The
+limits are CSS pixels, preserve the image aspect ratio, and only scale images
+down:
+
+```ts
+const term = new WTerm(document.getElementById("terminal"), {
+  core,
+  maxImageWidth: 640,
+  maxImageHeight: 480,
+});
+```
+
+The equivalent React, Vue, and Svelte props are `maxImageWidth` and
+`maxImageHeight`.
+
+`WTerm` answers Kitty's pixel geometry queries from the browser viewport, so
+direct image commands such as `kitten icat --transfer-mode=stream image.png`
+can negotiate their display size before transferring image data.
+
+## Options
+
+`GhosttyCore.load()` accepts an optional options object:
+
+<table>
+  <thead>
+    <tr>
+      <th>Option</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <code>wasmPath</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
+      <td>
+        Custom path to the ghostty-vt WASM binary. By default it resolves to the
+        committed binary inside the package.
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>scrollbackLimit</code>
+      </td>
+      <td>
+        <code>number</code>
+      </td>
+      <td>
+        Scrollback budget in bytes, not lines (default: 10000). ghostty
+        allocates history in pages, so the retained row count depends on the
+        terminal width.
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>foregroundColor</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
+      <td>
+        Foreground reported by OSC 10 in <code>#RRGGBB</code> format. Defaults
+        to <code>#d4d4d4</code>.
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>backgroundColor</code>
+      </td>
+      <td>
+        <code>string</code>
+      </td>
+      <td>
+        Background reported by OSC 11 in <code>#RRGGBB</code> format. Defaults
+        to <code>#1e1e1e</code>.
+      </td>
+    </tr>
+    <tr>
+      <td><code>imageStorageLimit</code></td>
+      <td><code>number</code></td>
+      <td>Maximum decoded Kitty image bytes per screen (default: 32 MiB). Set to <code>0</code> to disable graphics. One image is capped at <code>MAX_IMAGE_BYTES</code> (32 MiB).</td>
+    </tr>
+  </tbody>
+</table>
+
+Pass colors matching your CSS theme so terminal applications receive the
+colors they are actually rendered with:
+
+```ts
+const core = await GhosttyCore.load({
+  foregroundColor: "#ededed",
+  backgroundColor: "#0a0a0a",
+  imageStorageLimit: 32 * 1024 * 1024,
+});
+```
+
+The core rejects malformed, oversized, and non-direct images before they can
+access a path or shared-memory segment. `getResourceState()` reports graphics
+bytes used/capacity, image and placement counts, rejection and eviction
+counters, and saturation. `GhosttyCore.dispose()` is idempotent and releases
+WASM resources when the application owns the core; `WTerm.destroy()` never
+disposes a caller-supplied core.
+
+The exported `MAX_IMAGE_BYTES` constant documents the hard per-image decoded
+byte cap. A larger `imageStorageLimit` is still useful for storing several
+smaller images. Each screen also retains at most 4,096 image descriptors and
+4,096 placements; additional unique records fail closed so tiny-image churn
+cannot grow WASM metadata without bound.
+The DOM overlay independently caps visible canvas backing stores at 32 MiB and
+bounds each destination canvas to the terminal pixel area; placements that
+exceed those browser limits are skipped.
+
+## Updating a running theme
+
+Use [`wt.setThemeColors(colors)`](/themes#updating-host-colors) to update browser
+colors and Ghostty defaults together without restarting the terminal. Headless
+hosts can call `core.setThemeColors(colors)` with the same `TerminalThemeColors`
+object. Application overrides and partial parser input are preserved; resets
+use the latest host defaults. Use the updated bundled WASM asset for this API.
+
+## Bundlers
+
+Loads of the same resolved WASM URL share the download and compiled module,
+including concurrent calls. Each core still has its own instance and memory.
+The loader retains up to four recently used URLs per copy of the package in a
+page or worker; failed downloads and compilations can be retried. Use versioned
+or hashed URLs for new binaries because cached modules are not revalidated on
+each load.
+
+Serve the binary with `Content-Type: application/wasm` to compile while it
+downloads in supported browsers. Other MIME types or unavailable or failing
+streaming support fall back to buffered compilation without another fetch.
+
+The WASM binary is fetched at runtime rather than inlined, so the default has to resolve to a URL your app serves. `GhosttyCore.load()` resolves it with `new URL("../wasm/ghostty-vt.wasm", import.meta.url)`. Bundlers that implement that asset pattern emit the binary and rewrite the URL. Ones that do not leave `import.meta.url` pointing at the machine that built the bundle, and `load()` throws an error saying so.
+
+<table>
+  <thead>
+    <tr>
+      <th>Bundler</th>
+      <th>
+        Default <code>GhosttyCore.load()</code>
+      </th>
+      <th>Verified</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Vite (dev and build)</td>
+      <td>Works, emits a hashed asset.</td>
+      <td>Yes</td>
+    </tr>
+    <tr>
+      <td>Bun dev server</td>
+      <td>
+        Fails, pass <code>wasmPath</code>.
+      </td>
+      <td>Yes</td>
+    </tr>
+    <tr>
+      <td>Others</td>
+      <td>
+        Untested. Use <code>wasmPath</code> if the default throws.
+      </td>
+      <td>No</td>
+    </tr>
+  </tbody>
+</table>
+
+When the default cannot work, serve the binary yourself and point at it:
+
+```bash
+cp node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm public/ghostty-vt.wasm
+```
+
+```ts
+const core = await GhosttyCore.load({ wasmPath: "/ghostty-vt.wasm" });
+```
+
+The binary is also addressable as `@wterm/ghostty/ghostty-vt.wasm`, so a bundler with a URL import can take it directly.
+
+## How it works
+
+`@wterm/ghostty` builds libghostty directly from [ghostty-org/ghostty](https://github.com/ghostty-org/ghostty) source — no third-party npm packages or pre-built binaries from other projects. The architecture:
+
+1. **Zig package dependency**: ghostty v1.3.1 is declared as a URL dependency in `zig/build.zig.zon`. Zig's package manager fetches it automatically.
+2. **WASM compatibility patches**: ghostty's `Terminal` uses `posix.mmap` and Mach VM allocators internally, which don't exist on `wasm32-freestanding`. The build script applies small, targeted patches to replace these with `std.heap.wasm_allocator`, expose discarded scrollback rows, forward the per-screen Kitty image limit, bound and compact Kitty image/placement metadata, release tracked page pins during eviction, and make direct PNG decoding work without POSIX time. The patches touch `Terminal.zig`, `kitty/graphics_image.zig`, `kitty/graphics_storage.zig`, `kitty/graphics_exec.zig`, `kitty/graphics_unicode.zig`, `page.zig`, and `PageList.zig`; they also configure Wuffs with the freestanding compatibility headers and source flags in `zig/build.zig`.
+3. **Thin WASM export layer**: `zig/src/wasm_api.zig` imports ghostty's `Terminal` and `RenderState` APIs and exports functions to JavaScript.
+4. **Committed WASM binary**: The built `wasm/ghostty-vt.wasm` is checked into the repo so consumers never need Zig installed.
+5. **TypeScript bindings**: `wasm-bindings.ts` loads the WASM module and provides typed accessors for the exported functions.
+6. **TerminalCore adapter**: `ghostty-core.ts` implements the `TerminalCore` interface by calling the WASM bindings, converting ghostty's pre-resolved 24-bit RGB colors to wterm's `CellData` format via the `fgRgb`/`bgRgb` fields.
+
+The `TerminalCore` interface means the DOM renderer, input handler, and framework bindings don't need to know which core they're talking to.
+
+Ghostty enables grapheme clustering and returns combining sequences and ZWJ emoji through `CellData.chars`. The same complete strings are available from active cells and scrollback.
+
+`CellData.spacerHead` identifies empty right-edge filler before a wrapped wide glyph. [Terminal search](/api-reference#terminal-search) omits that filler and width-zero continuations, preserving real spaces and mapping grapheme matches to complete cells.
+
+[Selection and Copy](/api-reference#selection-and-copy) uses the same metadata to join soft wraps, omit filler cells, and preserve whole graphemes in copied text while retaining explicit newlines.
+
+Ghostty also supplies [tracked cell positions](/api-reference#tracked-cell-positions) through `trackPosition({ row, col })`. WTerm uses these to preserve native selections through output scrolling and reflow, clearing selections if their text changes or their positions become invalid. Serve the current WASM binary to enable tracking; older binaries return `null`.
+
+The adapter also reports how many rows Ghostty has discarded from the oldest end of its page-backed history. WTerm uses that count to keep retained rows anchored when the scrollback budget rolls over.
+
+For headless row reads, `getRowMetadata(row)` and
+`getScrollbackRowMetadata(offset)` expose native `wrapsToNext` and
+`continuesPrevious` flags. They distinguish automatic wrapping from explicit
+newlines across the live screen and retained history, including after reflow.
+Live row zero is the top of the screen; history offset zero is the newest
+retained row. Read metadata again after output, resize, or screen changes.
+Invalid positions, disposed cores, and older WASM binaries return `null`.
+See [Row Metadata](/api-reference#row-metadata) for the optional core contract.
+
+Terminal applications can query the Ghostty core's foreground and background colors with OSC 10 and OSC 11. Attached to `WTerm`, the core answers with the terminal's CSS theme colors (see [Color queries](/themes#color-queries)); headless, it starts with its configured colors. It tracks later OSC color changes and resets either way.
+
+Ghostty also exposes synchronized-output mode (`CSI ? 2026 h/l`) and its generation to the DOM renderer, so updates inside a synchronized block paint as one final frame.
+
+Kitty keyboard query and negotiation operate on Ghostty's native active-screen state. Primary and alternate screens have independent flag stacks, DECSTR preserves them, and RIS clears them. The DOM renderer reads those flags directly instead of maintaining a TypeScript shadow state.
+
+The bundled binary includes upstream's [WASM page-initialization fix](https://github.com/ghostty-org/ghostty/commit/420de124f04aa322bf250098cc62d7195db94bfd). New and replacement terminal pages are cleared before use, including release builds where the allocator may return memory used by earlier terminal state. If you serve the binary from a public directory, copy the updated package asset when upgrading.
+
+## Application clipboard requests
+
+Ghostty exposes OSC 52 writes through `getClipboardWrite()` and WTerm's
+`onClipboardWrite(text)` callback. The host chooses whether to accept the text;
+no browser clipboard access is automatic. Reads are unsupported. Requests are
+limited to 65,536 decoded UTF-8 bytes, with bounded encoded accumulation and
+only one pending write. See [Clipboard requests](/configuration#clipboard-requests)
+for selectors, delivery behavior, and browser permission handling. Serve the
+updated bundled WASM to enable this optional effect.
+
+## Rebuilding the WASM
+
+Only needed by maintainers. Requires [Zig 0.15.2](https://ziglang.org/download/),
+Bash, and Python 3. This is separate from the built-in core's Zig 0.16 toolchain.
+
+```bash
+pnpm --filter @wterm/ghostty rebuild-wasm
+```
+
+Each build verifies the exact compiler version and upstream content hash,
+patches a fresh dependency tree, checks patch idempotence, and compiles in
+isolated caches under `/tmp`. Temporary files are removed on exit; the shared
+Zig cache is never read or patched. Set `WTERM_GHOSTTY_ZIG=/path/to/zig` to
+select a compiler explicitly.
+
+Zig 0.15.2 cannot link its native build runner on macOS 26. Use the Linux
+container build when the host toolchain cannot build:
+
+```bash
+pnpm --filter @wterm/ghostty rebuild-wasm:docker
+```
+
+Docker and CI download the pinned compiler and verify its SHA-256 before
+extraction. Check the committed artifact without replacing it with:
+
+```bash
+pnpm --filter @wterm/ghostty check-wasm
+# Linux container with a read-only checkout:
+pnpm --filter @wterm/ghostty check-wasm:docker
+```
+
+CI requires a byte-for-byte match on every PR and push to `main`. If it reports
+drift, rebuild and commit `packages/@wterm/ghostty/wasm/ghostty-vt.wasm` alongside
+the source changes. Consumers do not need Zig or Docker.
+
+## Comparison
+
+<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th>Built-in (default)</th>
+      <th>
+        <code>@wterm/ghostty</code>
+      </th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>WASM binary size</td>
+      <td>~26 KB WASM (inlined)</td>
+      <td>~580 KB WASM (fetched)</td>
+    </tr>
+    <tr>
+      <td>VT compliance</td>
+      <td>Basic VT100/VT220/xterm</td>
+      <td>Comprehensive</td>
+    </tr>
+    <tr>
+      <td>Unicode</td>
+      <td>Single codepoints with wide-cell support</td>
+      <td>Full grapheme clusters</td>
+    </tr>
+    <tr>
+      <td>Color model</td>
+      <td>256-color palette indices</td>
+      <td>Pre-resolved 24-bit RGB</td>
+    </tr>
+    <tr>
+      <td>Dependencies</td>
+      <td>None</td>
+      <td>None (WASM built from source)</td>
+    </tr>
+    <tr>
+      <td>Setup</td>
+      <td>Zero-config</td>
+      <td>
+        Requires <code>@wterm/ghostty</code> install
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+## Shell integration
+
+OSC 7 directory reports reach `onWorkingDirectory(uri)`, or
+`GhosttyCore.getWorkingDirectory()` for headless consumers. Empty strings clear
+the value; `null` from the core means unchanged. See
+[Working directories](/configuration#working-directories) for URI handling,
+resource limits, shell setup, and workspace display behavior.
+
+With Ghostty and a shell emitting OSC 133, `onShellIntegration` receives the
+latest prompt, input, running, or completion state and the last reported exit
+code. Delivery continues while painting is paused; markers in one parser chunk
+coalesce into current state. See [Shell integration](/configuration#shell-integration)
+for the contract, shell setup, and workspace indicators.
+
+Use the underlying `WTerm` instance’s `scrollToPrompt(-1)` and
+`scrollToPrompt(1)` methods to navigate previous and next prompts in retained
+history. See [Shell integration](/configuration#shell-integration) for viewport
+behavior, unsupported cores, and inactive states.

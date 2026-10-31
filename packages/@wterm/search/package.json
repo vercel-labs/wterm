@@ -1,6 +1,6 @@
 {
   "name": "@wterm/search",
-  "version": "0.1.8",
+  "version": "0.5.7",
   "description": "Grid and scrollback search for wterm terminals",
   "type": "module",
   "main": "dist/index.js",
@@ -27,6 +27,8 @@
   },
   "devDependencies": {
     "@internal/ts": "workspace:*",
+    "@wterm/core": "workspace:*",
+    "@wterm/dom": "workspace:*",
     "typescript": "^6.0.2"
   },
   "keywords": [

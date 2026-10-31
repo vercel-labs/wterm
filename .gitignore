@@ -1,5 +1,6 @@
 zig-out/
 .zig-cache/
+zig-pkg/
 *.wasm
 !packages/@wterm/core/wasm/wterm.wasm
 !packages/@wterm/ghostty/wasm/ghostty-vt.wasm
@@ -10,6 +11,8 @@ dist/
 .turbo/
 *.tsbuildinfo
 .next/
+.source/
+.svelte-kit/
 next-env.d.ts
 packages/@wterm/core/src/wasm-inline.ts
 coverage/

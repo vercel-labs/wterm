@@ -1,8 +1,8 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/");
-  await page.waitForSelector(".wterm .term-grid .term-row");
+  await page.goto("/?debug");
+  await expect(page.locator(".wterm")).toContainText("Welcome to wterm!");
 });
 
 test.describe("rendering", () => {
@@ -36,9 +36,565 @@ test.describe("rendering", () => {
       terminal.locator(".term-wide").filter({ hasText: "📁" }),
     ).toHaveCount(1);
   });
+
+  test("reveals OSC 8 hyperlink decoration on hover", async ({ page }) => {
+    await page.evaluate(() => {
+      (
+        globalThis as typeof globalThis & {
+          __wterm: { write: (data: string) => void };
+        }
+      ).__wterm.write("\x1b]8;;https://wterm.dev\x1b\\wterm.dev\x1b]8;;\x1b\\");
+    });
+
+    const link = page.locator("a.term-link", { hasText: "wterm.dev" });
+    await expect(link).toHaveAttribute("href", "https://wterm.dev/");
+    await expect(link.locator("span")).toHaveCSS(
+      "text-decoration-line",
+      "none",
+    );
+    await link.hover();
+    await expect(link.locator("span")).toHaveCSS(
+      "text-decoration-line",
+      "none",
+    );
+    const modifier = await page.evaluate(() =>
+      navigator.platform.startsWith("Mac") ? "Meta" : "Control",
+    );
+    await page.keyboard.down(modifier);
+    await expect(link.locator("span")).toHaveCSS(
+      "text-decoration-line",
+      "underline",
+    );
+    await expect(link).toHaveCSS("cursor", "pointer");
+    await page.keyboard.up(modifier);
+    await expect(link.locator("span")).toHaveCSS(
+      "text-decoration-line",
+      "none",
+    );
+
+    const activation = await link.evaluate((element) => {
+      const dispatch = (init: MouseEventInit) => {
+        const event = new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          detail: 1,
+          ...init,
+        });
+        return {
+          dispatched: element.dispatchEvent(event),
+          defaultPrevented: event.defaultPrevented,
+        };
+      };
+      return {
+        isMac: navigator.platform.startsWith("Mac"),
+        plain: dispatch({}),
+        meta: dispatch({ metaKey: true }),
+        control: dispatch({ ctrlKey: true }),
+      };
+    });
+    expect(activation.plain).toEqual({
+      dispatched: false,
+      defaultPrevented: true,
+    });
+    expect(activation.meta).toEqual({
+      dispatched: activation.isMac,
+      defaultPrevented: !activation.isMac,
+    });
+    expect(activation.control).toEqual({
+      dispatched: !activation.isMac,
+      defaultPrevented: activation.isMac,
+    });
+
+    const mouseOwnership = await link.evaluate((element) => {
+      const scope = globalThis as typeof globalThis & {
+        __wterm: {
+          onData: ((data: string) => void) | null;
+          write: (data: string) => void;
+        };
+      };
+      scope.__wterm.write("\x1b[?1000h\x1b[?1006h");
+      const received: string[] = [];
+      scope.__wterm.onData = (data) => received.push(data);
+      const rect = element.getBoundingClientRect();
+      const init = {
+        bubbles: true,
+        button: 0,
+        buttons: 1,
+        clientX: rect.left + 2,
+        clientY: rect.top + 2,
+        cancelable: true,
+      };
+
+      element.dispatchEvent(
+        new MouseEvent("mousedown", { ...init, metaKey: true }),
+      );
+      const afterMeta = [...received];
+      element.dispatchEvent(
+        new MouseEvent("mousedown", { ...init, ctrlKey: true }),
+      );
+      const afterControl = [...received];
+      element.dispatchEvent(new MouseEvent("mousedown", init));
+
+      return {
+        isMac: navigator.platform.startsWith("Mac"),
+        afterMeta,
+        afterControl,
+        afterPlain: received,
+      };
+    });
+    const metaReports = mouseOwnership.afterMeta.length;
+    const controlReports =
+      mouseOwnership.afterControl.length - mouseOwnership.afterMeta.length;
+    expect(mouseOwnership.isMac ? metaReports : controlReports).toBe(0);
+    expect(mouseOwnership.isMac ? controlReports : metaReports).toBe(1);
+    expect(
+      mouseOwnership.afterPlain.length - mouseOwnership.afterControl.length,
+    ).toBe(1);
+    expect(mouseOwnership.afterPlain[1]).toMatch(/^\x1b\[<0;\d+;\d+M$/);
+  });
+});
+
+test.describe("terminal responses", () => {
+  test("forwards private-mode reports while synchronized output is active", async ({
+    page,
+  }) => {
+    const responses = await page.evaluate(() => {
+      const term = (
+        globalThis as typeof globalThis & {
+          __wterm: {
+            write: (data: string) => void;
+            onData: ((data: string) => void) | null;
+          };
+        }
+      ).__wterm;
+      const received: string[] = [];
+      term.onData = (data) => received.push(data);
+      term.write("\x1b[?2026$p");
+      term.write("\x1b[?2026h\x1b[?2026$p");
+      term.write("\x1b[?2026l\x1b[?2026$p");
+      return received;
+    });
+
+    expect(responses).toEqual([
+      "\x1b[?2026;2$y",
+      "\x1b[?2026;1$y",
+      "\x1b[?2026;2$y",
+    ]);
+  });
 });
 
 test.describe("keyboard input", () => {
+  test("reports legacy modified and control key input", async ({ page }) => {
+    await page.locator(".wterm").click();
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __legacyKeys: string[];
+        __wterm: { onData: ((data: string) => void) | null };
+      };
+      scope.__legacyKeys = [];
+      scope.__wterm.onData = (data) => scope.__legacyKeys.push(data);
+    });
+
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Control+ArrowLeft");
+    await page.keyboard.press("Shift+ArrowRight");
+    await page.keyboard.press("Control+Delete");
+    await page.keyboard.press("Shift+F1");
+    await page.keyboard.press("Control+Space");
+    await page.keyboard.press("Control+Slash");
+    await page.keyboard.press("Control+Backspace");
+
+    expect(
+      await page.evaluate(
+        () =>
+          (globalThis as typeof globalThis & { __legacyKeys: string[] })
+            .__legacyKeys,
+      ),
+    ).toEqual([
+      "\x1b[A",
+      "\x1b[1;5D",
+      "\x1b[1;2C",
+      "\x1b[3;5~",
+      "\x1b[1;2P",
+      "\0",
+      "\x1f",
+      "\x08",
+    ]);
+  });
+
+  test("Kitty report-all preserves Meta lifecycle and browser shortcuts", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await terminal.click();
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __reviewProbe?: string[];
+        __wterm: {
+          bridge: { kittyKeyboardFlags: () => number };
+          onData: ((data: string) => void) | null;
+        };
+      };
+      scope.__reviewProbe = [];
+      scope.__wterm.bridge.kittyKeyboardFlags = () => 1 | 2 | 8;
+      scope.__wterm.onData = (data) => scope.__reviewProbe?.push(data);
+    });
+
+    await page.keyboard.down("MetaLeft");
+    await page.keyboard.up("MetaLeft");
+    const modifier = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __reviewProbe: string[] })
+          .__reviewProbe,
+    );
+    expect.soft(modifier).toEqual(["\x1b[57444;9u", "\x1b[57444;1:3u"]);
+
+    await page.evaluate(() => {
+      (
+        globalThis as typeof globalThis & { __reviewProbe: string[] }
+      ).__reviewProbe.splice(0);
+    });
+    await page.keyboard.down("KeyA");
+    await page.keyboard.down("MetaLeft");
+    await page.keyboard.down("KeyA");
+    await page.keyboard.up("KeyA");
+    await page.keyboard.up("MetaLeft");
+    const interleaved = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __reviewProbe: string[] })
+          .__reviewProbe,
+    );
+    expect
+      .soft(interleaved)
+      .toEqual([
+        "\x1b[97u",
+        "\x1b[57444;9u",
+        "\x1b[97;9:2u",
+        "\x1b[97;9:3u",
+        "\x1b[57444;1:3u",
+      ]);
+
+    await page.evaluate(() => {
+      (
+        globalThis as typeof globalThis & { __reviewProbe: string[] }
+      ).__reviewProbe.splice(0);
+    });
+    await page.keyboard.down("MetaLeft");
+    await page.keyboard.press("KeyV");
+    await page.keyboard.up("MetaLeft");
+    const shortcut = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __reviewProbe: string[] })
+          .__reviewProbe,
+    );
+    expect.soft(shortcut).toEqual(["\x1b[57444;9u", "\x1b[57444;1:3u"]);
+  });
+
+  test("Kitty mode accepts AltGr text without turning it into a shortcut", async ({
+    page,
+  }) => {
+    await page.locator(".wterm").click();
+    const result = await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __wterm: {
+          bridge: { kittyKeyboardFlags: () => number };
+          onData: ((data: string) => void) | null;
+        };
+      };
+      const textarea = document.querySelector(".wterm textarea");
+      if (!(textarea instanceof HTMLTextAreaElement)) {
+        throw new Error("missing terminal textarea");
+      }
+      const received: string[] = [];
+      scope.__wterm.bridge.kittyKeyboardFlags = () => 31;
+      scope.__wterm.onData = (data) => received.push(data);
+
+      const altGrKey = new KeyboardEvent("keydown", {
+        key: "@",
+        code: "KeyQ",
+        ctrlKey: true,
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      Object.defineProperty(altGrKey, "getModifierState", {
+        value: (modifier: string) => modifier === "AltGraph",
+      });
+      textarea.dispatchEvent(altGrKey);
+      textarea.value = "@";
+      textarea.dispatchEvent(
+        new InputEvent("input", { inputType: "insertText", bubbles: true }),
+      );
+      textarea.dispatchEvent(
+        new KeyboardEvent("keyup", {
+          key: "@",
+          code: "KeyQ",
+          ctrlKey: true,
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+      const shortcut = new KeyboardEvent("keydown", {
+        key: "q",
+        code: "KeyQ",
+        ctrlKey: true,
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      textarea.dispatchEvent(shortcut);
+      return {
+        altGrPrevented: altGrKey.defaultPrevented,
+        shortcutPrevented: shortcut.defaultPrevented,
+        received,
+      };
+    });
+    expect(result).toEqual({
+      altGrPrevented: false,
+      shortcutPrevented: true,
+      received: ["@", "\x1b[113;7u"],
+    });
+  });
+
+  test("Kitty encoding follows real Chromium shifted-text and modifier-release events", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await terminal.click();
+
+    const setup = async (flags: number) => {
+      await page.evaluate((nextFlags) => {
+        const scope = globalThis as typeof globalThis & {
+          __kittyProbe?: {
+            events: Array<Record<string, string | boolean>>;
+            received: string[];
+          };
+          __wterm: {
+            bridge: { kittyKeyboardFlags: () => number };
+            onData: ((data: string) => void) | null;
+          };
+        };
+        const textarea = document.querySelector(".wterm textarea");
+        if (!(textarea instanceof HTMLTextAreaElement)) {
+          throw new Error("missing terminal textarea");
+        }
+        const probe = { events: [], received: [] };
+        scope.__kittyProbe = probe;
+        for (const type of ["keydown", "keyup"] as const) {
+          textarea.addEventListener(
+            type,
+            (event) => {
+              const key = event as KeyboardEvent;
+              probe.events.push({
+                type,
+                key: key.key,
+                code: key.code,
+                shiftKey: key.shiftKey,
+                altKey: key.altKey,
+                ctrlKey: key.ctrlKey,
+                metaKey: key.metaKey,
+              });
+            },
+            { capture: true },
+          );
+        }
+        scope.__wterm.bridge.kittyKeyboardFlags = () => nextFlags;
+        scope.__wterm.onData = (data) => probe.received.push(data);
+      }, flags);
+    };
+
+    await setup(1);
+    await page.keyboard.press("Shift+A");
+    const shifted = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect(shifted).toMatchObject({
+      events: [
+        {
+          type: "keydown",
+          key: "Shift",
+          code: "ShiftLeft",
+          shiftKey: true,
+        },
+        {
+          type: "keydown",
+          key: "A",
+          code: "KeyA",
+          shiftKey: true,
+        },
+        {
+          type: "keyup",
+          key: "A",
+          code: "KeyA",
+          shiftKey: true,
+        },
+        {
+          type: "keyup",
+          key: "Shift",
+          code: "ShiftLeft",
+          shiftKey: false,
+        },
+      ],
+    });
+    expect.soft(shifted).toMatchObject({ received: ["A"] });
+
+    await setup(4);
+    await page.keyboard.press("Shift+A");
+    const alternatesOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(alternatesOnly).toMatchObject({ received: ["A"] });
+
+    await setup(4);
+    await page.keyboard.press("Control+A");
+    const controlWithAlternatesOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect
+      .soft(controlWithAlternatesOnly)
+      .toMatchObject({ received: ["\x01"] });
+
+    await setup(4);
+    await page.keyboard.press("Alt+Shift+A");
+    const shiftedAltWithAlternatesOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect
+      .soft(shiftedAltWithAlternatesOnly)
+      .toMatchObject({ received: ["\x1bA"] });
+
+    await setup(4);
+    await page.keyboard.press("Control+;");
+    const unmappedControlWithAlternatesOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect
+      .soft(unmappedControlWithAlternatesOnly)
+      .toMatchObject({ received: [";"] });
+
+    await setup(2);
+    await page.keyboard.press("Control+A");
+    const controlWithEventsOnly = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(controlWithEventsOnly).toMatchObject({
+      received: ["\x01", "\x1b[97;5:3u"],
+    });
+
+    await setup(1 | 2 | 8);
+    await page.keyboard.down("Control");
+    await page.keyboard.up("Control");
+    const control = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect(control).toMatchObject({
+      events: [
+        {
+          type: "keydown",
+          key: "Control",
+          code: "ControlLeft",
+          ctrlKey: true,
+        },
+        {
+          type: "keyup",
+          key: "Control",
+          code: "ControlLeft",
+          ctrlKey: false,
+        },
+      ],
+    });
+    expect.soft(control).toMatchObject({
+      received: ["\x1b[57442;5u", "\x1b[57442;1:3u"],
+    });
+
+    await setup(1 | 2 | 8);
+    await page.keyboard.down("ControlLeft");
+    await page.keyboard.down("ControlRight");
+    await page.keyboard.up("ControlLeft");
+    await page.keyboard.up("ControlRight");
+    const pairedControl = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(pairedControl).toMatchObject({
+      received: [
+        "\x1b[57442;5u",
+        "\x1b[57448;5u",
+        "\x1b[57442;5:3u",
+        "\x1b[57448;1:3u",
+      ],
+    });
+
+    await setup(4);
+    await page.keyboard.press("F1");
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("NumpadEnter");
+    await page.keyboard.press("Numpad8");
+    const legacyFunctional = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(legacyFunctional).toMatchObject({
+      received: ["\x1bOP", "\x1b[Z", "\r", "\x1b[A"],
+    });
+
+    await setup(2);
+    await page.keyboard.down("Escape");
+    const escapePress = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(escapePress).toMatchObject({ received: ["\x1b"] });
+    await page.keyboard.up("Escape");
+
+    await setup(2);
+    await page.keyboard.down("ArrowUp");
+    await page.keyboard.down("ArrowUp");
+    await page.keyboard.up("ArrowUp");
+    const arrowLifecycle = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(arrowLifecycle).toMatchObject({
+      received: ["\x1b[A", "\x1b[1;1:2A", "\x1b[1;1:3A"],
+    });
+
+    await setup(4);
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __wterm: { bridge: { cursorKeysApp: () => boolean } };
+      };
+      scope.__wterm.bridge.cursorKeysApp = () => true;
+    });
+    await page.keyboard.press("ArrowUp");
+    const applicationCursor = await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __kittyProbe: unknown })
+          .__kittyProbe,
+    );
+    expect.soft(applicationCursor).toMatchObject({ received: ["\x1bOA"] });
+  });
+
   test("typing a command produces output", async ({ page }) => {
     const terminal = page.locator(".wterm");
     await expect(terminal).toContainText("$", { timeout: 5000 });
@@ -112,22 +668,323 @@ test.describe("cursor", () => {
 });
 
 test.describe("scrollback", () => {
-  test("generates scrollback after enough output", async ({ page }) => {
+  test("keeps history interaction local while mouse tracking is enabled", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await page.evaluate(() => {
+      const scope = globalThis as typeof globalThis & {
+        __historyMouseReports: string[];
+        __wterm: {
+          onData: ((data: string) => void) | null;
+          write: (data: string) => void;
+        };
+      };
+      scope.__historyMouseReports = [];
+      scope.__wterm.onData = (data) => scope.__historyMouseReports.push(data);
+      scope.__wterm.write(
+        Array.from({ length: 160 }, (_, index) => `history ${index}\r\n`).join(
+          "",
+        ) + "\x1b[?1002h\x1b[?1006h",
+      );
+    });
+    await expect(terminal).toHaveClass(/has-scrollback/);
+
+    const point = await terminal.evaluate(async (element) => {
+      element.scrollTop = 0;
+      element.dispatchEvent(new Event("scroll"));
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const host = element.getBoundingClientRect();
+      const row = Array.from(
+        element.querySelectorAll<HTMLElement>(".term-scrollback-row"),
+      ).find((candidate) => {
+        const rect = candidate.getBoundingClientRect();
+        return rect.top >= host.top && rect.bottom <= host.bottom;
+      });
+      if (!row) throw new Error("missing visible scrollback row");
+      const rect = row.getBoundingClientRect();
+      const x = rect.left + 10;
+      const y = rect.top + rect.height / 2;
+      const press = new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        buttons: 1,
+        clientX: x,
+        clientY: y,
+      });
+      row.dispatchEvent(press);
+      if (press.defaultPrevented) throw new Error("history click was captured");
+      return { x, y };
+    });
+
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.wheel(0, 120);
+    await expect
+      .poll(() => terminal.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            globalThis as typeof globalThis & {
+              __historyMouseReports: string[];
+            }
+          ).__historyMouseReports,
+      ),
+    ).toEqual([]);
+
+    await terminal.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect
+      .poll(() =>
+        terminal.evaluate(
+          (element) =>
+            element.scrollHeight - element.scrollTop - element.clientHeight,
+        ),
+      )
+      .toBeLessThanOrEqual(1);
+    const bottom = await terminal.evaluate((element) => element.scrollTop);
+    const liveRow = terminal
+      .locator(".term-row:not(.term-scrollback-row)")
+      .first();
+    const liveBox = await liveRow.boundingBox();
+    if (!liveBox) throw new Error("missing live terminal row");
+    await page.mouse.move(liveBox.x + 10, liveBox.y + liveBox.height / 2);
+    await page.keyboard.down("Shift");
+    await page.mouse.wheel(0, -120);
+    await page.keyboard.up("Shift");
+    await expect
+      .poll(() => terminal.evaluate((element) => element.scrollTop))
+      .toBeLessThan(bottom);
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            globalThis as typeof globalThis & {
+              __historyMouseReports: string[];
+            }
+          ).__historyMouseReports,
+      ),
+    ).toEqual([]);
+  });
+
+  test("applies one scroll adjustment when old rows are discarded across frames", async ({
+    page,
+  }) => {
+    const result = await page.evaluate(async () => {
+      const term = (
+        globalThis as typeof globalThis & {
+          __wterm: {
+            element: HTMLElement;
+            bridge: {
+              getScrollbackDiscardedCount?: () => number;
+            } | null;
+            write: (data: string) => void;
+          };
+        }
+      ).__wterm;
+      const scroller = term.element;
+      const lines = Array.from({ length: 1040 }, (_, index) => {
+        const label = `history ${String(index).padStart(4, "0")}`;
+        return `\x1b]8;;https://example.com/${index}\x1b\\${label}\x1b]8;;\x1b\\\r\n`;
+      }).join("");
+      term.write(lines);
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+
+      scroller.scrollTop = 6000;
+      scroller.dispatchEvent(new Event("scroll"));
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+
+      const firstVisible = () => {
+        const top = scroller.getBoundingClientRect().top;
+        return (
+          Array.from(
+            scroller.querySelectorAll<HTMLElement>(".term-scrollback-row"),
+          ).find((row) => row.getBoundingClientRect().bottom > top)
+            ?.textContent ?? null
+        );
+      };
+      const beforeScrollTop = scroller.scrollTop;
+      const beforeRow = firstVisible();
+      const beforeDiscarded = term.bridge?.getScrollbackDiscardedCount?.() ?? 0;
+      const measuredRow = scroller.querySelector<HTMLElement>(
+        ".term-scrollback-row",
+      );
+      if (!measuredRow) throw new Error("missing rendered scrollback row");
+      const rowHeight = measuredRow.getBoundingClientRect().height;
+
+      for (let index = 0; index < 40; index++) {
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => {
+            term.write(`next ${index}\r\n`);
+            resolve();
+          }),
+        );
+      }
+
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const afterDiscarded =
+        term.bridge?.getScrollbackDiscardedCount?.() ?? beforeDiscarded;
+      return {
+        after: scroller.scrollTop,
+        expected:
+          beforeScrollTop - (afterDiscarded - beforeDiscarded) * rowHeight,
+        beforeRow,
+        afterRow: firstVisible(),
+      };
+    });
+
+    expect(result.after).toBe(result.expected);
+    expect(result.afterRow).toBe(result.beforeRow);
+  });
+
+  test("bounds DOM rows and follows output at the exact bottom", async ({
+    page,
+  }) => {
     const terminal = page.locator(".wterm");
     await terminal.click();
 
-    for (let i = 0; i < 5; i++) {
-      await page.keyboard.type(
-        `for i in $(seq 1 20); do echo "line $i batch ${i}"; done`,
-        { delay: 5 },
-      );
-      await page.keyboard.press("Enter");
-      await page.waitForTimeout(300);
-    }
+    await page.keyboard.type(
+      'for i in $(seq 1 1200); do echo "scrollback line $i"; done',
+      { delay: 1 },
+    );
+    await page.keyboard.press("Enter");
 
     await expect(terminal).toHaveClass(/has-scrollback/, { timeout: 5000 });
+    await expect(terminal).toContainText("scrollback line 1200", {
+      timeout: 5000,
+    });
     const scrollbackRows = page.locator(".term-scrollback-row");
+    await expect
+      .poll(() => scrollbackRows.count(), { timeout: 5000 })
+      .toBeLessThan(100);
     expect(await scrollbackRows.count()).toBeGreaterThan(0);
+
+    const bottomDistance = await terminal.evaluate(
+      (element) =>
+        element.scrollHeight - element.scrollTop - element.clientHeight,
+    );
+    expect(bottomDistance).toBeLessThanOrEqual(1);
+  });
+
+  test("keeps following when the browser reclamps a programmatic scroll by one pixel", async ({
+    page,
+  }) => {
+    const result = await page.evaluate(() => {
+      const term = (
+        globalThis as typeof globalThis & {
+          __wterm: {
+            element: HTMLElement;
+            _programmaticScrollTop: number | null;
+            _setScrollTop(value: number): void;
+            _shouldScrollToBottom: boolean;
+          };
+        }
+      ).__wterm;
+      let actual = 100;
+      Object.defineProperty(term.element, "scrollTop", {
+        configurable: true,
+        get: () => actual,
+        set: (value: number) => {
+          actual = Math.min(value, 900);
+        },
+      });
+      term._shouldScrollToBottom = true;
+      term._setScrollTop(1000);
+      const accepted = term._programmaticScrollTop;
+      actual = 899;
+      term.element.dispatchEvent(new Event("scroll"));
+      return {
+        accepted,
+        following: term._shouldScrollToBottom,
+        pending: term._programmaticScrollTop,
+      };
+    });
+
+    expect(result).toEqual({
+      accepted: 900,
+      following: true,
+      pending: null,
+    });
+  });
+
+  test("returns to the bottom when the user types while reading history", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await terminal.click();
+    await page.keyboard.type(
+      'for i in $(seq 1 200); do echo "history line $i"; done',
+      { delay: 1 },
+    );
+    await page.keyboard.press("Enter");
+    await expect(terminal).toHaveClass(/has-scrollback/, { timeout: 5000 });
+
+    await terminal.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await expect
+      .poll(() => terminal.evaluate((element) => element.scrollTop))
+      .toBe(0);
+
+    await page.keyboard.type("echo back-at-bottom", { delay: 1 });
+
+    const bottomDistance = await terminal.evaluate(
+      (element) =>
+        element.scrollHeight - element.scrollTop - element.clientHeight,
+    );
+    expect(bottomDistance).toBeLessThanOrEqual(1);
+  });
+
+  test("keeps the same history row anchored across resize", async ({
+    page,
+  }) => {
+    const terminal = page.locator(".wterm");
+    await terminal.click();
+    await page.keyboard.type(
+      'for i in $(seq 1 400); do echo "resize history $i"; done',
+      { delay: 1 },
+    );
+    await page.keyboard.press("Enter");
+    await expect(terminal).toHaveClass(/has-scrollback/, { timeout: 5000 });
+    await expect(terminal).toContainText("resize history 400", {
+      timeout: 5000,
+    });
+
+    await terminal.evaluate(async (element) => {
+      element.scrollTop = 600;
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+    });
+    await expect
+      .poll(() => terminal.evaluate((element) => element.scrollTop))
+      .toBe(600);
+
+    const firstVisibleText = () =>
+      terminal.evaluate((element) => {
+        const top = element.getBoundingClientRect().top + 12;
+        const row = Array.from(
+          element.querySelectorAll<HTMLElement>(".term-scrollback-row"),
+        ).find((candidate) => candidate.getBoundingClientRect().bottom > top);
+        return row?.textContent ?? null;
+      });
+    const before = await firstVisibleText();
+    expect(before).not.toBeNull();
+
+    await page.setViewportSize({ width: 1280, height: 500 });
+
+    await expect.poll(firstVisibleText).toBe(before);
   });
 });
 

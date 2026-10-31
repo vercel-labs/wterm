@@ -14,7 +14,9 @@ export function pageMetadata(slug: string): Metadata {
 
   return {
     title: displayTitle,
+    description: DESCRIPTION,
     openGraph: {
+      url: new URL(slug ? `/${slug}` : "/", "https://wterm.dev").toString(),
       type: "website",
       locale: "en_US",
       siteName: "wterm",
