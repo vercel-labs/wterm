@@ -1,6 +1,6 @@
 {
   "name": "@wterm/serialize",
-  "version": "0.1.8",
+  "version": "0.5.7",
   "description": "Serialize and restore wterm terminal state",
   "type": "module",
   "main": "dist/index.js",
@@ -23,6 +23,8 @@
   },
   "devDependencies": {
     "@internal/ts": "workspace:*",
+    "@wterm/core": "workspace:*",
+    "@wterm/dom": "workspace:*",
     "typescript": "^6.0.2"
   },
   "peerDependencies": {

@@ -1,0 +1,1301 @@
+---
+title: "API Reference"
+navTitle: "API Reference"
+---
+
+Complete reference for all wterm options, methods, types, and transport APIs.
+
+## Cell Data
+
+`TerminalCore.getCell()` and `getScrollbackCell()` return `CellData`. Alongside glyph, color, style, and width fields, a core may provide resolved OSC 8 metadata:
+
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>linkUri</code></td>
+      <td><code>string?</code></td>
+      <td>The resolved URI attached to this cell</td>
+    </tr>
+    <tr>
+      <td><code>linkId</code></td>
+      <td><code>string?</code></td>
+      <td>The explicit OSC 8 <code>id=</code> parameter, when provided</td>
+    </tr>
+    <tr>
+      <td><code>linkKey</code></td>
+      <td><code>string?</code></td>
+      <td>An opaque semantic identity used by renderers to group linked cells. Consumers must not interpret its contents.</td>
+    </tr>
+  </tbody>
+</table>
+
+These fields are optional so custom `TerminalCore` implementations remain source-compatible.
+
+## Application Color Overrides
+
+`TerminalCore.getColorOverrides?()` returns a caller-owned
+`TerminalColorOverrides` snapshot with optional `foreground`, `background`,
+and `cursor` fields, each a 24-bit `0xRRGGBB` value. Zero is black. Omit a field
+to use the host's current CSS theme. These are application overrides, not
+configured theme colors, and reading them does not consume them. A missing
+method is equivalent to an empty snapshot.
+
+Ghostty supplies OSC 10/11/12 overrides and clears each with OSC 110/111/112.
+Its native color state survives resize, screen switches, SGR 0, and RIS;
+reinitialization clears it. Older WASM binaries and uninitialized/disposed
+Ghostty cores return an empty snapshot. The built-in core omits this method.
+
+See [Application color changes](/themes#application-color-changes) for CSS
+themes and rendering behavior.
+
+## Row Metadata
+
+`TerminalCore` has two optional methods for reading soft-wrap relationships.
+The Ghostty core implements both; the lightweight core omits them.
+
+<table>
+  <thead>
+    <tr><th>Method</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>getRowMetadata?(row)</code></td>
+      <td>Read a zero-based live row in the active screen.</td>
+    </tr>
+    <tr>
+      <td><code>getScrollbackRowMetadata?(offset)</code></td>
+      <td>Read retained history; offset zero is the newest row, directly above the live screen.</td>
+    </tr>
+  </tbody>
+</table>
+
+Each returns a caller-owned `TerminalRowMetadata` object or `null` when the
+row or metadata is unavailable. Ghostty returns `null` for negative,
+fractional, non-finite, or out-of-range indexes, before initialization, after
+disposal, and when an older WASM binary lacks the exports.
+
+<table>
+  <thead>
+    <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>wrapsToNext</code></td>
+      <td><code>boolean</code></td>
+      <td>The following row continues this logical line without an explicit newline. Merely filling the last column does not set this flag.</td>
+    </tr>
+    <tr>
+      <td><code>continuesPrevious</code></td>
+      <td><code>boolean</code></td>
+      <td>This row continues the preceding row, which may already have been discarded from history.</td>
+    </tr>
+  </tbody>
+</table>
+
+Metadata describes the current physical rows, not stable logical-line IDs.
+Re-read after output, resize/reflow, history pruning, reset, or screen changes;
+row indexes and scrollback offsets can change. Missing methods or `null`
+mean unknown, not a hard newline. Reads do not consume dirty flags or require
+a DOM render.
+
+## Tracked Cell Positions
+
+`TerminalCore.trackPosition?({ row, col })` returns a `TrackedTerminalPosition` or `null`. Coordinates are zero-based cells; row zero is the oldest retained row. Its `resolve()` method returns the current `{ row, col }` after scrolling or reflow, or `null` after pruning, reset, screen switching, reinitialization, or disposal. Call `dispose()` when finished; repeated disposal is safe. Invalidated handles never resolve to a new allocation.
+
+Ghostty supports up to 64 simultaneous handles. Invalid coordinates, exhausted capacity, or older WASM binaries return `null`. The built-in core omits this optional method. Pins follow cell locations; callers must separately check for overwritten text.
+
+## Terminal Graphics
+
+Graphics methods are optional. Cores that support them return a snapshot for
+the active primary or alternate screen and copied image data:
+
+<table>
+  <thead>
+    <tr><th>Type</th><th>Key fields</th><th>Meaning</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>TerminalImageDescriptor</code></td>
+      <td><code>imageId</code>, <code>version</code>, <code>width</code>, <code>height</code></td>
+      <td>Intrinsic image metadata. A new version replaces the prior pixels.</td>
+    </tr>
+    <tr>
+      <td><code>TerminalImagePlacement</code></td>
+      <td><code>row</code>, <code>col</code>, offsets, source rectangle, cell size, <code>z</code></td>
+      <td>Pinned placement in the retained active screen. Row zero is the oldest retained row; coordinates are top-left based.</td>
+    </tr>
+    <tr>
+      <td><code>TerminalImageData</code></td>
+      <td><code>rgba: Uint8Array</code></td>
+      <td>Copied row-major RGBA pixels. Invalid or unavailable data returns <code>null</code>.</td>
+    </tr>
+  </tbody>
+</table>
+
+`getGraphicsState()` and `getGraphicsImage(imageId, version)` are optional and
+must not be assumed by custom renderers. Returned snapshots and byte arrays
+are caller-owned copies. A state generation changes when image content,
+placements, screen, scrollback, or size changes.
+
+The built-in core consumes unsupported 7-bit Kitty APC strings safely but does
+not provide graphics. The Ghostty implementation currently supports direct
+Kitty PNG/RGB/RGBA with a 32 MiB decoded per-screen default; non-direct media,
+Sixel, iTerm2, animation, virtual placements, and persistence are unsupported.
+The DOM overlay also bounds each destination canvas to the terminal pixel area
+and limits all visible canvas backing stores to 32 MiB; placements that exceed
+those browser limits are skipped.
+
+## Terminal Options
+
+The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` constructor all accept these options:
+
+<table>
+  <thead>
+    <tr>
+      <th>Option</th>
+      <th>Type</th>
+      <th>Default</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>cols</code></td>
+      <td><code>number</code></td>
+      <td><code>80</code></td>
+      <td>Initial column count. Vanilla auto-resizing measures omitted dimensions before initialization; 80 is the fallback.</td>
+    </tr>
+    <tr>
+      <td><code>rows</code></td>
+      <td><code>number</code></td>
+      <td><code>24</code></td>
+      <td>Initial row count. Vanilla auto-resizing measures omitted dimensions before initialization; 24 is the fallback.</td>
+    </tr>
+    <tr>
+      <td><code>core</code></td>
+      <td><code>TerminalCore</code></td>
+      <td>—</td>
+      <td>A pre-constructed terminal core instance. When provided, <code>wasmUrl</code> is ignored and this core is used instead of loading the built-in Zig WASM binary. See <a href="/ghostty">Ghostty Core</a> for an example.</td>
+    </tr>
+    <tr>
+      <td><code>wasmUrl</code></td>
+      <td><code>string</code></td>
+      <td>—</td>
+      <td>URL to serve the WASM binary separately. When omitted, the ~26 KB binary is decoded from an inlined base64 string. Ignored when <code>core</code> is provided.</td>
+    </tr>
+    <tr>
+      <td><code>autoResize</code></td>
+      <td><code>boolean</code></td>
+      <td><code>true</code> (vanilla) / <code>false</code> (React, Vue, Svelte)</td>
+      <td>Automatically resize the terminal to fit its container using a <code>ResizeObserver</code></td>
+    </tr>
+    <tr>
+      <td><code>maxImageWidth</code></td>
+      <td><code>number</code></td>
+      <td>—</td>
+      <td>Maximum rendered Kitty image width in CSS pixels. Images are scaled down proportionally and are never enlarged.</td>
+    </tr>
+    <tr>
+      <td><code>maxImageHeight</code></td>
+      <td><code>number</code></td>
+      <td>—</td>
+      <td>Maximum rendered Kitty image height in CSS pixels. Images are scaled down proportionally and are never enlarged.</td>
+    </tr>
+    <tr>
+      <td><code>cursorBlink</code></td>
+      <td><code>boolean</code></td>
+      <td>Application-controlled</td>
+      <td>Force blinking on (<code>true</code>) or off (<code>false</code>); omit to follow the terminal (initially steady).</td>
+    </tr>
+    <tr>
+      <td><code>announceOutput</code></td>
+      <td><code>boolean</code></td>
+      <td><code>false</code></td>
+      <td>Politely announce bounded text changes while terminal input has focus. Mutable in all framework bindings.</td>
+    </tr>
+    <tr>
+      <td><code>debug</code></td>
+      <td><code>boolean</code></td>
+      <td><code>false</code></td>
+      <td>Enable debug mode. Exposes a <code>DebugAdapter</code> on the <code>WTerm</code> instance (<code>wt.debug</code>) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences.</td>
+    </tr>
+    <tr>
+      <td><code>renderingPaused</code></td>
+      <td><code>boolean</code></td>
+      <td><code>false</code></td>
+      <td>Suspend painting for an inactive pane. Parsing, replies, titles, bells, and core resizing continue. Mutable in all framework bindings; see <a href="/configuration#inactive-panes">Inactive panes</a>.</td>
+    </tr>
+    <tr>
+      <td><code>onData</code></td>
+      <td><code>(data: string) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically.</td>
+    </tr>
+    <tr>
+      <td><code>onBinary</code></td>
+      <td><code>(data: Uint8Array) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called with raw X10 mouse reports when supplied. Forward the bytes unchanged to a binary-capable transport; without it, only ASCII-safe X10 reports reach <code>onData</code>.</td>
+    </tr>
+    <tr>
+      <td><code>onTitle</code></td>
+      <td><code>(title: string) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called when the terminal title changes via an escape sequence</td>
+    </tr>
+    <tr>
+      <td><code>onBell</code></td>
+      <td><code>(count: number) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called as output is written with the number of pending BEL controls. The host decides whether to play sound or show a visual alert.</td>
+    </tr>
+    <tr>
+      <td><code>onClipboardWrite</code></td>
+      <td><code>(text: string) =&gt; void</code></td>
+      <td>—</td>
+      <td>Application clipboard-write request from Ghostty. No clipboard access is automatic; see <a href="/configuration#clipboard-requests">Clipboard requests</a>.</td>
+    </tr>
+    <tr>
+      <td><code>onShellIntegration</code></td>
+      <td><code>(state: ShellIntegrationState) =&gt; void</code></td>
+      <td>—</td>
+      <td>Latest shell-reported prompt, input, running, or completion state. Ghostty with OSC 133; see <a href="/configuration#shell-integration">Shell integration</a>.</td>
+    </tr>
+    <tr>
+      <td><code>onWorkingDirectory</code></td>
+      <td><code>(uri: string) =&gt; void</code></td>
+      <td>—</td>
+      <td>Raw shell-reported OSC 7 URI from Ghostty; empty clears it. Treat as untrusted metadata. See <a href="/configuration#working-directories">Working directories</a>.</td>
+    </tr>
+    <tr>
+      <td><code>onResize</code></td>
+      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called with the grid dimensions applied by the core after resize or when initialization changes the requested size. Use these values when resizing a connected PTY.</td>
+    </tr>
+  </tbody>
+</table>
+
+## React-Only Props
+
+The React `<Terminal>` component adds these props on top of the shared options above. It also spreads standard HTML attributes (`className`, `style`, `id`, etc.) onto the root `div`.
+
+<table>
+  <thead>
+    <tr>
+      <th>Prop</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>theme</code></td>
+      <td><code>string</code></td>
+      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>)</td>
+    </tr>
+    <tr>
+      <td><code>onReady</code></td>
+      <td><code>(wt: WTerm) =&gt; void</code></td>
+      <td>Called with the underlying <code>WTerm</code> instance after WASM loads and initialization completes</td>
+    </tr>
+    <tr>
+      <td><code>onError</code></td>
+      <td><code>(error: unknown) =&gt; void</code></td>
+      <td>Called if WASM loading or initialization fails. When omitted, errors are logged to the console.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Vue-Only Props
+
+The Vue `<Terminal>` component adds these props on top of the shared options above. Vue exposes input callbacks as events (see [Vue Events](#vue-events) below) instead of `onXxx` props. Standard HTML attributes (`class`, `style`, `id`, etc.) are forwarded to the root `div` via the default `inheritAttrs` behavior.
+
+<table>
+  <thead>
+    <tr>
+      <th>Prop</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>theme</code></td>
+      <td><code>string</code></td>
+      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>). Applied as a <code>{"theme-<name>"}</code> class on the root element.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Vue Events
+
+<table>
+  <thead>
+    <tr>
+      <th>Event</th>
+      <th>Payload</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>data</code></td>
+      <td><code>(data: string)</code></td>
+      <td>Emitted when the terminal produces data (user input or host response). When no listener is attached, input is echoed back automatically.</td>
+    </tr>
+    <tr>
+      <td><code>binary</code></td>
+      <td><code>(data: Uint8Array)</code></td>
+      <td>Emitted with raw X10 mouse reports for a binary-capable transport.</td>
+    </tr>
+    <tr>
+      <td><code>title</code></td>
+      <td><code>(title: string)</code></td>
+      <td>Emitted when the terminal title changes via an escape sequence.</td>
+    </tr>
+    <tr>
+      <td><code>bell</code></td>
+      <td><code>(count: number)</code></td>
+      <td>Emitted as output is written with the number of pending BEL controls.</td>
+    </tr>
+    <tr>
+      <td><code>clipboardWrite</code></td>
+      <td><code>(text: string)</code></td>
+      <td>Application clipboard-write request from Ghostty. No clipboard access is automatic; see <a href="/configuration#clipboard-requests">Clipboard requests</a>.</td>
+    </tr>
+    <tr>
+      <td><code>shellIntegration</code></td>
+      <td><code>(state: ShellIntegrationState)</code></td>
+      <td>Latest shell state from Ghostty. Use <code>@shell-integration</code>; see <a href="/configuration#shell-integration">Shell integration</a>.</td>
+    </tr>
+    <tr>
+      <td><code>workingDirectory</code></td>
+      <td><code>(uri: string)</code></td>
+      <td>Raw OSC 7 URI from Ghostty; empty clears it. Use <code>@working-directory</code>; see <a href="/configuration#working-directories">Working directories</a>.</td>
+    </tr>
+    <tr>
+      <td><code>resize</code></td>
+      <td><code>(cols: number, rows: number)</code></td>
+      <td>Emitted after the terminal is resized.</td>
+    </tr>
+    <tr>
+      <td><code>ready</code></td>
+      <td><code>(wt: WTerm)</code></td>
+      <td>Emitted once after <code>WTerm.init()</code> resolves, carrying the underlying <code>WTerm</code> instance.</td>
+    </tr>
+    <tr>
+      <td><code>error</code></td>
+      <td><code>(err: unknown)</code></td>
+      <td>Emitted if WASM loading or initialization fails.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Svelte-only Props
+
+The Svelte `<Terminal>` component adds `theme` and forwards standard HTML
+attributes such as `class`, `style`, `id`, and ARIA attributes to its root
+`div`. Svelte 5 callback props are listed below.
+
+<table>
+  <thead>
+    <tr>
+      <th>Prop</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>theme</code></td>
+      <td><code>string</code></td>
+      <td>Name of a built-in or custom theme (see <a href="/themes">Themes</a>). Applied as a <code>{"theme-<name>"}</code> class.</td>
+    </tr>
+    <tr>
+      <td><code>onData</code></td>
+      <td><code>(data: string) =&gt; void</code></td>
+      <td>Called for terminal input and host responses. When omitted, input is echoed automatically.</td>
+    </tr>
+    <tr>
+      <td><code>onBinary</code></td>
+      <td><code>(data: Uint8Array) =&gt; void</code></td>
+      <td>Called with raw X10 mouse reports for a binary-capable transport.</td>
+    </tr>
+    <tr>
+      <td><code>onTitle</code></td>
+      <td><code>(title: string) =&gt; void</code></td>
+      <td>Called when the terminal title changes.</td>
+    </tr>
+    <tr>
+      <td><code>onBell</code></td>
+      <td><code>(count: number) =&gt; void</code></td>
+      <td>Called with the pending BEL count as output is written.</td>
+    </tr>
+    <tr>
+      <td><code>onClipboardWrite</code></td>
+      <td><code>(text: string) =&gt; void</code></td>
+      <td>Application clipboard-write request from Ghostty. No clipboard access is automatic; see <a href="/configuration#clipboard-requests">Clipboard requests</a>.</td>
+    </tr>
+    <tr>
+      <td><code>onShellIntegration</code></td>
+      <td><code>(state: ShellIntegrationState) =&gt; void</code></td>
+      <td>Latest shell-reported prompt, input, running, or completion state. Ghostty with OSC 133; see <a href="/configuration#shell-integration">Shell integration</a>.</td>
+    </tr>
+    <tr>
+      <td><code>onWorkingDirectory</code></td>
+      <td><code>(uri: string) =&gt; void</code></td>
+      <td>Raw OSC 7 URI from Ghostty; empty clears it. Also accepts <code>onworkingdirectory</code>; see <a href="/configuration#working-directories">Working directories</a>.</td>
+    </tr>
+    <tr>
+      <td><code>onResize</code></td>
+      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>Called after the terminal is resized.</td>
+    </tr>
+    <tr>
+      <td><code>onReady</code></td>
+      <td><code>(wt: WTerm) =&gt; void</code></td>
+      <td>Called after WASM loads and initialization completes.</td>
+    </tr>
+    <tr>
+      <td><code>onError</code></td>
+      <td><code>(error: unknown) =&gt; void</code></td>
+      <td>Called if WASM loading or initialization fails.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Input Accessibility
+
+The actual terminal input is a native multiline textbox named **Terminal** by default. Set `aria-label`, `aria-labelledby`, `aria-describedby`, or `aria-description` on the host element, or pass them to the React, Vue, or Svelte component. WTerm keeps those attributes synchronized with the input, including removals. Referenced labels and descriptions follow normal browser ARIA precedence.
+
+```html
+<h2 id="shell-heading">Build shell</h2>
+<p id="shell-help">Commands run in the selected session.</p>
+<div id="terminal" aria-labelledby="shell-heading" aria-describedby="shell-help"></div>
+```
+
+The host defaults to `role="group"` after initialization; framework wrappers also render a group before initialization. The textarea is the editable control, and mounted output remains readable separately. If you previously set `role="textbox"` and `aria-multiline` on the host yourself, remove them or use `role="group"`. Other explicit host roles remain under your control.
+
+Host `tabindex` (React `tabIndex`) controls the input's tab stop: `0` for normal page entry, `-1` to exclude it. When supplied, WTerm normalizes the host itself to `-1` to avoid a duplicate stop, then restores the latest requested value on destruction. Omitting `tabindex` gives input a tab index of `0`. Use `wt.focus()` to focus input programmatically. Label and tab-order changes do not move focus. Tab and Shift+Tab inside input continue to reach the terminal application for completion/navigation.
+
+**Keyboard exit:** Press **Escape**, then **Tab** to move focus to the next page control, or **Escape**, then **Shift+Tab** to move backward. There is no timeout between the keys. Any other key except Shift, a pointer press, paste, text input, composition, or loss of focus cancels the sequence. Escape still reaches the application unless it clears Select All. Ordinary Tab and Shift+Tab keep their terminal behavior. The browser determines the next focus target; WTerm does not send the exit Tab or a release from a key pressed outside the terminal to the application.
+
+The input's accessible description includes the exit instructions after any host-provided description. Host `aria-describedby` references take precedence over `aria-description`.
+
+The live terminal exposes input semantics and mounted output. Use `readText()` to present retained history in an accessible reader; live output announcements are off by default. Ancestor `aria-hidden` and `inert` remain authoritative for hidden terminals.
+
+## Output announcements
+
+Set `announceOutput: true` in vanilla JavaScript, or pass the `announceOutput`
+prop in React, Vue, or Svelte, to opt into polite screen-reader announcements.
+It defaults to `false`. Change it without restarting the terminal using
+`term.setOutputAnnouncements(enabled)` or the reactive component prop. The
+local workspace provides an **Announce output** checkbox for each session.
+
+Only the focused terminal in the active browser document announces output.
+Leaving terminal input, opening the output reader, hiding the document, or
+turning the option off clears pending announcements. Returning starts from
+current text without replaying output received in the background.
+
+Changes are sampled after painting at most once every 500 ms. Announcements
+contain whole changed physical rows, with Unicode cells intact and trailing
+padding removed; they can include shell echo or redrawn text. Recently scrolled
+rows are included within the capture bounds. Unchanged text, styling changes,
+and erased blank rows stay silent. Resizing and switching screens establish a
+new baseline. Intermediate redraws can be coalesced, so this is a summary of
+screen changes, not a lossless transcript. Use `readText()` to inspect retained
+output explicitly.
+
+Each burst allows at most 20 changed rows or 4,000 UTF-16 code units. When the
+limit is exceeded, one notice replaces the text and announcements pause until
+new terminal input, focus reentry, or toggling the option off and on. The DOM
+retains only the latest batch. Captures are also bounded to 32,768 cells and
+65,536 UTF-16 code units; oversized captures or output pruned before it can be
+read produce the same pause notice without announcing partial text. Custom
+cores should expose `getScrollbackDiscardedCount()` to avoid rereading shifted
+rows when their history limit is reached. Route writes and resizes through
+WTerm so announcements follow completed paints.
+
+## Reading Terminal Output
+
+`readText()` returns a `Promise<string>` containing a plain-text snapshot of all retained history and the active screen, including unmounted rows. It preserves complete Unicode cells, joins confirmed soft wraps, keeps hard line breaks and blank rows, and trims hard-line padding. Cores without wrap metadata keep physical row breaks.
+
+```ts
+const controller = new AbortController();
+const text = await term.readText({ signal: controller.signal });
+// Display text in a labelled, read-only textarea or another accessible reader.
+// controller.abort() cancels a pending capture.
+```
+
+Capture runs in small batches after the current frame paints. It does not focus the terminal, change selection, write to the clipboard, or mount extra history. A completed string stays unchanged when output arrives, history is pruned, or the terminal is resized or destroyed.
+
+A write, resize, destruction, or newer `readText()` request rejects a pending capture with `AbortError`; an aborted signal rejects with its reason. Retry when output settles. Uninitialized terminals reject with an error. Capture is capped at 16,777,216 UTF-16 code units; larger output rejects with `RangeError` and never returns a partial result. Keep any previous snapshot until a replacement succeeds. Route core writes and resizes through WTerm so pending captures are invalidated correctly.
+
+Framework users call `readText()` on their WTerm instance. The local workspace's **Read output** button opens a native read-only text area for keyboard navigation and copying, with **Refresh** and **Close** controls. Closing releases the snapshot and cancels pending work. This is an explicitly requested snapshot; it does not announce live output automatically.
+
+## WTerm Methods
+
+Instance methods on the vanilla `WTerm` class:
+
+After `init()` or `resize()`, `wt.cols` and `wt.rows` report the applied grid
+dimensions. A core may cap the requested size; the built-in core currently
+supports up to 1024 columns and 512 rows. Use the applied dimensions for a
+connected PTY so its output wraps at the same columns as the browser terminal.
+
+WTerm renders synchronized output blocks (CSI `?2026`) atomically when the mode closes. Each block can hold rendering for at most one second from its opening sequence. Ordinary payload does not extend that deadline. If the deadline expires, WTerm resumes painting until a fresh block begins.
+
+Outside synchronized output, writes request the next animation frame directly. Writes received before that frame share one render.
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>{"init(): Promise<WTerm>"}</code></td>
+      <td>Load WASM and start rendering</td>
+    </tr>
+    <tr>
+      <td><code>setThemeColors(colors: TerminalThemeColors | null): void</code></td>
+      <td>Update host CSS and supported core defaults without parsing input; <code>null</code> returns to the CSS theme. See <a href="/themes#updating-host-colors">Updating host colors</a></td>
+    </tr>
+    <tr>
+      <td><code>write(data: string | Uint8Array)</code></td>
+      <td>Write data to the terminal</td>
+    </tr>
+    <tr>
+      <td><code>resize(cols, rows)</code></td>
+      <td>Request a grid size; read <code>wt.cols</code> and <code>wt.rows</code> afterward for the applied size</td>
+    </tr>
+    <tr>
+      <td><code>focus()</code></td>
+      <td>Focus the terminal input</td>
+    </tr>
+    <tr>
+      <td><code>setOutputAnnouncements(enabled)</code></td>
+      <td>Enable or stop polite output announcements without changing focus</td>
+    </tr>
+    <tr>
+      <td><code>setRenderingPaused(paused)</code></td>
+      <td>Pause pane painting or schedule the latest state when resuming. Browser document visibility also gates painting.</td>
+    </tr>
+    <tr>
+      <td><code>destroy()</code></td>
+      <td>Clean up event listeners, observers, and DOM</td>
+    </tr>
+    <tr>
+      <td><code>search(query, options?)</code></td>
+      <td>Start cancellable plain-text search across retained history and the active screen</td>
+    </tr>
+    <tr>
+      <td><code>findNext()</code> / <code>findPrevious()</code></td>
+      <td>Reveal a match with wraparound; return false if there are no matches</td>
+    </tr>
+    <tr>
+      <td><code>fit(): void</code></td>
+      <td>Resize the grid to the current element content box and font metrics. Hidden or uninitialized terminals stay unchanged. Uses the usual resize callback.</td>
+    </tr>
+    <tr>
+      <td><code>scrollToPrompt(direction: -1 | 1): boolean</code></td>
+      <td>Scroll from the viewport top to the previous or next shell prompt without wrapping. Returns whether scrolling moved. Requires Ghostty with OSC 133; see <a href="/configuration#shell-integration">Shell integration</a> for limits and inactive states.</td>
+    </tr>
+    <tr>
+      <td><code>getSearchState()</code> / <code>clearSearch()</code></td>
+      <td>Read a state snapshot, or cancel search and remove highlights</td>
+    </tr>
+    <tr>
+      <td><code>getSelectionText(): string | null</code></td>
+      <td>Read selected text with terminal line and cell semantics, or null when unavailable</td>
+    </tr>
+    <tr>
+      <td><code>{"readText(options?): Promise<string>"}</code></td>
+      <td>Capture retained history and the active screen without changing selection. Accepts an optional <code>signal</code>; see <a href="#reading-terminal-output">Reading Terminal Output</a> for cancellation and limits.</td>
+    </tr>
+    <tr>
+      <td><code>{"selectAll(): Promise<boolean>"}</code></td>
+      <td>Select retained history and the active screen; resolve true when the complete text is ready</td>
+    </tr>
+    <tr>
+      <td><code>clearSelection(): void</code></td>
+      <td>Clear custom selection and a native selection wholly inside this terminal</td>
+    </tr>
+    <tr>
+      <td><code>selectWord(position): boolean</code></td>
+      <td>Select the word at a retained-buffer cell, including confirmed soft wraps</td>
+    </tr>
+    <tr>
+      <td><code>selectLine(row): boolean</code></td>
+      <td>Select the complete logical line containing a retained-buffer row</td>
+    </tr>
+    <tr>
+      <td><code>selectRectangle(start, end): boolean</code></td>
+      <td>Select inclusive column and row bounds, preserving spaces and physical line breaks</td>
+    </tr>
+  </tbody>
+</table>
+
+## Selection and Copy
+
+WTerm handles the browser's normal Copy action for a native selection wholly inside contiguous mounted terminal rows. It writes plain text: Ghostty soft wraps join without a newline, explicit line breaks remain `\n`, and cores with unknown wrap boundaries retain physical row breaks. This includes the built-in core, which does not currently expose wrap metadata.
+
+`getSelectionText()` returns the same text without accessing the clipboard. Framework users call it through the WTerm instance received from `onReady` (React/Svelte), `ready` (Vue), or the instance ref.
+
+```ts
+const text = wt.getSelectionText();
+if (text !== null) console.log(text);
+```
+
+Partial grapheme and surrogate-pair selections expand to whole terminal cells. Wide continuations and flagged right-edge spacer heads add no text. Block and box-drawing glyphs remain text; hyperlinks copy their displayed characters without markup or link destinations. Trailing ASCII spaces are trimmed only when selection reaches the right edge of a hard-ended row. Interior spaces, spaces across soft wraps, and explicitly selected spaces at a partial row end are preserved.
+
+Extraction uses the painted snapshot, so output awaiting a frame or synchronized-output release cannot replace the text being copied. The result is `null` for collapsed, unavailable, or multiple-range selections, selections outside the terminal, and selections spanning unmounted history gaps. Browser copying remains unchanged in those cases. Copy also respects input-field selections and events already handled by the host. An all-padding selection can produce an empty string.
+
+With Ghostty's current WASM binary, WTerm preserves forward and backward selections through output scrolling and resize/reflow. It restores the native highlight after painting and clears the selection when selected text changes, an edge is discarded, or the application resets or switches screens. Selected history rows stay mounted separately from the viewport, leaving intervening gaps virtualized. Resize reports applied dimensions immediately and updates the DOM on the next paint frame.
+
+Native selection preservation is limited to 1,000 physical rows and 1,048,576 UTF-16 units; reflow beyond the row limit clears a tracked selection. Larger selections, cores without `trackPosition`, and new selections made while the painted frame lags the core keep native browser behavior and may change or clear when rendering catches up. Native selection begins in mounted text.
+
+### Words and Logical Lines
+
+Double-click to select a word or path; triple-click to select the complete logical line. Confirmed soft wraps can include history outside the mounted window. Single-click dragging retains native browser selection. Hold Shift to select live text while an application reports mouse input; history remains selectable without Shift. Modified link clicks keep their normal behavior.
+
+```ts
+wt.selectWord({ row: 10, col: 4 });
+wt.selectLine(10);
+console.log(wt.getSelectionText());
+```
+
+Coordinates start at the oldest retained row; columns are terminal cells. Both methods return `true` when a native selection is created, or `false` for invalid coordinates, an unavailable or pending frame, or ranges beyond 1,000 physical rows or 1,048,576 UTF-16 units. Gestures fall back to browser selection in those cases. Route writes and resizes through WTerm and select after painting. Successful selection replaces Select All and releases terminal input focus for normal Copy. Framework users call these methods through the underlying WTerm instance.
+
+Word boundaries match Ghostty's defaults: spaces, tabs, quotes, backticks, vertical bars (including `│`), colons, semicolons, commas, parentheses, square/curly/angle brackets, and dollar signs. Adjacent boundary characters form a separate run. Slashes, dots, hyphens, underscores, and Unicode text stay together. Either half of a wide glyph selects the whole grapheme. Line selection preserves indentation, trims trailing hard-line padding on copy, and excludes the next explicit newline. Hard and unknown row breaks stop expansion, so the built-in core selects within a physical row. These native selections follow the preservation behavior above.
+
+### Rectangular Selection
+
+Hold Alt (Option on macOS) and drag to copy columns from tables or logs. Hold Shift+Alt in the live screen of a mouse-reporting application. Drag beyond the top or bottom edge to scroll through history.
+
+```ts
+wt.selectRectangle({ row: 10, col: 4 }, { row: 14, col: 12 });
+const text = wt.getSelectionText();
+wt.clearSelection();
+```
+
+Corners are inclusive and may be supplied in either direction. Row zero is the oldest retained physical row; columns are terminal cells. Each selected row becomes a separate line, even across soft wraps. Selected spaces, including trailing padding, remain intact. Wide glyphs intersecting either edge expand to the complete grapheme, and highlights follow that expansion.
+
+`selectRectangle(start, end)` focuses terminal input and returns `true` when the complete snapshot is ready. Copy with Cmd+C, Ctrl+C, or Ctrl+Shift+C; Escape clears it. The method returns `false` for invalid coordinates, an unavailable or pending frame, or an oversized rectangle. A rejected request leaves the previous selection intact unless focus handling changes the terminal. Bounds are 1,000 rows, 1,048,576 UTF-16 units, and `rowCount * (selectedWidth + 1) <= 65,536`. No truncated prefix is exposed.
+
+The snapshot includes unmounted history without mounting extra rows. Only mounted rows are highlighted, using `--term-selection-bg`. Scrolling preserves it; any WTerm write or resize, new input, pointer selection, focus outside the terminal, replacement selection, or destruction clears it. Route core mutations through WTerm and select after painting. Framework users access this method through their WTerm instance.
+
+### Select All
+
+With terminal input focused, **Cmd+A** or **Ctrl+Shift+A** selects all retained history and the active screen. **Ctrl+A** still reaches the shell. Copy with **Cmd+C**, **Ctrl+C**, or **Ctrl+Shift+C**. These shortcuts also work with Kitty keyboard mode. Escape clears Select All without sending Escape to the application.
+
+```ts
+if (await wt.selectAll()) {
+  console.log(wt.getSelectionText());
+}
+wt.clearSelection();
+```
+
+Select All captures text in cancellable batches after the current frame paints. The promise resolves `true` when ready, or `false` if unavailable, cancelled, or too large. It preserves the same line/cell semantics as native Copy, including blank screen rows. Discarded history and the inactive screen are excluded. Virtual highlights keep the DOM window bounded; they do not create a browser DOM selection. Customize their color with `--term-selection-bg`.
+
+The snapshot is limited to 16,777,216 UTF-16 units; no truncated prefix is exposed or copied. While capture runs, `getSelectionText()` returns `null` and Copy is withheld. Wait until “Selecting terminal text…” disappears before copying. A visible status reports cancellation during capture or failure. Scrolling preserves the selection. Any WTerm `write` or `resize`, new input, pointer selection, focus outside the terminal, replacement selection, or destruction clears it. Route core mutations through WTerm. `clearSelection()` also clears a native selection wholly inside this terminal, leaving selections elsewhere untouched. Framework users access both methods through the underlying WTerm instance.
+
+## Terminal Search
+
+```ts
+import type { SearchOptions, SearchState } from "@wterm/dom";
+
+wt.onSearchChange = (state: SearchState) => {
+  // Update your Find controls from this snapshot.
+  console.log(state.count, state.activeIndex, state.searching, state.limited);
+};
+const options: SearchOptions = { caseSensitive: false };
+wt.search("connection refused", options);
+```
+
+`onSearchChange` can also be passed in the WTerm constructor options. Framework users access it and the search methods through their underlying WTerm instance (`onReady` in React/Svelte, `ready` in Vue, or the instance ref).
+
+`SearchState` contains `query`, `caseSensitive`, `count`, `activeIndex`, `searching`, and `limited`. Results arrive incrementally in chronological order. The first match is selected and revealed; `activeIndex` is zero-based or -1 when empty. Next/previous navigation wraps among matches found so far. Empty queries cancel work and remove highlights. Native text selection is preserved; the host owns Find controls and shortcuts.
+
+Search includes unmounted retained history. It scans in cancellable slices with a soft 4 ms budget, yielding between browser tasks so input and rendering can continue. Long searches avoid nested-timer delays where message tasks are available, with a timer fallback. Single-character cells that cannot start or continue a match skip coordinate bookkeeping, reducing work for sparse or absent matches. Ghostty joins confirmed soft wraps, including the history/screen boundary, while explicit newlines and unknown boundaries separate matches. The built-in core currently searches each physical row independently. Grapheme strings preserve Unicode content; matches highlight whole cells even when only part of a grapheme matches. Width-zero continuations and flagged `spacerHead` cells are omitted. Real spaces and blank-cell padding remain literal. Queries do not cross hard newlines and regular expressions are not interpreted.
+
+Matching ignores case by default using locale-independent JavaScript `toLowerCase()` on each code point. There is no Unicode normalization or full case folding: composed and decomposed accents differ, `ß` does not match `ss`, and final sigma differs from sigma. Lowercase expansions keep the original cell coordinates.
+
+Queries longer than 1,024 UTF-16 code units throw `RangeError` without changing the current search. At most 10,000 matches are retained; `limited` indicates additional matches exist. Narrow the query to reach them. Output, pruning, resize, and screen switches immediately discard stale results and restart after painting. Refresh selects the first new result without moving the scroll position. Continuous output can delay completion. Synchronized output waits for paint release; destruction cancels pending work. Use WTerm's `write` and `resize` methods for buffer mutations so results stay current.
+
+Highlight colors use `--term-search-match`, `--term-search-active`, and `--term-search-border` on the terminal element.
+
+## Imperative Handle (React)
+
+The `useTerminal` hook returns a ref and convenience methods that delegate to the underlying `WTerm` instance:
+
+```tsx
+const { ref, write, resize, focus } = useTerminal();
+```
+<table>
+  <thead>
+    <tr>
+      <th>Return</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>ref</code></td>
+      <td><code>{"RefObject<TerminalHandle>"}</code></td>
+      <td>Pass to <code>{"<Terminal ref={ref}>"}</code></td>
+    </tr>
+    <tr>
+      <td><code>write</code></td>
+      <td><code>(data: string | Uint8Array) =&gt; void</code></td>
+      <td>Write data to the terminal</td>
+    </tr>
+    <tr>
+      <td><code>resize</code></td>
+      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>Resize the terminal grid</td>
+    </tr>
+    <tr>
+      <td><code>focus</code></td>
+      <td><code>() =&gt; void</code></td>
+      <td>Focus the terminal input</td>
+    </tr>
+  </tbody>
+</table>
+
+The `TerminalHandle` interface exposed via `ref`:
+
+```ts
+interface TerminalHandle {
+  write(data: string | Uint8Array): void;
+  resize(cols: number, rows: number): void;
+  focus(): void;
+  readonly instance: WTerm | null;
+}
+```
+
+## Template Ref (Vue)
+
+The Vue `<Terminal>` component exposes the same methods directly on its instance — no separate composable. Access them via `useTemplateRef`:
+
+```vue
+<script setup lang="ts">
+import { useTemplateRef } from "vue";
+import { Terminal } from "@wterm/vue";
+
+const term = useTemplateRef("term");
+</script>
+
+<template>
+  <Terminal ref="term" />
+</template>
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Member</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>write</code></td>
+      <td><code>(data: string | Uint8Array) =&gt; void</code></td>
+      <td>Write data to the terminal. Safe to call after the <code>ready</code> event; calls before mount are ignored.</td>
+    </tr>
+    <tr>
+      <td><code>resize</code></td>
+      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>Resize the terminal grid. Calls before mount are ignored.</td>
+    </tr>
+    <tr>
+      <td><code>focus</code></td>
+      <td><code>() =&gt; void</code></td>
+      <td>Focus the terminal input.</td>
+    </tr>
+    <tr>
+      <td><code>instance</code></td>
+      <td><code>WTerm | null</code></td>
+      <td>Underlying <code>WTerm</code> instance. <code>null</code> until the component has mounted; the WASM bridge is only available after the <code>ready</code> event.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Imperative Handle (Svelte)
+
+Bind the Svelte component instance to access its imperative methods:
+
+```svelte
+<script lang="ts">
+import { Terminal, type TerminalHandle } from "@wterm/svelte";
+
+let terminal: TerminalHandle;
+</script>
+
+<Terminal bind:this={terminal} />
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>Member</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>write</code></td>
+      <td><code>(data: string | Uint8Array) =&gt; void</code></td>
+      <td>Write data to the terminal. Calls before initialization are ignored.</td>
+    </tr>
+    <tr>
+      <td><code>resize</code></td>
+      <td><code>(cols: number, rows: number) =&gt; void</code></td>
+      <td>Resize the terminal grid.</td>
+    </tr>
+    <tr>
+      <td><code>focus</code></td>
+      <td><code>() =&gt; void</code></td>
+      <td>Focus the terminal input.</td>
+    </tr>
+  </tbody>
+</table>
+
+To access the underlying <code>WTerm</code>, bind the component's
+<code>instance</code> prop:
+
+```svelte
+<script lang="ts">
+import { Terminal, type WTerm } from "@wterm/svelte";
+
+let instance: WTerm | null = null;
+</script>
+
+<Terminal bind:instance />
+```
+
+## WebSocketTransport
+
+Connect to a PTY backend over WebSocket with automatic reconnection and bounded send buffering.
+
+### Options
+
+<table>
+  <thead>
+    <tr>
+      <th>Option</th>
+      <th>Type</th>
+      <th>Default</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>url</code></td>
+      <td><code>string</code></td>
+      <td>—</td>
+      <td>WebSocket server URL</td>
+    </tr>
+    <tr>
+      <td><code>reconnect</code></td>
+      <td><code>boolean</code></td>
+      <td><code>true</code></td>
+      <td>Automatically reconnect on disconnect with exponential backoff</td>
+    </tr>
+    <tr>
+      <td><code>maxReconnectDelay</code></td>
+      <td><code>number</code></td>
+      <td><code>30000</code></td>
+      <td>Maximum delay between reconnection attempts (ms)</td>
+    </tr>
+    <tr>
+      <td><code>maxBufferedBytes</code></td>
+      <td><code>number</code></td>
+      <td><code>1048576</code></td>
+      <td>Maximum queued bytes, including the current open socket's buffered amount. Positive safe integer.</td>
+    </tr>
+    <tr>
+      <td><code>maxBufferedMessages</code></td>
+      <td><code>number</code></td>
+      <td><code>1024</code></td>
+      <td>Maximum messages waiting in the transport queue, including empty messages. Positive safe integer.</td>
+    </tr>
+    <tr>
+      <td><code>highWaterMark</code></td>
+      <td><code>number</code></td>
+      <td><code>65536</code></td>
+      <td>Byte threshold for pausing socket writes and reporting pressure. Defaults to the smaller of 64 KiB and the byte cap.</td>
+    </tr>
+    <tr>
+      <td><code>lowWaterMark</code></td>
+      <td><code>number</code></td>
+      <td><code>16384</code></td>
+      <td>Resume socket writes at or below this threshold. Defaults to one quarter of the high-water mark.</td>
+    </tr>
+    <tr>
+      <td><code>onBackpressure</code></td>
+      <td><code>(paused: boolean) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called on pressure transitions. Pause producers while true and resume when false.</td>
+    </tr>
+    <tr>
+      <td><code>onData</code></td>
+      <td><code>(data: Uint8Array | string) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called when data is received from the server</td>
+    </tr>
+    <tr>
+      <td><code>onOpen</code></td>
+      <td><code>() =&gt; void</code></td>
+      <td>—</td>
+      <td>Called when the connection opens</td>
+    </tr>
+    <tr>
+      <td><code>onClose</code></td>
+      <td><code>() =&gt; void</code></td>
+      <td>—</td>
+      <td>Called when the connection closes</td>
+    </tr>
+    <tr>
+      <td><code>onError</code></td>
+      <td><code>(event: Event) =&gt; void</code></td>
+      <td>—</td>
+      <td>Called when a WebSocket error occurs</td>
+    </tr>
+  </tbody>
+</table>
+
+### Methods
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>connect(url?)</code></td>
+      <td>Open the WebSocket connection. Same-URL calls while connecting/open do nothing. Changing the URL discards unsent data.</td>
+    </tr>
+    <tr>
+      <td><code>send(data: string | Uint8Array)</code></td>
+      <td>Accept a complete message for ordered delivery. Throws RangeError before accepting it if either buffer limit would be exceeded. Throws after explicit close until connect is called again.</td>
+    </tr>
+    <tr>
+      <td><code>close()</code></td>
+      <td>Close the connection, discard unsent data, and stop reconnect and drain timers.</td>
+    </tr>
+  </tbody>
+</table>
+
+### Properties
+
+<table>
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>connected</code></td>
+      <td><code>boolean</code></td>
+      <td>Whether the WebSocket is currently open</td>
+    </tr>
+    <tr>
+      <td><code>bufferedAmount</code></td>
+      <td><code>number</code></td>
+      <td>Bytes in the transport queue plus the current open socket's send buffer.</td>
+    </tr>
+    <tr>
+      <td><code>queuedBytes</code> / <code>queuedMessages</code></td>
+      <td><code>number</code></td>
+      <td>Bytes/messages not yet handed to the browser socket.</td>
+    </tr>
+    <tr>
+      <td><code>backpressured</code></td>
+      <td><code>boolean</code></td>
+      <td>Whether producers should pause. Clears when buffered bytes reach the low-water mark and the message queue has room.</td>
+    </tr>
+  </tbody>
+</table>
+
+### Buffering and delivery
+
+Strings are counted and sent as UTF-8 bytes. Queued byte-array views are copied,
+so changing the caller's buffer cannot change a pending command. Message order
+and boundaries are preserved. The limits apply before the first connection,
+while disconnected, and while the socket is open. Limits are construction
+options; they require positive safe integer caps and a positive high-water mark,
+with `0 <= lowWaterMark < highWaterMark <= maxBufferedBytes`.
+
+The transport pauses feeding the socket at the high-water mark and resumes at
+the low-water mark. A single message larger than the high-water mark is allowed
+only when the socket buffer is empty and it fits the hard byte cap. Drains
+process at most 64 messages at a time and poll every 16 ms only while an open
+socket has pending data. Background browser throttling can delay these polls.
+`onBackpressure` reports high/low byte threshold transitions and a full message
+queue; hosts should also inspect `connected` for connection status.
+
+Catch a buffer-limit `RangeError` and tell the user that the input was not
+accepted. A rejected message is never partially queued; existing queued messages
+remain unchanged. Do not silently ignore the error or automatically retry shell
+commands. `send()` accepting data and `bufferedAmount` reaching zero are not
+server acknowledgments.
+
+Unexpected disconnection retains only messages still in the transport queue.
+Bytes already handed to `WebSocket.send()` have uncertain delivery and are never
+replayed. Explicit `close()` clears unsent data and rejects sends until a new
+`connect()`; changing the URL also clears unsent data. Delayed callbacks from
+replaced sockets cannot feed output or close their replacement. This transport
+bounds client sends; it does not implement incoming-output flow control, PTY
+session recovery, or delivery acknowledgments.
+
+## WasmBridge
+
+Low-level interface to the Zig/WASM terminal state machine. The bridge manages a virtual terminal grid in WASM memory — you write data in and read cells, cursor state, and scrollback out.
+
+### Loading
+
+```ts
+import { WasmBridge } from "@wterm/core";
+
+const bridge = await WasmBridge.load();
+const bridge = await WasmBridge.load("/wterm.wasm");
+```
+
+When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string inlined in the package. Pass a URL when you want to serve the binary separately for caching or CDN use.
+
+### Methods
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>{"WasmBridge.load(url?): Promise<WasmBridge>"}</code></td>
+      <td>Load the WASM binary and return a new bridge instance</td>
+    </tr>
+    <tr>
+      <td><code>init(cols, rows)</code></td>
+      <td>Initialize the terminal grid</td>
+    </tr>
+    <tr>
+      <td><code>writeString(str, afterChunk?)</code></td>
+      <td>Write a UTF-8 string and optionally run a callback after each internal chunk</td>
+    </tr>
+    <tr>
+      <td><code>writeRaw(data, afterChunk?)</code></td>
+      <td>Write raw bytes and optionally run a callback after each 8192-byte internal chunk</td>
+    </tr>
+    <tr>
+      <td><code>resize(cols, rows)</code></td>
+      <td>Resize the terminal grid</td>
+    </tr>
+    <tr>
+      <td><code>getCell(row, col): CellData</code></td>
+      <td>Get cell data at a grid position</td>
+    </tr>
+    <tr>
+      <td><code>getCursor(): CursorState</code></td>
+      <td>Get current cursor position and visibility</td>
+    </tr>
+    <tr>
+      <td><code>getCols() / getRows()</code></td>
+      <td>Get current grid dimensions</td>
+    </tr>
+    <tr>
+      <td><code>isDirtyRow(row): boolean</code></td>
+      <td>Check if a row has changed since last <code>clearDirty()</code></td>
+    </tr>
+    <tr>
+      <td><code>getRowId(row): number | null</code></td>
+      <td>Optional. Live row identity that follows scrolling; null when unavailable</td>
+    </tr>
+    <tr>
+      <td><code>isRowContentDirty(row): boolean</code></td>
+      <td>Optional. Whether the row's content changed since <code>clearDirty()</code>, ignoring movement</td>
+    </tr>
+    <tr>
+      <td><code>clearDirty()</code></td>
+      <td>Reset all dirty-row flags</td>
+    </tr>
+    <tr>
+      <td><code>getTitle(): string | null</code></td>
+      <td>Get pending title change (via OSC escape), or <code>null</code> if unchanged</td>
+    </tr>
+    <tr>
+      <td><code>getWorkingDirectory?(): string | null</code></td>
+      <td>Consume a raw OSC 7 URI from a supporting core. Empty clears it; null means unchanged or unsupported. See <a href="/configuration#working-directories">Working directories</a>.</td>
+    </tr>
+    <tr>
+      <td><code>getBellCount?(): number</code></td>
+      <td>Read and clear pending BEL controls. Optional for custom cores; the built-in and Ghostty cores return <code>0</code> when none are pending.</td>
+    </tr>
+    <tr>
+      <td><code>getShellIntegrationState?(): ShellIntegrationState | null</code></td>
+      <td>Consume the latest shell-reported state change. The caller-owned snapshot has phase and exitCode; null means unchanged or unsupported. See <a href="/configuration#shell-integration">Shell integration</a>.</td>
+    </tr>
+    <tr>
+      <td><code>findPrompt?(row: number, direction: -1 | 1): number | null</code></td>
+      <td>Optional Ghostty lookup for the previous/next prompt start. Row zero is the oldest retained row; the origin must be in range. Skips continuation rows when moving forwards and returns null for unsupported cores, alternate screens, invalid inputs, or missing prompts. Does not move the cursor or consume shell state.</td>
+    </tr>
+    <tr>
+      <td><code>getClipboardWrite?(): string | null</code></td>
+      <td>Consume the latest application clipboard-write request. Empty text requests a clear; null means none. Ghostty only; the host owns acceptance.</td>
+    </tr>
+    <tr>
+      <td><code>getResponse(): string | null</code></td>
+      <td>Dequeue one pending host response (e.g. DSR), or <code>null</code>.</td>
+    </tr>
+    <tr>
+      <td><code>getResourceState?(): TerminalResourceState</code></td>
+      <td>Get optional core resource state. The built-in core reports hyperlink identity capacity, usage, capacity-rejected opens, and saturation.</td>
+    </tr>
+    <tr>
+      <td><code>getScrollbackCount(): number</code></td>
+      <td>Number of lines in the scrollback buffer</td>
+    </tr>
+    <tr>
+      <td><code>getScrollbackDiscardedCount?(): number</code></td>
+      <td>Cumulative rows discarded from the oldest end. Optional for third-party cores; WTerm uses it to preserve history position through rollover.</td>
+    </tr>
+    <tr>
+      <td><code>getScrollbackCell(offset, col): CellData</code></td>
+      <td>Get cell data from a scrollback line</td>
+    </tr>
+    <tr>
+      <td><code>getScrollbackLineLen(offset): number</code></td>
+      <td>Get the length of a scrollback line</td>
+    </tr>
+    <tr>
+      <td><code>cursorKeysApp(): boolean</code></td>
+      <td>Whether cursor keys are in application mode</td>
+    </tr>
+    <tr>
+      <td><code>bracketedPaste(): boolean</code></td>
+      <td>Whether bracketed paste mode is active</td>
+    </tr>
+    <tr>
+      <td><code>usingAltScreen(): boolean</code></td>
+      <td>Whether the alternate screen buffer is active</td>
+    </tr>
+    <tr>
+      <td><code>mouseTracking(): number</code></td>
+      <td>Active mouse tracking mode (<code>0</code>, <code>1000</code>, <code>1002</code>, or <code>1003</code>)</td>
+    </tr>
+    <tr>
+      <td><code>mouseSgr(): boolean</code></td>
+      <td>Whether cell-coordinate SGR mouse encoding (mode 1006) is active</td>
+    </tr>
+    <tr>
+      <td><code>mouseEncoding(): MouseEncoding | null</code></td>
+      <td>Active mouse wire format: <code>x10</code>, <code>utf8</code>, <code>sgr</code>, <code>urxvt</code>, or <code>sgr-pixels</code>. Optional for custom cores. The DOM layer sends all five formats; <code>sgr-pixels</code> uses 1-based CSS-pixel coordinates.</td>
+    </tr>
+    <tr>
+      <td><code>focusEvents(): boolean</code></td>
+      <td>Whether focus reporting (mode 1004) is active</td>
+    </tr>
+    <tr>
+      <td><code>synchronizedOutput(): boolean</code></td>
+      <td>Whether synchronized output mode (2026) is active</td>
+    </tr>
+    <tr>
+      <td><code>synchronizedOutputGeneration(): number</code></td>
+      <td>Monotonic generation for synchronized output blocks</td>
+    </tr>
+    <tr>
+      <td><code>kittyKeyboardFlags?(): number</code></td>
+      <td>Active Kitty keyboard protocol flags. Optional for third-party cores; omission keeps legacy keyboard encoding.</td>
+    </tr>
+  </tbody>
+</table>
+
+### Types
+
+`underlineStyle` takes precedence over the underline flag (`0x08`). If omitted,
+that flag selects a single underline. `underlineRgb` is an optional resolved
+`0xRRGGBB` color, including `0` for black; omitted colors follow the displayed
+foreground, including reverse video. Ghostty supplies the metadata in live
+cells and scrollback. The built-in core and older Ghostty binaries retain
+flag-based single underlines. Custom cores can adopt either optional field.
+`UnderlineStyle` is exported by `@wterm/core` and `@wterm/dom`.
+
+```ts
+type UnderlineStyle = "none" | "single" | "double" | "curly" | "dotted" | "dashed";
+
+interface CellData {
+  char: number;   // Unicode code point
+  chars?: string; // Complete grapheme cluster when the cell has multiple code points
+  fg: number;     // Foreground color index (256 = default)
+  bg: number;     // Background color index (256 = default)
+  flags: number;  // Style flags (bold, italic, underline, etc.)
+  width?: number; // 1 = narrow, 2 = wide leading cell, 0 = continuation
+  spacerHead?: boolean; // Empty right-edge filler before a wrapped wide glyph
+  fgRgb?: number; // Resolved 0xRRGGBB foreground
+  bgRgb?: number; // Resolved 0xRRGGBB background
+  underlineStyle?: UnderlineStyle; // Overrides flags bit 0x08 when present
+  underlineRgb?: number; // Resolved 0xRRGGBB; omitted follows the displayed foreground
+}
+
+interface CursorState {
+  row: number;
+  col: number;
+  visible: boolean;
+  shape?: "block" | "bar" | "underline";
+  blinking?: boolean;
+}
+```
+
+## @wterm/serialize
+
+Serialize and restore terminal sessions for persistence across reloads.
+
+### API
+
+```ts
+import { serialize, restore } from "@wterm/serialize";
+
+interface TerminalSnapshot {
+  version: 1;
+  cols: number;
+  rows: number;
+  payload: string;
+  cursor: { row: number; col: number; visible: boolean };
+  modes: {
+    altScreen: boolean;
+    cursorKeysApp: boolean;
+    bracketedPaste: boolean;
+  };
+}
+
+function serialize(term: WTerm): TerminalSnapshot;
+function restore(term: WTerm, snapshot: TerminalSnapshot): void;
+```
+
+### Notes
+
+- `serialize()` throws if called before `term.init()`.
+- `restore()` throws for unsupported snapshot versions.
+- v1 snapshots do not capture partial parser state, terminal title state, underline variants, underline colors, or OSC 8 links.

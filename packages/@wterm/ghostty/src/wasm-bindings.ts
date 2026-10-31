@@ -6,11 +6,20 @@
  * This module handles WASM loading, memory management, and cell parsing.
  */
 
+import type { UnderlineStyle } from "@wterm/core";
+
 export interface GhosttyExports {
   memory: WebAssembly.Memory;
 
   // Lifecycle
-  init(cols: number, rows: number, max_scrollback: number): number;
+  init(
+    cols: number,
+    rows: number,
+    max_scrollback: number,
+    foreground_rgb: number,
+    background_rgb: number,
+    image_storage_limit: number,
+  ): number;
   deinit(ptr: number): void;
   resize(ptr: number, cols: number, rows: number): void;
 
@@ -19,7 +28,27 @@ export interface GhosttyExports {
 
   // Render state
   update(ptr: number): void;
+  /** Host foreground/background/cursor and 16 palette entries as 19 little-endian u32s. */
+  set_theme_colors?(ptr: number, colors_ptr: number): void;
+  /** 0 = foreground, 1 = background, 2 = cursor; -1 when unset. */
+  get_color_override?(ptr: number, target: number): number;
   get_viewport(ptr: number, buf_ptr: number): number;
+  /** 20-byte cells with underline style/color. Optional for older binaries. */
+  get_viewport_v2?(ptr: number, buf_ptr: number): number;
+  get_viewport_grapheme(
+    ptr: number,
+    row: number,
+    col: number,
+    buf_ptr: number,
+    buf_len: number,
+  ): number;
+  get_viewport_hyperlink(
+    ptr: number,
+    row: number,
+    col: number,
+    buf_ptr: number,
+    buf_len: number,
+  ): number;
 
   // Dirty tracking
   is_dirty(ptr: number): number;
@@ -30,27 +59,98 @@ export interface GhosttyExports {
   get_cursor_row(ptr: number): number;
   get_cursor_col(ptr: number): number;
   get_cursor_visible(ptr: number): number;
+  get_cursor_shape?(ptr: number): number;
+  get_cursor_blinking?(ptr: number): number;
 
   // Modes
   cursor_keys_app(ptr: number): number;
   bracketed_paste(ptr: number): number;
   using_alt_screen(ptr: number): number;
+  mouse_tracking(ptr: number): number;
+  mouse_sgr(ptr: number): number;
+  mouse_encoding?(ptr: number): number;
+  focus_events(ptr: number): number;
+  synchronized_output(ptr: number): number;
+  synchronized_output_generation(ptr: number): number;
+  kitty_keyboard_flags?(ptr: number): number;
+
+  graphics_generation?(ptr: number): number;
+  graphics_image_count?(ptr: number): number;
+  graphics_placement_count?(ptr: number): number;
+  graphics_bytes_used?(ptr: number): number;
+  graphics_capacity?(ptr: number): number;
+  graphics_rejected?(ptr: number): number;
+  graphics_evicted?(ptr: number): number;
+  graphics_images?(ptr: number, buf_ptr: number, max_records: number): number;
+  graphics_placements?(
+    ptr: number,
+    buf_ptr: number,
+    max_records: number,
+  ): number;
+  graphics_image_size?(ptr: number, image_id: number, version: number): number;
+  graphics_image_copy?(
+    ptr: number,
+    image_id: number,
+    version: number,
+    buf_ptr: number,
+    buf_len: number,
+  ): number;
 
   // Grid
   get_cols(ptr: number): number;
   get_rows(ptr: number): number;
+  /** Bit 0: wraps to next; bit 1: continues previous. -1 for an invalid row. */
+  get_row_wraps?(ptr: number, row: number): number;
+  track_position?(ptr: number, row: number, col: number): number;
+  /** Retained row * 65536 + column, or -1 for an invalidated handle. */
+  resolve_position?(ptr: number, handle: number): number;
+  release_position?(ptr: number, handle: number): void;
 
   // Scrollback
   get_scrollback_count(ptr: number): number;
+  get_scrollback_row_wraps?(ptr: number, offset: number): number;
+  get_scrollback_discarded_count(ptr: number): number;
   get_scrollback_line(
     ptr: number,
     offset: number,
     buf_ptr: number,
     max_cols: number,
   ): number;
+  get_scrollback_line_v2?(
+    ptr: number,
+    offset: number,
+    buf_ptr: number,
+    max_cols: number,
+  ): number;
+  get_scrollback_grapheme(
+    ptr: number,
+    offset: number,
+    col: number,
+    buf_ptr: number,
+    buf_len: number,
+  ): number;
+  get_scrollback_hyperlink(
+    ptr: number,
+    offset: number,
+    col: number,
+    buf_ptr: number,
+    buf_len: number,
+  ): number;
 
   // Responses
   read_response(ptr: number, buf_ptr: number, buf_len: number): number;
+
+  // Host effects. Optional for apps still serving an older Ghostty binary.
+  get_title_len?(ptr: number): number;
+  get_title_ptr?(ptr: number): number;
+  get_working_directory_len?(ptr: number): number;
+  get_working_directory_ptr?(ptr: number): number;
+  get_bell_count?(ptr: number): number;
+  get_clipboard_write_len?(ptr: number): number;
+  get_clipboard_write_ptr?(ptr: number): number;
+  get_shell_phase?(ptr: number): number;
+  get_shell_exit_code?(ptr: number): number;
+  find_prompt?(ptr: number, row: number, direction: number): number;
 
   // Memory
   alloc_buffer(len: number): number;
@@ -63,6 +163,15 @@ export interface GhosttyWasm {
 }
 
 const CELL_BYTES = 16;
+export const CELL_BYTES_V2 = 20;
+const UNDERLINE_STYLES: readonly UnderlineStyle[] = [
+  "none",
+  "single",
+  "double",
+  "curly",
+  "dotted",
+  "dashed",
+];
 
 const REMEDY =
   "Serve the binary from your app and pass its URL: " +
@@ -90,6 +199,61 @@ function hasWasmMagic(bytes: ArrayBuffer): boolean {
   );
 }
 
+// Share code, never instances or memory. Bound retention for hosts that load
+// many different asset URLs, and share in-flight compilation as well.
+const modules = new Map<string, Promise<WebAssembly.Module>>();
+const MAX_CACHED_MODULES = 4;
+
+async function compileWasm(url: string): Promise<WebAssembly.Module> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `@wterm/ghostty: fetching ${url} returned ${response.status} ` +
+        `${response.statusText}. ${REMEDY}`,
+    );
+  }
+
+  if (
+    typeof WebAssembly.compileStreaming === "function" &&
+    response.headers.get("Content-Type")?.trim().toLowerCase() ===
+      "application/wasm"
+  ) {
+    try {
+      return await WebAssembly.compileStreaming(response.clone());
+    } catch {
+      // Keep the original response for engines that reject streaming, and
+      // preserve the useful non-WASM-body diagnostic below. No second fetch.
+    }
+  }
+
+  const bytes = await response.arrayBuffer();
+  if (!hasWasmMagic(bytes)) {
+    throw new Error(
+      `@wterm/ghostty: ${url} did not return a WASM module. ${REMEDY}`,
+    );
+  }
+  return WebAssembly.compile(bytes);
+}
+
+function loadModule(url: string): Promise<WebAssembly.Module> {
+  const cached = modules.get(url);
+  if (cached) {
+    // Keep recently used assets when another URL displaces a cache entry.
+    modules.delete(url);
+    modules.set(url, cached);
+    return cached;
+  }
+  const pending = compileWasm(url).catch((error: unknown) => {
+    // An evicted request must not remove a newer attempt for the same URL.
+    if (modules.get(url) === pending) modules.delete(url);
+    throw error;
+  });
+  modules.set(url, pending);
+  if (modules.size > MAX_CACHED_MODULES)
+    modules.delete(modules.keys().next().value!);
+  return pending;
+}
+
 /**
  * Load the ghostty-vt WASM module.
  *
@@ -97,7 +261,7 @@ function hasWasmMagic(bytes: ArrayBuffer): boolean {
  *   committed binary at `../wasm/ghostty-vt.wasm`.
  */
 export async function loadGhosttyWasm(wasmUrl?: string): Promise<GhosttyWasm> {
-  const url = wasmUrl ?? defaultWasmUrl();
+  let url = wasmUrl ?? defaultWasmUrl();
 
   // A file: URL in a browser is a build-machine path that survived bundling.
   // fetch() reports it as a bare "Failed to fetch", which names neither the
@@ -114,24 +278,17 @@ export async function loadGhosttyWasm(wasmUrl?: string): Promise<GhosttyWasm> {
     );
   }
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(
-      `@wterm/ghostty: fetching ${url} returned ${response.status} ` +
-        `${response.statusText}. ${REMEDY}`,
-    );
-  }
-
-  const bytes = await response.arrayBuffer();
-  if (!hasWasmMagic(bytes)) {
-    throw new Error(
-      `@wterm/ghostty: ${url} did not return a WASM module. ${REMEDY}`,
-    );
-  }
+  // Relative paths follow the current page/worker base, including <base>.
+  // Resolving before caching avoids reusing an asset after that base changes.
+  if (typeof document !== "undefined")
+    url = new URL(url, document.baseURI).href;
+  else if (typeof location !== "undefined")
+    url = new URL(url, location.href).href;
+  const module = await loadModule(url);
 
   let wasmMemory: WebAssembly.Memory;
 
-  const { instance } = await WebAssembly.instantiate(bytes, {
+  const instance = await WebAssembly.instantiate(module, {
     env: {
       log(ptr: number, len: number) {
         const text = new TextDecoder().decode(
@@ -158,16 +315,27 @@ export interface WasmCellData {
   bgB: number;
   flags: number;
   width: number;
-  /** Bit 0: has explicit fg color, Bit 1: has explicit bg color */
+  /** Bit 0: explicit fg, bit 1: explicit bg, bit 2 (v2): explicit underline */
   colorFlags: number;
+  underlineStyle?: UnderlineStyle;
+  underlineRgb?: number;
+  hasGrapheme: boolean;
+  hasHyperlink: boolean;
+  spacerHead: boolean;
 }
 
 /**
  * Parse a single cell from the viewport buffer at the given byte offset.
- * The buffer layout matches the 16-byte struct from wasm_api.zig.
+ * The buffer layout matches the selected cell export from wasm_api.zig.
  */
-export function parseCell(view: DataView, byteOffset: number): WasmCellData {
-  return {
+export function parseCell(
+  view: DataView,
+  byteOffset: number,
+  cellBytes = CELL_BYTES,
+): WasmCellData {
+  const colorFlags = view.getUint8(byteOffset + 12);
+  const contentFlags = view.getUint8(byteOffset + 13);
+  const cell: WasmCellData = {
     codepoint: view.getUint32(byteOffset, true),
     fgR: view.getUint8(byteOffset + 4),
     fgG: view.getUint8(byteOffset + 5),
@@ -177,8 +345,23 @@ export function parseCell(view: DataView, byteOffset: number): WasmCellData {
     bgB: view.getUint8(byteOffset + 9),
     flags: view.getUint8(byteOffset + 10),
     width: view.getUint8(byteOffset + 11),
-    colorFlags: view.getUint8(byteOffset + 12),
+    colorFlags,
+    hasGrapheme: (contentFlags & 1) !== 0,
+    hasHyperlink: (contentFlags & 2) !== 0,
+    spacerHead: (contentFlags & 4) !== 0,
   };
+  // History scans decode millions of cells. Assign the extended fields
+  // directly instead of allocating and spreading another object per cell.
+  if (cellBytes === CELL_BYTES_V2) {
+    cell.underlineStyle = UNDERLINE_STYLES[view.getUint8(byteOffset + 16)];
+    cell.underlineRgb =
+      colorFlags & 4
+        ? (view.getUint8(byteOffset + 17) << 16) |
+          (view.getUint8(byteOffset + 18) << 8) |
+          view.getUint8(byteOffset + 19)
+        : undefined;
+  }
+  return cell;
 }
 
 /** Byte size of one cell in the viewport buffer. */
@@ -189,12 +372,134 @@ export { CELL_BYTES };
  * The caller must free it with freeBuffer when done.
  */
 export function allocBuffer(wasm: GhosttyWasm, size: number): number {
-  return wasm.exports.alloc_buffer(size);
+  if (!Number.isSafeInteger(size) || size <= 0 || size > 0xffffffff) return 0;
+  try {
+    return wasm.exports.alloc_buffer(size);
+  } catch {
+    return 0;
+  }
 }
 
 /** Free a buffer previously allocated with allocBuffer. */
 export function freeBuffer(wasm: GhosttyWasm, ptr: number, size: number): void {
-  wasm.exports.free_buffer(ptr, size);
+  if (ptr === 0 || !Number.isSafeInteger(size) || size <= 0) return;
+  try {
+    wasm.exports.free_buffer(ptr, size);
+  } catch {
+    // A failed cleanup must not turn a recoverable terminal read into a throw.
+  }
+}
+
+export const GRAPHICS_IMAGE_BYTES = 16;
+export const GRAPHICS_PLACEMENT_BYTES = 60;
+
+export interface WasmGraphicsImage {
+  imageId: number;
+  version: number;
+  width: number;
+  height: number;
+}
+
+export interface WasmGraphicsPlacement {
+  placementKey: string;
+  imageId: number;
+  imageVersion: number;
+  row: number;
+  col: number;
+  offsetX: number;
+  offsetY: number;
+  sourceX: number;
+  sourceY: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  columns: number;
+  rows: number;
+  z: number;
+}
+
+export function readGraphicsImages(
+  wasm: GhosttyWasm,
+  termPtr: number,
+  bufPtr: number,
+  capacity: number,
+): WasmGraphicsImage[] {
+  const read = wasm.exports.graphics_images;
+  if (!read || !Number.isSafeInteger(capacity) || capacity < 0) return [];
+  let count: number;
+  try {
+    count = read(termPtr, bufPtr, capacity);
+  } catch {
+    return [];
+  }
+  if (!Number.isSafeInteger(count) || count < 0 || count > capacity) return [];
+  const byteLength = count * GRAPHICS_IMAGE_BYTES;
+  if (!Number.isSafeInteger(byteLength)) return [];
+  let view: DataView;
+  try {
+    view = new DataView(wasm.exports.memory.buffer, bufPtr, byteLength);
+  } catch {
+    return [];
+  }
+  const result: WasmGraphicsImage[] = [];
+  for (let i = 0; i < count; i++) {
+    const offset = i * GRAPHICS_IMAGE_BYTES;
+    result.push({
+      imageId: view.getUint32(offset, true),
+      version: view.getUint32(offset + 4, true),
+      width: view.getUint32(offset + 8, true),
+      height: view.getUint32(offset + 12, true),
+    });
+  }
+  return result;
+}
+
+export function readGraphicsPlacements(
+  wasm: GhosttyWasm,
+  termPtr: number,
+  bufPtr: number,
+  capacity: number,
+): WasmGraphicsPlacement[] {
+  const read = wasm.exports.graphics_placements;
+  if (!read || !Number.isSafeInteger(capacity) || capacity < 0) return [];
+  let count: number;
+  try {
+    count = read(termPtr, bufPtr, capacity);
+  } catch {
+    return [];
+  }
+  if (!Number.isSafeInteger(count) || count < 0 || count > capacity) return [];
+  const byteLength = count * GRAPHICS_PLACEMENT_BYTES;
+  if (!Number.isSafeInteger(byteLength)) return [];
+  let view: DataView;
+  try {
+    view = new DataView(wasm.exports.memory.buffer, bufPtr, byteLength);
+  } catch {
+    return [];
+  }
+  const result: WasmGraphicsPlacement[] = [];
+  for (let i = 0; i < count; i++) {
+    const offset = i * GRAPHICS_PLACEMENT_BYTES;
+    const imageId = view.getUint32(offset, true);
+    const placementId = view.getUint32(offset + 4, true);
+    const placementTag = view.getUint32(offset + 56, true);
+    result.push({
+      placementKey: `${imageId}:${placementId}:${placementTag}`,
+      imageId,
+      imageVersion: view.getUint32(offset + 8, true),
+      row: view.getUint32(offset + 12, true),
+      col: view.getUint32(offset + 16, true),
+      offsetX: view.getUint32(offset + 20, true),
+      offsetY: view.getUint32(offset + 24, true),
+      sourceX: view.getUint32(offset + 28, true),
+      sourceY: view.getUint32(offset + 32, true),
+      sourceWidth: view.getUint32(offset + 36, true),
+      sourceHeight: view.getUint32(offset + 40, true),
+      columns: view.getUint32(offset + 44, true),
+      rows: view.getUint32(offset + 48, true),
+      z: view.getInt32(offset + 52, true),
+    });
+  }
+  return result;
 }
 
 /**
@@ -205,9 +510,10 @@ export function writeString(
   wasm: GhosttyWasm,
   termPtr: number,
   str: string,
+  afterChunk?: () => void,
 ): void {
   const encoded = new TextEncoder().encode(str);
-  writeBytes(wasm, termPtr, encoded);
+  writeBytes(wasm, termPtr, encoded, afterChunk);
 }
 
 /**
@@ -218,11 +524,22 @@ export function writeBytes(
   wasm: GhosttyWasm,
   termPtr: number,
   data: Uint8Array,
+  afterChunk?: () => void,
 ): void {
-  if (data.length === 0) return;
-  const bufPtr = allocBuffer(wasm, data.length);
-  if (bufPtr === 0) return;
-  new Uint8Array(wasm.exports.memory.buffer, bufPtr, data.length).set(data);
-  wasm.exports.write(termPtr, bufPtr, data.length);
-  freeBuffer(wasm, bufPtr, data.length);
+  let offset = 0;
+  while (offset < data.length) {
+    const length = Math.min(data.length - offset, 8192);
+    const bufPtr = allocBuffer(wasm, length);
+    if (bufPtr === 0) return;
+    try {
+      new Uint8Array(wasm.exports.memory.buffer, bufPtr, length).set(
+        data.subarray(offset, offset + length),
+      );
+      wasm.exports.write(termPtr, bufPtr, length);
+    } finally {
+      freeBuffer(wasm, bufPtr, length);
+    }
+    offset += length;
+    afterChunk?.();
+  }
 }

@@ -2,12 +2,13 @@ const terminal_mod = @import("terminal.zig");
 const grid_mod = @import("grid.zig");
 const cell_mod = @import("cell.zig");
 const scrollback_mod = @import("scrollback.zig");
+const hyperlink_mod = @import("hyperlink.zig");
 
 const Terminal = terminal_mod.Terminal;
 
 var terminal: Terminal = undefined;
 var scrollback: scrollback_mod.Scrollback = .{};
-var alt_grid: grid_mod.Grid = undefined;
+var alt_grid: grid_mod.Grid = .{};
 var input_buffer: [8192]u8 = undefined;
 var initialized: bool = false;
 
@@ -16,17 +17,27 @@ var initialized: bool = false;
 export fn init(cols: u32, rows: u32) void {
     const c: u16 = if (cols > grid_mod.MAX_COLS) grid_mod.MAX_COLS else if (cols == 0) 1 else @intCast(cols);
     const r: u16 = if (rows > grid_mod.MAX_ROWS) grid_mod.MAX_ROWS else if (rows == 0) 1 else @intCast(rows);
-    terminal.reset(c, r);
+    if (initialized) {
+        terminal.reset(c, r);
+        alt_grid.deinit();
+    } else {
+        terminal = Terminal.init(c, r);
+    }
+    terminal.hyperlinks.reset();
+    terminal.clusters.reset();
+    terminal.colors.reset();
     terminal.scrollback = &scrollback;
     terminal.alt_grid = &alt_grid;
     scrollback.reset();
     initialized = true;
+    terminal.grid.normalize();
 }
 
 export fn resizeTerminal(cols: u32, rows: u32) void {
     const c: u16 = if (cols > grid_mod.MAX_COLS) grid_mod.MAX_COLS else if (cols == 0) 1 else @intCast(cols);
     const r: u16 = if (rows > grid_mod.MAX_ROWS) grid_mod.MAX_ROWS else if (rows == 0) 1 else @intCast(rows);
     terminal.resize(c, r);
+    terminal.grid.normalize();
 }
 
 // -- Input --
@@ -38,16 +49,33 @@ export fn getWriteBuffer() [*]u8 {
 export fn writeBytes(len: u32) void {
     const n = if (len > input_buffer.len) input_buffer.len else len;
     terminal.write(input_buffer[0..n]);
+    // The host reads cells from getGridPtr() directly between calls.
+    terminal.grid.normalize();
+}
+
+// -- Theme --
+
+/// Host theme defaults for OSC 10 and OSC 11 queries, as 0xRRGGBB.
+export fn setThemeColors(foreground: u32, background: u32) void {
+    terminal.theme_fg = foreground & 0xffffff;
+    terminal.theme_bg = background & 0xffffff;
 }
 
 // -- Grid data --
 
 export fn getGridPtr() [*]const u8 {
-    return @ptrCast(&terminal.grid.cells);
+    terminal.grid.normalize();
+    return @ptrCast(terminal.grid.cells.ptr);
 }
 
 export fn getDirtyPtr() [*]const u8 {
-    return @ptrCast(&terminal.grid.dirty);
+    return @ptrCast(terminal.grid.dirty.ptr);
+}
+
+/// Return the live row identity, or zero for an invalid row or exhausted identities.
+export fn getRowId(row: u32) u32 {
+    if (row >= terminal.rows) return 0;
+    return terminal.grid.row_ids[row];
 }
 
 export fn clearDirty() void {
@@ -66,6 +94,14 @@ export fn getCursorCol() u32 {
 
 export fn getCursorVisible() u32 {
     return if (terminal.cursor_visible) 1 else 0;
+}
+
+export fn getCursorShape() u32 {
+    return @intFromEnum(terminal.cursor_shape);
+}
+
+export fn getCursorBlinking() u32 {
+    return if (terminal.cursor_blinking) 1 else 0;
 }
 
 export fn getCols() u32 {
@@ -88,6 +124,34 @@ export fn getUsingAltScreen() u32 {
     return if (terminal.using_alt_screen) 1 else 0;
 }
 
+export fn getMouseTracking() u32 {
+    return terminal.mouse_tracking;
+}
+
+export fn getMouseSgr() u32 {
+    return if (terminal.mouse_encoding == .sgr) 1 else 0;
+}
+
+export fn getMouseEncoding() u32 {
+    return @intFromEnum(terminal.mouse_encoding);
+}
+
+export fn getFocusEvents() u32 {
+    return if (terminal.focus_events) 1 else 0;
+}
+
+export fn getSynchronizedOutput() u32 {
+    return if (terminal.synchronized_output) 1 else 0;
+}
+
+export fn getSynchronizedOutputGeneration() u32 {
+    return terminal.synchronized_output_generation;
+}
+
+export fn getKittyKeyboardFlags() u32 {
+    return terminal.kittyKeyboardFlags();
+}
+
 // -- Title --
 
 export fn getTitlePtr() [*]const u8 {
@@ -106,10 +170,73 @@ export fn getTitleChanged() u32 {
     return 0;
 }
 
+export fn getBellCount() u32 {
+    const count = terminal.bell_count;
+    terminal.bell_count = 0;
+    return count;
+}
+
+export fn getLinkUriPtr(index: u32) [*]const u8 {
+    const entry = terminal.hyperlinks.get(@intCast(index)) orelse return &input_buffer;
+    return &entry.uri;
+}
+
+export fn getLinkUriLen(index: u32) u32 {
+    const entry = terminal.hyperlinks.get(@intCast(index)) orelse return 0;
+    return entry.uri_len;
+}
+
+export fn getLinkIdPtr(index: u32) [*]const u8 {
+    const entry = terminal.hyperlinks.get(@intCast(index)) orelse return &input_buffer;
+    return &entry.id;
+}
+
+export fn getLinkIdLen(index: u32) u32 {
+    const entry = terminal.hyperlinks.get(@intCast(index)) orelse return 0;
+    return entry.id_len;
+}
+
+export fn getHyperlinkCapacity() u32 {
+    return hyperlink_mod.MAX_LINKS;
+}
+
+export fn getHyperlinkCount() u32 {
+    return terminal.hyperlinks.count;
+}
+
+export fn getHyperlinkRejectedCount() u32 {
+    return terminal.hyperlinks.rejected;
+}
+
+/// UTF-8 bytes of a grapheme cluster; `index` is a cell char with its cluster bit cleared.
+export fn getClusterPtr(index: u32) [*]const u8 {
+    const bytes = terminal.clusters.get(index) orelse return &input_buffer;
+    return bytes.ptr;
+}
+
+export fn getClusterLen(index: u32) u32 {
+    const bytes = terminal.clusters.get(index) orelse return 0;
+    return @intCast(bytes.len);
+}
+
+/// Returns 0xRRGGBB for a truecolor cell index, or 0xFFFFFFFF when the index is not a truecolor entry.
+export fn getColorRgb(index: u32) u32 {
+    if (index > 0xffff) return 0xffffffff;
+    return terminal.colors.get(@intCast(index)) orelse 0xffffffff;
+}
+
 // -- Scrollback --
 
 export fn getScrollbackCount() u32 {
     return scrollback.count;
+}
+
+export fn getScrollbackClearCount() u32 {
+    return scrollback.clears;
+}
+
+export fn getScrollbackDiscardedCount() u32 {
+    return scrollback.discarded;
 }
 
 var scrollback_line_buf: [grid_mod.MAX_COLS * cell_mod.Cell.BYTE_SIZE]u8 = undefined;
@@ -117,7 +244,7 @@ var scrollback_line_buf: [grid_mod.MAX_COLS * cell_mod.Cell.BYTE_SIZE]u8 = undef
 export fn getScrollbackLine(offset: u32) [*]const u8 {
     const line = scrollback.getLine(offset);
     if (line) |l| {
-        return @ptrCast(&l.cells);
+        return @ptrCast(l.cells.ptr);
     }
     return &scrollback_line_buf;
 }
@@ -133,15 +260,15 @@ export fn getScrollbackLineLen(offset: u32) u32 {
 // -- Response buffer (for DSR replies) --
 
 export fn getResponsePtr() [*]const u8 {
-    return &terminal.response_buf;
+    return terminal.responsePtr();
 }
 
 export fn getResponseLen() u32 {
-    return terminal.response_len;
+    return terminal.responseLen();
 }
 
 export fn clearResponse() void {
-    terminal.response_len = 0;
+    terminal.popResponse();
 }
 
 // -- Debug log (unhandled sequences ring buffer) --
@@ -170,4 +297,8 @@ export fn getCellSize() u32 {
 
 export fn getMaxCols() u32 {
     return grid_mod.MAX_COLS;
+}
+
+export fn getGridStride() u32 {
+    return terminal.grid.stride;
 }

@@ -13,7 +13,7 @@
   "dependencies": {
     "@wterm/dom": "workspace:*",
     "@wterm/just-bash": "workspace:*",
-    "just-bash": "^2.14.2"
+    "just-bash": "^3.4.2"
   },
   "devDependencies": {
     "typescript": "^6.0.2",

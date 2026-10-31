@@ -1,11 +1,8 @@
-import { readFile } from "fs/promises";
-import { join } from "path";
 import { convertToModelMessages, stepCountIs, streamText } from "ai";
 import type { ModelMessage, UIMessage } from "ai";
 import { createBashTool } from "bash-tool";
 import { headers } from "next/headers";
-import { allDocsPages } from "@/lib/docs-navigation";
-import { mdxToCleanMarkdown } from "@/lib/mdx-to-markdown";
+import { geistdocsSource } from "@/lib/geistdocs/source";
 import { minuteRateLimit, dailyRateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
@@ -16,7 +13,7 @@ const SYSTEM_PROMPT = `You are a helpful documentation assistant for wterm ("dub
 
 GitHub repository: https://github.com/vercel-labs/wterm
 Documentation: https://wterm.dev
-npm packages: @wterm/core, @wterm/dom, @wterm/react, @wterm/vue, @wterm/markdown, @wterm/just-bash
+npm packages: @wterm/core, @wterm/dom, @wterm/react, @wterm/vue, @wterm/svelte, @wterm/markdown, @wterm/just-bash
 
 You have access to the full wterm documentation via the bash and readFile tools. The docs are available as markdown files in the /workspace/ directory.
 
@@ -31,33 +28,16 @@ When answering questions:
 - Do NOT use emojis in your responses`;
 
 async function loadDocsFiles(): Promise<Record<string, string>> {
-  const files: Record<string, string> = {};
-
-  const results = await Promise.allSettled(
-    allDocsPages.map(async (page) => {
-      const slug = page.href.replace(/^\//, "");
-      const filePath = slug
-        ? join(process.cwd(), "src", "app", slug, "page.mdx")
-        : join(process.cwd(), "src", "app", "page.mdx");
-
-      const raw = await readFile(filePath, "utf-8");
-      const md = mdxToCleanMarkdown(raw);
-      const fileName = slug ? `/${slug}.md` : "/index.md";
-      return { fileName, md };
+  const entries = await Promise.all(
+    geistdocsSource.source.getPages("en").map(async (page) => {
+      const slug = page.slugs.join("/");
+      return [
+        slug ? `/${slug}.md` : "/index.md",
+        await geistdocsSource.getPageMarkdown(page),
+      ] as const;
     }),
   );
-
-  for (const [i, result] of results.entries()) {
-    if (result.status === "fulfilled") {
-      files[result.value.fileName] = result.value.md;
-    } else {
-      console.warn(
-        `Failed to load docs page ${allDocsPages[i].href}: ${result.reason}`,
-      );
-    }
-  }
-
-  return files;
+  return Object.fromEntries(entries);
 }
 
 function addCacheControl(messages: ModelMessage[]): ModelMessage[] {

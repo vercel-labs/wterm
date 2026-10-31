@@ -1,0 +1,149 @@
+---
+title: "React"
+navTitle: "React"
+---
+
+The `@wterm/react` package provides a `<Terminal>` component and a `useTerminal` hook for integrating wterm into React applications.
+
+## Install
+
+```bash
+npm install @wterm/dom @wterm/react
+```
+
+## Basic Usage
+
+```tsx
+import { Terminal } from "@wterm/react";
+import "@wterm/react/css";
+
+function App() {
+  return <Terminal />;
+}
+```
+
+## Custom Input Handling
+
+By default, typed input is echoed back to the terminal. Use `onData` with `useTerminal` when you need control over input — for example, sending it to a server:
+
+```tsx
+import { Terminal, useTerminal } from "@wterm/react";
+import "@wterm/react/css";
+
+function App() {
+  const { ref, write } = useTerminal();
+
+  return (
+    <Terminal
+      ref={ref}
+      onData={(data) => {
+        socket.send(data);
+      }}
+    />
+  );
+}
+```
+
+## Props
+
+The `<Terminal>` component accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `onData`, `onBinary`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onWorkingDirectory`, `onResize`) plus [React-only props](/api-reference#react-only-props) (`theme`, `onReady`, `onError`). Pass a [`TerminalCore`](/ghostty) instance to the `core` prop to use an alternative emulation backend.
+
+Standard `div` props (`className`, `style`, `id`, etc.) are forwarded to the container element.
+
+Use `<Terminal aria-label="Build shell" aria-describedby="shell-help" />` to name and describe the actual input. Label attributes stay synchronized when props change. The wrapper is a group; input is the single editable control. `tabIndex={-1}` removes input from page tab entry. Press Escape, then Tab to move focus out of the terminal, or Escape, then Shift+Tab to move backward. Use `readText()` on the WTerm instance to present a stable snapshot of retained output in a labelled, read-only text area; see [Reading Terminal Output](/api-reference#reading-terminal-output). See [Input Accessibility](/api-reference#input-accessibility).
+
+The React wrapper delegates rendering to `@wterm/dom`, so a graphics-capable
+core such as `@wterm/ghostty` automatically renders direct Kitty PNG/RGB/RGBA
+images. Set `maxImageWidth` and/or `maxImageHeight` to constrain their rendered
+size in CSS pixels; images preserve their aspect ratio and are never enlarged.
+Image canvases are decorative (`aria-hidden`, non-focusable, and
+pointer-transparent); text remains the accessible terminal surface.
+
+The underlying DOM terminal also answers Kitty pixel geometry queries from the
+rendered viewport, so direct image clients can negotiate their display size.
+
+## useTerminal Hook
+
+Returns a ref and imperative helpers:
+
+```tsx
+const { ref, write, resize, focus } = useTerminal();
+```
+
+See the full [Imperative Handle](/api-reference#imperative-handle-react) reference for all returned methods and the `TerminalHandle` interface.
+
+## Themes
+
+Import the stylesheet and switch themes via the `theme` prop:
+
+```tsx
+import "@wterm/react/css";
+
+<Terminal theme="monokai" />;
+```
+
+Built-in themes: `solarized-dark`, `monokai`, `light`. Define custom themes with CSS custom properties (`--term-fg`, `--term-bg`, `--term-color-0` through `--term-color-15`).
+
+## Next.js
+
+For Next.js, add `@wterm/dom` and `@wterm/react` to `transpilePackages` in your config:
+
+```js
+// next.config.mjs
+const nextConfig = {
+  transpilePackages: ["@wterm/dom", "@wterm/react"],
+};
+```
+
+## Terminal Search
+
+The underlying WTerm instance exposes full-history `search`, `findNext`, `findPrevious`, `getSearchState`, and `clearSearch`. Set its `onSearchChange` callback to keep Find controls current. Use `onReady` or `ref.current.instance`. See [Terminal Search](/api-reference#terminal-search) for Unicode behavior, progress, and limits.
+
+## Selection and Copy
+
+Native Copy preserves terminal line breaks and complete Unicode cells, joining confirmed Ghostty soft wraps. Call `getSelectionText()` on the underlying WTerm instance to read that text without writing the clipboard. See [Selection and Copy](/api-reference#selection-and-copy) for whitespace behavior, return values, and native-selection limits.
+
+With Ghostty's current WASM binary, selections also follow output scrolling and resize/reflow while their text remains intact. Overwritten or discarded text, resets, and screen switches clear them. The same reference covers preservation limits and pending-frame behavior.
+
+Use `await wt.selectAll()` on the WTerm instance to select all retained history and the active screen without mounting extra rows, then read `wt.getSelectionText()`. Cmd+A or Ctrl+Shift+A invokes the same action from terminal input. `wt.clearSelection()` cancels it. See [Select All](/api-reference#select-all) for capture limits, shortcuts, and when selection clears.
+
+Double-click words or paths, or triple-click logical lines. The WTerm methods `selectWord({ row, col })` and `selectLine(row)` create the same native selection, including confirmed Ghostty soft wraps and unmounted history. See [Words and Logical Lines](/api-reference#words-and-logical-lines) for coordinates, boundaries, and limits.
+
+Alt/Option-drag selects rectangular columns; Shift+Alt selects inside mouse-reporting applications. Call `selectRectangle(start, end)` on the WTerm instance with inclusive retained-row/cell corners. Rectangles preserve selected spaces and physical row breaks and clear on output or resize. See [Rectangular Selection](/api-reference#rectangular-selection) for copy shortcuts, coordinates, and limits.
+
+## Output announcements
+
+Opt in with `announceOutput` to announce terminal text changes politely while
+input has focus. The option defaults to `false`; component prop changes apply
+without restarting the terminal, and vanilla callers use
+`term.setOutputAnnouncements(enabled)`. Announcements are batched and stop
+when focus leaves input. Bursts are bounded to avoid overwhelming the speech
+queue. See [Output announcements](/api-reference#output-announcements) for
+capture limits, pause/resume behavior, and redraw semantics.
+
+## Inactive panes
+
+Use `renderingPaused` for panes that are not visible. Parsing and terminal
+effects continue, and resuming paints the latest state without restarting.
+In vanilla code, call `term.setRenderingPaused(paused)`; framework props are
+reactive. Browser document visibility also pauses painting. See
+[Inactive panes](/configuration#inactive-panes) for focus and capture behavior.
+
+Application clipboard writes require an explicit host policy; see [Clipboard requests](/configuration#clipboard-requests).
+
+## Shell integration
+
+With Ghostty, the `onWorkingDirectory` prop receives raw OSC 7 URI reports,
+including while rendering is paused. An empty string clears the value. Treat
+the URI as untrusted metadata; see [Working directories](/configuration#working-directories).
+
+With Ghostty and a shell emitting OSC 133, `onShellIntegration` receives the
+latest prompt, input, running, or completion state and the last reported exit
+code. Delivery continues while painting is paused; markers in one parser chunk
+coalesce into current state. See [Shell integration](/configuration#shell-integration)
+for the contract, shell setup, and workspace indicators.
+
+Use the underlying `WTerm` instance’s `scrollToPrompt(-1)` and
+`scrollToPrompt(1)` methods to navigate previous and next prompts in retained
+history. See [Shell integration](/configuration#shell-integration) for viewport
+behavior, unsupported cores, and inactive states.

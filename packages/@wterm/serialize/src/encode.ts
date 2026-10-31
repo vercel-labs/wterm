@@ -1,4 +1,4 @@
-import type { CellData, WasmBridge } from "@wterm/core";
+import type { CellData, TerminalCore } from "@wterm/core";
 
 const ESC = "\x1b[";
 const RESET = `${ESC}0m`;
@@ -19,6 +19,8 @@ type RunStyle = {
   fg: number;
   bg: number;
   flags: number;
+  fgRgb?: number;
+  bgRgb?: number;
 };
 
 function isDefaultSpace(cell: CellData): boolean {
@@ -36,7 +38,13 @@ function normalizeChar(codepoint: number): string {
 }
 
 function sameStyle(a: RunStyle, b: RunStyle): boolean {
-  return a.fg === b.fg && a.bg === b.bg && a.flags === b.flags;
+  return (
+    a.fg === b.fg &&
+    a.bg === b.bg &&
+    a.flags === b.flags &&
+    a.fgRgb === b.fgRgb &&
+    a.bgRgb === b.bgRgb
+  );
 }
 
 export function colorFg(idx: number): string {
@@ -53,6 +61,10 @@ export function colorBg(idx: number): string {
   return `${ESC}48;5;${idx}m`;
 }
 
+function colorRgb(code: 38 | 48, rgb: number): string {
+  return `${ESC}${code};2;${(rgb >> 16) & 0xff};${(rgb >> 8) & 0xff};${rgb & 0xff}m`;
+}
+
 export function sgrForRun(_prev: RunStyle | null, cur: RunStyle): string {
   let out = RESET;
 
@@ -60,14 +72,14 @@ export function sgrForRun(_prev: RunStyle | null, cur: RunStyle): string {
     if ((cur.flags & flag) !== 0) out += sgr;
   }
 
-  out += colorFg(cur.fg);
-  out += colorBg(cur.bg);
+  out += cur.fgRgb === undefined ? colorFg(cur.fg) : colorRgb(38, cur.fgRgb);
+  out += cur.bgRgb === undefined ? colorBg(cur.bg) : colorRgb(48, cur.bgRgb);
 
   return out;
 }
 
 export function encodeRow(
-  _bridge: WasmBridge,
+  _bridge: TerminalCore,
   len: number,
   readCell: (col: number) => CellData,
 ): string {
@@ -90,8 +102,18 @@ export function encodeRow(
 
   for (let col = 0; col < trimmedLen; col++) {
     const cell = cells[col]!;
-    const style: RunStyle = { fg: cell.fg, bg: cell.bg, flags: cell.flags };
-    const char = normalizeChar(cell.char);
+    // A wide glyph already covers its continuation cell. A spacer head is the
+    // filler before a wrapped wide glyph, and each row is encoded on its own.
+    if (cell.width === 0 || cell.spacerHead) continue;
+
+    const style: RunStyle = {
+      fg: cell.fg,
+      bg: cell.bg,
+      flags: cell.flags,
+      fgRgb: cell.fgRgb,
+      bgRgb: cell.bgRgb,
+    };
+    const char = cell.chars ?? normalizeChar(cell.char);
 
     if (!runStyle) {
       runStyle = style;
@@ -118,7 +140,7 @@ export function encodeRow(
   return out;
 }
 
-export function encodeStream(bridge: WasmBridge): string {
+export function encodeStream(bridge: TerminalCore): string {
   const cursor = bridge.getCursor();
   const rows = bridge.getRows();
   const cols = bridge.getCols();

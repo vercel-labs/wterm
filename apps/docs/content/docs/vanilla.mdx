@@ -1,0 +1,240 @@
+---
+title: "Vanilla JS"
+navTitle: "Vanilla JS"
+---
+
+The `@wterm/dom` package provides a framework-free terminal that works with plain HTML/CSS/JS.
+
+## Install
+
+```bash
+npm install @wterm/dom
+```
+
+## Usage
+
+```html
+<div id="terminal"></div>
+
+<script type="module">
+  import { WTerm } from "@wterm/dom";
+  import "@wterm/dom/css";
+
+  const term = new WTerm(document.getElementById("terminal"), {
+    onTitle(title) {
+      document.title = title;
+    },
+  });
+
+  await term.init();
+</script>
+```
+
+## Input Accessibility
+
+Give the host an `aria-label` or `aria-labelledby`, with an optional `aria-describedby` or `aria-description`. WTerm applies these to the actual input and keeps changes synchronized. The input defaults to the name **Terminal**; the host defaults to a group. Host `tabindex="-1"` excludes input from page tab entry, while `term.focus()` still focuses it programmatically. Press Escape, then Tab to move focus out of the terminal, or Escape, then Shift+Tab to move backward. Use `readText()` on the WTerm instance to present a stable snapshot of retained output in a labelled, read-only text area; see [Reading Terminal Output](/api-reference#reading-terminal-output). See [Input Accessibility](/api-reference#input-accessibility) for tab-order ownership and output limits.
+
+## Custom Input Handling
+
+By default, typed input is echoed back to the terminal. Pass `onData` when you need control over input — for example, sending it to a server:
+
+```js
+const term = new WTerm(document.getElementById("terminal"), {
+  onData(data) {
+    socket.send(data);
+  },
+});
+
+await term.init();
+```
+
+## Options and Methods
+
+The `WTerm` constructor accepts all [shared terminal options](/api-reference#terminal-options) (`cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `onData`, `onBinary`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onWorkingDirectory`, `onResize`). Pass a [`TerminalCore`](/ghostty) instance to the `core` option to use an alternative emulation backend.
+
+When auto-resizing, omitted dimensions are measured before core initialization,
+avoiding an unnecessary initial resize. Explicit dimensions are preserved at
+initialization. Hidden containers fall back to 80×24 until measurable. Read
+`wt.cols` and `wt.rows` after `await wt.init()` when starting a PTY.
+
+See [WTerm Methods](/api-reference#wterm-methods) for all instance methods, including [full-history Find](/api-reference#terminal-search): `search`, `findNext`, `findPrevious`, `getSearchState`, and `clearSearch`. Use the `onSearchChange` WTerm option or instance callback for progress and match counts.
+
+When a terminal application enables mouse tracking, UTF-8 (1005), SGR (1006), urxvt (1015), and SGR pixel (1016) reports reach `onData` with keyboard input and focus reports. Forward `onData` strings through a UTF-8 transport. Mode 1016 uses 1-based CSS-pixel coordinates relative to the visible grid, independent of device pixel ratio. Mode 1003 sends unpressed pointer motion once per cell in cell formats and once per CSS pixel in 1016.
+
+X10 mouse reports go to `onBinary` as raw bytes when that callback is supplied. Without `onBinary`, ASCII-safe X10 reports reach `onData`; coordinates requiring non-ASCII bytes are skipped. Hold Shift for native text selection.
+
+When mouse tracking is active, clicks and wheel gestures on scrollback rows
+stay with the browser. If you are reading history, the wheel scrolls it until
+you reach the bottom; hold Shift and scroll to move through history from the
+live viewport. A drag begun on the live grid still reports its release after
+leaving the grid.
+
+When an application rings BEL, `onBell(count)` receives the number of bells as
+output is written. WTerm does not play sound automatically; your application
+can choose an audible or visual notification.
+
+When the active core negotiates the Kitty keyboard protocol, WTerm encodes key presses, repeats, and available releases from the core's current flags. The built-in and Ghostty cores keep separate primary and alternate-screen flag stacks. Third-party cores without Kitty state retain legacy keyboard behavior.
+
+The built-in core answers DEC private-mode status queries such as `CSI ?2026$p` for synchronized output. A response of `CSI ?2026;1$y` means the mode is set; `CSI ?2026;2$y` means it is reset. WTerm forwards the response through `onData` to your connected application.
+
+Printable AltGr input uses the browser's committed text path even in Kitty mode, so layouts that use AltGr can enter characters. This includes Control+Alt text with the right Alt key when the browser does not report AltGraph state. Control+Alt chords without either AltGr signal keep their Kitty encoding.
+
+Outside Kitty keyboard mode, modified arrow, Home/End, Insert/Delete, Page
+Up/Down, and F1–F12 keys use xterm-style CSI modifier sequences. For example,
+Control+Left sends `CSI 1;5D` instead of an unmodified Left arrow. Unmodified
+arrows still honor application cursor mode. Browser-reserved shortcuts may not
+reach the terminal.
+
+While the terminal is focused, handled key presses do not bubble to page-level
+shortcut listeners. Control+K can reach the terminal instead of opening docs
+search.
+
+When Kitty keyboard mode is not negotiated, Control+Space sends NUL, Control+/
+sends US, and Control+Backspace sends BS. Browsers may reserve some shortcuts.
+Control+Alt printable input remains on the native text path in this mode for
+keyboard layouts that use AltGr.
+
+Browsers do not expose every native keyboard field. WTerm uses `KeyboardEvent.code` for functional and modifier identity, `KeyboardEvent.key` for text, and reports shifted alternates when available. It does not invent a base-layout alternate, synthesize missing release events, or retain associated text beyond the current press.
+
+IME composition displays tentative text at the terminal cursor and sends only
+the committed text to `onData`. If you are viewing scrollback when composition
+starts, WTerm returns to the live viewport so the browser's candidate window
+appears by the current input.
+
+On touch-first devices, the transparent input target stays at the cursor for
+soft-keyboard focus and the native paste menu. Holding Backspace sends repeated
+deletions, and pasted text follows the application's bracketed-paste mode.
+
+Application-provided OSC 8 hyperlinks render as native anchors across both the active viewport and scrollback. Only absolute HTTP and HTTPS URIs become clickable; invalid, relative, and executable schemes remain ordinary terminal text.
+
+Partial row redraws reuse matching cell spans when most of the row is unchanged. When span styles and column widths stay the same, text changes update existing text nodes without reparsing HTML. Cell widths, selection, links, and text decorations remain intact.
+
+Glyph ink can overhang its cell without shifting later columns, so italic and fallback characters retain their complete shape. The viewport still clips output at its edges. Fractional `--term-row-height` values are preserved during initialization, allowing the live grid to match a host's typography.
+
+While hovering an anchor, holding Command on macOS or Control on Windows and Linux reveals its underline and pointer cursor. Plain clicks remain terminal interaction. Command-click, Control-click, or native keyboard activation when an anchor receives focus opens the link. Modified link activation remains available while SGR mouse tracking is active and is not forwarded to the terminal application.
+
+Scrollback normally uses a bounded DOM window around the visible rows. Up to 1,000 selected history rows stay mounted separately from a distant viewport, leaving gaps virtualized. Native browser find and accessibility inspect mounted rows, not every retained history row. If the terminal is already at the bottom, new output keeps it at the exact bottom; reading older history does not enable auto-follow, and terminal input returns to the bottom.
+
+With the built-in and Ghostty cores, small scrolls reuse the mounted overscan window until the viewport approaches its edge. When the window moves, overlapping history rows keep their content without rereading their cells. Output, theme changes, resize, and history changes refresh the content. Custom cores without a discarded-history count refresh mounted history on every render.
+
+Copying a terminal selection preserves complete Unicode cells and explicit newlines; Ghostty soft wraps join without artificial line breaks. Block glyphs are included as text. Use `term.getSelectionText()` to read the same plain text without touching the clipboard. See [Selection and Copy](/api-reference#selection-and-copy) for whitespace behavior and native-selection limits.
+
+With Ghostty's current WASM binary, selections also follow output scrolling and resize/reflow. Overwritten or discarded text, resets, and screen switches clear the selection. See the same reference for preservation limits and behavior while a frame is pending.
+
+Use `await wt.selectAll()` on the WTerm instance to select all retained history and the active screen without mounting extra rows, then read `wt.getSelectionText()`. Cmd+A or Ctrl+Shift+A invokes the same action from terminal input. `wt.clearSelection()` cancels it. See [Select All](/api-reference#select-all) for capture limits, shortcuts, and when selection clears.
+
+Double-click words or paths, or triple-click logical lines. The WTerm methods `selectWord({ row, col })` and `selectLine(row)` create the same native selection, including confirmed Ghostty soft wraps and unmounted history. See [Words and Logical Lines](/api-reference#words-and-logical-lines) for coordinates, boundaries, and limits.
+
+Alt/Option-drag selects rectangular columns; Shift+Alt selects inside mouse-reporting applications. Call `selectRectangle(start, end)` on the WTerm instance with inclusive retained-row/cell corners. Rectangles preserve selected spaces and physical row breaks and clear on output or resize. See [Rectangular Selection](/api-reference#rectangular-selection) for copy shortcuts, coordinates, and limits.
+
+### Terminal images
+
+When the supplied core exposes the optional graphics methods, `WTerm` renders
+visible pinned Kitty image placements in a separate canvas overlay. The overlay
+is pointer-transparent, non-focusable, `aria-hidden`, and does not change
+scroll height, so ordinary text selection, copy, keyboard input, and screen
+reader behavior remain row-based. Image pixels are decorative; provide text
+context separately when the image carries meaning.
+
+For browser safety, every destination canvas is bounded by the active terminal
+pixel area and all visible canvas backing stores share a 32 MiB budget. An
+oversized or otherwise unmaterializable placement is skipped without changing
+the text or scrollback surface.
+
+The default lightweight core safely consumes unsupported Kitty APC data but
+does not render it. Pass a Ghostty core for direct PNG/RGB/RGBA support. Images
+are transient, bounded per-screen state; file/shared-memory/URL media, Sixel,
+iTerm2, animation, and virtual placements are unsupported.
+Use `maxImageWidth` and/or `maxImageHeight` in the `WTerm` options to constrain
+oversized rendered images. The limits are CSS pixels, preserve aspect ratio,
+and only scale images down.
+
+The DOM wrapper answers Kitty pixel geometry queries (`CSI 14 t` and
+`CSI 16 t`) from the rendered terminal element, allowing Kitty graphics clients
+such as `kitten icat --transfer-mode=stream image.png` to negotiate image size.
+Queries can span text and byte writes, including while rendering is paused.
+Ordinary byte output is scanned directly without creating a decoded string copy.
+
+## Themes
+
+Import the stylesheet and apply a theme class to the terminal element:
+
+```js
+import "@wterm/dom/css";
+```
+
+Built-in themes: `theme-solarized-dark`, `theme-monokai`, `theme-light`:
+
+```js
+element.classList.add("theme-monokai");
+```
+
+All colors use CSS custom properties (`--term-fg`, `--term-bg`, `--term-color-0` through `--term-color-15`) so you can define your own theme with plain CSS.
+
+## WebSocket Transport
+
+Connect to a PTY backend over WebSocket:
+
+```js
+import { WTerm, WebSocketTransport } from "@wterm/dom";
+
+const term = new WTerm(el, { cols: 80, rows: 24 });
+await term.init();
+
+const ws = new WebSocketTransport({
+  url: "ws://localhost:8080/pty",
+  onData: (data) => term.write(data),
+});
+
+ws.connect();
+term.onData = (data) => {
+  try {
+    ws.send(data);
+  } catch (error) {
+    console.error("Input was not sent", error); // Show this in your app's UI.
+  }
+};
+```
+
+See the full [WebSocketTransport](/api-reference#websockettransport) reference for all options, methods, and properties.
+
+Sends are bounded to 1 MiB and 1,024 queued messages by default. Observe
+`onBackpressure` and catch buffer-limit `RangeError` to show input that was not
+accepted. Explicit close discards unsent input. See
+[Buffering and delivery](/api-reference#buffering-and-delivery) before wiring
+shell input or implementing reconnect behavior.
+
+## Output announcements
+
+Opt in with `announceOutput` to announce terminal text changes politely while
+input has focus. The option defaults to `false`; component prop changes apply
+without restarting the terminal, and vanilla callers use
+`term.setOutputAnnouncements(enabled)`. Announcements are batched and stop
+when focus leaves input. Bursts are bounded to avoid overwhelming the speech
+queue. See [Output announcements](/api-reference#output-announcements) for
+capture limits, pause/resume behavior, and redraw semantics.
+
+## Inactive panes
+
+Use `renderingPaused` for panes that are not visible. Parsing and terminal
+effects continue, and resuming paints the latest state without restarting.
+In vanilla code, call `term.setRenderingPaused(paused)`; framework props are
+reactive. Browser document visibility also pauses painting. See
+[Inactive panes](/configuration#inactive-panes) for focus and capture behavior.
+
+## Shell integration
+
+With Ghostty, `onWorkingDirectory(uri)` receives raw OSC 7 directory reports,
+including while rendering is paused. An empty string clears the value. Treat
+the URI as untrusted metadata; see [Working directories](/configuration#working-directories).
+
+With Ghostty and a shell emitting OSC 133, `onShellIntegration` receives the
+latest prompt, input, running, or completion state and the last reported exit
+code. Delivery continues while painting is paused; markers in one parser chunk
+coalesce into current state. See [Shell integration](/configuration#shell-integration)
+for the contract, shell setup, and workspace indicators.
+
+Use the underlying `WTerm` instance’s `scrollToPrompt(-1)` and
+`scrollToPrompt(1)` methods to navigate previous and next prompts in retained
+history. See [Shell integration](/configuration#shell-integration) for viewport
+behavior, unsupported cores, and inactive states.

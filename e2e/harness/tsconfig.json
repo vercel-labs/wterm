@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client", "node"]
+  },
+  "include": [
+    "src",
+    "tests/*.ts",
+    "playwright.config.ts",
+    "load.config.ts",
+    "input.config.ts",
+    "pty-input.config.ts",
+    "search.config.ts",
+    "stability.config.ts",
+    "performance.config.ts"
+  ]
+}

@@ -15,12 +15,19 @@ vi.mock("@wterm/dom", () => {
     this.cols = options?.cols ?? 80;
     this.rows = options?.rows ?? 24;
     this.onData = options?.onData ?? null;
+    this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
+    this.onWorkingDirectory = options?.onWorkingDirectory ?? null;
+    this.onBell = options?.onBell ?? null;
+    this.onClipboardWrite = options?.onClipboardWrite ?? null;
+    this.onShellIntegration = options?.onShellIntegration ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
     this.resize = vi.fn();
     this.focus = vi.fn();
+    this.setOutputAnnouncements = vi.fn();
+    this.setRenderingPaused = vi.fn();
     this.destroy = vi.fn();
     this.init = vi.fn().mockImplementation(async () => {
       this.bridge = {};
@@ -52,16 +59,61 @@ describe("Terminal component", () => {
 
   it("renders a div with terminal role and a11y attrs", async () => {
     const wrapper = await mountTerminal();
-    const el = wrapper.get("[role='textbox']");
+    const el = wrapper.get("[role='group']");
     expect(el.attributes("aria-label")).toBe("Terminal");
     expect(el.attributes("aria-roledescription")).toBe("terminal");
-    expect(el.attributes("aria-multiline")).toBe("true");
+    expect(el.attributes("aria-multiline")).toBeUndefined();
   });
 
   it("applies class from attribute fallthrough", async () => {
     const wrapper = await mountTerminal({}, { class: "custom" });
     expect(wrapper.classes()).toContain("custom");
     expect(wrapper.classes()).toContain("wterm");
+  });
+
+  it("toggles output announcements without replacing the terminal", async () => {
+    const wrapper = await mountTerminal({ announceOutput: true });
+    const instance = lastWTermInstance;
+    const { WTerm } = await import("@wterm/dom");
+    expect(vi.mocked(WTerm).mock.calls[0][1]?.announceOutput).toBe(true);
+    await wrapper.setProps({ announceOutput: false });
+    expect(instance.setOutputAnnouncements).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(wrapper.attributes("announceoutput")).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it("pauses painting without replacing the terminal or leaking an attribute", async () => {
+    const wrapper = await mountTerminal({ renderingPaused: true });
+    const instance = lastWTermInstance;
+    const { WTerm } = await import("@wterm/dom");
+    expect(vi.mocked(WTerm).mock.calls[0][1]?.renderingPaused).toBe(true);
+    await wrapper.setProps({ renderingPaused: false });
+    expect(instance.setRenderingPaused).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
+    expect(wrapper.attributes("renderingpaused")).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it("updates host input labels and tab order without restarting the terminal", async () => {
+    const wrapper = await mountTerminal(
+      {},
+      { "aria-label": "Build shell", "aria-describedby": "help", tabindex: 0 },
+    );
+    const instance = lastWTermInstance;
+    await wrapper.setProps({
+      "aria-label": "Test shell",
+      "aria-labelledby": "heading",
+      "aria-describedby": undefined,
+      tabindex: -1,
+    } as any);
+    expect(wrapper.attributes("aria-label")).toBe("Test shell");
+    expect(wrapper.attributes("aria-labelledby")).toBe("heading");
+    expect(wrapper.attributes("aria-describedby")).toBeUndefined();
+    expect(wrapper.attributes("tabindex")).toBe("-1");
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
   });
 
   it("applies theme class", async () => {
@@ -87,6 +139,17 @@ describe("Terminal component", () => {
     await flushPromises();
     expect(wrapper.emitted("ready")).toBeTruthy();
     expect(wrapper.emitted("ready")![0][0]).toBe(lastWTermInstance);
+  });
+
+  it("emits raw X10 bytes through the binary event", async () => {
+    const onBinary = vi.fn();
+    const wrapper = await mountTerminal({}, { onBinary });
+    const bytes = Uint8Array.of(27, 91, 77, 32, 132, 33);
+
+    expect(lastWTermInstance.onBinary).toBeTypeOf("function");
+    lastWTermInstance.onBinary(bytes);
+    expect(onBinary).toHaveBeenCalledWith(bytes);
+    expect(wrapper.emitted("binary")?.[0]).toEqual([bytes]);
   });
 
   it("emits error on init failure", async () => {
@@ -168,6 +231,7 @@ describe("Terminal component", () => {
   it("toggles cursor-blink class on prop change", async () => {
     const wrapper = await mountTerminal({ cursorBlink: false });
     await flushPromises();
+    lastWTermInstance.element.classList.add("focused", "has-scrollback");
     await wrapper.setProps({ cursorBlink: true });
     await nextTick();
     expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
@@ -178,6 +242,19 @@ describe("Terminal component", () => {
     expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
       false,
     );
+    expect(lastWTermInstance.element.classList.contains("cursor-steady")).toBe(
+      true,
+    );
+    await wrapper.setProps({ cursorBlink: undefined });
+    await nextTick();
+    expect(lastWTermInstance.element.classList.contains("cursor-blink")).toBe(
+      false,
+    );
+    expect(lastWTermInstance.element.classList.contains("cursor-steady")).toBe(
+      false,
+    );
+    expect(wrapper.classes()).toContain("focused");
+    expect(wrapper.classes()).toContain("has-scrollback");
   });
 
   it("emits data when WTerm onData fires", async () => {
@@ -217,6 +294,42 @@ describe("Terminal component", () => {
     await flushPromises();
     lastWTermInstance.onTitle("my title");
     expect(wrapper.emitted("title")![0]).toEqual(["my title"]);
+  });
+
+  it("emits clipboard writes including empty clears", async () => {
+    const wrapper = await mountTerminal();
+    await flushPromises();
+    lastWTermInstance.onClipboardWrite("copied");
+    lastWTermInstance.onClipboardWrite("");
+    expect(wrapper.emitted("clipboardWrite")).toEqual([["copied"], [""]]);
+  });
+
+  it("emits shell state including resets", async () => {
+    const wrapper = await mountTerminal();
+    await flushPromises();
+    const running = { phase: "running", exitCode: null };
+    const reset = { phase: "unknown", exitCode: null };
+    lastWTermInstance.onShellIntegration(running);
+    lastWTermInstance.onShellIntegration(reset);
+    expect(wrapper.emitted("shellIntegration")).toEqual([[running], [reset]]);
+  });
+
+  it("emits working-directory reports including resets", async () => {
+    const wrapper = await mountTerminal();
+    await flushPromises();
+    lastWTermInstance.onWorkingDirectory("file://remote/work");
+    lastWTermInstance.onWorkingDirectory("");
+    expect(wrapper.emitted("workingDirectory")).toEqual([
+      ["file://remote/work"],
+      [""],
+    ]);
+  });
+
+  it("emits bell counts when WTerm onBell fires", async () => {
+    const wrapper = await mountTerminal();
+    await flushPromises();
+    lastWTermInstance.onBell(3);
+    expect(wrapper.emitted("bell")![0]).toEqual([3]);
   });
 
   it("emits resize when WTerm onResize fires", async () => {

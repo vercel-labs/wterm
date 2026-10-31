@@ -17,12 +17,19 @@ vi.mock("@wterm/dom", () => {
     this.cols = options?.cols ?? 80;
     this.rows = options?.rows ?? 24;
     this.onData = options?.onData ?? null;
+    this.onBinary = options?.onBinary ?? null;
     this.onTitle = options?.onTitle ?? null;
+    this.onWorkingDirectory = options?.onWorkingDirectory ?? null;
+    this.onBell = options?.onBell ?? null;
+    this.onClipboardWrite = options?.onClipboardWrite ?? null;
+    this.onShellIntegration = options?.onShellIntegration ?? null;
     this.onResize = options?.onResize ?? null;
     this.autoResize = options?.autoResize !== false;
     this.write = vi.fn();
     this.resize = vi.fn();
     this.focus = vi.fn();
+    this.setOutputAnnouncements = vi.fn();
+    this.setRenderingPaused = vi.fn();
     this.destroy = vi.fn();
     this.init = vi.fn().mockImplementation(async () => {
       this.bridge = {};
@@ -51,7 +58,7 @@ describe("Terminal component", () => {
 
   it("renders a div with terminal role", async () => {
     await renderTerminal();
-    const el = screen.getByRole("textbox");
+    const el = screen.getByRole("group");
     expect(el).toBeInTheDocument();
     expect(el).toHaveAttribute("aria-label", "Terminal");
     expect(el).toHaveAttribute("aria-roledescription", "terminal");
@@ -59,14 +66,84 @@ describe("Terminal component", () => {
 
   it("applies className prop", async () => {
     const { container } = await renderTerminal({ className: "custom" });
-    const el = container.querySelector("[role='textbox']")!;
+    const el = container.querySelector("[role='group']")!;
     expect(el.className).toContain("custom");
+  });
+
+  it("toggles output announcements without replacing the terminal", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const { rerender } = render(<Terminal announceOutput />);
+    const instance = lastWTermInstance;
+    expect(instance.setOutputAnnouncements).toHaveBeenLastCalledWith(true);
+    rerender(<Terminal announceOutput={false} />);
+    expect(instance.setOutputAnnouncements).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
+    expect(instance.element.hasAttribute("announceOutput")).toBe(false);
+  });
+
+  it("pauses painting without replacing the terminal or leaking a DOM attribute", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const { rerender } = render(<Terminal renderingPaused />);
+    const instance = lastWTermInstance;
+    expect(instance.setRenderingPaused).toHaveBeenLastCalledWith(true);
+    rerender(<Terminal renderingPaused={false} />);
+    expect(instance.setRenderingPaused).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
+    expect(instance.element.hasAttribute("renderingPaused")).toBe(false);
+  });
+
+  it("updates host input labels and tab order without restarting the terminal", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const { rerender } = render(
+      <Terminal
+        aria-label="Build shell"
+        aria-describedby="help"
+        tabIndex={0}
+      />,
+    );
+    const host = screen.getByRole("group", { name: "Build shell" });
+    const instance = lastWTermInstance;
+    expect(host).not.toHaveAttribute("aria-multiline");
+    rerender(
+      <Terminal
+        aria-label="Test shell"
+        aria-labelledby="heading"
+        tabIndex={-1}
+      />,
+    );
+    expect(host).toHaveAttribute("aria-label", "Test shell");
+    expect(host).toHaveAttribute("aria-labelledby", "heading");
+    expect(host).not.toHaveAttribute("aria-describedby");
+    expect(host).toHaveAttribute("tabindex", "-1");
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
   });
 
   it("applies theme class", async () => {
     const { container } = await renderTerminal({ theme: "dark" });
-    const el = container.querySelector("[role='textbox']")!;
+    const el = container.querySelector("[role='group']")!;
     expect(el.className).toContain("theme-dark");
+  });
+
+  it("lets cursor blink props switch between forced and application-controlled behavior", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const { rerender, container } = render(<Terminal />);
+    await act(async () => {});
+    const element = container.querySelector('[role="group"]')!;
+    expect(element).not.toHaveClass("cursor-blink", "cursor-steady");
+    element.classList.add("focused", "has-scrollback");
+    rerender(<Terminal cursorBlink />);
+    expect(element).toHaveClass("cursor-blink");
+    expect(element).toHaveClass("focused", "has-scrollback");
+    rerender(<Terminal cursorBlink={false} />);
+    expect(element).toHaveClass("cursor-steady", "focused", "has-scrollback");
+    expect(element).not.toHaveClass("cursor-blink");
+    rerender(<Terminal />);
+    expect(element).not.toHaveClass("cursor-blink", "cursor-steady");
+    expect(element).toHaveClass("focused", "has-scrollback");
+    expect(lastWTermInstance.destroy).not.toHaveBeenCalled();
   });
 
   it("creates WTerm instance on mount", async () => {
@@ -89,6 +166,26 @@ describe("Terminal component", () => {
     expect(onReady).toHaveBeenCalled();
   });
 
+  it("forwards raw mouse bytes and follows onBinary prop changes", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const first = vi.fn();
+    const next = vi.fn();
+    const bytes = Uint8Array.of(27, 91, 77, 32, 132, 33);
+    const { rerender } = render(<Terminal onBinary={first} />);
+    await act(async () => {});
+
+    lastWTermInstance.onBinary(bytes);
+    expect(first).toHaveBeenCalledWith(bytes);
+
+    rerender(<Terminal onBinary={next} />);
+    lastWTermInstance.onBinary(bytes);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(bytes);
+
+    rerender(<Terminal />);
+    expect(lastWTermInstance.onBinary).toBeNull();
+  });
+
   it("calls onError on init failure", async () => {
     const { WTerm } = await import("@wterm/dom");
     (WTerm as any).mockImplementationOnce(function (
@@ -107,6 +204,8 @@ describe("Terminal component", () => {
       this.resize = vi.fn();
       this.focus = vi.fn();
       this.destroy = vi.fn();
+      this.setOutputAnnouncements = vi.fn();
+      this.setRenderingPaused = vi.fn();
       this.init = vi.fn().mockRejectedValue(new Error("WASM failed"));
       lastWTermInstance = this;
     });
@@ -157,6 +256,23 @@ describe("Terminal component", () => {
     expect(lastWTermInstance.resize).toHaveBeenCalledWith(120, 40);
   });
 
+  it("does not repeat a capped size request on unrelated renders", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const { rerender } = render(<Terminal cols={320} rows={40} />);
+    await act(async () => {});
+    lastWTermInstance.cols = 256;
+
+    rerender(<Terminal cols={320} rows={40} className="updated" />);
+    expect(lastWTermInstance.resize).not.toHaveBeenCalled();
+
+    rerender(<Terminal cols={300} rows={40} className="updated" />);
+    expect(lastWTermInstance.resize).toHaveBeenCalledOnce();
+    expect(lastWTermInstance.resize).toHaveBeenCalledWith(300, 40);
+
+    rerender(<Terminal cols={300} rows={40} className="again" />);
+    expect(lastWTermInstance.resize).toHaveBeenCalledOnce();
+  });
+
   it("delegates focus through imperative handle", async () => {
     const ref = createRef<TerminalHandle>();
     const Terminal = (await import("../Terminal.js")).default;
@@ -165,6 +281,75 @@ describe("Terminal component", () => {
 
     ref.current!.focus();
     expect(lastWTermInstance.focus).toHaveBeenCalled();
+  });
+
+  it("forwards clipboard requests to the latest callback and honors removal", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const first = vi.fn();
+    const next = vi.fn();
+    const { rerender } = render(<Terminal onClipboardWrite={first} />);
+    await act(async () => {});
+    const instance = lastWTermInstance;
+    instance.onClipboardWrite("first");
+    rerender(<Terminal onClipboardWrite={next} />);
+    instance.onClipboardWrite("");
+    rerender(<Terminal />);
+    instance.onClipboardWrite("ignored");
+    expect(first).toHaveBeenCalledExactlyOnceWith("first");
+    expect(next).toHaveBeenCalledExactlyOnceWith("");
+    expect(lastWTermInstance).toBe(instance);
+  });
+
+  it("forwards shell state to the current callback without replacing the terminal", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const first = vi.fn(),
+      next = vi.fn();
+    const { rerender } = render(<Terminal onShellIntegration={first} />);
+    await act(async () => {});
+    const instance = lastWTermInstance;
+    const running = { phase: "running", exitCode: null };
+    const complete = { phase: "complete", exitCode: 7 };
+    instance.onShellIntegration(running);
+    rerender(<Terminal onShellIntegration={next} />);
+    instance.onShellIntegration(complete);
+    rerender(<Terminal />);
+    instance.onShellIntegration(running);
+    expect(first).toHaveBeenCalledExactlyOnceWith(running);
+    expect(next).toHaveBeenCalledExactlyOnceWith(complete);
+    expect(lastWTermInstance).toBe(instance);
+  });
+
+  it("forwards directory reports to the latest callback without remounting", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const first = vi.fn(),
+      next = vi.fn();
+    const { rerender } = render(<Terminal onWorkingDirectory={first} />);
+    await act(async () => {});
+    const instance = lastWTermInstance;
+    instance.onWorkingDirectory("file://remote/work");
+    rerender(<Terminal onWorkingDirectory={next} />);
+    instance.onWorkingDirectory("");
+    rerender(<Terminal />);
+    instance.onWorkingDirectory("file:///ignored");
+    expect(first).toHaveBeenCalledExactlyOnceWith("file://remote/work");
+    expect(next).toHaveBeenCalledExactlyOnceWith("");
+    expect(lastWTermInstance).toBe(instance);
+  });
+
+  it("forwards bell counts to the latest callback", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const first = vi.fn();
+    const next = vi.fn();
+    const { rerender } = render(<Terminal onBell={first} />);
+    await act(async () => {});
+
+    lastWTermInstance.onBell(2);
+    expect(first).toHaveBeenCalledWith(2);
+
+    rerender(<Terminal onBell={next} />);
+    lastWTermInstance.onBell(1);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(1);
   });
 });
 

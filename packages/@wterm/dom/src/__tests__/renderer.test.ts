@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Renderer } from "../renderer.js";
-import type { CellData, CursorState } from "@wterm/core";
+import { markSelectionChanged } from "../selection-state.js";
+import type { CellData, CursorState, TerminalPosition } from "@wterm/core";
 
 function createMockBridge(cols: number, rows: number, grid: CellData[][] = []) {
   const dirtyRows = new Set<number>();
@@ -60,7 +61,1058 @@ describe("Renderer", () => {
     });
   });
 
+  it("moves clean live rows without reading their cells and relocates the cursor", () => {
+    const cells = ["a", "b", "c", "d"].map((text) => [makeCell(text)]);
+    let ids = [1, 2, 3, 4];
+    let dirtyRow = -1;
+    const bridge = {
+      ...createMockBridge(1, 4, cells),
+      getRowId: (row: number) => ids[row],
+      isRowContentDirty: (row: number) => row === dirtyRow,
+      trackPosition: (position: TerminalPosition) => {
+        const id = ids[position.row];
+        return {
+          resolve: () => {
+            const row = ids.indexOf(id);
+            return row < 0 ? null : { row, col: position.col };
+          },
+          dispose: () => {},
+        };
+      },
+    };
+    bridge.getCursor = () => ({ row: 2, col: 0, visible: true });
+    const renderer = new Renderer(container);
+    renderer.render(bridge);
+    const original = Array.from(container.querySelectorAll(".term-row"));
+    const getCell = vi.spyOn(bridge, "getCell");
+    const range = document.createRange();
+    range.selectNodeContents(original[2]);
+    const selection = document.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    markSelectionChanged(document);
+    renderer.beforeMutation(bridge);
+
+    cells.splice(1, 2, cells[2], [makeCell("e")]);
+    ids = [1, 3, 5, 4];
+    bridge.isDirtyRow = () => true;
+    dirtyRow = 2;
+    renderer.render(bridge);
+    const moved = container.querySelectorAll(".term-row");
+    expect(Array.from(moved, (row) => row.textContent)).toEqual([
+      "a",
+      "c",
+      "e",
+      "d",
+    ]);
+    expect(moved[1]).toBe(original[2]);
+    expect(moved[0]).toBe(original[0]);
+    expect(moved[3]).toBe(original[3]);
+    expect(moved[1].querySelector(".term-cursor")).toBeNull();
+    expect(moved[2].querySelector(".term-cursor")).not.toBeNull();
+    expect(getCell.mock.calls.map(([row]) => row)).toEqual([1, 2]);
+    expect(selection.toString()).toBe("c");
+    expect(renderer.getSelectionText()).toBe("c");
+
+    getCell.mockClear();
+    renderer.beforeMutation(bridge);
+    cells.splice(1, 2, [makeCell("f")], cells[1]);
+    ids = [1, 6, 3, 4];
+    dirtyRow = 1;
+    renderer.render(bridge);
+    const reversed = container.querySelectorAll(".term-row");
+    expect(Array.from(reversed, (row) => row.textContent)).toEqual([
+      "a",
+      "f",
+      "c",
+      "d",
+    ]);
+    expect(reversed[2]).toBe(original[2]);
+    expect(reversed[1].querySelector(".term-cursor")).toBeNull();
+    expect(reversed[2].querySelector(".term-cursor")).not.toBeNull();
+    expect(getCell.mock.calls.map(([row]) => row)).toEqual([1, 2]);
+    expect(selection.toString()).toBe("c");
+    expect(renderer.getSelectionText()).toBe("c");
+    selection.removeAllRanges();
+    renderer.destroy();
+  });
+
+  describe("cell canvas", () => {
+    const viewport = {
+      scrollTop: 0,
+      clientHeight: 8,
+      rowHeight: 4,
+      charWidth: 7.5,
+    };
+    const opaque = {
+      ...makeCell("█"),
+      fgRgb: 0x112233,
+      bgRgb: 0x445566,
+    };
+    const edge = (col: number) => Math.round(col * viewport.charWidth);
+    const center = (col: number) => Math.floor((edge(col) + edge(col + 1)) / 2);
+
+    function pixel(
+      image: { width: number; data: Uint8ClampedArray },
+      x: number,
+      y: number,
+    ) {
+      const i = (y * image.width + x) * 4;
+      return Array.from(image.data.slice(i, i + 4));
+    }
+
+    function mockCanvas() {
+      const context = {
+        createImageData: vi.fn((width: number, height: number) => ({
+          width,
+          height,
+          data: new Uint8ClampedArray(width * height * 4),
+        })),
+        putImageData: vi.fn(),
+      };
+      const getContext = vi
+        .spyOn(HTMLCanvasElement.prototype, "getContext")
+        .mockReturnValue(context as unknown as CanvasRenderingContext2D);
+      return { context, getContext };
+    }
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it("gives block cells their own spans while the canvas is suspended", () => {
+      mockCanvas();
+      const bridge = createMockBridge(2, 1, [[opaque, opaque]]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.setup(2, 1);
+      renderer.render(bridge, viewport);
+      expect(container.querySelectorAll(".term-canvas-run")).toHaveLength(1);
+      renderer.setCanvasSuspended(true);
+      renderer.render(bridge, viewport);
+      expect(container.querySelector(".term-canvas-run")).toBeNull();
+      expect(container.querySelectorAll(".term-block")).toHaveLength(2);
+      renderer.setCanvasSuspended(false);
+      renderer.render(bridge, viewport);
+      expect(container.querySelectorAll(".term-canvas-run")).toHaveLength(1);
+    });
+
+    it("extends a uniform canvas-painted background to the row edge", () => {
+      mockCanvas();
+      const cells: CellData[] = ["a", "b"].map((char) => ({
+        ...makeCell(char),
+        bgRgb: 0x14283c,
+      }));
+      const bridge = createMockBridge(2, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.setup(2, 1);
+      renderer.render(bridge, viewport);
+      const row = container.querySelector<HTMLElement>(".term-row")!;
+      expect(row.style.background).toBe("rgb(20, 40, 60)");
+      expect(row.firstElementChild?.getAttribute("style") ?? "").not.toContain(
+        "background",
+      );
+      expect(
+        container.querySelector<HTMLCanvasElement>(".term-cell-canvas")!.hidden,
+      ).toBe(false);
+
+      cells[0] = { ...cells[0], char: 0x2580, fgRgb: 0xff0000 };
+      bridge.isDirtyRow = () => true;
+      renderer.render(bridge, viewport);
+      expect(row.style.background).toBe("");
+      expect(row.querySelector(".term-canvas-run")?.textContent).toBe("▀");
+    });
+
+    it("moves clean canvas bands with their DOM text in either direction", () => {
+      const { context } = mockCanvas();
+      context.putImageData.mockImplementation((image: ImageData) =>
+        image.data.slice(),
+      );
+      const cells = [0x112233, 0x445566, 0x778899].map((fgRgb) => [
+        { ...opaque, fgRgb },
+      ]);
+      let ids = [1, 2, 3];
+      const bridge = {
+        ...createMockBridge(1, 3, cells),
+        getRowId: (row: number) => ids[row],
+      };
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.render(bridge, viewport);
+      const image = context.createImageData.mock.results[0].value;
+      const original = Array.from(container.querySelectorAll(".term-row"));
+      context.putImageData.mockClear();
+      cells.push(cells.shift()!);
+      ids = [2, 3, 1];
+      renderer.render(bridge, viewport);
+      expect(container.querySelectorAll(".term-row")[1]).toBe(original[2]);
+      expect(context.putImageData).toHaveBeenNthCalledWith(1, image, 0, 0);
+      const moved = {
+        ...image,
+        data: context.putImageData.mock.results[0].value,
+      };
+      expect(pixel(moved, 0, 0)).toEqual([68, 85, 102, 255]);
+      expect(pixel(moved, 0, 4)).toEqual([119, 136, 153, 255]);
+      expect(pixel(moved, 0, 8)).toEqual([17, 34, 51, 255]);
+      context.putImageData.mockClear();
+      cells.unshift(cells.pop()!);
+      ids = [1, 2, 3];
+      renderer.render(bridge, viewport);
+      expect(container.querySelectorAll(".term-row")[0]).toBe(original[0]);
+      expect(context.putImageData).toHaveBeenNthCalledWith(1, image, 0, 0);
+      const restored = {
+        ...image,
+        data: context.putImageData.mock.results[0].value,
+      };
+      expect(pixel(restored, 0, 0)).toEqual([17, 34, 51, 255]);
+      expect(pixel(restored, 0, 4)).toEqual([68, 85, 102, 255]);
+      expect(pixel(restored, 0, 8)).toEqual([119, 136, 153, 255]);
+      renderer.destroy();
+    });
+
+    it("paints RGBA half blocks, full blocks, reverse, and indexed colors in one text run", () => {
+      const { context } = mockCanvas();
+      const cells = [
+        { ...opaque, char: 0x2580 },
+        { ...makeCell("▄"), fgRgb: 0x778899, bgRgb: 0xaabbcc },
+        opaque,
+        { ...opaque, char: 0x2580, flags: 0x20 },
+        makeCell("▀", 196, 232),
+      ];
+      const bridge = createMockBridge(5, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.setup(5, 1);
+      const canvas =
+        container.querySelector<HTMLCanvasElement>(".term-cell-canvas")!;
+      expect(canvas).not.toBeNull();
+      renderer.render(bridge, { ...viewport, rowHeight: 5 });
+
+      expect(canvas.width).toBe(38);
+      expect(canvas.height).toBe(5);
+      expect(canvas.style.width).toBe("38px");
+      const runs = container.querySelectorAll<HTMLElement>(".term-canvas-run");
+      expect(runs).toHaveLength(1);
+      expect(runs[0].textContent).toBe("▀▄█▀▀");
+      expect(runs[0].style.getPropertyValue("--term-span-cols")).toBe("5");
+
+      expect(context.createImageData).toHaveBeenCalledTimes(1);
+      const image = context.createImageData.mock.results[0].value;
+      const colors = [
+        { top: [17, 34, 51, 255], bottom: [68, 85, 102, 255] },
+        { top: [170, 187, 204, 255], bottom: [119, 136, 153, 255] },
+        { top: [17, 34, 51, 255], bottom: [17, 34, 51, 255] },
+        { top: [68, 85, 102, 255], bottom: [17, 34, 51, 255] },
+        { top: [255, 0, 0, 255], bottom: [8, 8, 8, 255] },
+      ];
+      colors.forEach(({ top, bottom }, col) => {
+        expect(pixel(image, center(col), 0)).toEqual(top);
+        expect(pixel(image, center(col), 4)).toEqual(bottom);
+      });
+      expect(context.putImageData).toHaveBeenCalledWith(
+        image,
+        0,
+        0,
+        0,
+        0,
+        38,
+        5,
+      );
+    });
+
+    it("paints eligible cell backgrounds while retaining merged DOM text", () => {
+      const { context } = mockCanvas();
+      const cells = [
+        { ...makeCell("a"), fgRgb: 0x112233, bgRgb: 0x445566 },
+        { ...makeCell("b"), fgRgb: 0x112233, bg: 196 },
+        { ...makeCell(" "), fgRgb: 0x112233, bgRgb: 0xabcdef },
+        {
+          ...makeCell("r", 196, 256, 0x20),
+          bgRgb: 0x112233,
+        },
+      ];
+      const bridge = createMockBridge(cells.length, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.render(bridge, viewport);
+
+      const row = container.querySelector<HTMLElement>(".term-row")!;
+      const run = row.querySelector<HTMLElement>("span")!;
+      expect(run.textContent).toBe("ab r");
+      expect(run.style.color).toBe("rgb(17, 34, 51)");
+      expect(run.style.background).toBe("");
+      expect(row.style.background).toBe("");
+
+      const image = context.createImageData.mock.results[0].value;
+      [0x445566, 0xff0000, 0xabcdef, 0xff0000].forEach((rgb, col) => {
+        const expected = [rgb >> 16, (rgb >> 8) & 0xff, rgb & 0xff, 255];
+        expect(pixel(image, center(col), 0)).toEqual(expected);
+        expect(pixel(image, center(col), viewport.rowHeight - 1)).toEqual(
+          expected,
+        );
+      });
+    });
+
+    it("keeps cursor, themed, dim, invisible, decorated, linked, wide, and other blocks in the DOM", () => {
+      const { context } = mockCanvas();
+      const cells = [
+        opaque,
+        makeCell("█"),
+        makeCell("█", 1, 16),
+        makeCell("▀", 16, 1),
+        { ...opaque, flags: 0x02 },
+        { ...opaque, flags: 0x40 },
+        { ...opaque, flags: 0x08 },
+        { ...opaque, flags: 0x80 },
+        { ...opaque, linkUri: "https://example.com", linkKey: "block" },
+        { ...opaque, width: 2 },
+        makeCell(" ", 256, 256, 0, 0),
+        { ...opaque, char: 0x2591 },
+        opaque,
+      ];
+      const bridge = createMockBridge(cells.length, 1, [cells]);
+      new Renderer(container).render(bridge, viewport);
+
+      const row = container.querySelector(".term-row")!;
+      expect(row.textContent).toBe("███▀██████░█");
+      expect(row.querySelector(".term-cursor")?.textContent).toBe("█");
+      expect(row.querySelector("a.term-link")?.getAttribute("href")).toBe(
+        "https://example.com/",
+      );
+      expect(row.querySelector(".term-wide")?.textContent).toBe("█");
+      expect(row.querySelectorAll(".term-canvas-run")).toHaveLength(1);
+      expect(row.querySelector(".term-canvas-run")?.textContent).toBe("█");
+
+      const image = context.createImageData.mock.results[0].value;
+      cells.forEach((_, col) => {
+        const expected =
+          col === cells.length - 1 ? [17, 34, 51, 255] : [0, 0, 0, 0];
+        for (const y of [0, viewport.rowHeight - 1]) {
+          expect(pixel(image, center(col), y)).toEqual(expected);
+        }
+      });
+    });
+
+    it("paints a full block from its foreground when the theme supplies the background", () => {
+      const { context } = mockCanvas();
+      const bridge = createMockBridge(1, 1, [[makeCell("█", 196, 256)]]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      new Renderer(container).render(bridge, viewport);
+
+      const image = context.createImageData.mock.results[0].value;
+      expect(pixel(image, center(0), 0)).toEqual([255, 0, 0, 255]);
+      expect(container.querySelector(".term-canvas-run")?.textContent).toBe(
+        "█",
+      );
+    });
+
+    it("falls back without usable geometry or a 2D context", () => {
+      const { context, getContext } = mockCanvas();
+      const bridge = createMockBridge(1, 1, [[opaque]]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      for (const metrics of [
+        undefined,
+        { ...viewport, charWidth: undefined },
+        { ...viewport, charWidth: 0 },
+        { ...viewport, rowHeight: 0 },
+        { ...viewport, rowHeight: 4.5 },
+      ]) {
+        const host = document.createElement("div");
+        container.appendChild(host);
+        new Renderer(host).render(bridge, metrics);
+        expect(host.querySelector(".term-canvas-run")).toBeNull();
+        expect(host.querySelector(".term-block")?.textContent).toBe("█");
+      }
+      expect(getContext).not.toHaveBeenCalled();
+      getContext.mockReturnValue(null);
+      new Renderer(container).render(bridge, viewport);
+      expect(container.querySelector(".term-canvas-run")).toBeNull();
+      expect(container.querySelector(".term-block")?.textContent).toBe("█");
+      expect(context.createImageData).not.toHaveBeenCalled();
+      expect(context.putImageData).not.toHaveBeenCalled();
+    });
+
+    it("clears only a dirty row when its cells fall back to text", () => {
+      const { context } = mockCanvas();
+      const cells = [
+        [opaque, opaque],
+        [opaque, opaque],
+      ];
+      const bridge = createMockBridge(2, 2, cells);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.render(bridge, viewport);
+      expect(
+        container.querySelector<HTMLElement>(".term-row")!.style.background,
+      ).toBe("");
+      const image = context.createImageData.mock.results[0].value;
+      cells[1] = [
+        { ...opaque, char: "x".codePointAt(0)!, bgRgb: undefined },
+        { ...opaque, flags: 0x02 },
+      ];
+      bridge.isDirtyRow = (row) => row === 1;
+      renderer.render(bridge, viewport);
+
+      expect(pixel(image, center(0), 0)).toEqual([17, 34, 51, 255]);
+      expect(pixel(image, center(1), 3)).toEqual([17, 34, 51, 255]);
+      for (const y of [4, 7]) {
+        for (const col of [0, 1]) {
+          expect(pixel(image, center(col), y)).toEqual([0, 0, 0, 0]);
+        }
+      }
+      const rows = container.querySelectorAll(".term-row");
+      expect(rows[0].querySelector(".term-canvas-run")?.textContent).toBe("██");
+      expect(rows[1].querySelector(".term-canvas-run")).toBeNull();
+      expect(rows[1].textContent).toBe("x█");
+    });
+
+    it("offsets the live canvas below scrollback without painting history into it", () => {
+      mockCanvas();
+      const bridge = createMockBridge(1, 1, [[opaque]]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.getScrollbackCount = () => 3;
+      bridge.getScrollbackLineLen = () => 1;
+      bridge.getScrollbackCell = () => opaque;
+      new Renderer(container).render(bridge, {
+        ...viewport,
+        clientHeight: 16,
+        overscanRows: 0,
+      });
+
+      const canvas =
+        container.querySelector<HTMLCanvasElement>(".term-cell-canvas")!;
+      expect(canvas.style.top).toBe("12px");
+      expect(canvas.height).toBe(4);
+      const history = container.querySelectorAll(".term-scrollback-row");
+      expect(history).toHaveLength(3);
+      for (const row of history) {
+        expect(row.textContent).toBe("█");
+        expect(row.querySelector(".term-canvas-run")).toBeNull();
+      }
+      expect(container.querySelectorAll(".term-canvas-run")).toHaveLength(1);
+    });
+  });
+
+  describe("underline decorations", () => {
+    it.each([
+      ["single", "solid"],
+      ["double", "double"],
+      ["curly", "wavy"],
+      ["dotted", "dotted"],
+      ["dashed", "dashed"],
+    ] as const)(
+      "renders %s with an independent color and solid strike",
+      (underlineStyle, cssStyle) => {
+        const cell = {
+          ...makeCell("x", 256, 256, 0x88),
+          underlineStyle,
+          underlineRgb: 0x123456,
+        };
+        const bridge = createMockBridge(2, 1, [[cell, cell]]);
+        const renderer = new Renderer(container);
+        renderer.render(bridge);
+        const cursor = container.querySelector<HTMLElement>(".term-cursor")!;
+        expect(cursor.style.textDecoration).toBe("underline");
+        expect(cursor.style.textDecorationStyle).toBe(cssStyle);
+        expect(cursor.style.textDecorationColor).toBe("rgb(18, 52, 86)");
+        expect(
+          (cursor.firstElementChild as HTMLElement).style.textDecoration,
+        ).toBe("line-through solid currentColor");
+        expect(container.textContent).toBe("xx");
+      },
+    );
+
+    it("supports flag-only cores, explicit none, and decoration-only redraws", () => {
+      const grid = [[makeCell("x", 256, 256, 8), makeCell("x", 256, 256, 8)]];
+      const bridge = createMockBridge(2, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector<HTMLElement>(".term-row")!;
+      expect(row.children).toHaveLength(1);
+      expect((row.firstElementChild as HTMLElement).style.textDecoration).toBe(
+        "underline",
+      );
+      const unchanged = row.firstChild;
+      bridge.isDirtyRow = () => true;
+      renderer.render(bridge);
+      expect(row.firstChild).toBe(unchanged);
+      grid[0][0] = { ...grid[0][0], underlineStyle: "dotted", underlineRgb: 0 };
+      grid[0][1] = { ...grid[0][1], underlineStyle: "none" };
+      renderer.render(bridge);
+      expect(row.children).toHaveLength(2);
+      expect(
+        (row.firstElementChild as HTMLElement).style.textDecorationStyle,
+      ).toBe("dotted");
+      expect(
+        (row.firstElementChild as HTMLElement).style.textDecorationColor,
+      ).toBe("rgb(0, 0, 0)");
+      expect((row.lastElementChild as HTMLElement).style.textDecoration).toBe(
+        "",
+      );
+    });
+
+    it("decorates wide, block, box, and history cells without changing text or columns", () => {
+      const cells = [
+        makeCell("界", 256, 256, 0, 2),
+        makeCell(" ", 256, 256, 0, 0),
+        makeCell("█"),
+        makeCell("╭"),
+      ].map((cell) => ({
+        ...cell,
+        underlineStyle: "curly" as const,
+        underlineRgb: 0x123456,
+      }));
+      const bridge = createMockBridge(4, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.getScrollbackCount = () => 1;
+      bridge.getScrollbackLineLen = () => 4;
+      bridge.getScrollbackCell = (_offset, col) => cells[col];
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      for (const row of container.querySelectorAll(".term-row")) {
+        expect(row.textContent).toBe("界█╭");
+        expect(row.children).toHaveLength(3);
+        for (const span of row.children) {
+          expect((span as HTMLElement).style.textDecorationStyle).toBe("wavy");
+          expect((span as HTMLElement).style.textDecorationColor).toBe(
+            "rgb(18, 52, 86)",
+          );
+        }
+      }
+    });
+  });
+
   describe("render", () => {
+    it("updates flat span text in place, including literal HTML and graphemes", () => {
+      const cells = [
+        makeCell("a"),
+        makeCell("界", 256, 256, 0, 2),
+        makeCell(" ", 256, 256, 0, 0),
+        { ...makeCell("e"), chars: "e\u0301" },
+        makeCell("b"),
+      ];
+      const bridge = createMockBridge(cells.length, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.isDirtyRow = () => true;
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector(".term-row")!;
+      const spans = Array.from(row.children);
+      const texts = spans.map((span) => span.firstChild);
+      const observer = new MutationObserver(() => {});
+      observer.observe(row, { subtree: true, childList: true });
+
+      for (const [left, right] of [
+        ["<", ">"],
+        ["&", '"'],
+      ]) {
+        cells[0] = makeCell(left);
+        cells[1] = makeCell("語", 256, 256, 0, 2);
+        cells[3] = { ...makeCell("a"), chars: "a\u0300" };
+        cells[4] = makeCell(right);
+        renderer.render(bridge);
+        expect(Array.from(row.children)).toEqual(spans);
+        expect(spans.map((span) => span.firstChild)).toEqual(texts);
+        expect(row.textContent).toBe(`${left}語a\u0300${right}`);
+        expect(row.querySelectorAll("span")).toHaveLength(4);
+        expect(observer.takeRecords()).toHaveLength(0);
+      }
+      observer.disconnect();
+    });
+
+    it("leaves unchanged text nodes alone between text-only updates", () => {
+      const cells = [makeCell("λ"), makeCell("ψ"), makeCell("π")];
+      const bridge = createMockBridge(3, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.isDirtyRow = () => true;
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector(".term-row")!;
+      const middle = row.children[1].firstChild;
+      const observer = new MutationObserver(() => {});
+      observer.observe(row, { subtree: true, characterData: true });
+      cells[0] = makeCell("α");
+      cells[2] = makeCell("ω");
+      renderer.render(bridge);
+      expect(row.textContent).toBe("αψω");
+      const changes = observer.takeRecords();
+      expect(changes).toHaveLength(2);
+      expect(changes.some((change) => change.target === middle)).toBe(false);
+      observer.disconnect();
+    });
+
+    it("replaces spans when colors, decorations, or cursor styling change", () => {
+      const cells = [makeCell("λ"), makeCell("ψ")];
+      const bridge = createMockBridge(2, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.isDirtyRow = () => true;
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector(".term-row")!;
+      const original = row.firstChild;
+      cells[0] = makeCell("α", 1);
+      renderer.render(bridge);
+      expect(row.firstChild).not.toBe(original);
+      expect((row.firstChild as HTMLElement).style.color).toBe(
+        "var(--term-color-1)",
+      );
+      cells[0] = { ...cells[0], flags: 0x88, underlineStyle: "curly" };
+      renderer.render(bridge);
+      expect(row.firstElementChild!.children).toHaveLength(1);
+      expect(row.textContent).toBe("αψ");
+      cells[0] = makeCell("β", 1);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: true });
+      renderer.render(bridge);
+      expect(row.firstElementChild!.className).toBe("term-cursor");
+      expect(row.firstElementChild!.children).toHaveLength(0);
+      expect(row.textContent).toBe("βψ");
+    });
+
+    it("retains unchanged Unicode cells when runs between them split and merge", () => {
+      const grapheme = {
+        ...makeCell("e", 256, 256, 0x88),
+        chars: "e\u0301",
+        underlineStyle: "curly" as const,
+      };
+      const cells = [
+        makeCell("界", 256, 256, 0, 2),
+        makeCell(" ", 256, 256, 0, 0),
+        makeCell("a"),
+        makeCell("b"),
+        grapheme,
+        makeCell("│"),
+        makeCell("█"),
+      ];
+      const bridge = createMockBridge(cells.length, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.isDirtyRow = () => true;
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector(".term-row")!;
+      const [wide, , accent, box, block] = Array.from(row.children);
+      const accentText = accent.firstChild!.firstChild;
+
+      for (const replacement of [
+        [makeCell("c", 1), makeCell("d", 2)],
+        [makeCell("語", 256, 256, 0, 2), makeCell(" ", 256, 256, 0, 0)],
+        [makeCell("x"), makeCell("y")],
+      ]) {
+        cells.splice(2, 2, ...replacement);
+        renderer.render(bridge);
+        expect(row.firstChild).toBe(wide);
+        expect(Array.from(row.children).slice(-3)).toEqual([
+          accent,
+          box,
+          block,
+        ]);
+        expect(accent.firstChild!.firstChild).toBe(accentText);
+        expect(row.textContent).toBe(
+          "界" +
+            (replacement[0].width === 2
+              ? "語"
+              : String.fromCodePoint(...replacement.map((c) => c.char))) +
+            "e\u0301│█",
+        );
+        expect(row.children).toHaveLength(replacement[0].fg === 1 ? 6 : 5);
+      }
+    });
+
+    it("updates complete links without replacing the Unicode cells around them", () => {
+      const cells = [
+        makeCell("λ"),
+        makeCell("a"),
+        makeCell("b"),
+        makeCell("ψ"),
+      ];
+      cells[1].linkUri = cells[2].linkUri = "https://example.com/old";
+      cells[1].linkKey = cells[2].linkKey = "old";
+      const bridge = createMockBridge(cells.length, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.isDirtyRow = () => true;
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector(".term-row")!;
+      const first = row.firstChild;
+      const last = row.lastChild;
+
+      for (const uri of [
+        "javascript:alert(1)",
+        "https://example.com/new?a=1&b=2",
+      ]) {
+        cells[1].linkUri = cells[2].linkUri = uri;
+        cells[1].linkKey = "left";
+        cells[2].linkKey = "right";
+        renderer.render(bridge);
+        expect(row.firstChild).toBe(first);
+        expect(row.lastChild).toBe(last);
+        expect(row.textContent).toBe("λabψ");
+        const links = Array.from(row.querySelectorAll("a"));
+        expect(links).toHaveLength(uri.startsWith("https:") ? 2 : 0);
+        for (const link of links) {
+          expect(link.href).toBe(uri);
+          expect(link.rel).toBe("noopener noreferrer");
+        }
+      }
+    });
+
+    it("keeps selection coordinates stable until a theme repaint and recolors unchanged history", () => {
+      let fgRgb = 0x123456;
+      const bridge = {
+        ...createMockBridge(2, 1),
+        trackPosition: (position: TerminalPosition) => ({
+          resolve: () => position,
+          dispose() {},
+        }),
+      };
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      bridge.getCell = () => ({ ...makeCell("L", 1), fgRgb });
+      bridge.getScrollbackCount = () => 2;
+      bridge.getScrollbackLineLen = () => 2;
+      bridge.getScrollbackCell = () => ({ ...makeCell("H", 1), fgRgb });
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 0,
+        clientHeight: 30,
+        rowHeight: 10,
+        scrollbackDiscardedCount: 7,
+      };
+      renderer.render(bridge, viewport);
+      const mounted = Array.from(renderer.searchRows());
+      const live = mounted[2].element;
+      const native = document.getSelection()!;
+      native.setBaseAndExtent(
+        live.firstChild!.firstChild!,
+        0,
+        live.firstChild!.firstChild!,
+        2,
+      );
+      expect(renderer.getSelectionText()).toBe("LL");
+
+      fgRgb = 0xabcdef;
+      renderer.invalidateColors();
+      expect(Array.from(renderer.searchRows())).toEqual(mounted);
+      expect(renderer.positionAt(live, 5, 10)).toEqual({ row: 2, col: 0 });
+      expect(renderer.getSelectionText()).toBe("LL");
+      expect((live.firstChild as HTMLElement).style.color).toBe(
+        "rgb(18, 52, 86)",
+      );
+
+      renderer.render(bridge, viewport);
+      expect(Array.from(renderer.searchRows())).toEqual(mounted);
+      for (const { element } of mounted)
+        expect((element.firstChild as HTMLElement).style.color).toBe(
+          "rgb(171, 205, 239)",
+        );
+      expect(renderer.getSelectionText()).toBe("LL");
+      native.removeAllRanges();
+      renderer.destroy();
+    });
+
+    it("paints color-only changes without replacing rows or overwriting host theme tokens", () => {
+      const host = document.createElement("div");
+      host.style.setProperty("--term-fg", "#abcdef");
+      host.appendChild(container);
+      let colors = { foreground: 0x123456, background: 0, cursor: 0xabcdef };
+      const bridge = {
+        ...createMockBridge(4, 2, [[makeCell("a")]]),
+        getColorOverrides: () => colors,
+      };
+      const renderer = new Renderer(container, { colorHost: host });
+      renderer.render(bridge);
+      const cell = container.querySelector(".term-row > span")!;
+      expect(host.style.getPropertyValue("--term-app-fg")).toBe(
+        "rgb(18,52,86)",
+      );
+      expect(host.style.getPropertyValue("--term-app-bg")).toBe("rgb(0,0,0)");
+      expect(host.style.getPropertyValue("--term-fg")).toBe("#abcdef");
+      const set = vi.spyOn(host.style, "setProperty");
+      renderer.render(bridge);
+      expect(set).not.toHaveBeenCalled();
+      colors = { ...colors, foreground: 0x654321 };
+      renderer.render(bridge);
+      expect(container.querySelector(".term-row > span")).toBe(cell);
+      expect(host.style.getPropertyValue("--term-app-fg")).toBe(
+        "rgb(101,67,33)",
+      );
+      renderer.render(createMockBridge(4, 2));
+      expect(host.style.getPropertyValue("--term-app-fg")).toBe("");
+      renderer.render(bridge);
+      renderer.destroy();
+      expect(host.style.getPropertyValue("--term-app-fg")).toBe("");
+      expect(host.style.getPropertyValue("--term-app-bg")).toBe("");
+      expect(host.style.getPropertyValue("--term-app-cursor")).toBe("");
+      expect(host.style.getPropertyValue("--term-fg")).toBe("#abcdef");
+    });
+
+    it.each([
+      ["red", makeCell(" ", 256, 1)],
+      ["reverse", makeCell(" ", 256, 256, 0x20)],
+      ["RGB", { ...makeCell(" "), bgRgb: 0x123456 }],
+    ])("keeps an isolated %s background in its cell", (_name, lastCell) => {
+      const bridge = createMockBridge(4, 2, [
+        [makeCell("a"), makeCell("b"), makeCell("c"), lastCell],
+        [makeCell("d"), makeCell("e"), makeCell("f"), lastCell],
+      ]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+
+      expect(container.style.background).toBe("");
+      for (const row of container.querySelectorAll<HTMLElement>(".term-row")) {
+        expect(row.style.background).toBe("");
+        expect(row.style.boxShadow).toBe("");
+        expect((row.lastElementChild as HTMLElement).style.background).not.toBe(
+          "",
+        );
+      }
+    });
+
+    it("extends a shared row background and clears it on a partial redraw", () => {
+      const cells = [
+        makeCell("a", 256, 1),
+        makeCell("b", 2, 1),
+        makeCell("c", 1, 3, 0x20),
+        makeCell(" ", 256, 1),
+      ];
+      const bridge = createMockBridge(4, 2, [cells]);
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const row = container.querySelector<HTMLElement>(".term-row")!;
+      expect(row.style.background).toBe("var(--term-color-1)");
+      expect(row.style.boxShadow).toBe("");
+      expect(container.style.background).toBe("");
+
+      cells[1] = makeCell("b");
+      bridge.isDirtyRow = (row) => row === 0;
+      renderer.render(bridge);
+      expect(row.style.background).toBe("");
+      expect(row.textContent).toBe("abc ");
+    });
+
+    it("uses the wide lead's background for both columns", () => {
+      const bridge = createMockBridge(3, 1, [
+        [
+          { ...makeCell("界", 256, 256, 0, 2), bgRgb: 0x123456 },
+          makeCell(" ", 256, 256, 0, 0),
+          { ...makeCell("x"), bgRgb: 0x123456 },
+        ],
+      ]);
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      expect(
+        container.querySelector<HTMLElement>(".term-row")!.style.background,
+      ).toBe("rgb(18, 52, 86)");
+      expect(container.style.background).toBe("");
+    });
+
+    it.each([0x02, 0x40])(
+      "does not put an opaque background behind cells with flag %s",
+      (flags) => {
+        const bridge = createMockBridge(2, 1, [
+          [makeCell("a", 256, 1, flags), makeCell("b", 256, 1, flags)],
+        ]);
+        const renderer = new Renderer(container);
+        renderer.render(bridge);
+        expect(
+          container.querySelector<HTMLElement>(".term-row")!.style.background,
+        ).toBe("");
+        expect(container.style.background).toBe("");
+      },
+    );
+
+    it("keeps scrollback backgrounds independent of the active screen and stored width", () => {
+      const bridge = createMockBridge(3, 1, [
+        [makeCell(" ", 256, 1), makeCell(" ", 256, 1), makeCell(" ", 256, 1)],
+      ]);
+      bridge.getScrollbackCount = () => 1;
+      bridge.getScrollbackLineLen = () => 3;
+      bridge.getScrollbackCell = (_offset, col) =>
+        makeCell(" ", 256, col === 2 ? 4 : 256);
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      expect(
+        container.querySelector<HTMLElement>(".term-scrollback-row")!.style
+          .background,
+      ).toBe("");
+      expect(container.style.background).toBe("");
+
+      bridge.getScrollbackCell = () => makeCell(" ", 256, 4);
+      renderer.render(bridge);
+      expect(
+        container.querySelector<HTMLElement>(".term-scrollback-row")!.style
+          .background,
+      ).toBe("var(--term-color-4)");
+      bridge.getCols = () => 4;
+      renderer.render(bridge);
+      const history = container.querySelector<HTMLElement>(
+        ".term-scrollback-row",
+      )!;
+      expect(history.style.background).toBe("");
+      expect(history.textContent).toBe("    ");
+    });
+
+    it("supports legacy cursor state and updates metadata without replacing clean rows", () => {
+      const bridge = createMockBridge(4, 1);
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+      expect(container.dataset.cursorShape).toBe("block");
+      expect(container.dataset.cursorBlink).toBe("false");
+      const row = container.querySelector(".term-row")!;
+      const cursor = row.querySelector(".term-cursor");
+      bridge.getCursor = () => ({
+        row: 0,
+        col: 0,
+        visible: true,
+        shape: "bar",
+        blinking: true,
+      });
+      renderer.render(bridge as any);
+      expect(container.dataset.cursorShape).toBe("bar");
+      expect(container.dataset.cursorBlink).toBe("true");
+      expect(row.querySelector(".term-cursor")).toBe(cursor);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      renderer.render(bridge as any);
+      expect(row.querySelector(".term-cursor")).toBeNull();
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: true });
+      renderer.render(bridge as any);
+      expect(row.querySelector(".term-cursor")).not.toBeNull();
+    });
+
+    it("renders contiguous OSC 8 cells as one safe anchor", () => {
+      const grid = [
+        [
+          {
+            ...makeCell("L"),
+            linkUri: "https://example.com/docs",
+            linkKey: "docs",
+          },
+          {
+            ...makeCell("I", 1),
+            linkUri: "https://example.com/docs",
+            linkKey: "docs",
+          },
+          {
+            ...makeCell("N"),
+            linkUri: "https://example.com/docs",
+            linkKey: "docs",
+          },
+          {
+            ...makeCell("K"),
+            linkUri: "https://example.com/docs",
+            linkKey: "docs",
+          },
+        ],
+      ];
+      const bridge = createMockBridge(4, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 4, visible: false });
+      new Renderer(container).render(bridge as any);
+
+      const links = container.querySelectorAll("a.term-link");
+      expect(links).toHaveLength(1);
+      expect(links[0].textContent).toBe("LINK");
+      expect(links[0].getAttribute("href")).toBe("https://example.com/docs");
+      expect(links[0].getAttribute("rel")).toBe("noopener noreferrer");
+    });
+
+    it("does not create anchors for unsafe or relative OSC 8 URIs", () => {
+      const grid = [
+        [
+          { ...makeCell("X"), linkUri: "javascript:alert(1)", linkKey: "x" },
+          { ...makeCell("Y"), linkUri: "/relative", linkKey: "y" },
+        ],
+      ];
+      const bridge = createMockBridge(2, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 2, visible: false });
+      new Renderer(container).render(bridge as any);
+
+      expect(container.querySelectorAll("a")).toHaveLength(0);
+      expect(container.querySelector(".term-row")?.textContent).toBe("XY");
+    });
+
+    it("escapes safe link hrefs before assigning row HTML", () => {
+      const grid = [
+        [
+          {
+            ...makeCell("L"),
+            linkUri: "https://example.com/?a=1&b=2",
+            linkKey: "escaped",
+          },
+        ],
+      ];
+      const bridge = createMockBridge(1, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 1, visible: false });
+
+      let proto = Object.getPrototypeOf(container);
+      while (proto && !Object.getOwnPropertyDescriptor(proto, "innerHTML")) {
+        proto = Object.getPrototypeOf(proto);
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(proto, "innerHTML")!;
+      const assignedValues: string[] = [];
+      Object.defineProperty(proto, "innerHTML", {
+        ...descriptor,
+        set(value: string) {
+          assignedValues.push(value);
+          descriptor.set!.call(this, value);
+        },
+      });
+
+      try {
+        new Renderer(container).render(bridge as any);
+      } finally {
+        Object.defineProperty(proto, "innerHTML", descriptor);
+      }
+
+      const rowHtml = assignedValues.find((value) =>
+        value.includes("term-link"),
+      );
+      expect(rowHtml).toContain("a=1&amp;b=2");
+      expect(container.querySelector("a")?.getAttribute("href")).toBe(
+        "https://example.com/?a=1&b=2",
+      );
+    });
+
+    it("does not merge adjacent links with different semantic keys", () => {
+      const grid = [
+        [
+          { ...makeCell("A"), linkUri: "https://example.com", linkKey: "a" },
+          { ...makeCell("B"), linkUri: "https://example.com", linkKey: "b" },
+        ],
+      ];
+      const bridge = createMockBridge(2, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 2, visible: false });
+      new Renderer(container).render(bridge as any);
+
+      expect(container.querySelectorAll("a.term-link")).toHaveLength(2);
+    });
+
+    it("keeps one anchor across styled, wide, block, and cursor spans", () => {
+      const linked = {
+        linkUri: "https://example.com/mixed",
+        linkKey: "mixed",
+      };
+      const grid = [
+        [
+          { ...makeCell("A"), ...linked },
+          { ...makeCell("B", 1), ...linked },
+          {
+            ...makeCell(String.fromCodePoint(0x1f4c1), 256, 256, 0, 2),
+            ...linked,
+          },
+          { char: 0, fg: 256, bg: 256, flags: 0, width: 0, ...linked },
+          { ...makeCell("▀"), ...linked },
+        ],
+      ];
+      const bridge = createMockBridge(5, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 1, visible: true });
+      new Renderer(container).render(bridge as any);
+
+      const links = container.querySelectorAll("a.term-link");
+      expect(links).toHaveLength(1);
+      expect(links[0].querySelector(".term-cursor")?.textContent).toBe("B");
+      expect(links[0].querySelector(".term-wide")).not.toBeNull();
+      expect(links[0].querySelector(".term-block")).not.toBeNull();
+    });
+
     it("renders text content from bridge cells", () => {
       const grid = [[makeCell("H"), makeCell("i")]];
       const bridge = createMockBridge(2, 1, grid);
@@ -70,6 +1122,25 @@ describe("Renderer", () => {
       const text = container.textContent;
       expect(text).toContain("H");
       expect(text).toContain("i");
+    });
+
+    it("renders a complete grapheme string from one cell", () => {
+      const grid = [[{ ...makeCell("e"), chars: "e\u0301" }]];
+      const bridge = createMockBridge(1, 1, grid);
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+
+      expect(container.querySelector(".term-row")?.textContent).toBe("e\u0301");
+    });
+
+    it("keeps the cursor on the grapheme's grid cell", () => {
+      const grid = [[{ ...makeCell("e"), chars: "e\u0301" }, makeCell("x")]];
+      const bridge = createMockBridge(2, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 1, visible: true });
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+
+      expect(container.querySelector(".term-cursor")?.textContent).toBe("x");
     });
 
     it("renders wide cells once and skips continuation cells", () => {
@@ -121,6 +1192,46 @@ describe("Renderer", () => {
       expect(cursor?.textContent).toBe("A");
     });
 
+    it("keeps explicit cell colors overridable on cursor spans", () => {
+      const grid = [[makeCell("A", 1, 4)]];
+      const bridge = createMockBridge(1, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: true });
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any);
+
+      const style = container
+        .querySelector(".term-cursor")
+        ?.getAttribute("style");
+      expect(style).toContain("--term-cell-fg:var(--term-color-1);");
+      expect(style).toContain("--term-cell-bg:var(--term-color-4);");
+      expect(style).not.toMatch(/(?:^|;)(?:color|background):/);
+    });
+
+    it("keeps explicit backgrounds overridable for wide, block, and blank cursors", () => {
+      const cases: CellData[][] = [
+        [
+          makeCell("界", 1, 4, 0, 2),
+          { char: 0, fg: 1, bg: 4, flags: 0, width: 0 },
+        ],
+        [makeCell("█", 1, 4)],
+        [{ char: 0, fg: 1, bg: 4, flags: 0, width: 1 }],
+      ];
+
+      for (const grid of cases) {
+        const caseContainer = document.createElement("div");
+        document.body.appendChild(caseContainer);
+        const bridge = createMockBridge(grid.length, 1, [grid]);
+        bridge.getCursor = () => ({ row: 0, col: 0, visible: true });
+        new Renderer(caseContainer).render(bridge as any);
+
+        const style = caseContainer
+          .querySelector(".term-cursor")
+          ?.getAttribute("style");
+        expect(style).toContain("--term-cell-bg:");
+        expect(style).not.toMatch(/(?:^|;)(?:color|background):/);
+      }
+    });
+
     it("re-renders on resize", () => {
       const bridge1 = createMockBridge(2, 1, [[makeCell("X")]]);
       const renderer = new Renderer(container);
@@ -146,6 +1257,7 @@ describe("Renderer", () => {
     it("applies styled spans for colored cells", () => {
       const grid = [[makeCell("C", 1, 256, 0)]];
       const bridge = createMockBridge(1, 1, grid);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
       const renderer = new Renderer(container);
       renderer.render(bridge as any);
 
@@ -193,6 +1305,376 @@ describe("Renderer", () => {
       const rowHtml = assignedValues.find((v) => v.includes('">'));
       expect(rowHtml).toContain("&quot;");
       expect(container.querySelector(".term-row")?.textContent).toBe('"');
+    });
+
+    it("bounds materialized scrollback rows to the visible window", () => {
+      const bridge = createMockBridge(4, 3);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 4;
+      bridge.getScrollbackCell = (offset: number) =>
+        makeCell(String(offset % 10));
+      const renderer = new Renderer(container);
+
+      renderer.render(bridge as any, {
+        scrollTop: 5000,
+        clientHeight: 100,
+        rowHeight: 10,
+        overscanRows: 10,
+      });
+
+      expect(container.querySelectorAll(".term-scrollback-row").length).toBe(
+        30,
+      );
+      expect(container.querySelectorAll(".term-row").length).toBe(33);
+    });
+
+    it("refreshes visible scrollback when a full ring rolls over", () => {
+      let prefix = "A";
+      let discardedCount = 0;
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 2;
+      bridge.getScrollbackCell = () => makeCell(prefix);
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 5000,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 1,
+        scrollbackDiscardedCount: discardedCount,
+      };
+
+      renderer.render(bridge as any, viewport);
+      expect(container.querySelector(".term-scrollback-row")?.textContent).toBe(
+        "AA",
+      );
+
+      prefix = "B";
+      discardedCount = 1;
+      renderer.render(bridge as any, {
+        ...viewport,
+        scrollbackDiscardedCount: discardedCount,
+      });
+      expect(container.querySelector(".term-scrollback-row")?.textContent).toBe(
+        "BB",
+      );
+    });
+
+    it.each([5000, 5010])(
+      "refreshes scrollback without rollover metadata at scrollTop %i",
+      (scrollTop) => {
+        let prefix = "A";
+        const bridge = createMockBridge(2, 1);
+        bridge.getScrollbackCount = () => 1000;
+        bridge.getScrollbackLineLen = () => 2;
+        bridge.getScrollbackCell = () => makeCell(prefix);
+        const renderer = new Renderer(container);
+        const viewport = {
+          scrollTop: 5000,
+          clientHeight: 20,
+          rowHeight: 10,
+          overscanRows: 1,
+        };
+
+        renderer.render(bridge as any, viewport);
+        expect(
+          container.querySelector(".term-scrollback-row")?.textContent,
+        ).toBe("AA");
+
+        prefix = "B";
+        renderer.render(bridge as any, { ...viewport, scrollTop });
+
+        expect(
+          container.querySelector(".term-scrollback-row")?.textContent,
+        ).toBe("BB");
+      },
+    );
+
+    it("preserves unchanged visible scrollback row elements", () => {
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 2;
+      bridge.getScrollbackCell = () => makeCell("A");
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 5000,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 1,
+      };
+
+      renderer.render(bridge as any, viewport);
+      const row = container.querySelector(".term-scrollback-row");
+      const observer = new MutationObserver(() => {});
+      observer.observe(row!, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+      });
+      renderer.render(bridge as any, viewport);
+
+      expect(container.querySelector(".term-scrollback-row")).toBe(row);
+      expect(observer.takeRecords()).toEqual([]);
+      observer.disconnect();
+    });
+
+    it("only reads and creates entering history rows when scrolling in either direction", () => {
+      const bridge = {
+        ...createMockBridge(2, 1),
+        getScrollbackRowMetadata: vi.fn(() => ({
+          wrapsToNext: false,
+          continuesPrevious: false,
+        })),
+      };
+      bridge.getScrollbackCount = () => 1000;
+      const lengths = vi.fn(() => 2);
+      const cells = vi.fn((offset: number) => makeCell(String(offset % 10)));
+      bridge.getScrollbackLineLen = lengths;
+      bridge.getScrollbackCell = cells;
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 5000,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 1,
+        scrollbackDiscardedCount: 0,
+      };
+      renderer.render(bridge as any, viewport);
+      const before = Array.from(
+        container.querySelectorAll(".term-scrollback-row"),
+      );
+      const textNodes = before
+        .slice(1)
+        .map((row) => row.firstChild!.firstChild);
+      lengths.mockClear();
+      cells.mockClear();
+      bridge.getScrollbackRowMetadata.mockClear();
+      const create = vi.spyOn(document, "createElement");
+      renderer.render(bridge as any, { ...viewport, scrollTop: 5010 });
+      const createdRows = create.mock.results.filter(({ value }) =>
+        value?.classList?.contains("term-scrollback-row"),
+      );
+      create.mockRestore();
+      const after = Array.from(
+        container.querySelectorAll(".term-scrollback-row"),
+      );
+      expect(after.slice(0, 3)).toEqual(before.slice(1));
+      expect(
+        after.slice(0, 3).map((row) => row.firstChild!.firstChild),
+      ).toEqual(textNodes);
+      expect(after.map((row) => row.textContent)).toEqual([
+        "99",
+        "88",
+        "77",
+        "66",
+      ]);
+      expect(createdRows).toHaveLength(1);
+      expect(lengths.mock.calls).toEqual([[496]]);
+      expect(cells).toHaveBeenCalledTimes(2);
+      expect(bridge.getScrollbackRowMetadata.mock.calls).toEqual([[496]]);
+
+      lengths.mockClear();
+      cells.mockClear();
+      bridge.getScrollbackRowMetadata.mockClear();
+      renderer.render(bridge as any, viewport);
+      const back = Array.from(
+        container.querySelectorAll(".term-scrollback-row"),
+      );
+      expect(back.slice(1)).toEqual(after.slice(0, 3));
+      expect(back.map((row) => row.textContent)).toEqual([
+        "00",
+        "99",
+        "88",
+        "77",
+      ]);
+      expect(lengths.mock.calls).toEqual([[500]]);
+      expect(cells).toHaveBeenCalledTimes(2);
+      expect(bridge.getScrollbackRowMetadata.mock.calls).toEqual([[500]]);
+    });
+
+    it("refreshes retained content after output without changing history counts", () => {
+      let char = "A";
+      let bgRgb: number | undefined = 0xff0000;
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1;
+      bridge.getScrollbackLineLen = () => 2;
+      bridge.getScrollbackCell = () => ({ ...makeCell(char), bgRgb });
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 0,
+        clientHeight: 10,
+        rowHeight: 10,
+        scrollbackDiscardedCount: 0,
+      };
+      renderer.render(bridge as any, viewport);
+      const row = container.querySelector<HTMLElement>(".term-scrollback-row")!;
+      expect(row.style.background).toBe("rgb(255, 0, 0)");
+      renderer.beforeMutation(bridge);
+      char = "B";
+      bgRgb = undefined;
+      renderer.render(bridge as any, viewport);
+      expect(container.querySelector(".term-scrollback-row")).toBe(row);
+      expect(row.textContent).toBe("BB");
+      expect(row.style.background).toBe("");
+    });
+
+    it("preserves retained row elements across rollover", () => {
+      const history = ["A", "B", "C", "D", "E"];
+      let discardedCount = 0;
+      const bridge = createMockBridge(1, 1);
+      bridge.getScrollbackCount = () => history.length;
+      bridge.getScrollbackLineLen = () => 1;
+      bridge.getScrollbackCell = (offset: number) =>
+        makeCell(history[history.length - 1 - offset]);
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 0,
+        clientHeight: 50,
+        rowHeight: 10,
+        overscanRows: 0,
+        scrollbackDiscardedCount: discardedCount,
+      };
+
+      renderer.render(bridge as any, viewport);
+      const retainedRow = Array.from(
+        container.querySelectorAll(".term-scrollback-row"),
+      ).find((row) => row.textContent === "D");
+      history.splice(0, 3);
+      history.push("F", "G", "H");
+      discardedCount = 3;
+      renderer.render(bridge as any, {
+        ...viewport,
+        scrollbackDiscardedCount: discardedCount,
+      });
+
+      expect(
+        Array.from(container.querySelectorAll(".term-scrollback-row")).find(
+          (row) => row.textContent === "D",
+        ),
+      ).toBe(retainedRow);
+    });
+
+    it("keeps overscan rows until scrolling approaches the window edge", () => {
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 2;
+      const cells = vi.fn((offset: number) => makeCell(String(offset % 10)));
+      bridge.getScrollbackCell = cells;
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 5000,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 10,
+        scrollbackDiscardedCount: 0,
+      };
+      renderer.render(bridge as any, viewport);
+      const html = container.innerHTML;
+      cells.mockClear();
+      for (const scrollTop of [5010, 5050, 5000, 4950]) {
+        renderer.render(bridge as any, { ...viewport, scrollTop });
+        expect(container.innerHTML).toBe(html);
+      }
+      expect(cells).not.toHaveBeenCalled();
+
+      renderer.render(bridge as any, { ...viewport, scrollTop: 5060 });
+      expect(cells).toHaveBeenCalledTimes(12);
+      expect(container.querySelectorAll(".term-scrollback-row")).toHaveLength(
+        22,
+      );
+      expect(container.firstElementChild?.getAttribute("style")).toContain(
+        "4960px",
+      );
+
+      renderer.beforeMutation(bridge as any);
+      cells.mockClear();
+      renderer.render(bridge as any, { ...viewport, scrollTop: 5070 });
+      expect(cells).toHaveBeenCalledTimes(44);
+    });
+
+    it("updates history spacer heights when row metrics change", () => {
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 2;
+      const renderer = new Renderer(container);
+      renderer.render(bridge as any, {
+        scrollTop: 5000,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 10,
+        scrollbackDiscardedCount: 0,
+      });
+      renderer.render(bridge as any, {
+        scrollTop: 10000,
+        clientHeight: 40,
+        rowHeight: 20,
+        overscanRows: 10,
+        scrollbackDiscardedCount: 0,
+      });
+      expect(container.firstElementChild?.getAttribute("style")).toContain(
+        "9800px",
+      );
+    });
+
+    it("does not reread scrollback when history and window are unchanged", () => {
+      const bridge = createMockBridge(2, 1);
+      bridge.getScrollbackCount = () => 1000;
+      bridge.getScrollbackLineLen = () => 2;
+      let reads = 0;
+      bridge.getScrollbackCell = () => {
+        reads++;
+        return makeCell("A");
+      };
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 5000,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 1,
+        scrollbackDiscardedCount: 0,
+      };
+
+      renderer.render(bridge as any, viewport);
+      const firstReads = reads;
+      renderer.render(bridge as any, viewport);
+
+      expect(firstReads).toBeGreaterThan(0);
+      expect(reads).toBe(firstReads);
+    });
+
+    it("retains selected row content without rereading it or mounting the gap", () => {
+      const bridge = createMockBridge(1, 1);
+      bridge.getScrollbackCount = () => 100;
+      bridge.getScrollbackLineLen = () => 1;
+      const cells = vi.fn(() => makeCell("A"));
+      bridge.getScrollbackCell = cells;
+      const renderer = new Renderer(container);
+      const viewport = {
+        scrollTop: 0,
+        clientHeight: 20,
+        rowHeight: 10,
+        overscanRows: 0,
+        scrollbackDiscardedCount: 0,
+      };
+
+      renderer.render(bridge as any, viewport);
+      const firstRow = container.querySelector(".term-scrollback-row")!;
+      const selection = document.getSelection()!;
+      const range = document.createRange();
+      range.selectNodeContents(firstRow);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      selection.extend(firstRow, 1);
+      document.dispatchEvent(new Event("selectionchange"));
+
+      cells.mockClear();
+      renderer.render(bridge as any, { ...viewport, scrollTop: 100 });
+
+      expect(container.contains(firstRow)).toBe(true);
+      expect(container.querySelectorAll(".term-scrollback-row").length).toBe(3);
+      expect(cells).toHaveBeenCalledTimes(2);
+      expect(renderer.getSelectionText()).toBe("A");
+      selection.removeAllRanges();
     });
   });
 });

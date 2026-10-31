@@ -1,4 +1,9 @@
 .wterm {
+  /* Application overrides are owned by the renderer; each terminal is isolated. */
+  --term-app-fg: initial;
+  --term-app-bg: initial;
+  --term-app-cursor: initial;
+
   --term-fg: #d4d4d4;
   --term-bg: #1e1e1e;
   --term-cursor: #aeafad;
@@ -20,22 +25,26 @@
   --term-color-14: #4ec9b0;
   --term-color-15: #ffffff;
 
-  --term-font-family: 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace;
+  --term-font-family:
+    "Menlo", "Consolas", "DejaVu Sans Mono", "Courier New", monospace;
   --term-font-size: 14px;
   --term-line-height: 1.2;
   --term-row-height: 17px;
 
   position: relative;
-  background: var(--term-bg);
-  color: var(--term-fg);
+  background: var(--term-app-bg, var(--term-bg));
+  color: var(--term-app-fg, var(--term-fg));
   font-family: var(--term-font-family);
   font-size: var(--term-font-size);
+  font-kerning: none;
+  font-variant-ligatures: none;
   line-height: var(--term-line-height);
   padding: 12px;
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   outline: none;
   overflow: hidden;
+  overflow-anchor: none;
 }
 
 .wterm:focus,
@@ -45,9 +54,72 @@
 
 .term-grid {
   display: block;
+  position: relative;
   white-space: pre;
   contain: layout paint style;
   will-change: contents;
+}
+
+.term-cell-canvas {
+  position: absolute;
+  left: 0;
+  pointer-events: none;
+  image-rendering: pixelated;
+  z-index: -1;
+}
+
+.term-announcements {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: pre;
+  pointer-events: none;
+  user-select: none;
+}
+
+.term-images {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 1;
+}
+
+.term-search-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  z-index: 2;
+}
+
+.term-search-match {
+  position: absolute;
+  background: var(--term-search-match, rgb(255 200 0 / 25%));
+}
+
+.term-search-active {
+  background: var(--term-search-active, rgb(255 150 0 / 40%));
+  box-shadow: inset 0 0 0 1px var(--term-search-border, #ffb000);
+}
+
+.term-image-flow-spacer {
+  display: block;
+  height: 0;
+  pointer-events: none;
+}
+
+.term-image {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  user-select: none;
 }
 
 .term-row {
@@ -57,43 +129,268 @@
   contain: layout style;
 }
 
-.term-row > span {
+.term-select-all .term-row,
+.term-rectangle-row {
+  position: relative;
+}
+
+.term-select-all .term-row::after,
+.term-rectangle-row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--term-selection-bg, rgb(80 140 255 / 30%));
+  pointer-events: none;
+  user-select: none;
+  z-index: 3;
+}
+
+.term-rectangle-row::after {
+  left: var(--term-selection-left);
+  width: var(--term-selection-width);
+  right: auto;
+}
+
+.term-selection-status {
+  position: sticky;
+  bottom: 0;
+  width: fit-content;
+  max-width: 100%;
+  white-space: normal;
+  background: var(--term-app-bg, var(--term-bg));
+  color: var(--term-app-fg, var(--term-fg));
+  user-select: none;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.term-selection-status:empty {
+  display: none;
+}
+
+.term-scrollback-spacer {
+  display: block;
+  pointer-events: none;
+}
+
+.term-keyboard-spacer {
+  flex: none;
+  pointer-events: none;
+}
+
+.term-size-probe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: pre;
+  width: auto;
+  height: var(--term-row-height);
+}
+
+.term-row > span,
+.term-row > .term-link,
+.term-link > span {
   display: inline-block;
   height: var(--term-row-height);
   vertical-align: top;
 }
 
+.term-row > span,
+.term-link > span {
+  width: calc(var(--term-span-cols, 1) * var(--term-cell-width, 1ch));
+  /* Glyph ink may overhang its advance without moving the following cell. */
+  overflow: visible;
+}
+
+.term-link {
+  color: inherit;
+  cursor: text;
+}
+
+.wterm.link-modifier-active .term-link:hover,
+.term-link:focus-visible {
+  cursor: pointer;
+}
+
+.wterm.link-modifier-active .term-link:hover > span,
+.term-link:focus-visible > span {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
 .term-block {
-  width: 1ch;
+  width: var(--term-cell-width, 1ch);
   overflow: hidden;
+  -webkit-text-fill-color: transparent;
+}
+
+.term-canvas-run {
+  width: calc(var(--term-span-cols, 1) * var(--term-cell-width, 1ch));
+  letter-spacing: var(--term-block-spacing, 0px);
+  -webkit-text-fill-color: transparent;
+}
+
+.term-box {
+  --term-box-stroke: max(
+    1px,
+    round(calc(var(--term-cell-width, 1ch) * 0.18), 1px)
+  );
+  -webkit-text-fill-color: transparent;
+}
+
+.term-box-heavy,
+.term-box-bold {
+  --term-box-stroke: max(
+    2px,
+    round(calc(var(--term-cell-width, 1ch) * 0.3), 1px)
+  );
+}
+
+.term-box-round {
+  position: relative;
+}
+
+.term-box-round::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+  border: 0 solid currentColor;
+  pointer-events: none;
+}
+
+.term-box-round-tl::after {
+  inset: calc(50% - var(--term-box-stroke) * 0.5) 0 0
+    calc(50% - var(--term-box-stroke) * 0.5);
+  border-top-width: var(--term-box-stroke);
+  border-left-width: var(--term-box-stroke);
+  border-top-left-radius: 100%;
+}
+
+.term-box-round-tr::after {
+  inset: calc(50% - var(--term-box-stroke) * 0.5)
+    calc(50% - var(--term-box-stroke) * 0.5) 0 0;
+  border-top-width: var(--term-box-stroke);
+  border-right-width: var(--term-box-stroke);
+  border-top-right-radius: 100%;
+}
+
+.term-box-round-br::after {
+  inset: 0 calc(50% - var(--term-box-stroke) * 0.5)
+    calc(50% - var(--term-box-stroke) * 0.5) 0;
+  border-bottom-width: var(--term-box-stroke);
+  border-right-width: var(--term-box-stroke);
+  border-bottom-right-radius: 100%;
+}
+
+.term-box-round-bl::after {
+  inset: 0 0 calc(50% - var(--term-box-stroke) * 0.5)
+    calc(50% - var(--term-box-stroke) * 0.5);
+  border-bottom-width: var(--term-box-stroke);
+  border-left-width: var(--term-box-stroke);
+  border-bottom-left-radius: 100%;
+}
+
+@media (forced-colors: active), print {
+  .term-cell-canvas {
+    display: none;
+  }
+
+  .term-block,
+  .term-canvas-run {
+    background: none !important;
+    -webkit-text-fill-color: currentColor;
+  }
+
+  .term-box {
+    background-image: none !important;
+    -webkit-text-fill-color: currentColor;
+  }
+
+  .term-box-round::after {
+    display: none;
+  }
+}
+
+@media print and (forced-colors: none) {
+  .term-print-canvas .term-cell-canvas {
+    display: block;
+  }
+
+  .term-print-canvas .term-canvas-run {
+    -webkit-text-fill-color: transparent;
+  }
 }
 
 .term-wide {
-  width: 2ch;
-  overflow: hidden;
+  --term-span-cols: 2;
+  overflow: visible;
 }
 
 .term-cursor {
-  outline: 1px solid var(--term-cursor);
+  color: var(--term-cell-fg, inherit);
+  background: var(--term-cell-bg, transparent);
+  outline: 1px solid var(--term-app-cursor, var(--term-cursor));
   outline-offset: -1px;
 }
 
-.wterm.focused .term-cursor {
-  background: var(--term-cursor);
-  color: var(--term-bg);
+/* Native text selection can blur the input until click-to-focus runs. Keep
+   the cursor active during that press without cancelling the selection. */
+.wterm:is(.focused, :active) .term-cursor {
+  background: var(--term-app-cursor, var(--term-cursor));
+  color: var(--term-app-bg, var(--term-bg));
   outline: none;
 }
 
-.wterm.focused.cursor-blink .term-cursor {
-  animation: cursor-blink 1s step-end infinite;
+.wterm:is(.focused, :active) .term-grid[data-cursor-shape="bar"] .term-cursor,
+.wterm:is(.focused, :active) .term-grid[data-cursor-shape="underline"] .term-cursor {
+  background: var(--term-cell-bg, transparent);
+  color: var(--term-cell-fg, inherit);
+  box-shadow: var(--term-cursor-shadow);
+  --term-cursor-animation: cursor-line-blink;
+}
+
+.term-grid[data-cursor-shape="bar"] .term-cursor {
+  --term-cursor-shadow: inset 2px 0 0 var(--term-app-cursor, var(--term-cursor));
+}
+
+.term-grid[data-cursor-shape="underline"] .term-cursor {
+  --term-cursor-shadow: inset 0 -2px 0
+    var(--term-app-cursor, var(--term-cursor));
+}
+
+.wterm:is(.focused, :active).cursor-blink .term-cursor,
+.wterm:is(.focused, :active):not(.cursor-steady)
+  .term-grid[data-cursor-blink="true"]
+  .term-cursor {
+  animation: var(--term-cursor-animation, cursor-blink) 1s step-end infinite;
 }
 
 @keyframes cursor-blink {
-  0%, 100% { background: var(--term-cursor); color: var(--term-bg); }
-  50% { background: transparent; color: inherit; }
+  0%,
+  100% {
+    background: var(--term-app-cursor, var(--term-cursor));
+    color: var(--term-app-bg, var(--term-bg));
+  }
+  50% {
+    background: var(--term-cell-bg, transparent);
+    color: var(--term-cell-fg, inherit);
+  }
 }
 
-.wterm.has-scrollback {
+@keyframes cursor-line-blink {
+  0%,
+  100% {
+    box-shadow: var(--term-cursor-shadow);
+  }
+  50% {
+    box-shadow: none;
+  }
+}
+
+.wterm.has-scrollback,
+.wterm.has-image-flow {
   overflow-y: auto;
 }
 

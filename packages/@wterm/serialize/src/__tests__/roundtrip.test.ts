@@ -11,6 +11,20 @@ describe("roundtrip", () => {
     bridge.init(40, 10);
   });
 
+  it("preserves wide glyphs, grapheme clusters, and colors", async () => {
+    const term = await makeTerm(40, 10);
+    term.write(
+      "\u4e2dx\x1b[38;2;10;20;30mR\x1b[0m\x1b[48;5;200mQ\x1b[0m e\u0301",
+    );
+
+    const restored = await makeTerm(40, 10);
+    restore(restored as any, serialize(term as any));
+
+    const row = (t: typeof term) =>
+      Array.from({ length: 8 }, (_, col) => t.bridge!.getCell(0, col));
+    expect(row(restored)).toEqual(row(term));
+  });
+
   it("write Hello, world! -> serialize -> restore preserves chars", async () => {
     // Uses a minimal shim, not a real DOM WTerm, because serialize() only touches bridge + write().
     const term = await makeTerm(40, 10);

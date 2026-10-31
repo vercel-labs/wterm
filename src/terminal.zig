@@ -1,8 +1,13 @@
+const std = @import("std");
 const cell_mod = @import("cell.zig");
 const grid_mod = @import("grid.zig");
 const parser_mod = @import("parser.zig");
 const scrollback_mod = @import("scrollback.zig");
+const hyperlink_mod = @import("hyperlink.zig");
+const grapheme_mod = @import("grapheme.zig");
+const color_mod = @import("color.zig");
 const unicode_width = @import("unicode_width.zig");
+const charset_mod = @import("charset.zig");
 
 const Cell = cell_mod.Cell;
 const Grid = grid_mod.Grid;
@@ -11,6 +16,43 @@ const Action = parser_mod.Action;
 const Scrollback = scrollback_mod.Scrollback;
 
 pub const DEBUG_LOG_MAX: u8 = 32;
+pub const RESPONSE_MAX_BYTES: usize = 64;
+pub const RESPONSE_QUEUE_MAX: u16 = 2048;
+
+const KittyFlagStack = struct {
+    flags: [8]u5 = [_]u5{0} ** 8,
+    index: u3 = 0,
+
+    fn current(self: *const KittyFlagStack) u5 {
+        return self.flags[self.index];
+    }
+
+    fn push(self: *KittyFlagStack, flags: u5) void {
+        self.index +%= 1;
+        self.flags[self.index] = flags;
+    }
+
+    fn pop(self: *KittyFlagStack, count: u16) void {
+        if (count >= self.flags.len) {
+            self.* = .{};
+            return;
+        }
+        var remaining = count;
+        while (remaining > 0) : (remaining -= 1) {
+            self.flags[self.index] = 0;
+            self.index -%= 1;
+        }
+    }
+
+    fn set(self: *KittyFlagStack, flags: u5, mode: u16) void {
+        switch (mode) {
+            1 => self.flags[self.index] = flags,
+            2 => self.flags[self.index] |= flags,
+            3 => self.flags[self.index] &= ~flags,
+            else => {},
+        }
+    }
+};
 
 pub const DebugLogEntry = struct {
     final_byte: u8 = 0,
@@ -25,10 +67,50 @@ comptime {
         @compileError("DebugLogEntry size changed — update wasm-bridge.ts entrySize");
 }
 
+pub const CursorShape = enum(u8) { block, underline, bar };
+
+pub const MouseEncoding = enum(u8) {
+    x10 = 0,
+    utf8 = 1,
+    sgr = 2,
+    urxvt = 3,
+    sgr_pixels = 4,
+};
+
+// DECSET reports keep independent states even when mouse modes share one
+// effective tracking mode or wire encoding.
+fn privateModeBit(mode: u16) ?u4 {
+    return switch (mode) {
+        47 => 0,
+        1000 => 1,
+        1002 => 2,
+        1003 => 3,
+        1005 => 4,
+        1006 => 5,
+        1015 => 6,
+        1016 => 7,
+        1047 => 8,
+        1048 => 9,
+        1049 => 10,
+        else => null,
+    };
+}
+
+// Mouse modes occupy bits 1–7; soft reset leaves alternate-screen state alone.
+const mouse_private_mode_bits: u16 = 0x00fe;
+
 pub const Terminal = struct {
     grid: Grid,
     parser: Parser = .{},
     scrollback: ?*Scrollback = null,
+    hyperlinks: hyperlink_mod.Table = .{},
+    clusters: grapheme_mod.ClusterTable = .{},
+    /// Segments printed code points; reset by anything that is not a print.
+    segmenter: grapheme_mod.Segmenter = .{},
+    /// Cell holding the cluster the next code point may extend.
+    cluster_row: u16 = 0,
+    cluster_col: u16 = 0,
+    colors: color_mod.Table = .{},
 
     cols: u16,
     rows: u16,
@@ -36,6 +118,8 @@ pub const Terminal = struct {
     cursor_row: u16 = 0,
     cursor_col: u16 = 0,
     cursor_visible: bool = true,
+    cursor_shape: CursorShape = .block,
+    cursor_blinking: bool = false,
     wrap_pending: bool = false,
 
     saved_cursor_row: u16 = 0,
@@ -44,9 +128,18 @@ pub const Terminal = struct {
     saved_bg: u16 = cell_mod.DEFAULT_COLOR,
     saved_flags: u8 = 0,
 
+    /// Host theme defaults reported to OSC 10 and OSC 11 queries.
+    theme_fg: u32 = 0xd4d4d4,
+    theme_bg: u32 = 0x1e1e1e,
     current_fg: u16 = cell_mod.DEFAULT_COLOR,
     current_bg: u16 = cell_mod.DEFAULT_COLOR,
     current_flags: u8 = 0,
+    current_link: u16 = 0,
+
+    charset: charset_mod.State = .{},
+    // DECSC character-set snapshots belong to their screen.
+    saved_charset: [2]charset_mod.State = [_]charset_mod.State{.{}} ** 2,
+    alt_saved_charset: charset_mod.State = .{},
 
     scroll_top: u16 = 0,
     scroll_bottom: u16 = 0,
@@ -55,25 +148,42 @@ pub const Terminal = struct {
     origin_mode: bool = false,
     cursor_keys_app: bool = false,
     bracketed_paste: bool = false,
+    mouse_tracking: u16 = 0,
+    mouse_encoding: MouseEncoding = .x10,
+    private_mode_bits: u16 = 0,
+    focus_events: bool = false,
+    synchronized_output: bool = false,
+    synchronized_output_generation: u32 = 0,
     linefeed_mode: bool = false,
 
     // Alternate screen buffer (pointer to avoid doubling struct size)
     alt_grid: ?*Grid = null,
     alt_saved_cursor_row: u16 = 0,
     alt_saved_cursor_col: u16 = 0,
+    alt_saved_cursor_shape: CursorShape = .block,
     alt_saved_fg: u16 = cell_mod.DEFAULT_COLOR,
     alt_saved_bg: u16 = cell_mod.DEFAULT_COLOR,
     alt_saved_flags: u8 = 0,
+    alt_saved_link: u16 = 0,
     using_alt_screen: bool = false,
+    primary_kitty_keyboard: KittyFlagStack = .{},
+    alternate_kitty_keyboard: KittyFlagStack = .{},
 
     // Title (from OSC 0 / 2)
     title_buf: [256]u8 = undefined,
     title_len: u16 = 0,
     title_changed: bool = false,
 
-    // Response buffer for DSR and similar host-to-application replies
-    response_buf: [64]u8 = undefined,
-    response_len: u8 = 0,
+    // BEL controls waiting for the host.
+    bell_count: u32 = 0,
+
+    // Bounded FIFO for DSR and similar host-to-application replies.
+    // When full, new responses are dropped so accepted responses stay ordered.
+    response_queue: [RESPONSE_QUEUE_MAX][RESPONSE_MAX_BYTES]u8 = undefined,
+    response_lens: [RESPONSE_QUEUE_MAX]u8 = [_]u8{0} ** RESPONSE_QUEUE_MAX,
+    response_head: u16 = 0,
+    response_tail: u16 = 0,
+    response_count: u16 = 0,
 
     // Ring buffer of unhandled/ignored CSI sequences for debug introspection
     debug_log: [DEBUG_LOG_MAX]DebugLogEntry = [_]DebugLogEntry{.{}} ** DEBUG_LOG_MAX,
@@ -105,91 +215,25 @@ pub const Terminal = struct {
             .bg = self.current_bg,
             .flags = self.current_flags,
             .width = cell_mod.WIDTH_CONTINUATION,
+            .link = self.current_link,
         };
     }
 
-    fn clearWideCellAt(self: *Terminal, row: u16, col: u16, blank: Cell) void {
-        if (row >= self.rows or col >= self.cols) return;
-        const cell = self.grid.cells[row][col];
-        if (cell.width == cell_mod.WIDTH_CONTINUATION) {
-            if (col > 0 and self.grid.cells[row][col - 1].width == cell_mod.WIDTH_WIDE) {
-                self.grid.cells[row][col - 1] = blank;
-            }
-            self.grid.cells[row][col] = blank;
-            self.grid.dirty[row] = 1;
-            return;
-        }
-        if (cell.width == cell_mod.WIDTH_WIDE) {
-            self.grid.cells[row][col] = blank;
-            if (col + 1 < self.cols and self.grid.cells[row][col + 1].width == cell_mod.WIDTH_CONTINUATION) {
-                self.grid.cells[row][col + 1] = blank;
-            }
-            self.grid.dirty[row] = 1;
-        }
-    }
-
-    const WideRange = struct {
-        start: u16,
-        end: u16,
-    };
-
-    fn expandWideRange(self: *const Terminal, row: u16, start_col: u16, end_col: u16) WideRange {
-        if (row >= self.rows) return .{ .start = start_col, .end = end_col };
-        var start = if (start_col > self.cols) self.cols else start_col;
-        var end = if (end_col > self.cols) self.cols else end_col;
-        if (start < end) {
-            if (start < self.cols and self.grid.cells[row][start].width == cell_mod.WIDTH_CONTINUATION and start > 0) {
-                start -= 1;
-            }
-            if (end < self.cols and self.grid.cells[row][end].width == cell_mod.WIDTH_CONTINUATION) {
-                end += 1;
-            } else if (end > 0 and end < self.cols and self.grid.cells[row][end - 1].width == cell_mod.WIDTH_WIDE) {
-                end += 1;
-            }
-        }
-        return .{ .start = start, .end = end };
-    }
-
-    fn sanitizeWideRow(self: *Terminal, row: u16, blank: Cell) void {
-        if (row >= self.rows) return;
-        self.sanitizeWideRowWidth(row, self.cols, blank);
-    }
-
-    /// Repair a row so no wide cell lacks its continuation and no continuation
-    /// lacks its wide cell, considering only the first `width` columns.
-    ///
-    /// The width argument matters when a row is about to be stored at a
-    /// narrower width than the grid it came from: a pair straddling that
-    /// boundary must be blanked before the prefix is copied, or the copy keeps
-    /// a wide cell whose continuation was left behind.
-    fn sanitizeWideRowWidth(self: *Terminal, row: u16, width: u16, blank: Cell) void {
+    /// Copy a scrollback line back into the viewport, padded or truncated to the
+    /// current width. The line was stored at whatever width was current when it
+    /// left, which need not be this one.
+    fn setRowFromScrollback(
+        self: *Terminal,
+        row: u16,
+        line: *const scrollback_mod.ScrollbackLine,
+        width: u16,
+    ) void {
         var c: u16 = 0;
-        var changed = false;
-        while (c < width) {
-            const cell = self.grid.cells[row][c];
-            if (cell.width == cell_mod.WIDTH_CONTINUATION) {
-                if (c == 0 or self.grid.cells[row][c - 1].width != cell_mod.WIDTH_WIDE) {
-                    self.grid.cells[row][c] = blank;
-                    changed = true;
-                }
-                c += 1;
-            } else if (cell.width == cell_mod.WIDTH_WIDE) {
-                if (c + 1 >= width or self.grid.cells[row][c + 1].width != cell_mod.WIDTH_CONTINUATION) {
-                    self.grid.cells[row][c] = blank;
-                    changed = true;
-                    c += 1;
-                } else {
-                    c += 2;
-                }
-            } else {
-                if (cell.width != cell_mod.WIDTH_NARROW) {
-                    self.grid.cells[row][c].width = cell_mod.WIDTH_NARROW;
-                    changed = true;
-                }
-                c += 1;
-            }
+        while (c < width) : (c += 1) {
+            self.grid.getRow(row)[c] = if (c < line.len) line.cells[c] else Cell{};
         }
-        if (changed) self.grid.dirty[row] = 1;
+        self.grid.sanitizeWideRowWidth(row, width, Cell{});
+        self.grid.dirty[row] = 1;
     }
 
     fn logUnhandled(self: *Terminal, final: u8, private_marker: u8) void {
@@ -213,11 +257,16 @@ pub const Terminal = struct {
     pub fn reset(self: *Terminal, cols: u16, rows: u16) void {
         self.grid.reset(cols, rows);
         self.parser = .{};
+        self.segmenter = .{};
+        self.cluster_row = 0;
+        self.cluster_col = 0;
         self.cols = cols;
         self.rows = rows;
         self.cursor_row = 0;
         self.cursor_col = 0;
         self.cursor_visible = true;
+        self.cursor_shape = .block;
+        self.cursor_blinking = false;
         self.wrap_pending = false;
         self.saved_cursor_row = 0;
         self.saved_cursor_col = 0;
@@ -227,31 +276,144 @@ pub const Terminal = struct {
         self.current_fg = cell_mod.DEFAULT_COLOR;
         self.current_bg = cell_mod.DEFAULT_COLOR;
         self.current_flags = 0;
+        self.current_link = 0;
+        self.charset = .{};
+        self.saved_charset = [_]charset_mod.State{.{}} ** 2;
+        self.alt_saved_charset = .{};
         self.scroll_top = 0;
         self.scroll_bottom = rows;
         self.auto_wrap = true;
         self.origin_mode = false;
         self.cursor_keys_app = false;
         self.bracketed_paste = false;
+        self.mouse_tracking = 0;
+        self.mouse_encoding = .x10;
+        self.private_mode_bits = 0;
+        self.focus_events = false;
+        self.synchronized_output = false;
         self.linefeed_mode = false;
         self.alt_saved_cursor_row = 0;
         self.alt_saved_cursor_col = 0;
+        self.alt_saved_cursor_shape = .block;
         self.alt_saved_fg = cell_mod.DEFAULT_COLOR;
         self.alt_saved_bg = cell_mod.DEFAULT_COLOR;
         self.alt_saved_flags = 0;
+        self.alt_saved_link = 0;
         self.using_alt_screen = false;
+        self.primary_kitty_keyboard = .{};
+        self.alternate_kitty_keyboard = .{};
         self.title_len = 0;
         self.title_changed = false;
-        self.response_len = 0;
+        self.bell_count = 0;
+        self.response_head = 0;
+        self.response_tail = 0;
+        self.response_count = 0;
         self.tab_stops = initTabStops();
     }
 
     // -- Public API --
 
     pub fn write(self: *Terminal, data: []const u8) void {
-        for (data) |byte| {
-            self.processByte(byte);
+        var i: usize = 0;
+        while (i < data.len) {
+            if (self.parser.state == .ground) {
+                const n = self.printRun(data[i..]);
+                if (n > 0) {
+                    i += n;
+                    continue;
+                }
+            } else if (self.parser.state == .csi_param) {
+                i += self.parser.feedCsiParams(data[i..]);
+                if (i == data.len) break;
+            }
+            self.processByte(data[i]);
+            i += 1;
         }
+    }
+
+    /// Writes a run of printable text straight into the cursor row and returns
+    /// the bytes consumed. It stops, leaving the rest to printChar, at anything
+    /// that needs printChar's care: control bytes, partial or invalid UTF-8,
+    /// a mapped charset, a pending wrap, the last column, or a cell that is
+    /// already part of a wide pair.
+    fn printRun(self: *Terminal, data: []const u8) usize {
+        // Only plain ASCII maps code points to themselves; British and DEC
+        // graphics take the printChar path.
+        if (self.wrap_pending or self.charset.single_shift != null or
+            self.charset.slots[self.charset.gl] != .ascii) return 0;
+        std.debug.assert(self.cursor_row < self.rows);
+        const cols = self.cols;
+        const row = self.grid.getRow(self.cursor_row);
+        var col: u16 = self.cursor_col;
+        var i: usize = 0;
+        while (i < data.len) {
+            const b = data[i];
+            var cp: u21 = undefined;
+            var len: usize = 1;
+            if (b >= 0x20 and b < 0x7F) {
+                cp = b;
+            } else {
+                len = parser_mod.utf8SequenceLength(b);
+                if (len < 2 or i + len > data.len or !parser_mod.utf8Continuations(data[i + 1 .. i + len])) break;
+                cp = parser_mod.decodeUtf8(data[i .. i + len]);
+            }
+            const width: u16 = if (cp < unicode_width.first_wide) 1 else unicode_width.displayWidth(cp);
+            if (col + width >= cols) break;
+            if (row[col].width != cell_mod.WIDTH_NARROW) break;
+            if (width == 2 and row[col + 1].width != cell_mod.WIDTH_NARROW) break;
+            // Checked last so a code point handed back to printChar is segmented once.
+            if (!self.segmenter.breaksBefore(cp)) {
+                self.cursor_col = col;
+                self.extendCluster(cp);
+                col = self.cursor_col;
+                i += len;
+                if (self.wrap_pending) break;
+                continue;
+            }
+            self.cluster_row = self.cursor_row;
+            self.cluster_col = col;
+            row[col] = .{
+                .char = cp,
+                .fg = self.current_fg,
+                .bg = self.current_bg,
+                .flags = self.current_flags,
+                .width = @intCast(width),
+                .link = self.current_link,
+            };
+            if (width == 2) row[col + 1] = self.continuationCell();
+            col += width;
+            i += len;
+        }
+        if (i > 0) {
+            self.cursor_col = col;
+            self.grid.dirty[self.cursor_row] = 1;
+        }
+        return i;
+    }
+
+    pub fn responsePtr(self: *const Terminal) [*]const u8 {
+        return &self.response_queue[self.response_head];
+    }
+
+    pub fn responseLen(self: *const Terminal) u8 {
+        if (self.response_count == 0) return 0;
+        return self.response_lens[self.response_head];
+    }
+
+    pub fn popResponse(self: *Terminal) void {
+        if (self.response_count == 0) return;
+        self.response_lens[self.response_head] = 0;
+        self.response_head = (self.response_head + 1) % RESPONSE_QUEUE_MAX;
+        self.response_count -= 1;
+    }
+
+    fn enqueueResponse(self: *Terminal, response: []const u8) void {
+        if (self.response_count == RESPONSE_QUEUE_MAX) return;
+        const len = @min(response.len, RESPONSE_MAX_BYTES);
+        @memcpy(self.response_queue[self.response_tail][0..len], response[0..len]);
+        self.response_lens[self.response_tail] = @intCast(len);
+        self.response_tail = (self.response_tail + 1) % RESPONSE_QUEUE_MAX;
+        self.response_count += 1;
     }
 
     pub fn resize(self: *Terminal, new_cols: u16, new_rows: u16) void {
@@ -262,6 +424,15 @@ pub const Terminal = struct {
         const old_rows = self.rows;
 
         if (cols == old_cols and rows == old_rows) return;
+        // Rows and columns can move under the open cluster.
+        self.segmenter = .{};
+
+        // An allocation failure leaves both the active and inactive screens at
+        // their old size. The host can read the applied dimensions afterward.
+        self.grid.ensureCapacity(cols, rows) catch return;
+        if (self.using_alt_screen) {
+            self.alt_grid.?.ensureCapacity(cols, rows) catch return;
+        }
 
         // Clear cells beyond the new column width for each preserved row
         if (cols < old_cols) {
@@ -270,24 +441,44 @@ pub const Terminal = struct {
             while (r < preserve_rows) : (r += 1) {
                 var c: u16 = cols;
                 while (c < old_cols) : (c += 1) {
-                    self.grid.cells[r][c] = Cell{};
+                    self.grid.getRow(r)[c] = Cell{};
                 }
             }
         }
 
-        // Push excess bottom rows into scrollback when shrinking vertically
+        // Shrinking vertically drops rows off the top into scrollback, not off
+        // the bottom: the viewport is a window onto history, and the window
+        // keeps the newest rows. Blank trailing rows below the cursor are
+        // discarded first so a shrink that fits does not push live content.
+        var restored: u16 = 0;
         if (rows < old_rows) {
-            if (!self.using_alt_screen and self.scrollback != null) {
-                const push_cols = if (cols < old_cols) cols else old_cols;
-                var r: u16 = rows;
-                while (r < old_rows) : (r += 1) {
-                    // These rows skipped the truncation loop above, which only
-                    // covers the rows the grid keeps. Repair at the width they
-                    // are stored with, or a pair split by that width survives
-                    // in history as a wide cell with no continuation.
-                    self.sanitizeWideRowWidth(r, push_cols, Cell{});
-                    self.scrollback.?.push(&self.grid.cells[r], push_cols);
+            // Scroll only as far as it takes to keep the cursor on screen, so a
+            // shrink at a fresh prompt pushes nothing and rows below the cursor
+            // are discarded rather than preserved.
+            const from_top: u16 = if (self.cursor_row >= rows)
+                self.cursor_row - rows + 1
+            else
+                0;
+
+            if (from_top > 0) {
+                if (!self.using_alt_screen and self.scrollback != null) {
+                    const push_cols = if (cols < old_cols) cols else old_cols;
+                    var r: u16 = 0;
+                    while (r < from_top) : (r += 1) {
+                        // These rows may have skipped the truncation loop above,
+                        // which only covers the rows the grid keeps. Repair at
+                        // the width they are stored with, or a pair split by that
+                        // width survives in history as a wide cell with no
+                        // continuation.
+                        self.grid.sanitizeWideRowWidth(r, push_cols, Cell{});
+                        self.scrollback.?.push(self.grid.getRow(r), push_cols);
+                    }
                 }
+                self.grid.scrollUp(0, old_rows, from_top, Cell{});
+                self.cursor_row = if (self.cursor_row > from_top)
+                    self.cursor_row - from_top
+                else
+                    0;
             }
         }
 
@@ -296,9 +487,27 @@ pub const Terminal = struct {
         self.grid.cols = cols;
         self.grid.rows = rows;
 
-        // Clear any newly exposed rows when growing vertically
+        // Growing vertically is the inverse: refill from the top out of history
+        // before blanking anything, so shrink then grow is identity on the
+        // visible content.
         if (rows > old_rows) {
-            var r: u16 = old_rows;
+            const gained = rows - old_rows;
+            if (!self.using_alt_screen and self.scrollback != null) {
+                const available = self.scrollback.?.count;
+                restored = if (gained > available) @intCast(available) else gained;
+            }
+            if (restored > 0) {
+                self.grid.scrollDown(0, old_rows + restored, restored, Cell{});
+                var i: u16 = 0;
+                while (i < restored) : (i += 1) {
+                    // pop returns newest first, so fill the inserted band from
+                    // the bottom up to restore chronological order.
+                    const line = self.scrollback.?.pop() orelse break;
+                    self.setRowFromScrollback(restored - 1 - i, line, cols);
+                }
+                self.cursor_row += restored;
+            }
+            var r: u16 = old_rows + restored;
             while (r < rows) : (r += 1) {
                 self.grid.clearRow(r);
             }
@@ -311,7 +520,7 @@ pub const Terminal = struct {
             while (r2 < preserve_rows) : (r2 += 1) {
                 var c: u16 = old_cols;
                 while (c < cols) : (c += 1) {
-                    self.grid.cells[r2][c] = Cell{};
+                    self.grid.getRow(r2)[c] = Cell{};
                 }
                 self.grid.dirty[r2] = 1;
             }
@@ -321,7 +530,7 @@ pub const Terminal = struct {
 
         var sr: u16 = 0;
         while (sr < rows) : (sr += 1) {
-            self.sanitizeWideRow(sr, Cell{});
+            self.grid.sanitizeWideRowWidth(sr, self.cols, Cell{});
         }
 
         if (self.cursor_col >= cols) self.cursor_col = cols - 1;
@@ -332,12 +541,14 @@ pub const Terminal = struct {
         while (r < rows) : (r += 1) {
             self.grid.dirty[r] = 1;
         }
+        if (self.using_alt_screen) self.alt_grid.?.resizeView(cols, rows);
     }
 
     // -- Byte processing --
 
     fn processByte(self: *Terminal, byte: u8) void {
         const action = self.parser.feed(byte);
+        if (action != .none and action != .print) self.segmenter = .{};
         switch (action) {
             .none => {},
             .print => self.printChar(self.parser.print_char),
@@ -345,47 +556,65 @@ pub const Terminal = struct {
             .csi_dispatch => self.handleCsi(),
             .esc_dispatch => self.handleEsc(),
             .osc_dispatch => self.handleOsc(),
+            .unsupported_apc => {},
         }
     }
 
     // -- Print --
 
     fn printChar(self: *Terminal, codepoint: u21) void {
-        if (self.wrap_pending) {
+        const mapped = self.charset.map(codepoint);
+        if (!self.segmenter.breaksBefore(mapped)) {
+            self.extendCluster(mapped);
+            return;
+        }
+
+        if (self.wrap_pending and self.auto_wrap) {
             self.cursor_col = 0;
             self.doLinefeed();
             self.wrap_pending = false;
         }
 
-        var width = unicode_width.displayWidth(codepoint);
+        var char = mapped;
+        var width: u8 = if (char < unicode_width.first_wide) cell_mod.WIDTH_NARROW else unicode_width.displayWidth(char);
         if (width == cell_mod.WIDTH_WIDE and self.cols < 2) {
+            // A one-column grid cannot hold a wide pair. Consume a blank
+            // cell instead, preserving the usual cursor and wrapping behavior.
+            char = ' ';
             width = cell_mod.WIDTH_NARROW;
         }
 
         if (width == cell_mod.WIDTH_WIDE and self.cursor_col + 1 >= self.cols) {
             if (self.auto_wrap) {
                 const blank = self.blankCell();
-                self.clearWideCellAt(self.cursor_row, self.cursor_col, blank);
+                self.grid.clearWideCellAt(self.cursor_row, self.cursor_col, blank);
                 self.grid.setCell(self.cursor_row, self.cursor_col, blank);
                 self.cursor_col = 0;
                 self.doLinefeed();
             } else {
-                width = cell_mod.WIDTH_NARROW;
+                self.segmenter = .{};
+                return;
             }
         }
 
-        const blank = self.blankCell();
-        self.clearWideCellAt(self.cursor_row, self.cursor_col, blank);
-        if (width == cell_mod.WIDTH_WIDE) {
-            self.clearWideCellAt(self.cursor_row, self.cursor_col + 1, blank);
+        // Overwriting a narrow cell with a narrow one cannot split a wide pair.
+        if (width == cell_mod.WIDTH_WIDE or self.grid.getCell(self.cursor_row, self.cursor_col).width != cell_mod.WIDTH_NARROW) {
+            const blank = self.blankCell();
+            self.grid.clearWideCellAt(self.cursor_row, self.cursor_col, blank);
+            if (width == cell_mod.WIDTH_WIDE) {
+                self.grid.clearWideCellAt(self.cursor_row, self.cursor_col + 1, blank);
+            }
         }
 
+        self.cluster_row = self.cursor_row;
+        self.cluster_col = self.cursor_col;
         self.grid.setCell(self.cursor_row, self.cursor_col, Cell{
-            .char = @intCast(codepoint),
+            .char = @intCast(char),
             .fg = self.current_fg,
             .bg = self.current_bg,
             .flags = self.current_flags,
             .width = width,
+            .link = self.current_link,
         });
 
         if (width == cell_mod.WIDTH_WIDE) {
@@ -402,11 +631,65 @@ pub const Terminal = struct {
         }
     }
 
+    /// Appends a code point to the cluster printed last, widening it when VS16
+    /// or a second regional indicator turns it into emoji presentation.
+    fn extendCluster(self: *Terminal, cp: u21) void {
+        const row = self.cluster_row;
+        const col = self.cluster_col;
+        if (row >= self.rows or col >= self.cols) return;
+        var cell = self.grid.getCell(row, col);
+        if (cell.width == cell_mod.WIDTH_CONTINUATION) return;
+
+        var buf: [grapheme_mod.MAX_CLUSTER_CODEPOINTS * 4]u8 = undefined;
+        var len: usize = 0;
+        if (cell.char & grapheme_mod.CLUSTER_BIT != 0) {
+            const existing = self.clusters.get(cell.char & ~grapheme_mod.CLUSTER_BIT) orelse return;
+            @memcpy(buf[0..existing.len], existing);
+            len = existing.len;
+        } else {
+            len = std.unicode.utf8Encode(@intCast(cell.char), &buf) catch return;
+        }
+        const stored = std.unicode.utf8CountCodepoints(buf[0..len]) catch return;
+        if (stored < grapheme_mod.MAX_CLUSTER_CODEPOINTS) {
+            len += std.unicode.utf8Encode(cp, buf[len..]) catch return;
+            if (self.clusters.intern(grid_mod.allocator, buf[0..len])) |index| {
+                cell.char = grapheme_mod.CLUSTER_BIT | index;
+            }
+        }
+
+        const widens = cell.width == cell_mod.WIDTH_NARROW and
+            (cp == 0xFE0F or grapheme_mod.props(cp).gcb == .regional_indicator) and
+            col + 1 < self.cols and !self.wrap_pending and self.cursor_row == row and
+            self.cursor_col == col + 1;
+        if (widens) {
+            const blank = self.blankCell();
+            self.grid.clearWideCellAt(row, col + 1, blank);
+            cell.width = cell_mod.WIDTH_WIDE;
+            self.grid.setCell(row, col + 1, Cell{
+                .char = 0,
+                .fg = cell.fg,
+                .bg = cell.bg,
+                .flags = cell.flags,
+                .width = cell_mod.WIDTH_CONTINUATION,
+                .link = cell.link,
+            });
+            if (col + 2 < self.cols) {
+                self.cursor_col = col + 2;
+            } else if (self.auto_wrap) {
+                self.cursor_col = self.cols - 1;
+                self.wrap_pending = true;
+            } else {
+                self.cursor_col = self.cols - 1;
+            }
+        }
+        self.grid.setCell(row, col, cell);
+    }
+
     // -- C0 control codes --
 
     fn executeControl(self: *Terminal, byte: u8) void {
         switch (byte) {
-            0x07 => {}, // BEL
+            0x07 => self.bell_count +|= 1, // BEL
             0x08, 0x7F => self.backspace(),
             0x09 => self.horizontalTab(),
             0x0A, 0x0B, 0x0C => {
@@ -414,6 +697,8 @@ pub const Terminal = struct {
                 if (self.linefeed_mode) self.carriageReturn();
             },
             0x0D => self.carriageReturn(),
+            0x0E => self.charset.gl = 1, // SO / LS1
+            0x0F => self.charset.gl = 0, // SI / LS0
             else => {},
         }
     }
@@ -438,7 +723,7 @@ pub const Terminal = struct {
         if (self.cursor_row + 1 >= self.scroll_bottom) {
             if (!self.using_alt_screen and self.scroll_top == 0) {
                 if (self.scrollback) |sb| {
-                    sb.push(&self.grid.cells[self.scroll_top], self.cols);
+                    sb.push(self.grid.getRow(self.scroll_top), self.cols);
                 }
             }
             self.grid.scrollUp(self.scroll_top, self.scroll_bottom, 1, self.blankCell());
@@ -456,11 +741,19 @@ pub const Terminal = struct {
 
     fn handleEsc(self: *Terminal) void {
         const byte = self.parser.execute_byte;
-        const has_inter = self.parser.intermediate_count > 0;
-        const inter0 = if (has_inter) self.parser.intermediates[0] else @as(u8, 0);
-
-        if (has_inter and inter0 == '#' and byte == '8') {
-            self.decaln();
+        if (self.parser.intermediate_count > 0) {
+            if (self.parser.intermediate_count != 1) return;
+            switch (self.parser.intermediates[0]) {
+                '(', ')', '*', '+' => |intermediate| {
+                    if (charset_mod.Charset.fromDesignator(byte)) |charset| {
+                        self.charset.slots[intermediate - '('] = charset;
+                    }
+                },
+                '#' => if (byte == '8') self.decaln(),
+                else => {},
+            }
+            // An unsupported designation must not dispatch its final byte
+            // as a bare ESC command (e.g. ESC ( c must not reset the screen).
             return;
         }
 
@@ -475,6 +768,10 @@ pub const Terminal = struct {
             'M' => self.reverseIndex(),
             'c' => self.fullReset(),
             'H' => self.setTabStop(),
+            'n' => self.charset.gl = 2, // LS2
+            'o' => self.charset.gl = 3, // LS3
+            'N' => self.charset.single_shift = 2, // SS2
+            'O' => self.charset.single_shift = 3, // SS3
             else => {},
         }
     }
@@ -503,14 +800,16 @@ pub const Terminal = struct {
         self.saved_fg = self.current_fg;
         self.saved_bg = self.current_bg;
         self.saved_flags = self.current_flags;
+        self.saved_charset[@intFromBool(self.using_alt_screen)] = self.charset;
     }
 
     fn restoreCursor(self: *Terminal) void {
-        self.cursor_row = self.saved_cursor_row;
-        self.cursor_col = self.saved_cursor_col;
+        self.cursor_row = @min(self.saved_cursor_row, self.rows - 1);
+        self.cursor_col = @min(self.saved_cursor_col, self.cols - 1);
         self.current_fg = self.saved_fg;
         self.current_bg = self.saved_bg;
         self.current_flags = self.saved_flags;
+        self.charset = self.saved_charset[@intFromBool(self.using_alt_screen)];
         self.wrap_pending = false;
     }
 
@@ -531,6 +830,42 @@ pub const Terminal = struct {
     fn handleCsi(self: *Terminal) void {
         const final = self.parser.execute_byte;
 
+        // DECSCUSR is CSI Ps SP q; bare CSI q controls keyboard LEDs.
+        if (final == 'q' and self.parser.csi_private == 0 and
+            self.parser.intermediate_count == 1 and self.parser.intermediates[0] == ' ')
+        {
+            if (self.parser.param_count <= 1) {
+                const style = self.parser.getParam(0, 0);
+                if (style <= 6) {
+                    self.cursor_shape = switch (style) {
+                        3, 4 => .underline,
+                        5, 6 => .bar,
+                        else => .block,
+                    };
+                    // Zero restores wterm's default steady block cursor.
+                    self.cursor_blinking = style == 1 or style == 3 or style == 5;
+                }
+            }
+            return;
+        }
+
+        if (final == 'c') {
+            if (self.parser.csi_private == 0 and self.parser.intermediate_count == 0) {
+                // VT100 with the advanced video option, matching Ghostty's DA1 reply.
+                self.enqueueResponse("\x1b[?1;2c");
+            } else {
+                self.logUnhandled(final, self.parser.csi_private);
+            }
+            return;
+        }
+
+        if (final == 'u' and switch (self.parser.csi_private) {
+            '?', '>', '<', '=' => true,
+            else => false,
+        }) {
+            self.handleKittyKeyboard();
+            return;
+        }
         if (self.parser.csi_private == '?') {
             self.handlePrivateMode(final);
             return;
@@ -583,7 +918,67 @@ pub const Terminal = struct {
         }
     }
 
+    fn activeKittyKeyboard(self: *Terminal) *KittyFlagStack {
+        return if (self.using_alt_screen)
+            &self.alternate_kitty_keyboard
+        else
+            &self.primary_kitty_keyboard;
+    }
+
+    pub fn kittyKeyboardFlags(self: *Terminal) u5 {
+        return self.activeKittyKeyboard().current();
+    }
+
+    fn handleKittyKeyboard(self: *Terminal) void {
+        const stack = self.activeKittyKeyboard();
+        switch (self.parser.csi_private) {
+            '?' => {
+                var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
+                const response = std.fmt.bufPrint(
+                    &buf,
+                    "\x1b[?{d}u",
+                    .{stack.current()},
+                ) catch return;
+                self.enqueueResponse(response);
+            },
+            '>' => {
+                const value = if (self.parser.param_count == 1)
+                    self.parser.getParam(0, 0)
+                else
+                    0;
+                if (value <= 31) stack.push(@intCast(value));
+            },
+            '<' => {
+                const count = if (self.parser.param_count == 1)
+                    self.parser.getParam(0, 1)
+                else
+                    1;
+                stack.pop(count);
+            },
+            '=' => {
+                const value = self.parser.getParam(0, 0);
+                const mode = self.parser.getParam(1, 1);
+                if (value <= 31 and mode >= 1 and mode <= 3) {
+                    stack.set(@intCast(value), mode);
+                }
+            },
+            else => unreachable,
+        }
+    }
+
     fn handlePrivateMode(self: *Terminal, final: u8) void {
+        if (final == 'p' and self.parser.intermediate_count == 1 and
+            self.parser.intermediates[0] == '$')
+        {
+            if (self.parser.param_count == 1 and !self.parser.subparam[0]) {
+                self.reportPrivateMode(self.parser.params[0]);
+            }
+            return;
+        }
+        if (self.parser.intermediate_count != 0) {
+            self.logUnhandled(final, '?');
+            return;
+        }
         switch (final) {
             'h' => self.setPrivateMode(true),
             'l' => self.setPrivateMode(false),
@@ -596,22 +991,69 @@ pub const Terminal = struct {
         const count = if (self.parser.param_count == 0) @as(u8, 1) else self.parser.param_count;
         while (i < count) : (i += 1) {
             const mode = self.parser.params[i];
+            if (privateModeBit(mode)) |bit| {
+                const mask = @as(u16, 1) << bit;
+                if (enabled) self.private_mode_bits |= mask else self.private_mode_bits &= ~mask;
+            }
             switch (mode) {
                 1 => self.cursor_keys_app = enabled,
                 6 => self.origin_mode = enabled,
                 7 => self.auto_wrap = enabled,
-                12 => {}, // cursor blink - handled by renderer
+                12 => self.cursor_blinking = enabled,
                 20 => self.linefeed_mode = enabled,
                 25 => self.cursor_visible = enabled,
                 47 => self.switchScreen(enabled, false),
+                1000 => self.setMouseTracking(1000, enabled),
+                1002 => self.setMouseTracking(1002, enabled),
+                1003 => self.setMouseTracking(1003, enabled),
+                1004 => self.focus_events = enabled,
+                1005 => self.mouse_encoding = if (enabled) .utf8 else .x10,
+                1006 => self.mouse_encoding = if (enabled) .sgr else .x10,
+                1015 => self.mouse_encoding = if (enabled) .urxvt else .x10,
+                1016 => self.mouse_encoding = if (enabled) .sgr_pixels else .x10,
                 1047 => self.switchScreen(enabled, false),
                 1048 => {
                     if (enabled) self.saveCursor() else self.restoreCursor();
                 },
                 1049 => self.switchScreen(enabled, true),
                 2004 => self.bracketed_paste = enabled,
+                2026 => {
+                    if (enabled and !self.synchronized_output) {
+                        self.synchronized_output_generation +%= 1;
+                    }
+                    self.synchronized_output = enabled;
+                },
                 else => {},
             }
+        }
+    }
+
+    fn reportPrivateMode(self: *Terminal, mode: u16) void {
+        const active: ?bool = switch (mode) {
+            1 => self.cursor_keys_app,
+            6 => self.origin_mode,
+            7 => self.auto_wrap,
+            12 => self.cursor_blinking,
+            25 => self.cursor_visible,
+            1004 => self.focus_events,
+            2004 => self.bracketed_paste,
+            2026 => self.synchronized_output,
+            else => if (privateModeBit(mode)) |bit|
+                self.private_mode_bits & (@as(u16, 1) << bit) != 0
+            else
+                null,
+        };
+        const status: u8 = if (active) |enabled| (if (enabled) @as(u8, 1) else 2) else 0;
+        var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
+        const response = std.fmt.bufPrint(&buf, "\x1b[?{d};{d}$y", .{ mode, status }) catch return;
+        self.enqueueResponse(response);
+    }
+
+    fn setMouseTracking(self: *Terminal, mode: u16, enabled: bool) void {
+        if (enabled) {
+            self.mouse_tracking = mode;
+        } else if (self.mouse_tracking == mode) {
+            self.mouse_tracking = 0;
         }
     }
 
@@ -620,14 +1062,22 @@ pub const Terminal = struct {
         const ag = self.alt_grid orelse return;
 
         if (alt) {
+            ag.ensureCapacity(self.cols, self.rows) catch return;
+            self.alt_saved_cursor_shape = self.cursor_shape;
+            self.alt_saved_link = self.current_link;
+            self.current_link = 0;
             if (save_cursor) self.saveCursorToAlt();
-            ag.* = self.grid;
+            std.mem.swap(Grid, &self.grid, ag);
             self.grid.reset(self.cols, self.rows);
             self.using_alt_screen = true;
         } else {
-            self.grid = ag.*;
+            std.mem.swap(Grid, &self.grid, ag);
             self.using_alt_screen = false;
-            if (save_cursor) self.restoreCursorFromAlt();
+            self.current_link = self.alt_saved_link;
+            if (save_cursor) {
+                self.restoreCursorFromAlt();
+                self.cursor_shape = self.alt_saved_cursor_shape;
+            }
             var r: u16 = 0;
             while (r < self.rows) : (r += 1) {
                 self.grid.dirty[r] = 1;
@@ -643,48 +1093,62 @@ pub const Terminal = struct {
         self.alt_saved_fg = self.current_fg;
         self.alt_saved_bg = self.current_bg;
         self.alt_saved_flags = self.current_flags;
+        self.alt_saved_charset = self.charset;
     }
 
     fn restoreCursorFromAlt(self: *Terminal) void {
-        self.cursor_row = self.alt_saved_cursor_row;
-        self.cursor_col = self.alt_saved_cursor_col;
+        self.cursor_row = @min(self.alt_saved_cursor_row, self.rows - 1);
+        self.cursor_col = @min(self.alt_saved_cursor_col, self.cols - 1);
         self.current_fg = self.alt_saved_fg;
         self.current_bg = self.alt_saved_bg;
         self.current_flags = self.alt_saved_flags;
+        self.charset = self.alt_saved_charset;
         self.wrap_pending = false;
     }
 
     fn softReset(self: *Terminal) void {
+        self.charset = .{};
+        self.saved_charset[@intFromBool(self.using_alt_screen)] = .{};
         self.cursor_visible = true;
         self.origin_mode = false;
         self.auto_wrap = true;
         self.cursor_keys_app = false;
         self.bracketed_paste = false;
+        self.mouse_tracking = 0;
+        self.mouse_encoding = .x10;
+        self.private_mode_bits &= ~mouse_private_mode_bits;
+        self.focus_events = false;
+        self.synchronized_output = false;
         self.scroll_top = 0;
         self.scroll_bottom = self.rows;
         self.resetStyle();
     }
 
     fn handleDeviceStatus(self: *Terminal) void {
-        const param = self.parser.getParam(0, 0);
-        if (param == 6) {
-            // CPR – Cursor Position Report: ESC [ row ; col R
-            const row = self.cursor_row + 1;
-            const col = self.cursor_col + 1;
-            var buf: [64]u8 = undefined;
-            var len: u8 = 0;
-            buf[len] = 0x1B;
-            len += 1;
-            buf[len] = '[';
-            len += 1;
-            len = appendU16(buf[0..], len, row);
-            buf[len] = ';';
-            len += 1;
-            len = appendU16(buf[0..], len, col);
-            buf[len] = 'R';
-            len += 1;
-            self.response_buf = buf;
-            self.response_len = len;
+        if (self.parser.csi_private != 0 or self.parser.intermediate_count != 0 or
+            self.parser.param_count != 1 or self.parser.subparam[0]) return;
+
+        switch (self.parser.params[0]) {
+            5 => self.enqueueResponse("\x1b[0n"),
+            6 => {
+                // CPR – Cursor Position Report: ESC [ row ; col R
+                const row = self.cursor_row + 1;
+                const col = self.cursor_col + 1;
+                var buf: [64]u8 = undefined;
+                var len: u8 = 0;
+                buf[len] = 0x1B;
+                len += 1;
+                buf[len] = '[';
+                len += 1;
+                len = appendU16(buf[0..], len, row);
+                buf[len] = ';';
+                len += 1;
+                len = appendU16(buf[0..], len, col);
+                buf[len] = 'R';
+                len += 1;
+                self.enqueueResponse(buf[0..len]);
+            },
+            else => {},
         }
     }
 
@@ -779,8 +1243,8 @@ pub const Terminal = struct {
     }
 
     fn eraseChars(self: *Terminal, n: u16) void {
-        const count = if (n == 0) 1 else n;
-        const end = if (self.cursor_col + count > self.cols) self.cols else self.cursor_col + count;
+        const count = @min(if (n == 0) 1 else n, self.cols - self.cursor_col);
+        const end = self.cursor_col + count;
         self.grid.clearRangeAs(self.cursor_row, self.cursor_col, end, self.blankCell());
     }
 
@@ -797,44 +1261,11 @@ pub const Terminal = struct {
     }
 
     fn deleteChars(self: *Terminal, n: u16) void {
-        const count = if (n == 0) 1 else n;
-        const blank = self.blankCell();
-        const range = self.expandWideRange(self.cursor_row, self.cursor_col, self.cursor_col + count);
-        const delete_count = range.end - range.start;
-        var col = range.start;
-        while (col + delete_count < self.cols) : (col += 1) {
-            self.grid.cells[self.cursor_row][col] = self.grid.cells[self.cursor_row][col + delete_count];
-        }
-        while (col < self.cols) : (col += 1) {
-            self.grid.cells[self.cursor_row][col] = blank;
-        }
-        self.grid.dirty[self.cursor_row] = 1;
-        self.sanitizeWideRow(self.cursor_row, blank);
+        self.grid.deleteCells(self.cursor_row, self.cursor_col, if (n == 0) 1 else n, self.blankCell());
     }
 
     fn insertBlanks(self: *Terminal, n: u16) void {
-        const count = if (n == 0) 1 else n;
-        const blank = self.blankCell();
-        var start = self.cursor_col;
-        if (start < self.cols and self.grid.cells[self.cursor_row][start].width == cell_mod.WIDTH_CONTINUATION and start > 0) {
-            start -= 1;
-        }
-        if (start + count >= self.cols) {
-            self.grid.clearRangeAs(self.cursor_row, start, self.cols, blank);
-            return;
-        }
-        var col = self.cols - 1;
-        while (col >= start + count) : (col -= 1) {
-            self.grid.cells[self.cursor_row][col] = self.grid.cells[self.cursor_row][col - count];
-            if (col == 0) break;
-        }
-        var c = start;
-        const end = if (start + count > self.cols) self.cols else start + count;
-        while (c < end) : (c += 1) {
-            self.grid.cells[self.cursor_row][c] = blank;
-        }
-        self.grid.dirty[self.cursor_row] = 1;
-        self.sanitizeWideRow(self.cursor_row, blank);
+        self.grid.insertCells(self.cursor_row, self.cursor_col, if (n == 0) 1 else n, self.blankCell());
     }
 
     fn scrollUpN(self: *Terminal, n: u16) void {
@@ -843,7 +1274,7 @@ pub const Terminal = struct {
             if (self.scrollback) |sb| {
                 var i: u16 = 0;
                 while (i < count and i < self.scroll_bottom - self.scroll_top) : (i += 1) {
-                    sb.push(&self.grid.cells[self.scroll_top + i], self.cols);
+                    sb.push(self.grid.getRow(self.scroll_top + i), self.cols);
                 }
             }
         }
@@ -866,6 +1297,23 @@ pub const Terminal = struct {
             self.cursor_col = 0;
             self.wrap_pending = false;
         }
+    }
+
+    fn reportThemeColor(self: *Terminal, number: u8, rgb: u32) void {
+        var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
+        const channel = struct {
+            fn get(value: u32, shift: u5) u16 {
+                return @as(u16, @intCast((value >> shift) & 0xff)) * 257;
+            }
+        };
+        const out = std.fmt.bufPrint(&buf, "\x1b]{d};rgb:{x:0>4}/{x:0>4}/{x:0>4}{s}", .{
+            number,
+            channel.get(rgb, 16),
+            channel.get(rgb, 8),
+            channel.get(rgb, 0),
+            if (self.parser.osc_bel) "\x07" else "\x1b\\",
+        }) catch return;
+        self.enqueueResponse(out);
     }
 
     // -- Tab stops --
@@ -950,7 +1398,7 @@ pub const Terminal = struct {
     }
 
     /// Parses 38;5;n (256-color) and 38;2;r;g;b (24-bit color)
-    fn parseExtendedColor(self: *const Terminal, start: u8, color: *u16) u8 {
+    fn parseExtendedColor(self: *Terminal, start: u8, color: *u16) u8 {
         if (start + 1 >= self.parser.param_count) return 0;
         const kind = self.parser.params[start + 1];
         if (kind == 5 and start + 2 < self.parser.param_count) {
@@ -961,10 +1409,10 @@ pub const Terminal = struct {
             const r = self.parser.params[start + 2];
             const g = self.parser.params[start + 3];
             const b_val = self.parser.params[start + 4];
-            // Pack RGB into u16: use color indices 257+ for RGB
-            // Store as index into a separate RGB table via WASM API
-            // For now, find closest 256-color match
-            color.* = rgbTo256(@intCast(r), @intCast(g), @intCast(b_val));
+            if (r > 255 or g > 255 or b_val > 255) return 4;
+            const rgb = (@as(u32, r) << 16) | (@as(u32, g) << 8) | b_val;
+            color.* = self.colors.intern(rgb) orelse
+                rgbTo256(@intCast(r), @intCast(g), @intCast(b_val));
             return 4;
         }
         return 0;
@@ -982,7 +1430,19 @@ pub const Terminal = struct {
         if (self.parser.osc_len < 2) return;
         const data = self.parser.osc_data[0..self.parser.osc_len];
 
-        // OSC 0;title ST  or  OSC 2;title ST
+        // OSC 10 and 11 report the theme foreground and background. Each `?`
+        // queries the next color, as in `OSC 10 ; ? ; ?`.
+        if (data.len >= 3 and data[0] == '1' and (data[1] == '0' or data[1] == '1') and data[2] == ';') {
+            var number: u8 = if (data[1] == '0') 10 else 11;
+            var it = std.mem.splitScalar(u8, data[3..], ';');
+            while (it.next()) |param| : (number += 1) {
+                if (number > 11) break;
+                if (!std.mem.eql(u8, param, "?")) continue;
+                self.reportThemeColor(number, if (number == 10) self.theme_fg else self.theme_bg);
+            }
+            return;
+        }
+
         if ((data[0] == '0' or data[0] == '2') and data[1] == ';') {
             const title = data[2..];
             const len = if (title.len > self.title_buf.len) self.title_buf.len else title.len;
@@ -992,6 +1452,34 @@ pub const Terminal = struct {
             }
             self.title_len = @intCast(len);
             self.title_changed = true;
+            return;
+        }
+
+        if (data[0] == '8' and data[1] == ';') {
+            if (self.parser.osc_truncated) {
+                self.current_link = 0;
+                return;
+            }
+            const params_end = std.mem.indexOfScalarPos(u8, data, 2, ';') orelse {
+                self.current_link = 0;
+                return;
+            };
+            const params = data[2..params_end];
+            const uri = data[params_end + 1 ..];
+            if (uri.len == 0) {
+                self.current_link = 0;
+                return;
+            }
+
+            var explicit_id: ?[]const u8 = null;
+            var params_it = std.mem.splitScalar(u8, params, ':');
+            while (params_it.next()) |param| {
+                if (std.mem.startsWith(u8, param, "id=") and param.len > 3) {
+                    explicit_id = param[3..];
+                    break;
+                }
+            }
+            self.current_link = self.hyperlinks.open(uri, explicit_id);
         }
     }
 
@@ -1044,6 +1532,19 @@ fn rgbTo256(r: u8, g: u8, b: u8) u16 {
     return 16 + ri * 36 + gi * 6 + bi;
 }
 
+test {
+    _ = grapheme_mod;
+    _ = color_mod;
+}
+
+test "truecolor SGR keeps exact RGB values" {
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[38;2;255;100;0mA\x1b[0m \x1b[48;2;10;20;30mB\x1b[0m");
+    try std.testing.expectEqual(@as(u32, 0xff6400), t.colors.get(t.grid.getCell(0, 0).fg).?);
+    try std.testing.expectEqual(@as(u32, 0x0a141e), t.colors.get(t.grid.getCell(0, 2).bg).?);
+    try std.testing.expectEqual(cell_mod.DEFAULT_COLOR, t.grid.getCell(0, 2).fg);
+}
+
 test "basic print" {
     var t = Terminal.init(80, 24);
     t.write("Hello");
@@ -1052,6 +1553,205 @@ test "basic print" {
     try @import("std").testing.expectEqual(@as(u32, 'H'), h.char);
     try @import("std").testing.expectEqual(@as(u32, 'e'), e.char);
     try @import("std").testing.expectEqual(@as(u16, 5), t.cursor_col);
+}
+
+test "OSC 8 stamps exact cells and closes on BEL or ST" {
+    const testing = std.testing;
+    var t = Terminal.init(20, 2);
+    t.write("\x1b]8;id=docs;https://example.com\x07LINK\x1b]8;;\x1b\\ plain");
+
+    const link = t.grid.getCell(0, 0).link;
+    try testing.expect(link != 0);
+    try testing.expectEqual(link, t.grid.getCell(0, 3).link);
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(0, 4).link);
+    const entry = t.hyperlinks.get(link).?;
+    try testing.expectEqualStrings("https://example.com", entry.uri[0..entry.uri_len]);
+    try testing.expectEqualStrings("docs", entry.id[0..entry.id_len]);
+}
+
+test "OSC 8 overwrite erase and truncation fail closed" {
+    const testing = std.testing;
+    var t = Terminal.init(20, 2);
+    t.write("\x1b]8;;https://example.com\x1b\\LINK\x1b]8;;\x1b\\");
+    try testing.expect(t.grid.getCell(0, 0).link != 0);
+    t.write("\rX\x1b[K");
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(0, 0).link);
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(0, 1).link);
+
+    t.write("\r\n\x1b]8;;https://old.example\x1b\\");
+    try testing.expect(t.current_link != 0);
+    t.write("\x1b]8;;");
+    var i: usize = 0;
+    while (i < parser_mod.MAX_OSC + 1) : (i += 1) t.write("x");
+    t.write("\x07Y");
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(1, 0).link);
+
+    t.write("\x1b]8;;https://old.example\x1b\\");
+    try testing.expect(t.current_link != 0);
+    t.write("\x1b]8;malformed\x07Z");
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(1, 1).link);
+
+    t.write("\x1b[H\x1b]8;;https://active.example\x1b\\LINK");
+    t.write("\r\x1b[K");
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(0, 0).link);
+    t.write("Q");
+    try testing.expect(t.grid.getCell(0, 0).link != 0);
+}
+
+test "OSC 8 implicit opens keep distinct identity" {
+    const testing = std.testing;
+    var t = Terminal.init(20, 2);
+    t.write("\x1b]8;;https://example.com\x1b\\A\x1b]8;;\x1b\\");
+    t.write("\x1b]8;;https://example.com\x1b\\B\x1b]8;;\x1b\\");
+    try testing.expect(t.grid.getCell(0, 0).link != t.grid.getCell(0, 1).link);
+}
+
+test "OSC 8 covers wide cells and keeps active link state screen-local" {
+    const testing = std.testing;
+    var alt = Grid.init(20, 2);
+    var t = Terminal.init(20, 2);
+    t.alt_grid = &alt;
+
+    t.write("\x1b]8;;https://example.com/wide\x1b\\界");
+    const primary_link = t.grid.getCell(0, 0).link;
+    try testing.expect(primary_link != 0);
+    try testing.expectEqual(primary_link, t.grid.getCell(0, 1).link);
+
+    t.write("\x1b[?1049h\x1b[H");
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(0, 0).link);
+    t.write("A");
+    try testing.expectEqual(@as(u16, 0), t.grid.getCell(0, 0).link);
+    t.write("\x1b]8;;https://example.com/alt\x1b\\B");
+    const alt_link = t.grid.getCell(0, 1).link;
+    try testing.expect(alt_link != 0);
+
+    t.write("\x1b[?1049l");
+    try testing.expectEqual(primary_link, t.grid.getCell(0, 0).link);
+    try testing.expectEqual(@as(u32, '界'), t.grid.getCell(0, 0).char);
+    t.write("C");
+    try testing.expectEqual(primary_link, t.grid.getCell(0, 2).link);
+}
+
+test "OSC 8 identities remain stable across RIS" {
+    const testing = std.testing;
+    var t = Terminal.init(20, 2);
+    t.write("\x1b]8;;https://a.example\x1b\\A\x1b]8;;\x1b\\");
+    const first_link = t.grid.getCell(0, 0).link;
+    try testing.expect(first_link != 0);
+
+    t.write("\x1bc");
+    t.write("\x1b]8;;https://b.example\x1b\\B\x1b]8;;\x1b\\");
+    const second_link = t.grid.getCell(0, 0).link;
+    try testing.expect(second_link != 0);
+    try testing.expect(first_link != second_link);
+    try testing.expectEqualStrings(
+        "https://a.example",
+        t.hyperlinks.get(first_link).?.uri[0..t.hyperlinks.get(first_link).?.uri_len],
+    );
+    try testing.expectEqualStrings(
+        "https://b.example",
+        t.hyperlinks.get(second_link).?.uri[0..t.hyperlinks.get(second_link).?.uri_len],
+    );
+}
+
+test "DEC special graphics translates fragmented output with style and links intact" {
+    var t = Terminal.init(32, 2);
+    const input = "\x1b[1;31;44m\x1b]8;;https://example.com\x07\x1b(0_`abcdefghijklmnopqrstuvwxyz{|}~";
+    for (input) |byte| t.write(&.{byte});
+    try expectRowCells(&t, 0, "_◆▒␉␌␍␊°±␤␋┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£·");
+    const link = t.grid.getCell(0, 0).link;
+    try std.testing.expect(link != 0);
+    for (0..32) |col| {
+        const cell = t.grid.getCell(0, @intCast(col));
+        try std.testing.expectEqual(@as(u8, 1), cell.width);
+        try std.testing.expectEqual(@as(u16, 1), cell.fg);
+        try std.testing.expectEqual(@as(u16, 4), cell.bg);
+        try std.testing.expectEqual(cell_mod.FLAG_BOLD, cell.flags);
+        try std.testing.expectEqual(link, cell.link);
+    }
+    t.write("\x1b(B\r\nqxa");
+    try std.testing.expectEqual(@as(u32, 'q'), t.grid.getCell(1, 0).char);
+    try std.testing.expectEqual(@as(u32, 'x'), t.grid.getCell(1, 1).char);
+    try std.testing.expectEqual(@as(u32, 'a'), t.grid.getCell(1, 2).char);
+}
+
+test "G0 and G1 designation and locking shifts leave the cursor and existing cells alone" {
+    var t = Terminal.init(8, 2);
+    t.write("q");
+    t.grid.clearDirty();
+    t.write("\x1b)0\x0e");
+    try std.testing.expectEqual(@as(u16, 1), t.cursor_col);
+    try std.testing.expectEqual(@as(u8, 0), t.grid.dirty[0]);
+    try std.testing.expectEqual(@as(u32, 'q'), t.grid.getCell(0, 0).char);
+    t.write("qx\x0fq\x1b(0q\x1b(Bq");
+    try expectRowCells(&t, 0, "q─│q─q  ");
+}
+
+test "G2 and G3 support single and locking shifts and the British set" {
+    var t = Terminal.init(12, 2);
+    t.write("\x1b*0\x1b+Aq\x1bNqq\x1bO##\x1bnq\x1bo#\x0f#");
+    try expectRowCells(&t, 0, "q─q£#─£#    ");
+    t.write("\r\n\x1bN\rqq");
+    try expectRowCells(&t, 1, "─q          ");
+    t.write("\r\x1bN qq");
+    try expectRowCells(&t, 1, " qq         ");
+}
+
+test "character set translation preserves UTF-8 and wide-cell pairing" {
+    var t = Terminal.init(8, 2);
+    const input = "\x1b(0é界🙂q";
+    for (input) |byte| t.write(&.{byte});
+    try expectRowCells(&t, 0, "é界\x00🙂\x00─  ");
+    try std.testing.expectEqual(@as(u16, 6), t.cursor_col);
+    t.write("\x1b(B\r\n\x1b*0\x1bN界q");
+    try expectRowCells(&t, 1, "界\x00q     ");
+}
+
+test "cursor saves restore all character set designations and pending single shifts" {
+    var t = Terminal.init(8, 2);
+    t.write("\x1b)0\x0e\x1b7\x1b)B\x0f\x1b8q");
+    try expectRowCells(&t, 0, "─       ");
+    t.write("\x0f\x1b*0\x1bN\x1b[sq\x1b*B\x1b[uqq");
+    try expectRowCells(&t, 0, "──q     ");
+}
+
+test "alternate screen cursor restoration preserves primary character sets" {
+    var alt = Grid.init(8, 2);
+    var t = Terminal.init(8, 2);
+    t.alt_grid = &alt;
+    t.write("\x1b(0\x1b7\x1b[?1049hq");
+    try expectRowCells(&t, 0, "─       ");
+    t.write("\x1b(B\x1b[H\x1b7q\x1b[?1049lq");
+    try expectRowCells(&t, 0, "─       ");
+    // Saving an alternate-screen charset must not overwrite primary DECSC.
+    t.write("\x1b(B\x1b8q");
+    try expectRowCells(&t, 0, "─       ");
+    t.write("\x1b[?47h\x1b(B\x1b[?47lq");
+    try expectRowCells(&t, 0, "─q      ");
+}
+
+test "hard and soft resets clear character set designations and saved shifts" {
+    for ([_][]const u8{ "\x1bc", "\x1b[!p" }) |reset_sequence| {
+        var t = Terminal.init(8, 2);
+        t.write("\x1b(0\x1b)0\x1b*0\x1b+0\x0e\x1bN\x1b7");
+        t.write(reset_sequence);
+        t.write("q\x0eq\x1bnq\x1boq\x1bNq\x1bOq");
+        try expectRowCells(&t, 0, "qqqqqq  ");
+        t.write("\x1b8q");
+        try std.testing.expectEqual(@as(u32, 'q'), t.grid.getCell(0, 0).char);
+    }
+}
+
+test "unsupported and cancelled designations do not execute bare ESC commands" {
+    var t = Terminal.init(8, 2);
+    t.write("AB\x1b7CD\x1b(0\x1b(c\x1b(D\x1b(8\x1b(7\x1b( M\x1b((Bq");
+    try expectRowCells(&t, 0, "ABCD─   ");
+    try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+    try std.testing.expectEqual(@as(u16, 5), t.cursor_col);
+    t.write("\x1b(\x18q\x1b(\x1b(Bq");
+    try expectRowCells(&t, 0, "ABCD──q ");
+    t.write("\x1b8q");
+    try expectRowCells(&t, 0, "ABqD──q ");
 }
 
 test "wide characters advance by two cells" {
@@ -1097,15 +1797,76 @@ test "printing over wide character clears both cells" {
     try testing.expectEqual(@as(u32, 'a'), t.grid.getCell(0, 2).char);
 }
 
-test "delete chars keeps wide cells intact" {
-    const testing = @import("std").testing;
-    var t = Terminal.init(80, 24);
-    t.write("\xF0\x9F\x93\x81ab");
-    t.write("\x1b[1;1H\x1b[P");
-    try testing.expectEqual(@as(u32, 'a'), t.grid.getCell(0, 0).char);
-    try testing.expectEqual(@as(u32, 'b'), t.grid.getCell(0, 1).char);
-    try testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 0).width);
-    try testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 1).width);
+fn expectRowCells(t: *const Terminal, row: u16, expected: []const u8) !void {
+    var chars = (try std.unicode.Utf8View.init(expected)).iterator();
+    var col: u16 = 0;
+    while (chars.nextCodepoint()) |char| : (col += 1) {
+        const cell = t.grid.getCell(row, col);
+        try std.testing.expectEqual(@as(u32, char), cell.char);
+        try std.testing.expectEqual(if (char == 0) cell_mod.WIDTH_CONTINUATION else unicode_width.displayWidth(char), cell.width);
+    }
+    try std.testing.expectEqual(t.cols, col);
+}
+
+test "character edits shift exact columns across wide pairs" {
+    const cases = [_]struct { input: []const u8, col: u16, edit: []const u8, expected: []const u8 }{
+        .{ .input = "A界BC", .col = 1, .edit = "\x1b[P", .expected = "A BC    " },
+        .{ .input = "A界BC", .col = 2, .edit = "\x1b[P", .expected = "A BC    " },
+        .{ .input = "A界BC", .col = 1, .edit = "\x1b[2P", .expected = "ABC     " },
+        .{ .input = "A界語BC", .col = 2, .edit = "\x1b[2P", .expected = "A  BC   " },
+        .{ .input = "A界語BC", .col = 2, .edit = "\x1b[P", .expected = "A 語\x00BC  " },
+        .{ .input = "A界語BC", .col = 0, .edit = "\x1b[P", .expected = "界\x00語\x00BC  " },
+        .{ .input = "A界BC", .col = 2, .edit = "\x1b[0P", .expected = "A BC    " },
+        .{ .input = "ABCDEF界", .col = 7, .edit = "\x1b[P", .expected = "ABCDEF  " },
+        .{ .input = "A界BC", .col = 2, .edit = "\x1b[65535P", .expected = "A       " },
+        .{ .input = "A界BC", .col = 1, .edit = "\x1b[@", .expected = "A 界\x00BC  " },
+        .{ .input = "A界BC", .col = 2, .edit = "\x1b[@", .expected = "A   BC  " },
+        .{ .input = "A界語BC", .col = 2, .edit = "\x1b[@", .expected = "A   語\x00BC" },
+        .{ .input = "A界BC", .col = 2, .edit = "\x1b[0@", .expected = "A   BC  " },
+        .{ .input = "ABCDE界F", .col = 1, .edit = "\x1b[@", .expected = "A BCDE界\x00" },
+        .{ .input = "ABCDE界F", .col = 1, .edit = "\x1b[2@", .expected = "A  BCDE " },
+        .{ .input = "ABCDEF界", .col = 7, .edit = "\x1b[@", .expected = "ABCDEF  " },
+        .{ .input = "A界BC", .col = 2, .edit = "\x1b[65535@", .expected = "A       " },
+        .{ .input = "A界BC", .col = 0, .edit = "\x1b[65535@", .expected = "        " },
+        .{ .input = "A界BC", .col = 2, .edit = "\x1b[65535X", .expected = "A       " },
+    };
+    for (cases) |case| {
+        var t = Terminal.init(8, 2);
+        t.write(case.input);
+        t.cursorPosition(1, case.col + 1);
+        t.grid.clearDirty();
+        t.write(case.edit);
+        try expectRowCells(&t, 0, case.expected);
+        try expectRowCells(&t, 1, "        ");
+        try std.testing.expectEqual(case.col, t.cursor_col);
+        try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+        try std.testing.expectEqual(@as(u8, 1), t.grid.dirty[0]);
+        try std.testing.expectEqual(@as(u8, 0), t.grid.dirty[1]);
+    }
+}
+
+test "wide edit repairs use erase background and preserve shifted attributes and links" {
+    for ([_][]const u8{ "\x1b[P", "\x1b[@" }) |edit| {
+        var t = Terminal.init(8, 2);
+        t.write("\x1b[1;31;44m\x1b]8;;https://example.com\x07A界語B");
+        const lead = t.grid.getCell(0, 3);
+        const continuation = t.grid.getCell(0, 4);
+        const following = t.grid.getCell(0, 5);
+        t.write("\x1b[42m\x1b[1;3H");
+        t.write(edit);
+        const insert = edit[2] == '@';
+        const shifted: u16 = if (insert) 4 else 2;
+        try std.testing.expectEqualDeep(lead, t.grid.getCell(0, shifted));
+        try std.testing.expectEqualDeep(continuation, t.grid.getCell(0, shifted + 1));
+        try std.testing.expectEqualDeep(following, t.grid.getCell(0, shifted + 2));
+        try std.testing.expectEqualDeep(Cell{ .bg = 2 }, t.grid.getCell(0, 1));
+        if (insert) {
+            try std.testing.expectEqualDeep(Cell{ .bg = 2 }, t.grid.getCell(0, 2));
+            try std.testing.expectEqualDeep(Cell{ .bg = 2 }, t.grid.getCell(0, 3));
+        } else {
+            try std.testing.expectEqualDeep(Cell{ .bg = 2 }, t.grid.getCell(0, 7));
+        }
+    }
 }
 
 test "insert blanks shifts wide cells without splitting them" {
@@ -1133,6 +1894,46 @@ test "wide character wraps before final column" {
     try testing.expectEqual(@as(u16, 2), t.cursor_col);
 }
 
+test "wide characters that cannot fit with wrapping disabled leave the grid untouched" {
+    for ([_][]const u8{ "abcd", "abcde", "abc界" }) |input| {
+        var t = Terminal.init(5, 2);
+        t.write(input);
+        const before: [5]Cell = t.grid.getRow(0)[0..5].*;
+        t.grid.clearDirty();
+        t.write("\x1b[?7l界");
+        try std.testing.expectEqualDeep(before, t.grid.getRow(0)[0..5].*);
+        try std.testing.expectEqual(@as(u8, 0), t.grid.dirty[0]);
+        try std.testing.expectEqual(@as(u8, 0), t.grid.dirty[1]);
+        try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+        try std.testing.expectEqual(@as(u16, 4), t.cursor_col);
+    }
+}
+
+test "disabling wrapping suspends a pending wrap" {
+    var t = Terminal.init(5, 2);
+    t.write("abcde\x1b[?7l界X");
+    try expectRowCells(&t, 0, "abcdX");
+    try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+    t.write("\x1b[?7hY");
+    try expectRowCells(&t, 1, "Y    ");
+    try std.testing.expectEqual(@as(u16, 1), t.cursor_row);
+    try std.testing.expectEqual(@as(u16, 1), t.cursor_col);
+}
+
+test "single-column grids consume wide characters as spaces" {
+    for ([_]bool{ true, false }) |wrap| {
+        var t = Terminal.init(1, 2);
+        if (!wrap) t.write("\x1b[?7l");
+        t.write("a\r界");
+        try expectRowCells(&t, 0, " ");
+        try std.testing.expectEqual(wrap, t.wrap_pending);
+        t.write("B");
+        try expectRowCells(&t, if (wrap) 1 else 0, "B");
+        try std.testing.expectEqual(@as(u16, if (wrap) 1 else 0), t.cursor_row);
+        try std.testing.expectEqual(@as(u16, 0), t.cursor_col);
+    }
+}
+
 test "linefeed and carriage return" {
     var t = Terminal.init(80, 24);
     t.write("AB\r\nCD");
@@ -1147,6 +1948,229 @@ test "cursor movement CSI" {
     t.write("\x1b[5;10H");
     try @import("std").testing.expectEqual(@as(u16, 4), t.cursor_row);
     try @import("std").testing.expectEqual(@as(u16, 9), t.cursor_col);
+}
+
+test "queues consecutive CPR responses in order" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[1G\x1b[6n\x1b[2G\x1b[6n");
+
+    try testing.expectEqualStrings("\x1b[1;1R", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try testing.expectEqualStrings("\x1b[1;2R", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try testing.expectEqual(@as(u8, 0), t.responseLen());
+}
+
+test "reports operating status in order and ignores malformed status requests" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[5n\x1b[2G\x1b[6n\x1b[5n");
+
+    for ([_][]const u8{ "\x1b[0n", "\x1b[1;2R", "\x1b[0n" }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
+
+    t.write("\x1b[?5n\x1b[!5n\x1b[5;6n\x1b[5$n\x1b[6;1n\x1b[0n");
+    try testing.expectEqual(@as(u8, 0), t.responseLen());
+}
+
+test "answers primary device attributes without claiming other variants" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+
+    t.write("\x1b[c\x1b[6n\x1b[0c\x1b[2c\x1b[0;0c");
+    for ([_][]const u8{
+        "\x1b[?1;2c",
+        "\x1b[1;1R",
+        "\x1b[?1;2c",
+        "\x1b[?1;2c",
+        "\x1b[?1;2c",
+    }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
+
+    t.write("\x1b[?c\x1b[>c\x1b[!c\x1b[=c\x1b[ c");
+    try testing.expectEqual(@as(u8, 0), t.responseLen());
+}
+
+test "reports DEC private modes and ignores malformed queries" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    var ag = Grid.init(80, 24);
+    t.alt_grid = &ag;
+
+    t.write("\x1b[?7$p\x1b[?25$p\x1b[?2026$p\x1b[?7777$p");
+    for ([_][]const u8{
+        "\x1b[?7;1$y",
+        "\x1b[?25;1$y",
+        "\x1b[?2026;2$y",
+        "\x1b[?7777;0$y",
+    }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
+
+    t.write("\x1b[?2026h\x1b[?2026$");
+    t.write("p\x1b[?2004h\x1b[?2004$p");
+    try testing.expectEqualStrings("\x1b[?2026;1$y", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try testing.expectEqualStrings("\x1b[?2004;1$y", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try testing.expect(t.synchronized_output);
+    try testing.expectEqual(@as(u32, 1), t.synchronized_output_generation);
+
+    t.write("\x1b[?2026l\x1b[?2026$p\x1b[?2004l\x1b[?2004$p");
+    try testing.expectEqualStrings("\x1b[?2026;2$y", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try testing.expectEqualStrings("\x1b[?2004;2$y", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+
+    t.write("\x1b[?2026p\x1b[2026$p\x1b[?25;2026$p");
+    try testing.expectEqual(@as(u8, 0), t.responseLen());
+}
+
+test "reports independently enabled mouse and alternate-screen modes" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    var ag = Grid.init(80, 24);
+    t.alt_grid = &ag;
+
+    t.write("\x1b[?1000h\x1b[?1002h\x1b[?1005h\x1b[?1006h");
+    t.write("\x1b[?1000$p\x1b[?1002$p\x1b[?1005$p\x1b[?1006$p");
+    for ([_][]const u8{
+        "\x1b[?1000;1$y",
+        "\x1b[?1002;1$y",
+        "\x1b[?1005;1$y",
+        "\x1b[?1006;1$y",
+    }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
+
+    t.write("\x1b[?1002l\x1b[?1006l\x1b[?1000$p\x1b[?1002$p\x1b[?1005$p\x1b[?1006$p");
+    for ([_][]const u8{
+        "\x1b[?1000;1$y",
+        "\x1b[?1002;2$y",
+        "\x1b[?1005;1$y",
+        "\x1b[?1006;2$y",
+    }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
+
+    t.write("\x1b[?1016h\x1b[?1016l\x1b[?1005$p\x1b[?1016$p");
+    try testing.expectEqualStrings("\x1b[?1005;1$y", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try testing.expectEqualStrings("\x1b[?1016;2$y", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+
+    t.write("\x1b[?1049h\x1b[?1048h\x1b[?47$p\x1b[?1048$p\x1b[?1049$p");
+    for ([_][]const u8{
+        "\x1b[?47;2$y",
+        "\x1b[?1048;1$y",
+        "\x1b[?1049;1$y",
+    }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
+
+    t.write("\x1b[?1049l\x1b[!p\x1b[?1000$p\x1b[?1005$p\x1b[?1049$p");
+    for ([_][]const u8{
+        "\x1b[?1000;2$y",
+        "\x1b[?1005;2$y",
+        "\x1b[?1049;2$y",
+    }) |expected| {
+        try testing.expectEqualStrings(expected, t.responsePtr()[0..t.responseLen()]);
+        t.popResponse();
+    }
+}
+
+test "response FIFO wraps and drops newest when full" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    var index: u16 = 0;
+    while (index < RESPONSE_QUEUE_MAX) : (index += 1) t.write("\x1b[6n");
+    try testing.expectEqual(RESPONSE_QUEUE_MAX, t.response_count);
+    t.write("\x1b[2G\x1b[6n");
+    try testing.expectEqual(RESPONSE_QUEUE_MAX, t.response_count);
+
+    index = 0;
+    while (index < RESPONSE_QUEUE_MAX) : (index += 1) t.popResponse();
+    try testing.expectEqual(@as(u8, 0), t.responseLen());
+    t.write("\x1b[3G\x1b[6n");
+    try testing.expectEqualStrings("\x1b[1;3R", t.responsePtr()[0..t.responseLen()]);
+}
+
+test "reset clears queued responses" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[6n\x1b[6n");
+    try testing.expectEqual(@as(u16, 2), t.response_count);
+    t.reset(80, 24);
+    try testing.expectEqual(@as(u8, 0), t.responseLen());
+}
+
+test "kitty keyboard state transitions and query" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[?u");
+    try testing.expectEqualStrings("\x1b[?0u", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    t.write("\x1b[>5u\x1b[=2;2u\x1b[=1;3u\x1b[?u");
+    try testing.expectEqual(@as(u5, 6), t.kittyKeyboardFlags());
+    try testing.expectEqualStrings("\x1b[?6u", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    t.write("\x1b[<u\x1b[?u");
+    try testing.expectEqual(@as(u5, 0), t.kittyKeyboardFlags());
+    try testing.expectEqualStrings("\x1b[?0u", t.responsePtr()[0..t.responseLen()]);
+}
+
+test "kitty keyboard stack wraps and oversized pop clears" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    var count: u8 = 0;
+    while (count < 9) : (count += 1) t.write("\x1b[>1u");
+    try testing.expectEqual(@as(u5, 1), t.kittyKeyboardFlags());
+    t.write("\x1b[<10u");
+    try testing.expectEqual(@as(u5, 0), t.kittyKeyboardFlags());
+}
+
+test "kitty keyboard push and pop default extra parameters" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[>5u\x1b[>7;2u");
+    try testing.expectEqual(@as(u5, 0), t.kittyKeyboardFlags());
+    t.write("\x1b[<u");
+    try testing.expectEqual(@as(u5, 5), t.kittyKeyboardFlags());
+    t.write("\x1b[<1;2u");
+    try testing.expectEqual(@as(u5, 0), t.kittyKeyboardFlags());
+}
+
+test "kitty keyboard state is per screen and follows reset semantics" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    var ag = Grid.init(80, 24);
+    t.alt_grid = &ag;
+    t.write("\x1b[>6u\x1b[?1049h");
+    try testing.expectEqual(@as(u5, 0), t.kittyKeyboardFlags());
+    t.write("\x1b[>9u\x1b[!p");
+    try testing.expectEqual(@as(u5, 9), t.kittyKeyboardFlags());
+    t.write("\x1b[?1049l");
+    try testing.expectEqual(@as(u5, 6), t.kittyKeyboardFlags());
+    t.write("\x1bc");
+    try testing.expectEqual(@as(u5, 0), t.kittyKeyboardFlags());
+    try testing.expect(!t.using_alt_screen);
+}
+
+test "plain CSI u remains cursor restore" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[4;5H\x1b[s\x1b[8;9H\x1b[u");
+    try testing.expectEqual(@as(u16, 3), t.cursor_row);
+    try testing.expectEqual(@as(u16, 4), t.cursor_col);
 }
 
 test "SGR colors" {
@@ -1199,6 +2223,61 @@ test "alternate screen buffer" {
     try testing.expectEqual(@as(u32, 'm'), t.grid.getCell(0, 0).char);
 }
 
+test "tracks mouse and focus modes across reset" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[?1000h\x1b[?1004h\x1b[?1006h");
+    try testing.expectEqual(@as(u16, 1000), t.mouse_tracking);
+    try testing.expectEqual(MouseEncoding.sgr, t.mouse_encoding);
+    try testing.expect(t.focus_events);
+    t.write("\x1b[?1002h\x1b[?1000l");
+    try testing.expectEqual(@as(u16, 1002), t.mouse_tracking);
+    t.write("\x1b[?1003h\x1b[?1002l");
+    try testing.expectEqual(@as(u16, 1003), t.mouse_tracking);
+    t.write("\x1b[?1003l");
+    try testing.expectEqual(@as(u16, 0), t.mouse_tracking);
+    t.write("\x1b[?1003h");
+    t.write("\x1b[!p");
+    try testing.expectEqual(@as(u16, 0), t.mouse_tracking);
+    try testing.expectEqual(MouseEncoding.x10, t.mouse_encoding);
+    try testing.expect(!t.focus_events);
+}
+
+test "tracks mouse wire encoding modes" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    try testing.expectEqual(MouseEncoding.x10, t.mouse_encoding);
+
+    t.write("\x1b[?1005h");
+    try testing.expectEqual(MouseEncoding.utf8, t.mouse_encoding);
+    t.write("\x1b[?1015h");
+    try testing.expectEqual(MouseEncoding.urxvt, t.mouse_encoding);
+    t.write("\x1b[?1006h");
+    try testing.expectEqual(MouseEncoding.sgr, t.mouse_encoding);
+    t.write("\x1b[?1016h");
+    try testing.expectEqual(MouseEncoding.sgr_pixels, t.mouse_encoding);
+
+    t.write("\x1b[?1016l");
+    try testing.expectEqual(MouseEncoding.x10, t.mouse_encoding);
+    t.write("\x1b[?1005h\x1b[!p");
+    try testing.expectEqual(MouseEncoding.x10, t.mouse_encoding);
+}
+
+test "tracks synchronized output across fragmented writes and reset" {
+    const testing = @import("std").testing;
+    var t = Terminal.init(80, 24);
+    t.write("\x1b[?20");
+    t.write("26h");
+    try testing.expect(t.synchronized_output);
+    t.write("\x1b[?2026l");
+    try testing.expect(!t.synchronized_output);
+    t.write("\x1b[?2026h\x1b[!p");
+    try testing.expect(!t.synchronized_output);
+    t.write("\x1b[?2026h");
+    t.reset(80, 24);
+    try testing.expect(!t.synchronized_output);
+}
+
 test "erase inherits current background color" {
     const testing = @import("std").testing;
     var t = Terminal.init(80, 24);
@@ -1230,6 +2309,144 @@ test "scroll fills new lines with current background" {
     try testing.expectEqual(@as(u16, 2), blank_cell.bg);
 }
 
+test "scrollback stays ordered across a vertical shrink (#43)" {
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    var t = Terminal.init(80, 24);
+    t.scrollback = sb;
+
+    var buf: [32]u8 = undefined;
+    var i: u32 = 1;
+    while (i <= 200) : (i += 1) {
+        t.write(try std.fmt.bufPrint(&buf, "line {d}\r\n", .{i}));
+    }
+    t.resize(80, 6);
+
+    // Oldest to newest, every stored line must be the next one written.
+    var prev: u32 = 0;
+    var off: u32 = sb.count;
+    while (off > 0) {
+        off -= 1;
+        const line = sb.getLine(off).?;
+        var text: [32]u8 = undefined;
+        var n: usize = 0;
+        var c: u16 = 0;
+        while (c < line.len and n < text.len) : (c += 1) {
+            const ch = line.cells[c].char;
+            if (ch >= 32 and ch < 127) {
+                text[n] = @intCast(ch);
+                n += 1;
+            }
+        }
+        while (n > 0 and text[n - 1] == ' ') n -= 1;
+        if (n == 0) continue;
+        try testing.expect(std.mem.startsWith(u8, text[0..n], "line "));
+        const num = try std.fmt.parseInt(u32, text[5..n], 10);
+        if (prev != 0) try testing.expectEqual(prev + 1, num);
+        prev = num;
+    }
+    try testing.expect(prev > 0);
+}
+
+test "scrollback reads stay correct after a pop on a wrapped ring" {
+    const testing = @import("std").testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+
+    // Fill past capacity so the ring wraps, then take one back out. `count`
+    // now drops below the maximum while `write_pos` sits mid-ring, so any read
+    // that treats "count < max" as "never wrapped" lands on the wrong line.
+    var row: [grid_mod.MAX_COLS]Cell = undefined;
+    var i: u32 = 0;
+    while (i < scrollback_mod.MAX_SCROLLBACK_LINES + 10) : (i += 1) {
+        row[0] = Cell{ .char = 'a' + @as(u32, @intCast(i % 26)) };
+        sb.push(&row, 1);
+    }
+    const newest = sb.getLine(0).?.cells[0].char;
+    const second = sb.getLine(1).?.cells[0].char;
+
+    _ = sb.pop();
+    try testing.expectEqual(second, sb.getLine(0).?.cells[0].char);
+    try testing.expect(sb.getLine(0).?.cells[0].char != newest);
+}
+
+test "vertical shrink then grow restores the viewport" {
+    const testing = @import("std").testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    var t = Terminal.init(20, 6);
+    t.scrollback = sb;
+    t.write("r0\r\nr1\r\nr2\r\nr3\r\nr4\r\nr5");
+
+    var before: [6][2]u32 = undefined;
+    for (0..6) |r| {
+        before[r][0] = t.grid.getCell(@intCast(r), 0).char;
+        before[r][1] = t.grid.getCell(@intCast(r), 1).char;
+    }
+    const scrollback_before = sb.count;
+
+    t.resize(20, 3);
+    // The window keeps the newest rows, so the bottom of the screen is unchanged.
+    try testing.expectEqual(@as(u32, 'r'), t.grid.getCell(2, 0).char);
+    try testing.expectEqual(@as(u32, '5'), t.grid.getCell(2, 1).char);
+    try testing.expectEqual(scrollback_before + 3, sb.count);
+
+    t.resize(20, 6);
+    for (0..6) |r| {
+        try testing.expectEqual(before[r][0], t.grid.getCell(@intCast(r), 0).char);
+        try testing.expectEqual(before[r][1], t.grid.getCell(@intCast(r), 1).char);
+    }
+    try testing.expectEqual(scrollback_before, sb.count);
+}
+
+test "shrink at a top-of-screen prompt adds no scrollback" {
+    const testing = @import("std").testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    var t = Terminal.init(80, 24);
+    t.scrollback = sb;
+    t.write("$ ");
+    try testing.expectEqual(@as(u16, 0), t.cursor_row);
+    t.resize(80, 8);
+    try testing.expectEqual(@as(u32, 0), sb.count);
+    try testing.expectEqual(@as(u16, 0), t.cursor_row);
+    try testing.expectEqual(@as(u32, '$'), t.grid.getCell(0, 0).char);
+}
+
+test "shrink keeps the cursor row on screen when content sits below it" {
+    const testing = @import("std").testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    var t = Terminal.init(20, 8);
+    t.scrollback = sb;
+    t.write("r0\r\nr1\r\nr2\r\nr3\r\nr4\r\nr5\r\nr6\r\nr7");
+    t.write("\x1b[3;1H");
+    try testing.expectEqual(@as(u16, 2), t.cursor_row);
+    t.resize(20, 3);
+    try testing.expectEqual(@as(u32, '2'), t.grid.getCell(t.cursor_row, 1).char);
+}
+
+test "alternate screen resize does not touch scrollback" {
+    const testing = @import("std").testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    var t = Terminal.init(20, 6);
+    t.scrollback = sb;
+    t.write("\x1b[?1049h");
+    t.write("a0\r\na1\r\na2\r\na3\r\na4\r\na5");
+    const before = sb.count;
+    t.resize(20, 3);
+    t.resize(20, 6);
+    try testing.expectEqual(before, sb.count);
+}
+
 test "scrollback" {
     const testing = @import("std").testing;
     const sb = try testing.allocator.create(Scrollback);
@@ -1242,4 +2459,433 @@ test "scrollback" {
     const line0 = sb.getLine(0).?;
     try testing.expectEqual(@as(u32, 'L'), line0.cells[0].char);
     try testing.expectEqual(@as(u32, '2'), line0.cells[1].char);
+}
+
+test "grids grow beyond 256 columns and rows without losing cells" {
+    const testing = std.testing;
+    var t = Terminal.init(80, 24);
+    defer t.grid.deinit();
+    t.write("A");
+
+    t.resize(320, 300);
+    try testing.expectEqual(@as(u16, 320), t.cols);
+    try testing.expectEqual(@as(u16, 300), t.rows);
+    try testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 0).char);
+    t.write("\x1b[300;320HZ");
+    try testing.expectEqual(@as(u32, 'Z'), t.grid.getCell(299, 319).char);
+
+    t.resize(520, 320);
+    try testing.expectEqual(@as(u32, 'Z'), t.grid.getCell(299, 319).char);
+    t.grid.clearDirty();
+    t.grid.setCell(319, 519, Cell{ .char = 'X' });
+    try testing.expectEqual(@as(u8, 1), t.grid.dirty[319]);
+    try testing.expectEqual(@as(u32, 'X'), t.grid.getCell(319, 519).char);
+}
+
+test "scrollback preserves columns beyond 256" {
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(320, 2);
+    defer t.grid.deinit();
+    t.scrollback = sb;
+
+    t.write("\x1b[1;300HQ\x1b[2;1H\n");
+    try testing.expectEqual(@as(u32, 1), sb.count);
+    try testing.expectEqual(@as(u16, 320), sb.getLine(0).?.len);
+    try testing.expectEqual(@as(u32, 'Q'), sb.getLine(0).?.cells[299].char);
+
+    t.resize(320, 3);
+    try testing.expectEqual(@as(u32, 'Q'), t.grid.getCell(0, 299).char);
+}
+
+test "alternate screen and hidden primary resize together" {
+    const testing = std.testing;
+    var t = Terminal.init(320, 3);
+    defer t.grid.deinit();
+    var alternate = Grid.init(1, 1);
+    defer alternate.deinit();
+    t.alt_grid = &alternate;
+
+    t.write("\x1b[1;300HP\x1b[?1049h");
+    try testing.expect(t.using_alt_screen);
+    t.resize(400, 4);
+    t.write("\x1b[4;399HA\x1b[?1049l");
+    try testing.expect(!t.using_alt_screen);
+    try testing.expectEqual(@as(u16, 400), t.grid.cols);
+    try testing.expectEqual(@as(u16, 4), t.grid.rows);
+    try testing.expectEqual(@as(u32, 'P'), t.grid.getCell(0, 299).char);
+    try testing.expectEqual(@as(u32, ' '), t.grid.getCell(3, 398).char);
+}
+
+test "alternate screen exit clamps a saved cursor after shrinking" {
+    const testing = std.testing;
+    var t = Terminal.init(320, 4);
+    defer t.grid.deinit();
+    var alternate = Grid.init(1, 1);
+    defer alternate.deinit();
+    t.alt_grid = &alternate;
+
+    t.write("\x1b[4;320H\x1b[?1049h");
+    t.resize(80, 2);
+    t.write("\x1b[?1049l");
+    try testing.expectEqual(@as(u16, 1), t.cursor_row);
+    try testing.expectEqual(@as(u16, 79), t.cursor_col);
+    t.write("X");
+    try testing.expectEqual(@as(u32, 'X'), t.grid.getCell(1, 79).char);
+}
+
+fn testClusterText(t: *const Terminal, row: u16, col: u16) []const u8 {
+    const cell = t.grid.getCell(row, col);
+    return t.clusters.get(cell.char & ~grapheme_mod.CLUSTER_BIT).?;
+}
+
+test "grapheme clusters share one cell group" {
+    const testing = std.testing;
+    var t = Terminal.init(20, 4);
+    t.write("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}x\r\n\u{1F1EF}\u{1F1F5}y\r\ne\u{301}z");
+    try testing.expectEqualStrings("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}", testClusterText(&t, 0, 0));
+    try testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(0, 0).width);
+    try testing.expectEqual(@as(u32, 'x'), t.grid.getCell(0, 2).char);
+    // Two regional indicators widen into one flag.
+    try testing.expectEqualStrings("\u{1F1EF}\u{1F1F5}", testClusterText(&t, 1, 0));
+    try testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(1, 0).width);
+    try testing.expectEqual(@as(u32, 'y'), t.grid.getCell(1, 2).char);
+    try testing.expectEqualStrings("e\u{301}", testClusterText(&t, 2, 0));
+    try testing.expectEqual(@as(u32, 'z'), t.grid.getCell(2, 1).char);
+    try testing.expectEqual(@as(u16, 2), t.cursor_col);
+}
+
+test "a control sequence ends the cluster" {
+    var t = Terminal.init(20, 2);
+    t.write("e\x1b[1m\u{301}");
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.getCell(0, 0).char);
+    try std.testing.expectEqual(@as(u32, 0x301), t.grid.getCell(0, 1).char);
+}
+
+test "VS16 at the last column keeps the cell narrow" {
+    var t = Terminal.init(4, 2);
+    t.write("abc\u{2764}\u{FE0F}");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 3).width);
+    try std.testing.expectEqualStrings("\u{2764}\u{FE0F}", testClusterText(&t, 0, 3));
+}
+
+test "long runs of combining marks keep a bounded cluster" {
+    var t = Terminal.init(20, 2);
+    t.write("a");
+    var i: usize = 0;
+    while (i < 200) : (i += 1) t.write("\u{301}");
+    t.write("b");
+    const stored = try std.unicode.utf8CountCodepoints(testClusterText(&t, 0, 0));
+    try std.testing.expectEqual(grapheme_mod.MAX_CLUSTER_CODEPOINTS, stored);
+    try std.testing.expectEqual(@as(u32, 'b'), t.grid.getCell(0, 1).char);
+}
+
+test "a resize between a base and its mark starts a new cluster" {
+    var t = Terminal.init(10, 4);
+    t.write("A\r\nB\r\nC\r\nDe");
+    t.resize(10, 2);
+    t.write("\u{301}");
+    // The base may have moved; the mark must not vanish or attach elsewhere.
+    try std.testing.expectEqual(@as(u32, 0x301), t.grid.getCell(t.cursor_row, t.cursor_col - 1).char);
+}
+
+fn testFeedBytewise(t: *Terminal, data: []const u8) void {
+    for (data) |b| t.processByte(b);
+}
+
+test "printable runs match byte-at-a-time parsing" {
+    const inputs = [_][]const u8{
+        "plain ascii that runs past the last column of a narrow grid",
+        "\x1b[31;44mstyled\x1b[0m \x1b]8;;https://x.test\x07link\x1b]8;;\x07 done",
+        "\x1b[38;2;12;34;56;48;2;78;90;123m▀▀\x1b[38;5;255;48;5;16m▄█\x1b[0mend",
+        "\x1b[1;4:0;38:2:12:34:56m▀\x1b[38;2;65536;2;3m▄\x1b[mreset",
+        "\u{754C}\u{1F600}\u{E9} wide at the edge \u{8A9E}\u{8A9E}\u{8A9E}\u{8A9E}",
+        "\x1b(0lqqk\x1b(B mapped then ascii",
+        "bad \xC3 utf8 \xE2\x82 cut \xFF\xFE end",
+        "\x1b[1;9H\u{754C}\u{754C}over\x1b[1;10Hx",
+        "\u{754C}\u{754C}\x1b[1;2Hxy\x1b[2;1H\u{754C}\x1b[2;1Hz",
+        "a\u{754C}\x1b[1;1H\u{8A9E}",
+        "e\u{301}z \u{1F1EF}\u{1F1F5} \u{1F468}\u{200D}\u{1F469} \u{2764}\u{FE0F}",
+        "abc",
+    };
+    for (inputs) |input| {
+        var fast = Terminal.init(9, 4);
+        var slow = Terminal.init(9, 4);
+        // Start clean so dirty marks come only from the input.
+        fast.grid.clearDirty();
+        slow.grid.clearDirty();
+        fast.write(input);
+        testFeedBytewise(&slow, input);
+        try std.testing.expectEqual(slow.cursor_row, fast.cursor_row);
+        try std.testing.expectEqual(slow.cursor_col, fast.cursor_col);
+        try std.testing.expectEqual(slow.wrap_pending, fast.wrap_pending);
+        var r: u16 = 0;
+        while (r < 4) : (r += 1) {
+            try std.testing.expectEqual(slow.grid.dirty[r], fast.grid.dirty[r]);
+            var c: u16 = 0;
+            while (c < 9) : (c += 1) try std.testing.expectEqualDeep(slow.grid.getCell(r, c), fast.grid.getCell(r, c));
+        }
+    }
+}
+
+test "a UTF-8 sequence split across writes still decodes" {
+    var t = Terminal.init(10, 2);
+    t.write("a\xE7\x95");
+    t.write("\x8Cb");
+    try std.testing.expectEqual(@as(u32, 0x754C), t.grid.getCell(0, 1).char);
+    try std.testing.expectEqual(@as(u32, 'b'), t.grid.getCell(0, 3).char);
+}
+
+fn testExpectRowsLogical(t: *Terminal, first: u8) !void {
+    // Rows hold consecutive letters from `first`, read both through the
+    // accessors and through the physical layout the host sees.
+    t.grid.normalize();
+    var r: u16 = 0;
+    while (r < t.rows) : (r += 1) {
+        const want: u32 = first + r;
+        try std.testing.expectEqual(want, t.grid.getCell(r, 0).char);
+        try std.testing.expectEqual(want, t.grid.cells[@as(usize, r) * t.grid.stride].char);
+    }
+}
+
+test "full-screen scrolls keep logical rows and normalize for the host" {
+    var t = Terminal.init(4, 3);
+    var c: u8 = 'a';
+    while (c <= 'z') : (c += 1) {
+        t.write(&.{c});
+        if (c != 'z') t.write("\r\n");
+    }
+    try testExpectRowsLogical(&t, 'x');
+    for (t.grid.dirty[0..t.rows]) |d| try std.testing.expectEqual(@as(u8, 1), d);
+}
+
+test "full-screen scrolls carry row identities and content dirtiness through normalization" {
+    for ([_]u16{ 3, grid_mod.MAX_ROWS }) |rows| {
+        var t = Terminal.init(4, rows);
+        defer t.grid.deinit();
+        var iteration: u16 = 0;
+        while (iteration < 32) : (iteration += 1) {
+            t.grid.clearDirty();
+            t.grid.setCell(rows - 1, 0, Cell{ .char = 'A' + iteration });
+            var ids: [grid_mod.MAX_ROWS]u32 = undefined;
+            var chars: [grid_mod.MAX_ROWS]u32 = undefined;
+            @memcpy(ids[0..rows], t.grid.row_ids[0..rows]);
+            for (0..rows) |row| chars[row] = t.grid.getCell(@intCast(row), 0).char;
+            const count = iteration % 3 + 1;
+            t.grid.scrollUp(0, rows, count, Cell{});
+            t.grid.normalize();
+            for (0..rows) |row| {
+                if (row + count < rows) {
+                    try std.testing.expectEqual(ids[row + count], t.grid.row_ids[row]);
+                    try std.testing.expectEqual(chars[row + count], t.grid.getCell(@intCast(row), 0).char);
+                    try std.testing.expectEqual(@as(u8, if (row + count == rows - 1) 1 else 0), t.grid.dirty[row]);
+                } else {
+                    for (ids[0..rows]) |id| try std.testing.expect(id != t.grid.row_ids[row]);
+                    try std.testing.expectEqual(@as(u32, ' '), t.grid.getCell(@intCast(row), 0).char);
+                    try std.testing.expectEqual(@as(u8, 1), t.grid.dirty[row]);
+                }
+            }
+        }
+    }
+}
+
+test "scroll regions reverse index and line edits carry row identities and dirty flags" {
+    const scenarios = [_]struct { sequence: []const u8, sources: [5]?usize }{
+        .{ .sequence = "\x1b[2;4r\x1b[S", .sources = .{ 0, 2, 3, null, 4 } },
+        .{ .sequence = "\x1b[2;4r\x1b[T", .sources = .{ 0, null, 1, 2, 4 } },
+        .{ .sequence = "\x1b[2;4r\x1b[2;1H\x1b[L", .sources = .{ 0, null, 1, 2, 4 } },
+        .{ .sequence = "\x1b[2;4r\x1b[2;1H\x1b[M", .sources = .{ 0, 2, 3, null, 4 } },
+        .{ .sequence = "\x1b[2;4r\x1b[2;1H\x1bM", .sources = .{ 0, null, 1, 2, 4 } },
+        .{ .sequence = "\x1b[2;4r\x1b[99S", .sources = .{ 0, null, null, null, 4 } },
+        .{ .sequence = "\x1b[2;4r\x1b[99T", .sources = .{ 0, null, null, null, 4 } },
+    };
+    for (scenarios) |scenario| {
+        var t = Terminal.init(4, 5);
+        defer t.grid.deinit();
+        t.write("A\r\nB\r\nC\r\nD\r\nE");
+        const ids = t.grid.row_ids[0..5].*;
+        t.grid.clearDirty();
+        t.write("\x1b[3;1HX");
+        t.write(scenario.sequence);
+        for (scenario.sources, 0..) |source, row| {
+            if (source) |original| {
+                try std.testing.expectEqual(ids[original], t.grid.row_ids[row]);
+                try std.testing.expectEqual(@as(u32, if (original == 2) 'X' else 'A' + @as(u32, @intCast(original))), t.grid.getCell(@intCast(row), 0).char);
+                try std.testing.expectEqual(@as(u8, if (original == 2) 1 else 0), t.grid.dirty[row]);
+            } else {
+                for (ids) |id| try std.testing.expect(id != t.grid.row_ids[row]);
+                try std.testing.expectEqual(@as(u32, ' '), t.grid.getCell(@intCast(row), 0).char);
+                try std.testing.expectEqual(@as(u8, 1), t.grid.dirty[row]);
+            }
+        }
+    }
+}
+
+test "row identities survive screen switches but not clearing and reset" {
+    var t = Terminal.init(4, 3);
+    defer t.grid.deinit();
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("A\r\nB\r\nC");
+    const primary_ids = t.grid.row_ids[0..3].*;
+    t.grid.clearDirty();
+    t.write("\x1b[?1049h");
+    const alt_ids = t.grid.row_ids[0..3].*;
+    for (alt_ids) |id| {
+        for (primary_ids) |primary_id| try std.testing.expect(id != primary_id);
+    }
+    t.write("\x1b[?1049l");
+    try std.testing.expectEqualSlices(u32, &primary_ids, t.grid.row_ids[0..3]);
+    try std.testing.expectEqualSlices(u8, &.{ 1, 1, 1 }, t.grid.dirty[0..3]);
+    t.write("\x1b[2;1H\x1b[K");
+    try std.testing.expect(t.grid.row_ids[1] != primary_ids[1]);
+    try std.testing.expectEqual(primary_ids[0], t.grid.row_ids[0]);
+    t.write("\x1b[2J");
+    const cleared_ids = t.grid.row_ids[0..3].*;
+    for (cleared_ids) |id| {
+        for (primary_ids) |primary_id| try std.testing.expect(id != primary_id);
+        for (alt_ids) |alt_id| try std.testing.expect(id != alt_id);
+    }
+    t.write("\x1bc");
+    for (t.grid.row_ids[0..3]) |id| {
+        for (cleared_ids) |cleared_id| try std.testing.expect(id != cleared_id);
+    }
+}
+
+test "resize preserves retained row identities and creates new identities for restored history" {
+    const sb = try std.testing.allocator.create(Scrollback);
+    defer std.testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(4, 3);
+    defer t.grid.deinit();
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.scrollback = sb;
+    t.alt_grid = &alt;
+    t.write("A\r\nB\r\nC");
+    const ids = t.grid.row_ids[0..3].*;
+    t.resize(4, 2);
+    try std.testing.expectEqual(ids[1], t.grid.row_ids[0]);
+    try std.testing.expectEqual(ids[2], t.grid.row_ids[1]);
+    t.resize(4, 3);
+    try std.testing.expect(t.grid.row_ids[0] != ids[0]);
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 0).char);
+    try std.testing.expectEqualSlices(u32, ids[1..], t.grid.row_ids[1..3]);
+    const restored_ids = t.grid.row_ids[0..3].*;
+    t.write("\x1b[?1049h");
+    t.resize(40, 5);
+    t.write("\x1b[?1049l");
+    try std.testing.expectEqualSlices(u32, &restored_ids, t.grid.row_ids[0..3]);
+    for (t.grid.row_ids[3..5]) |id| {
+        try std.testing.expect(id != 0);
+        for (restored_ids) |restored_id| try std.testing.expect(id != restored_id);
+    }
+    for (t.grid.dirty[0..5]) |dirty| try std.testing.expectEqual(@as(u8, 1), dirty);
+}
+
+test "a scroll region interleaved with full-screen scrolls" {
+    var t = Terminal.init(4, 4);
+    t.write("a\r\nb\r\nc\r\nd\r\ne\r\nf");
+    // Rows c d e f; scroll only rows 2-3, then scroll the whole screen again.
+    t.write("\x1b[2;3r\x1b[3;1H\nX\x1b[r\x1b[4;1H\ng");
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'X'), t.grid.getCell(1, 0).char);
+    try std.testing.expectEqual(@as(u32, 'f'), t.grid.getCell(2, 0).char);
+    try std.testing.expectEqual(@as(u32, 'g'), t.grid.getCell(3, 0).char);
+    try std.testing.expectEqual(@as(u32, 'X'), t.grid.cells[1 * @as(usize, t.grid.stride)].char);
+}
+
+test "resize right after a scroll burst keeps content" {
+    var t = Terminal.init(5, 3);
+    t.write("a\r\nb\r\nc\r\nd\r\ne");
+    t.resize(5, 6);
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.getCell(t.cursor_row, 0).char);
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.cells[@as(usize, t.cursor_row) * t.grid.stride].char);
+    t.resize(5, 2);
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'e'), t.grid.cells[@as(usize, t.cursor_row) * t.grid.stride].char);
+}
+
+test "alternate screen scrolls do not disturb the primary layout" {
+    var t = Terminal.init(4, 3);
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("a\r\nb\r\nc\r\nd");
+    t.write("\x1b[?1049h1\r\n2\r\n3\r\n4\r\n5");
+    t.write("\x1b[?1049l");
+    try testExpectRowsLogical(&t, 'b');
+}
+
+test "resizing while the primary screen is hidden after scrolls" {
+    var t = Terminal.init(4, 3);
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh\x1b[?1049h");
+    t.resize(4, 4);
+    t.write("\x1b[?1049l");
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'h'), t.grid.getCell(t.cursor_row, 0).char);
+}
+
+test "entering the alternate screen after it scrolled and the terminal grew" {
+    var t = Terminal.init(4, 3);
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("\x1b[?1049h1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7\r\n8\x1b[?1049l");
+    t.resize(4, 4);
+    t.write("\x1b[?1049hX");
+    t.grid.normalize();
+    try std.testing.expectEqual(@as(u32, 'X'), t.grid.cells[0].char);
+}
+
+test "reinitializing starts a fresh cluster at the home position" {
+    var t = Terminal.init(10, 2);
+    t.write("ABC");
+    t.clusters.reset();
+    t.reset(10, 2);
+    t.write("\u{301}");
+    try std.testing.expectEqual(@as(u32, 0x301), t.grid.getCell(0, 0).char);
+    try std.testing.expectEqual(@as(u32, ' '), t.grid.getCell(0, 2).char);
+    try std.testing.expectEqual(@as(u16, 1), t.cursor_col);
+}
+
+test "a cursor saved before a shrink is clamped when restored" {
+    var t = Terminal.init(10, 10);
+    var alt = Grid.init(10, 10);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("\x1b[10;10H\x1b7");
+    t.resize(10, 4);
+    t.write("\x1b[?47h\x1b8x");
+    try std.testing.expect(t.cursor_row < t.rows);
+    try std.testing.expect(t.cursor_col < t.cols);
+    try std.testing.expectEqual(@as(u32, 'x'), t.grid.getCell(3, 9).char);
+}
+
+test "OSC 10 and 11 report the theme colors with the query's terminator" {
+    var t = Terminal.init(10, 2);
+    t.theme_fg = 0x112233;
+    t.theme_bg = 0xfafafa;
+    t.write("\x1b]10;?\x07");
+    try std.testing.expectEqualStrings("\x1b]10;rgb:1111/2222/3333\x07", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    t.write("\x1b]11;?\x1b\\");
+    try std.testing.expectEqualStrings("\x1b]11;rgb:fafa/fafa/fafa\x1b\\", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    // One OSC can query both, and setting a color is not answered.
+    t.write("\x1b]10;?;?\x07\x1b]10;#ffffff\x07");
+    try std.testing.expectEqualStrings("\x1b]10;rgb:1111/2222/3333\x07", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try std.testing.expectEqualStrings("\x1b]11;rgb:fafa/fafa/fafa\x07", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try std.testing.expectEqual(@as(u8, 0), t.responseLen());
 }

@@ -59,6 +59,7 @@ restore(term: WTerm, snapshot: TerminalSnapshot): void
 
 - Partial parser state in the middle of an escape sequence is not captured.
 - Terminal title state is not captured in v1.
+- Underline variants, underline colors, and OSC 8 links are not captured in v1.
 
 ## License
 

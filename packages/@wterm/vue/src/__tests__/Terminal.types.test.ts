@@ -63,6 +63,7 @@ describe("Terminal types", () => {
 
     // Accept valid payloads.
     expectTypeOf<Emit>().toBeCallableWith("data", "hello");
+    expectTypeOf<Emit>().toBeCallableWith("binary", new Uint8Array());
     expectTypeOf<Emit>().toBeCallableWith("title", "new title");
     expectTypeOf<Emit>().toBeCallableWith("resize", 80, 24);
     expectTypeOf<Emit>().toBeCallableWith("ready", {} as WTerm);
@@ -73,6 +74,8 @@ describe("Terminal types", () => {
       if (0) {
         // @ts-expect-error — data takes a string, not a number
         emit("data", 42);
+        // @ts-expect-error — binary takes raw bytes
+        emit("binary", "text");
         // @ts-expect-error — resize needs two numbers
         emit("resize", 80);
         // @ts-expect-error — unknown event

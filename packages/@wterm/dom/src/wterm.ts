@@ -1,7 +1,114 @@
-import { WasmBridge, type TerminalCore } from "@wterm/core";
+import {
+  WasmBridge,
+  type TerminalCore,
+  type TerminalPosition,
+  type TerminalThemeColors,
+  type ShellIntegrationState,
+} from "@wterm/core";
 import { Renderer } from "./renderer.js";
 import { InputHandler } from "./input.js";
+import { HistorySelection } from "./history-selection.js";
+import { RectangleDrag } from "./rectangle-drag.js";
+import { TextCapture } from "./text-capture.js";
+import { OutputAnnouncements } from "./output-announcements.js";
 import { DebugAdapter } from "./debug.js";
+import { isLinkActivationModifier } from "./hyperlink.js";
+import { markSelectionChanged } from "./selection-state.js";
+import {
+  SearchController,
+  type SearchOptions,
+  type SearchState,
+} from "./search.js";
+
+const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
+const PROGRAMMATIC_SCROLL_TOLERANCE = 1;
+const pendingRenders = new Set<WTerm>();
+let renderFrameId: number | null = null;
+
+interface RenderFrame {
+  scrollTop: number;
+  viewportScrollTop: number;
+  clientHeight: number;
+  maxScrollTop: number;
+  rowHeight: number;
+  scrollbackCount: number;
+  discardedCount: number | undefined;
+  dirtyCount: number;
+  followOutput: boolean;
+  restoreScroll: boolean;
+}
+
+const THEME_PROPERTIES = [
+  "--term-fg",
+  "--term-bg",
+  "--term-cursor",
+  ...Array.from({ length: 16 }, (_, index) => `--term-color-${index}`),
+];
+
+/** Whether the data may hold an OSC 10 or OSC 11 color query. */
+function mayQueryThemeColors(data: string | Uint8Array): boolean {
+  if (typeof data === "string")
+    return data.includes("\x1b]10;") || data.includes("\x1b]11;");
+  for (let i = data.indexOf(0x1b); i >= 0; i = data.indexOf(0x1b, i + 1)) {
+    if (
+      data[i + 1] === 0x5d &&
+      data[i + 2] === 0x31 &&
+      (data[i + 3] === 0x30 || data[i + 3] === 0x31) &&
+      data[i + 4] === 0x3b
+    )
+      return true;
+  }
+  return false;
+}
+
+/** Resolves the theme custom properties on `element` to 24-bit RGB values. */
+function readCssThemeColors(element: HTMLElement): TerminalThemeColors | null {
+  const probe = element.ownerDocument.createElement("span");
+  probe.style.display = "none";
+  element.appendChild(probe);
+  try {
+    const values: number[] = [];
+    for (const property of THEME_PROPERTIES) {
+      probe.style.color = `var(${property})`;
+      const rgb = parseCssColor(getComputedStyle(probe).color);
+      if (rgb === null) return null;
+      values.push(rgb);
+    }
+    return {
+      foreground: values[0],
+      background: values[1],
+      cursor: values[2],
+      palette: values.slice(3),
+    };
+  } finally {
+    probe.remove();
+  }
+}
+
+/** 0xRRGGBB for a computed CSS color, or null when it cannot be read. */
+function parseCssColor(color: string | undefined): number | null {
+  if (typeof color !== "string") return null;
+  const rgb = color.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/);
+  if (rgb)
+    return (
+      (Math.round(Number(rgb[1])) << 16) |
+      (Math.round(Number(rgb[2])) << 8) |
+      Math.round(Number(rgb[3]))
+    );
+  // Modern color spaces (oklch, color(), ...) resolve through a canvas.
+  try {
+    const context = document.createElement("canvas").getContext("2d", {
+      willReadFrequently: true,
+    });
+    if (!context) return null;
+    context.fillStyle = color;
+    context.fillRect(0, 0, 1, 1);
+    const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+    return (r << 16) | (g << 8) | b;
+  } catch {
+    return null;
+  }
+}
 
 export interface WTermOptions {
   cols?: number;
@@ -13,11 +120,31 @@ export interface WTermOptions {
   core?: TerminalCore;
   wasmUrl?: string;
   autoResize?: boolean;
+  /** Maximum rendered Kitty image width in CSS pixels. */
+  maxImageWidth?: number;
+  /** Maximum rendered Kitty image height in CSS pixels. */
+  maxImageHeight?: number;
+  /** Force blinking on/off; omit to follow the terminal application's request. */
   cursorBlink?: boolean;
+  /** Announce changed terminal text politely while input has focus. Off by default. */
+  announceOutput?: boolean;
+  /** Suspend painting for an inactive pane while continuing to parse output. */
+  renderingPaused?: boolean;
   debug?: boolean;
   onData?: (data: string) => void;
+  /** Raw input bytes, used by X10 mouse reports. */
+  onBinary?: (data: Uint8Array) => void;
   onTitle?: (title: string) => void;
+  /** Shell-reported OSC 7 URI; empty clears it. Untrusted metadata, not a verified local path. */
+  onWorkingDirectory?: (uri: string) => void;
+  /** Called with the number of BEL controls since the last delivery. */
+  onBell?: (count: number) => void;
+  /** Application request only: the host must apply its clipboard policy. No browser clipboard access is automatic. */
+  onClipboardWrite?: (text: string) => void;
+  /** Latest shell-reported state per parser chunk. Requires a supporting core and OSC 133 markers. */
+  onShellIntegration?: (state: ShellIntegrationState) => void;
   onResize?: (cols: number, rows: number) => void;
+  onSearchChange?: (state: SearchState) => void;
 }
 
 export class WTerm {
@@ -29,48 +156,297 @@ export class WTerm {
   debug: DebugAdapter | null = null;
 
   private _coreOption: TerminalCore | undefined;
+  private _initialColsExplicit: boolean;
+  private _initialRowsExplicit: boolean;
+  private _themeColors: TerminalThemeColors | null = null;
+  /** Colors last read from CSS and handed to the core, to skip repeat updates. */
+  private _cssThemeKey: string | null = null;
   private wasmUrl: string | undefined;
+  private maxImageWidth: number | undefined;
+  private maxImageHeight: number | undefined;
   private _debugEnabled: boolean;
   private renderer: Renderer | null = null;
   private input: InputHandler | null = null;
-  private rafId: number | null = null;
-  private _renderTimer: ReturnType<typeof setTimeout> | null = null;
+  private _renderingPaused: boolean;
+  private _onVisibilityChange: () => void;
+  private _synchronizedOutputTimer: ReturnType<typeof setTimeout> | null = null;
+  private _synchronizedOutputState: "idle" | "held" | "passthrough" = "idle";
+  private _synchronizedOutputGeneration = 0;
+  private _rendererNeedsSetup = false;
   private resizeObserver: ResizeObserver | null = null;
   private _destroyed = false;
   private _shouldScrollToBottom = false;
+  private _pinnedToBottom = true;
+  private _scrollbackDiscardedCount = 0;
+  private _programmaticScrollTop: number | null = null;
+  private _pendingResizeScrollTop: number | null = null;
   private _rowHeight = 0;
-  private _onClickFocus: () => void;
+  private _charWidth = 0;
+  private _windowSizeQueryState: 0 | 1 | 2 | 3 | 4 | 6 = 0;
+  private _search: SearchController;
+  private _historySelection: HistorySelection;
+  private _rectangleDrag: RectangleDrag;
+  private _textCapture = new TextCapture();
+  private _outputAnnouncements: OutputAnnouncements;
+  private _searchReveal = false;
+  private _onClickFocus: (event: MouseEvent) => void;
+  private _onScroll: () => void;
+  private _onModifierChange: (event: KeyboardEvent) => void;
+  private _onWindowBlur: () => void;
+  private _onBeforePrint: () => void;
+  private _onAfterPrint: () => void;
+  private _onCopy: (event: ClipboardEvent) => void;
+  private _onMouseSelect: (event: MouseEvent) => void;
 
   onData: ((data: string) => void) | null;
+  onBinary: ((data: Uint8Array) => void) | null;
   onTitle: ((title: string) => void) | null;
+  onWorkingDirectory: ((uri: string) => void) | null;
+  onBell: ((count: number) => void) | null;
+  onShellIntegration: ((state: ShellIntegrationState) => void) | null;
+  onClipboardWrite: ((text: string) => void) | null;
   onResize: ((cols: number, rows: number) => void) | null;
+  onSearchChange: ((state: SearchState) => void) | null;
 
   private _container: HTMLDivElement;
 
   constructor(element: HTMLElement, options: WTermOptions = {}) {
     this.element = element;
     this._coreOption = options.core;
+    this._initialColsExplicit = options.cols !== undefined;
+    this._initialRowsExplicit = options.rows !== undefined;
     this.wasmUrl = options.wasmUrl;
+    this.maxImageWidth = options.maxImageWidth;
+    this.maxImageHeight = options.maxImageHeight;
     this.cols = options.cols || 80;
     this.rows = options.rows || 24;
     this.autoResize = options.autoResize !== false;
     this._debugEnabled = options.debug ?? false;
+    this._renderingPaused = options.renderingPaused ?? false;
 
     this.onData = options.onData || null;
+    this.onBinary = options.onBinary || null;
     this.onTitle = options.onTitle || null;
+    this.onWorkingDirectory = options.onWorkingDirectory || null;
+    this.onBell = options.onBell || null;
+    this.onShellIntegration = options.onShellIntegration || null;
+    this.onClipboardWrite = options.onClipboardWrite || null;
     this.onResize = options.onResize || null;
+    this.onSearchChange = options.onSearchChange || null;
+    this._search = new SearchController((reveal) => {
+      this._searchReveal ||= reveal;
+      if (reveal) {
+        const match = this._search.matches[this.getSearchState().activeIndex];
+        if (match) {
+          this._shouldScrollToBottom = false;
+          this._pendingResizeScrollTop = null;
+          this._setScrollTop(
+            (match.start.row + 0.5) * this._rowHeight -
+              this.element.clientHeight / 2,
+          );
+        }
+      }
+      if (this._synchronizedOutputState !== "held") this._scheduleRender();
+      this.onSearchChange?.(this.getSearchState());
+    });
 
     this._container = document.createElement("div");
     this._container.className = "term-grid";
     this.element.appendChild(this._container);
     this.element.classList.add("wterm");
-    if (options.cursorBlink) this.element.classList.add("cursor-blink");
+    this._historySelection = new HistorySelection(this.element);
+    this._rectangleDrag = new RectangleDrag(this.element, {
+      start: (event) => {
+        if (
+          !(event.target instanceof Element) ||
+          !this.bridge ||
+          !this._canRender()
+        )
+          return null;
+        const point = this.renderer?.positionAt(
+          event.target,
+          event.clientX,
+          this._charWidth,
+        );
+        if (
+          !point ||
+          (!event.shiftKey &&
+            this.bridge.mouseTracking?.() &&
+            point.row >= this.bridge.getScrollbackCount())
+        )
+          return null;
+        return point;
+      },
+      position: (event) => {
+        const bounds = this.element.getBoundingClientRect();
+        return (
+          this.renderer?.dragPositionAt(
+            event.clientX,
+            Math.max(
+              bounds.top + 1,
+              Math.min(bounds.bottom - 1, event.clientY),
+            ),
+            this._charWidth,
+          ) ?? null
+        );
+      },
+      select: (start, end) => this.selectRectangle(start, end),
+      clear: () => this._historySelection.clear(),
+    });
+    this._outputAnnouncements = new OutputAnnouncements(
+      this.element,
+      () => this.bridge,
+      () =>
+        this._canRender() &&
+        !pendingRenders.has(this) &&
+        this._synchronizedOutputState !== "held",
+    );
+    this._outputAnnouncements.setEnabled(options.announceOutput ?? false);
+    this._onVisibilityChange = () => {
+      if (this._canRender()) this._scheduleRender();
+      else {
+        this._rectangleDrag.cancel();
+        this._cancelScheduledRender();
+        this._outputAnnouncements.invalidate();
+      }
+    };
+    this.element.ownerDocument.addEventListener(
+      "visibilitychange",
+      this._onVisibilityChange,
+    );
+    this.element.classList.toggle("cursor-blink", options.cursorBlink === true);
+    this.element.classList.toggle(
+      "cursor-steady",
+      options.cursorBlink === false,
+    );
 
-    this._onClickFocus = () => {
+    this._onClickFocus = (event) => {
+      if (event.defaultPrevented || this._historySelection.active) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest(".term-link")) {
+        if (
+          isLinkActivationModifier(
+            event,
+            this.element.ownerDocument.defaultView?.navigator ?? navigator,
+          ) ||
+          event.detail === 0
+        ) {
+          return;
+        }
+        event.preventDefault();
+      }
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) this.input?.focus();
     };
+    this._onMouseSelect = (event) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        (event.detail !== 2 && event.detail !== 3) ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        !(event.target instanceof Element)
+      )
+        return;
+      const position = this.renderer?.positionAt(
+        event.target,
+        event.clientX,
+        this._charWidth,
+      );
+      if (!position || !this.bridge) return;
+      if (
+        !event.shiftKey &&
+        this.bridge.mouseTracking?.() &&
+        position.row >= this.bridge.getScrollbackCount()
+      )
+        return;
+      const selected =
+        event.detail === 2
+          ? this.selectWord(position)
+          : this.selectLine(position.row);
+      if (selected) event.preventDefault();
+    };
+    // Expand after native mouse selection finishes. Cancelling mousedown
+    // leaves Chromium/WebKit's previous selection gesture active, which can
+    // collapse a replacement range on mouseup. Run before click-to-focus.
+    this.element.addEventListener("click", this._onMouseSelect);
     this.element.addEventListener("click", this._onClickFocus);
+    this._onModifierChange = (event) => {
+      this.element.classList.toggle(
+        "link-modifier-active",
+        isLinkActivationModifier(
+          event,
+          this.element.ownerDocument.defaultView?.navigator ?? navigator,
+        ),
+      );
+    };
+    this._onWindowBlur = () => {
+      this.element.classList.remove("link-modifier-active");
+    };
+    this.element.ownerDocument.addEventListener(
+      "keydown",
+      this._onModifierChange,
+    );
+    this.element.ownerDocument.addEventListener(
+      "keyup",
+      this._onModifierChange,
+    );
+    this.element.ownerDocument.defaultView?.addEventListener(
+      "blur",
+      this._onWindowBlur,
+    );
+    this._onBeforePrint = () => this._setPrintMode(true);
+    this._onAfterPrint = () => this._setPrintMode(false);
+    this.element.ownerDocument.defaultView?.addEventListener(
+      "beforeprint",
+      this._onBeforePrint,
+    );
+    this.element.ownerDocument.defaultView?.addEventListener(
+      "afterprint",
+      this._onAfterPrint,
+    );
+    this._onScroll = () => {
+      if (this._pendingResizeScrollTop !== null) return;
+      const atBottom = this._isScrolledToBottom();
+      if (this._shouldScrollToBottom && atBottom) {
+        this._programmaticScrollTop = null;
+        return;
+      }
+      if (
+        this._programmaticScrollTop !== null &&
+        Math.abs(this.element.scrollTop - this._programmaticScrollTop) <=
+          PROGRAMMATIC_SCROLL_TOLERANCE
+      ) {
+        this._programmaticScrollTop = null;
+        return;
+      }
+      this._programmaticScrollTop = null;
+      this._shouldScrollToBottom = false;
+      this._scheduleRender();
+    };
+    this.element.addEventListener("scroll", this._onScroll, { passive: true });
+    this._onCopy = (event) => {
+      if (event.defaultPrevented || !event.clipboardData) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        !this.element.contains(target) &&
+        (target.closest("input, textarea") ||
+          (target as HTMLElement).isContentEditable)
+      )
+        return;
+      const text = this.getSelectionText();
+      // A pending full-history snapshot must never fall back to a partial copy.
+      if (this._historySelection.pending) {
+        event.preventDefault();
+        return;
+      }
+      if (text === null) return;
+      event.clipboardData.setData("text/plain", text);
+      event.preventDefault();
+    };
+    this.element.ownerDocument.addEventListener("copy", this._onCopy);
   }
 
   async init(): Promise<this> {
@@ -81,7 +457,22 @@ export class WTerm {
         this.bridge = await WasmBridge.load(this.wasmUrl);
       }
       if (this._destroyed) return this;
+      this.bridge.setUpdateListener?.(this._onCoreUpdate);
+      const initialCols = this.cols;
+      const initialRows = this.rows;
+      this._setRowHeight();
+      if (this.autoResize) {
+        const size = this._measureGridSize();
+        if (size) {
+          if (!this._initialColsExplicit) this.cols = size.cols;
+          if (!this._initialRowsExplicit) this.rows = size.rows;
+        }
+      }
       this.bridge.init(this.cols, this.rows);
+      if (this._themeColors) this.bridge.setThemeColors?.(this._themeColors);
+      else this._syncCssThemeColors();
+      this.cols = this.bridge.getCols();
+      this.rows = this.bridge.getRows();
 
       if (this._debugEnabled) {
         this.debug = new DebugAdapter();
@@ -89,15 +480,22 @@ export class WTerm {
         (globalThis as Record<string, unknown>).__wterm = this;
       }
 
-      this._setRowHeight();
+      this._measureCharSize();
 
-      this.renderer = new Renderer(this._container);
+      this.renderer = new Renderer(this._container, {
+        colorHost: this.element,
+        maxImageWidth: this.maxImageWidth,
+        maxImageHeight: this.maxImageHeight,
+      });
       this.renderer.setup(this.cols, this.rows);
 
       this.input = new InputHandler(
         this.element,
-        (data) => {
-          this._scrollToBottom();
+        (data, preserveScroll = false) => {
+          if (!preserveScroll) {
+            this._outputAnnouncements.input();
+            this._scrollToBottom();
+          }
           if (this.onData) {
             this.onData(data);
           } else {
@@ -105,16 +503,49 @@ export class WTerm {
           }
         },
         () => this.bridge,
+        () =>
+          this._charWidth > 0 && this._rowHeight > 0
+            ? { charWidth: this._charWidth, rowHeight: this._rowHeight }
+            : null,
+        () => {
+          this._rectangleDrag.cancel();
+          this._historySelection.clear();
+          this._scrollToBottom();
+        },
+        (data) => {
+          this._outputAnnouncements.input();
+          this._rectangleDrag.cancel();
+          this._historySelection.clear();
+          this._scrollToBottom();
+          if (this.onBinary) {
+            this.onBinary(data);
+          } else if (!this.onData) {
+            this.write(data);
+          } else if (data.every((byte) => byte < 128)) {
+            this.onData(String.fromCharCode(...data));
+          }
+        },
+        {
+          selectAll: () => {
+            void this.selectAll();
+          },
+          hasSelection: () => this._historySelection.active,
+          clearSelection: () => {
+            this._rectangleDrag.cancel();
+            this._historySelection.clear();
+          },
+        },
       );
 
-      if (this.autoResize) {
-        this._setupResizeObserver();
-      } else {
+      this._setupResizeObserver();
+      if (!this.autoResize) {
         this._lockHeight();
       }
 
       this.input.focus();
       this._initialRender();
+      if (this.cols !== initialCols || this.rows !== initialRows)
+        this.onResize?.(this.cols, this.rows);
     } catch (err) {
       this.destroy();
       throw new Error(
@@ -127,41 +558,557 @@ export class WTerm {
 
   private _isScrolledToBottom(): boolean {
     const el = this.element;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 5;
+    this._pinnedToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 5;
+    return this._pinnedToBottom;
   }
 
   private _scrollToBottom(): void {
-    const el = this.element;
-    const maxScroll = el.scrollHeight - el.clientHeight;
-    if (maxScroll <= 0) {
-      el.scrollTop = 0;
+    this._setScrollTop(this.element.scrollHeight);
+  }
+
+  private _setScrollTop(value: number, frame?: RenderFrame): void {
+    if (!frame) {
+      const before = this.element.scrollTop;
+      this.element.scrollTop = value;
+      const after = this.element.scrollTop;
+      this._isScrolledToBottom();
+      if (after !== before) this._programmaticScrollTop = after;
       return;
     }
-    const rh = this._rowHeight || 17;
-    el.scrollTop = Math.floor(maxScroll / rh) * rh;
+    const maxScrollTop = frame.maxScrollTop;
+    const target = Math.max(0, Math.min(value, maxScrollTop));
+    this._pinnedToBottom = maxScrollTop - target < 5;
+    if (target !== frame.viewportScrollTop || frame.restoreScroll) {
+      this._programmaticScrollTop = target;
+    }
+    this.element.scrollTop = target;
+  }
+
+  /**
+   * Apply host colors without writing terminal input or restarting the session.
+   * Pass `null` to drop them and answer color queries from the page's CSS again.
+   */
+  setThemeColors(colors: TerminalThemeColors | null): void {
+    if (colors === null) {
+      if (this._destroyed) return;
+      this._themeColors = null;
+      for (const property of THEME_PROPERTIES)
+        this.element.style.removeProperty(property);
+      this._cssThemeKey = null;
+      this._syncCssThemeColors();
+      this.renderer?.invalidateColors();
+      this._scheduleRender();
+      return;
+    }
+    const values = [
+      colors.foreground,
+      colors.background,
+      colors.cursor,
+      ...colors.palette,
+    ];
+    if (
+      colors.palette.length !== 16 ||
+      values.some(
+        (value) => !Number.isInteger(value) || value < 0 || value > 0xffffff,
+      )
+    )
+      throw new RangeError(
+        "Theme colors must be 24-bit RGB values with exactly 16 palette entries",
+      );
+    if (this._destroyed) return;
+    const copy = { ...colors, palette: [...colors.palette] };
+    this.bridge?.setThemeColors?.(copy);
+    this._themeColors = copy;
+    values.forEach((value, index) =>
+      this.element.style.setProperty(
+        THEME_PROPERTIES[index],
+        `#${value.toString(16).padStart(6, "0")}`,
+      ),
+    );
+    this.renderer?.invalidateColors();
+    this._scheduleRender();
   }
 
   write(data: string | Uint8Array): void {
-    if (!this.bridge) return;
+    if (!this.bridge || this._destroyed) return;
+    markSelectionChanged(this.element.ownerDocument);
+    this._textCapture.cancel();
+    this._rectangleDrag.cancel();
+    this._historySelection.invalidate();
+    this.renderer?.beforeMutation(this.bridge);
     if (this.debug) this.debug.traceWrite(data);
-    this._shouldScrollToBottom = this._isScrolledToBottom();
+    this._shouldScrollToBottom = this._pinnedToBottom;
+    // Answer theme color queries with the colors the page shows right now.
+    if (mayQueryThemeColors(data)) this._syncCssThemeColors();
+    const windowSizeQueries = this._collectWindowSizeQueries(data);
+    let deliveryError: unknown;
+    let hasDeliveryError = false;
+    const recordDeliveryError = (error: unknown) => {
+      if (hasDeliveryError) return;
+      hasDeliveryError = true;
+      deliveryError = error;
+    };
+    const drain = () => {
+      const result = this._deliverCoreEffects();
+      if (result.hasError) recordDeliveryError(result.error);
+    };
     if (typeof data === "string") {
-      this.bridge.writeString(data);
+      this.bridge.writeString(data, drain);
     } else {
-      this.bridge.writeRaw(data);
+      this.bridge.writeRaw(data, drain);
     }
-    this._scheduleRender();
+    const synchronized = this.bridge.synchronizedOutput?.() ?? false;
+    const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
+    this._updateSynchronizedOutput(synchronized, generation);
+    this._invalidateSearch();
+    if (this._synchronizedOutputState !== "held") {
+      this._setupRendererIfNeeded();
+      this._scheduleRender();
+    }
+    drain();
+    for (const query of windowSizeQueries) {
+      try {
+        this.onData?.(this._windowSizeResponse(query));
+      } catch (error) {
+        recordDeliveryError(error);
+      }
+    }
+    if (hasDeliveryError) throw deliveryError;
+  }
+
+  /**
+   * Hands the core the theme colors the page's CSS resolves to, unless the
+   * host set explicit colors with setThemeColors().
+   */
+  private _syncCssThemeColors(): void {
+    if (this._themeColors || !this.bridge?.setThemeColors || this._destroyed)
+      return;
+    let colors: TerminalThemeColors | null;
+    try {
+      colors = readCssThemeColors(this.element);
+    } catch {
+      // Detection is best effort; the core keeps its previous colors.
+      return;
+    }
+    if (!colors) return;
+    const key = [
+      colors.foreground,
+      colors.background,
+      colors.cursor,
+      ...colors.palette,
+    ].join();
+    if (key === this._cssThemeKey) return;
+    this._cssThemeKey = key;
+    this.bridge.setThemeColors(colors);
+  }
+
+  /**
+   * Hands replies, bells, titles, clipboard writes, shell state and the
+   * working directory to the host. Returns the first host callback error.
+   */
+  private _deliverCoreEffects(): { hasError: boolean; error?: unknown } {
+    let hasError = false;
+    let firstError: unknown;
+    const record = (error: unknown) => {
+      if (hasError) return;
+      hasError = true;
+      firstError = error;
+    };
+    const result = this._drainResponses();
+    if (result.hasError) record(result.error);
+    const bells = this.bridge?.getBellCount?.() ?? 0;
+    if (bells > 0) {
+      try {
+        this.onBell?.(bells);
+      } catch (error) {
+        record(error);
+      }
+    }
+    // Titles, like replies and bells, must reach the host even without paint.
+    try {
+      this._deliverTitle();
+    } catch (error) {
+      record(error);
+    }
+    try {
+      const text = this.bridge?.getClipboardWrite?.() ?? null;
+      if (text !== null && !this._destroyed) this.onClipboardWrite?.(text);
+    } catch (error) {
+      record(error);
+    }
+    try {
+      const state = this.bridge?.getShellIntegrationState?.() ?? null;
+      if (state !== null && !this._destroyed) this.onShellIntegration?.(state);
+    } catch (error) {
+      record(error);
+    }
+    try {
+      const uri = this.bridge?.getWorkingDirectory?.() ?? null;
+      if (uri !== null && !this._destroyed) this.onWorkingDirectory?.(uri);
+    } catch (error) {
+      record(error);
+    }
+    return { hasError, error: firstError };
+  }
+
+  /** New state from a core that applies writes asynchronously. */
+  private _onCoreUpdate = (): void => {
+    if (!this.bridge || this._destroyed) return;
+    // The core changed, as after a write: stale captures and drags end.
+    this._textCapture.cancel();
+    this._rectangleDrag.cancel();
+    this.renderer?.beforeMutation(this.bridge);
+    this._historySelection.invalidate();
+    const result = this._deliverCoreEffects();
+    const synchronized = this.bridge.synchronizedOutput?.() ?? false;
+    const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
+    this._updateSynchronizedOutput(synchronized, generation);
+    this._invalidateSearch();
+    if (this._synchronizedOutputState !== "held") {
+      this._setupRendererIfNeeded();
+      this._scheduleRender();
+    }
+    if (result.hasError) {
+      // There is no write call to throw from; surface it like an event handler.
+      const error = result.error;
+      queueMicrotask(() => {
+        throw error;
+      });
+    }
+  };
+
+  /** Fit the grid to the current element and font metrics. */
+  fit(): void {
+    if (!this.bridge || this._destroyed) return;
+    const size = this._measureGridSize();
+    if (size && (size.cols !== this.cols || size.rows !== this.rows))
+      this.resize(size.cols, size.rows);
+  }
+
+  private _measureGridSize(): { cols: number; rows: number } | null {
+    const measured = this._measureCharSize();
+    if (!measured) return null;
+    const style = getComputedStyle(this.element);
+    const rect = this.element.getBoundingClientRect();
+    const pixels = (value: string) => parseFloat(value) || 0;
+    const bordersX =
+      pixels(style.borderLeftWidth) + pixels(style.borderRightWidth);
+    const bordersY =
+      pixels(style.borderTopWidth) + pixels(style.borderBottomWidth);
+    const scrollbarWidth = Math.max(
+      0,
+      this.element.offsetWidth - this.element.clientWidth - bordersX,
+    );
+    const scrollbarHeight = Math.max(
+      0,
+      this.element.offsetHeight - this.element.clientHeight - bordersY,
+    );
+    const width =
+      rect.width -
+      pixels(style.paddingLeft) -
+      pixels(style.paddingRight) -
+      bordersX -
+      scrollbarWidth;
+    const height =
+      rect.height -
+      pixels(style.paddingTop) -
+      pixels(style.paddingBottom) -
+      bordersY -
+      scrollbarHeight;
+    if (width <= 0 || height <= 0) return null;
+    const cols = Math.max(1, Math.floor(width / measured.charWidth));
+    const rows = Math.max(1, Math.floor(height / measured.rowHeight));
+    return { cols, rows };
   }
 
   resize(cols: number, rows: number): void {
-    if (!this.bridge) return;
-    this._shouldScrollToBottom = this._isScrolledToBottom();
-    this.cols = cols;
-    this.rows = rows;
+    if (!this.bridge || this._destroyed) return;
+    markSelectionChanged(this.element.ownerDocument);
+    this._textCapture.cancel();
+    this._rectangleDrag.cancel();
+    this._historySelection.invalidate();
+    this.renderer?.beforeMutation(this.bridge);
+    this._shouldScrollToBottom =
+      this._pendingResizeScrollTop === null && this._isScrolledToBottom();
     this.bridge.resize(cols, rows);
-    this.renderer?.setup(cols, rows);
+    this._outputAnnouncements.invalidate();
+    this.cols = this.bridge.getCols();
+    this.rows = this.bridge.getRows();
+    const synchronized = this.bridge.synchronizedOutput?.() ?? false;
+    const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
+    if (this._updateSynchronizedOutput(synchronized, generation)) {
+      this._rendererNeedsSetup = true;
+    } else {
+      this._setupRenderer();
+      this._scheduleRender();
+    }
+    this._invalidateSearch();
+    if (this.onResize) this.onResize(this.cols, this.rows);
+  }
+
+  /** Search retained history and the active screen, using plain text. */
+  search(query: string, options: SearchOptions = {}): void {
+    if (this._destroyed) return;
+    this._search.search(query, options);
+    this._paintSearch();
+  }
+
+  findNext(): boolean {
+    return !this._destroyed && this._search.navigate(1);
+  }
+  findPrevious(): boolean {
+    return !this._destroyed && this._search.navigate(-1);
+  }
+  clearSearch(): void {
+    this.search("");
+  }
+  getSearchState(): SearchState {
+    return this._search.snapshot();
+  }
+
+  /** Scroll to the previous (-1) or next (1) shell prompt from the viewport top. */
+  scrollToPrompt(direction: -1 | 1): boolean {
+    if (
+      !this._canRender() ||
+      !this.bridge?.findPrompt ||
+      !this.renderer ||
+      this._synchronizedOutputState === "held" ||
+      this.bridge.usingAltScreen() ||
+      (direction !== -1 && direction !== 1)
+    )
+      return false;
+    // Resolve against the current parsed buffer and mounted viewport, including
+    // any output, resize or user scroll that has not painted yet.
+    this._cancelScheduledRender();
+    this._doRender();
+    if (direction === 1 && this._isScrolledToBottom()) return false;
+    const bounds = this.element.getBoundingClientRect();
+    const origin = this.renderer.dragPositionAt(
+      bounds.left,
+      bounds.top + this.element.clientTop + 1,
+      this._charWidth,
+    );
+    if (!origin) return false;
+    const target = this.bridge.findPrompt(origin.row, direction);
+    if (
+      target === null ||
+      !Number.isInteger(target) ||
+      target < 0 ||
+      target >= this.bridge.getScrollbackCount() + this.rows ||
+      (direction < 0 ? target >= origin.row : target <= origin.row)
+    )
+      return false;
+    const before = this.element.scrollTop;
+    this._shouldScrollToBottom = false;
+    this._searchReveal = false;
+    this._pendingResizeScrollTop = target * this._rowHeight;
+    this._doRender();
+    // The initial estimate mounts distant history. Use actual row geometry for
+    // padding, fractional line heights and inline image layout.
+    const mounted = Array.from(this.renderer.searchRows()).find(
+      ({ row }) => row === target,
+    );
+    if (mounted) {
+      this._setScrollTop(
+        this.element.scrollTop +
+          mounted.element.getBoundingClientRect().top -
+          bounds.top -
+          this.element.clientTop,
+      );
+    }
     this._scheduleRender();
-    if (this.onResize) this.onResize(cols, rows);
+    return (
+      Math.abs(this.element.scrollTop - before) > PROGRAMMATIC_SCROLL_TOLERANCE
+    );
+  }
+
+  /** Enable or stop polite announcements without changing terminal focus. */
+  setOutputAnnouncements(enabled: boolean): void {
+    if (!this._destroyed) this._outputAnnouncements.setEnabled(enabled);
+  }
+
+  /** Pause pane painting without buffering output or stopping terminal effects. */
+  setRenderingPaused(paused: boolean): void {
+    if (this._destroyed || paused === this._renderingPaused) return;
+    this._renderingPaused = paused;
+    this._onVisibilityChange();
+  }
+
+  private _canRender(): boolean {
+    return (
+      !this._destroyed &&
+      !this._renderingPaused &&
+      this.element.ownerDocument.visibilityState !== "hidden"
+    );
+  }
+
+  /** Capture retained history and the active screen without changing selection. */
+  readText(options: { signal?: AbortSignal } = {}): Promise<string> {
+    if (this._destroyed || !this.renderer || !this.bridge)
+      return Promise.reject(new Error("Terminal is not initialized"));
+    const captured = this._textCapture.read(options.signal);
+    this._scheduleRender();
+    return captured;
+  }
+
+  /** Read the terminal selection with terminal line and cell semantics. */
+  getSelectionText(): string | null {
+    if (this._destroyed) return null;
+    return (
+      this._historySelection.getText() ??
+      this.renderer?.getSelectionText() ??
+      null
+    );
+  }
+
+  /** Select retained history and the active screen without mounting extra rows. */
+  selectAll(): Promise<boolean> {
+    if (this._destroyed || !this.renderer || !this.bridge)
+      return Promise.resolve(false);
+    this._rectangleDrag.cancel();
+    const selected = this._historySelection.select();
+    this._scheduleRender();
+    return selected;
+  }
+
+  /** Select a word at a cell, with row zero at the oldest retained row. */
+  selectWord(position: TerminalPosition): boolean {
+    return this._selectUnit(position, "word");
+  }
+
+  /** Select the logical line containing a retained-buffer row. */
+  selectLine(row: number): boolean {
+    return this._selectUnit({ row, col: 0 }, "line");
+  }
+
+  /** Select inclusive rectangle corners in retained physical-row coordinates. */
+  selectRectangle(start: TerminalPosition, end: TerminalPosition): boolean {
+    if (this._destroyed || !this.bridge || !this.renderer || !this._canRender())
+      return false;
+    const rectangle = this.renderer.rectangle(this.bridge, start, end, () => {
+      this.input?.focus();
+    });
+    if (!rectangle) return false;
+    this._historySelection.selectRectangle(rectangle);
+    this._historySelection.paintRectangle(
+      this.renderer.searchRows(),
+      this._charWidth,
+    );
+    return true;
+  }
+
+  private _selectUnit(
+    position: TerminalPosition,
+    unit: "word" | "line",
+  ): boolean {
+    if (this._destroyed || !this.bridge || !this.renderer) return false;
+    return this.renderer.select(this.bridge, position, unit, () => {
+      this._rectangleDrag.cancel();
+      this._historySelection.clear();
+      const active = this.element.ownerDocument.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        this.element.contains(active) &&
+        active.tagName === "TEXTAREA"
+      )
+        active.blur();
+    });
+  }
+
+  /** Clear custom selection and any native selection wholly owned by this terminal. */
+  clearSelection(): void {
+    this._rectangleDrag.cancel();
+    this._historySelection.clear();
+    const selection = this.element.ownerDocument.getSelection();
+    if (!selection || selection.isCollapsed) return;
+    for (let index = 0; index < selection.rangeCount; index++) {
+      const range = selection.getRangeAt(index);
+      if (
+        !this.element.contains(range.startContainer) ||
+        !this.element.contains(range.endContainer)
+      )
+        return;
+    }
+    markSelectionChanged(this.element.ownerDocument);
+    selection.removeAllRanges();
+  }
+
+  private _invalidateSearch(): void {
+    if (!this.getSearchState().query) return;
+    this._searchReveal = false;
+    this._search.invalidate();
+    this._paintSearch();
+  }
+
+  private _paintSearch(): void {
+    if (!this.renderer || !this.bridge || !this._canRender()) return;
+    const fragment = document.createDocumentFragment();
+    const matches = this._search.matches;
+    if (!matches.length) {
+      this.renderer.setSearchDecorations(fragment);
+      return;
+    }
+    const active = this.getSearchState().activeIndex;
+    const viewport = this.element.getBoundingClientRect();
+    for (const { row, element } of this.renderer.searchRows()) {
+      const rect = element.getBoundingClientRect();
+      if (rect.bottom <= viewport.top || rect.top >= viewport.bottom) continue;
+      // Match ends are ordered, so offscreen history does not add paint work.
+      let low = 0,
+        high = matches.length;
+      while (low < high) {
+        const mid = (low + high) >>> 1;
+        if (matches[mid].end.row < row) low = mid + 1;
+        else high = mid;
+      }
+      const history = this.bridge.getScrollbackCount();
+      const offset = history - row - 1;
+      let cols =
+        row < history ? this.bridge.getScrollbackLineLen(offset) : this.cols;
+      if (cols <= 0) continue;
+      const last =
+        row < history
+          ? this.bridge.getScrollbackCell(offset, cols - 1)
+          : this.bridge.getCell(row - history, cols - 1);
+      if (last.spacerHead) cols--;
+      let rangeStart = -1,
+        rangeEnd = -1;
+      const draw = (start: number, end: number, selected: boolean) => {
+        if (end <= start) return;
+        const mark = document.createElement("div");
+        mark.className = `term-search-match${selected ? " term-search-active" : ""}`;
+        mark.style.cssText = `left:${start * this._charWidth}px;top:${element.offsetTop}px;width:${(end - start) * this._charWidth}px;height:${rect.height}px`;
+        fragment.appendChild(mark);
+      };
+      for (
+        let i = low;
+        i < matches.length && matches[i].start.row <= row;
+        i++
+      ) {
+        const match = matches[i];
+        const start = match.start.row === row ? match.start.col : 0;
+        const end = Math.min(
+          cols,
+          match.end.row === row ? match.end.endCol : cols,
+        );
+        if (rangeStart >= 0 && start > rangeEnd) {
+          draw(rangeStart, rangeEnd, false);
+          rangeStart = -1;
+        }
+        if (rangeStart < 0) rangeStart = start;
+        rangeEnd = Math.max(rangeEnd, end);
+      }
+      if (rangeStart >= 0) draw(rangeStart, rangeEnd, false);
+      const selected = matches[active];
+      if (selected && selected.start.row <= row && selected.end.row >= row) {
+        draw(
+          selected.start.row === row ? selected.start.col : 0,
+          Math.min(cols, selected.end.row === row ? selected.end.endCol : cols),
+          true,
+        );
+      }
+    }
+    this.renderer.setSearchDecorations(fragment);
   }
 
   focus(): void {
@@ -173,16 +1120,140 @@ export class WTerm {
   }
 
   private _scheduleRender(): void {
-    if (this._renderTimer != null) return;
-    this._renderTimer = setTimeout(() => {
-      this._renderTimer = null;
-      if (this.rafId == null) {
-        this.rafId = requestAnimationFrame(() => {
-          this.rafId = null;
-          this._doRender();
-        });
+    if (
+      !this._canRender() ||
+      this._synchronizedOutputState === "held" ||
+      pendingRenders.has(this)
+    )
+      return;
+    pendingRenders.add(this);
+    if (renderFrameId === null) {
+      const frameId = requestAnimationFrame(WTerm._flushRenders);
+      if (pendingRenders.size > 0) renderFrameId = frameId;
+    }
+  }
+
+  private _cancelScheduledRender(): void {
+    pendingRenders.delete(this);
+    if (pendingRenders.size === 0 && renderFrameId !== null) {
+      cancelAnimationFrame(renderFrameId);
+      renderFrameId = null;
+    }
+  }
+
+  private static _flushRenders(): void {
+    renderFrameId = null;
+    const frames = new Map<WTerm, RenderFrame>();
+    const terminals = Array.from(pendingRenders);
+    for (const document of new Set(
+      terminals.map((terminal) => terminal.element.ownerDocument),
+    ))
+      markSelectionChanged(document);
+    for (const phase of ["read", "render", "measure", "scroll", "finish"]) {
+      for (const terminal of terminals) {
+        try {
+          if (phase === "read") {
+            if (!pendingRenders.delete(terminal)) continue;
+            const frame = terminal._readRender();
+            if (frame) frames.set(terminal, frame);
+            continue;
+          }
+          const frame = frames.get(terminal);
+          if (!frame) continue;
+          if (phase === "render") terminal._renderFrame(frame);
+          else if (phase === "measure") terminal._measureRenderScroll(frame);
+          else if (phase === "scroll") terminal._scrollRender(frame);
+          else terminal._finishRender();
+        } catch (error) {
+          frames.delete(terminal);
+          queueMicrotask(() => {
+            throw error;
+          });
+        }
       }
-    }, 0);
+    }
+  }
+
+  private _updateSynchronizedOutput(
+    synchronized: boolean,
+    generation: number,
+  ): boolean {
+    if (!synchronized) {
+      if (this._synchronizedOutputState === "held") {
+        this._cancelSynchronizedOutputFallback();
+      }
+      this._synchronizedOutputState = "idle";
+      return false;
+    }
+    if (
+      this._synchronizedOutputState === "held" &&
+      generation !== this._synchronizedOutputGeneration
+    ) {
+      this._armSynchronizedOutputFallback(generation);
+      return true;
+    } else if (
+      this._synchronizedOutputState === "passthrough" &&
+      generation !== this._synchronizedOutputGeneration
+    ) {
+      this._synchronizedOutputState = "idle";
+    }
+    if (this._synchronizedOutputState !== "idle") {
+      return this._synchronizedOutputState === "held";
+    }
+    this._synchronizedOutputState = "held";
+    this._cancelScheduledRender();
+    this._armSynchronizedOutputFallback(generation);
+    return true;
+  }
+
+  private _armSynchronizedOutputFallback(generation: number): void {
+    this._cancelSynchronizedOutputFallback();
+    this._synchronizedOutputGeneration = generation;
+    this._synchronizedOutputTimer = setTimeout(() => {
+      if (
+        this._synchronizedOutputState !== "held" ||
+        this._synchronizedOutputGeneration !== generation
+      ) {
+        return;
+      }
+      this._synchronizedOutputTimer = null;
+      this._synchronizedOutputState = "passthrough";
+      this._setupRendererIfNeeded();
+      this._cancelScheduledRender();
+      this._doRender();
+    }, SYNCHRONIZED_OUTPUT_TIMEOUT_MS);
+  }
+
+  private _cancelSynchronizedOutputFallback(): void {
+    if (this._synchronizedOutputTimer == null) return;
+    clearTimeout(this._synchronizedOutputTimer);
+    this._synchronizedOutputTimer = null;
+  }
+
+  /** Prepares colored print output without advancing a paused or synchronized screen. */
+  private _setPrintMode(printing: boolean): void {
+    if (!this.renderer || this._destroyed) return;
+    const keepCanvas =
+      printing &&
+      (!this._canRender() || this._synchronizedOutputState === "held");
+    this.element.classList.toggle("term-print-canvas", keepCanvas);
+    this.renderer.setCanvasSuspended(printing && !keepCanvas);
+    if (keepCanvas) return;
+    if (printing) this._doRender();
+    else this._scheduleRender();
+  }
+
+  private _setupRendererIfNeeded(): void {
+    if (!this._rendererNeedsSetup) return;
+    this._setupRenderer();
+    this._rendererNeedsSetup = false;
+  }
+
+  private _setupRenderer(): void {
+    if (!this._shouldScrollToBottom && this._pendingResizeScrollTop === null) {
+      this._pendingResizeScrollTop = this.element.scrollTop;
+    }
+    this.renderer?.requestSetup();
   }
 
   private _initialRender(): void {
@@ -190,40 +1261,279 @@ export class WTerm {
   }
 
   private _doRender(): void {
-    if (!this.bridge || !this.renderer) return;
+    this._cancelScheduledRender();
+    markSelectionChanged(this.element.ownerDocument);
+    const frame = this._readRender();
+    if (!frame) return;
+    this._renderFrame(frame);
+    this._measureRenderScroll(frame);
+    this._scrollRender(frame);
+    this._finishRender();
+  }
+
+  private _readRender(): RenderFrame | null {
+    if (
+      !this._canRender() ||
+      !this.bridge ||
+      !this.renderer ||
+      this._synchronizedOutputState === "held"
+    )
+      return null;
 
     let dirtyCount = 0;
-    const t0 = this.debug ? performance.now() : 0;
     if (this.debug) {
       for (let r = 0; r < this.rows; r++) {
         if (this.bridge.isDirtyRow(r)) dirtyCount++;
       }
     }
 
-    this.renderer.render(this.bridge);
+    const rowHeight = this._rowHeight || 17;
+    const viewportScrollTop = this.element.scrollTop;
+    const clientHeight = this.element.clientHeight;
+    this._pinnedToBottom =
+      this.element.scrollHeight - viewportScrollTop - clientHeight < 5;
+    const style = getComputedStyle(this.element);
+    const padding =
+      (parseFloat(style.paddingTop) || 0) +
+      (parseFloat(style.paddingBottom) || 0);
+    const scrollbackCount = this.bridge.getScrollbackCount();
+    const discardedCount = this.bridge.getScrollbackDiscardedCount?.();
+    const discardedDelta =
+      discardedCount !== undefined &&
+      discardedCount >= this._scrollbackDiscardedCount
+        ? discardedCount - this._scrollbackDiscardedCount
+        : 0;
+    if (discardedCount !== undefined) {
+      this._scrollbackDiscardedCount = discardedCount;
+    }
+    let scrollTop =
+      this._pendingResizeScrollTop !== null
+        ? this._pendingResizeScrollTop
+        : viewportScrollTop;
+    if (!this._shouldScrollToBottom && discardedDelta > 0) {
+      scrollTop = Math.max(0, scrollTop - discardedDelta * rowHeight);
+    }
+
+    return {
+      scrollTop,
+      viewportScrollTop,
+      clientHeight,
+      maxScrollTop: Math.max(
+        0,
+        Math.round(
+          (scrollbackCount + this.rows) * rowHeight +
+            padding +
+            this._keyboardInset +
+            this._historySelection.statusHeight,
+        ) - clientHeight,
+      ),
+      rowHeight,
+      scrollbackCount,
+      discardedCount,
+      dirtyCount,
+      followOutput: this._shouldScrollToBottom,
+      restoreScroll:
+        this._pendingResizeScrollTop !== null || discardedDelta > 0,
+    };
+  }
+
+  private _renderFrame(frame: RenderFrame): void {
+    if (!this.bridge || !this.renderer) return;
+    const t0 = this.debug ? performance.now() : 0;
+    this.renderer.render(this.bridge, {
+      scrollTop: frame.followOutput
+        ? Math.max(
+            0,
+            (frame.scrollbackCount + this.rows) * frame.rowHeight -
+              frame.clientHeight,
+          )
+        : frame.scrollTop,
+      clientHeight: frame.clientHeight,
+      rowHeight: frame.rowHeight,
+      scrollbackDiscardedCount: frame.discardedCount,
+      charWidth: this._charWidth,
+    });
 
     if (this.debug) {
-      this.debug.recordRender(performance.now() - t0, dirtyCount);
+      this.debug.recordRender(performance.now() - t0, frame.dirtyCount);
     }
 
-    const hasScrollback = this.bridge.getScrollbackCount() > 0;
+    const hasScrollback =
+      frame.scrollbackCount > 0 || this.renderer.hasImageFlow;
     this.element.classList.toggle("has-scrollback", hasScrollback);
+  }
 
-    if (this._shouldScrollToBottom) {
-      this._scrollToBottom();
-    } else if (!hasScrollback && this.element.scrollTop !== 0) {
-      this.element.scrollTop = 0;
+  private _measureRenderScroll(frame: RenderFrame): void {
+    if (this.renderer?.hasImageFlow) {
+      frame.maxScrollTop = Math.max(
+        0,
+        this.element.scrollHeight - frame.clientHeight,
+      );
+    }
+  }
+
+  private _scrollRender(frame: RenderFrame): void {
+    this._pendingResizeScrollTop = null;
+    if (frame.followOutput) {
+      this._setScrollTop(frame.maxScrollTop, frame);
+    } else if (frame.restoreScroll) {
+      this._setScrollTop(frame.scrollTop, frame);
+    } else if (!frame.scrollbackCount && !this.renderer?.hasImageFlow) {
+      this._setScrollTop(0, frame);
+    }
+  }
+
+  private _finishRender(): void {
+    if (
+      !this.bridge ||
+      !this.renderer ||
+      !this._canRender() ||
+      this._synchronizedOutputState === "held"
+    )
+      return;
+    this.input?.syncInputPosition();
+    if (this._searchReveal) {
+      this._searchReveal = false;
+      const match = this._search.matches[this.getSearchState().activeIndex];
+      const target =
+        match &&
+        Array.from(this.renderer.searchRows()).find(
+          ({ row }) => row === match.start.row,
+        );
+      if (target) {
+        const rect = target.element.getBoundingClientRect();
+        const viewport = this.element.getBoundingClientRect();
+        this._setScrollTop(
+          this.element.scrollTop +
+            rect.top -
+            viewport.top -
+            (this.element.clientHeight - rect.height) / 2,
+        );
+      }
+    }
+    this._paintSearch();
+    this._search.resume(this.bridge);
+    this._historySelection.resume(this.bridge);
+    this._historySelection.paintRectangle(
+      this.renderer.searchRows(),
+      this._charWidth,
+    );
+    this._textCapture.resume(this.bridge);
+    this._outputAnnouncements.rendered();
+
+    this._deliverTitle();
+
+    this._drainResponses();
+  }
+
+  private _deliverTitle(): void {
+    const title = this.bridge?.getTitle() ?? null;
+    if (title !== null) this.onTitle?.(title);
+  }
+
+  private _drainResponses(): { hasError: boolean; error?: unknown } {
+    if (!this.bridge) return { hasError: false };
+    let response: string | null;
+    let firstError: unknown;
+    let hasError = false;
+    while ((response = this.bridge.getResponse()) !== null) {
+      try {
+        if (this.onData) this.onData(response);
+      } catch (error) {
+        if (!hasError) {
+          hasError = true;
+          firstError = error;
+        }
+      }
+    }
+    return { hasError, error: firstError };
+  }
+
+  /**
+   * Kitty uses xterm window reports to discover the pixel geometry needed for
+   * image placement. The core intentionally does not know about the browser
+   * viewport, so these two queries are answered at the DOM boundary.
+   */
+  private _collectWindowSizeQueries(data: string | Uint8Array): (14 | 16)[] {
+    const queries: (14 | 16)[] = [];
+    let state = this._windowSizeQueryState;
+    let index = 0;
+    while (index < data.length) {
+      if (state === 0) {
+        // Skip ordinary output in bulk. ASCII queries can be recognized in
+        // raw bytes without allocating or decoding a copy of every write.
+        index =
+          typeof data === "string"
+            ? data.indexOf("\x1b", index)
+            : data.indexOf(0x1b, index);
+        if (index < 0) break;
+        state = 1;
+        index++;
+        continue;
+      }
+      const code =
+        typeof data === "string" ? data.charCodeAt(index) : data[index];
+      index++;
+      const restart = code === 0x1b ? 1 : 0;
+      switch (state) {
+        case 1: // ESC
+          state = code === 0x5b ? 2 : restart;
+          break;
+        case 2: // ESC [
+          state = code === 0x31 ? 3 : restart;
+          break;
+        case 3: // ESC [ 1
+          state = code === 0x34 ? 4 : code === 0x36 ? 6 : restart;
+          break;
+        case 4:
+        case 6:
+          if (code === 0x74) queries.push(state === 4 ? 14 : 16);
+          state = restart;
+          break;
+      }
+    }
+    // Only the matched ASCII prefix survives, including across mixed writes.
+    this._windowSizeQueryState = state;
+    return queries;
+  }
+
+  private _windowSizeResponse(query: 14 | 16): string {
+    const { width, height } = this._pixelSize();
+    if (query === 14) {
+      return `\x1b[4;${height};${width}t`;
+    }
+    const cellWidth = Math.max(1, Math.round(this._charWidth));
+    const cellHeight = Math.max(1, Math.round(this._rowHeight));
+    return `\x1b[6;${cellHeight};${cellWidth}t`;
+  }
+
+  private _pixelSize(): { width: number; height: number } {
+    const style = getComputedStyle(this.element);
+    const horizontalPadding =
+      (parseFloat(style.paddingLeft) || 0) +
+      (parseFloat(style.paddingRight) || 0);
+    const verticalPadding =
+      (parseFloat(style.paddingTop) || 0) +
+      (parseFloat(style.paddingBottom) || 0);
+
+    let width = this.element.clientWidth - horizontalPadding;
+    let height = this.element.clientHeight - verticalPadding;
+    if (width <= 0 || height <= 0) {
+      const rect = this.element.getBoundingClientRect();
+      width = rect.width - horizontalPadding;
+      height = rect.height - verticalPadding;
     }
 
-    const title = this.bridge.getTitle();
-    if (title !== null && this.onTitle) {
-      this.onTitle(title);
-    }
+    // A hidden element has no layout box. The measured cell geometry still
+    // gives Kitty a useful answer while the terminal is being mounted.
+    if (width <= 0 && this._charWidth > 0) width = this.cols * this._charWidth;
+    if (height <= 0 && this._rowHeight > 0)
+      height = this.rows * this._rowHeight;
 
-    const response = this.bridge.getResponse();
-    if (response !== null && this.onData) {
-      this.onData(response);
-    }
+    return {
+      width: Math.max(1, Math.round(width)),
+      height: Math.max(1, Math.round(height)),
+    };
   }
 
   private _lockHeight(): void {
@@ -250,9 +1560,8 @@ export class WTerm {
     const h = probe.getBoundingClientRect().height;
     probe.remove();
     if (h > 0) {
-      const rh = Math.ceil(h);
-      this._rowHeight = rh;
-      this.element.style.setProperty("--term-row-height", `${rh}px`);
+      this._rowHeight = h;
+      this.element.style.setProperty("--term-row-height", `${h}px`);
     }
   }
 
@@ -266,51 +1575,203 @@ export class WTerm {
     row.style.position = "absolute";
 
     const probe = document.createElement("span");
+    // Measure the font itself, not the cell width from an earlier measurement.
+    probe.style.width = "auto";
     probe.textContent = "W";
     row.appendChild(probe);
+    const block = document.createElement("span");
+    block.style.width = "auto";
+    block.style.letterSpacing = "0";
+    block.textContent = "\u2580";
+    row.appendChild(block);
 
     this._container.appendChild(row);
     const charWidth = probe.getBoundingClientRect().width;
+    const blockWidth = block.getBoundingClientRect().width;
     const rowHeight = row.getBoundingClientRect().height;
     row.remove();
 
     if (charWidth === 0 || rowHeight === 0) return null;
+    const changed =
+      this._charWidth > 0 &&
+      (charWidth !== this._charWidth || rowHeight !== this._rowHeight);
+    this._charWidth = charWidth;
     this._rowHeight = rowHeight;
+    this.element.style.setProperty("--term-cell-width", `${charWidth}px`);
+    const drift = blockWidth > 0 ? charWidth - blockWidth : 0;
+    this.element.style.setProperty(
+      "--term-block-spacing",
+      Math.abs(drift) > 0.01 ? `${drift}px` : "0px",
+    );
+    if (changed && this.renderer) this._scheduleRender();
     return { charWidth, rowHeight };
   }
 
   private _setupResizeObserver(): void {
-    const initial = this._measureCharSize();
-    if (!initial) return;
-
-    let { charWidth, rowHeight } = initial;
+    // This probe survives grid rebuilds and changes size when a web font loads
+    // or the host changes typography, even if the container stays the same size.
+    const probe = document.createElement("span");
+    probe.className = "term-size-probe";
+    probe.setAttribute("aria-hidden", "true");
+    probe.textContent = "W";
+    this.element.appendChild(probe);
+    let containerRect: DOMRectReadOnly | undefined;
 
     this.resizeObserver = new ResizeObserver((entries) => {
-      const measured = this._measureCharSize();
-      if (measured) {
-        charWidth = measured.charWidth;
-        rowHeight = measured.rowHeight;
-      }
-
+      if (this._destroyed) return;
       for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        const newCols = Math.max(1, Math.floor(width / charWidth));
-        const newRows = Math.max(1, Math.floor(height / rowHeight));
-        if (newCols !== this.cols || newRows !== this.rows) {
-          this.resize(newCols, newRows);
-        }
+        if (entry.target === this.element) containerRect = entry.contentRect;
       }
+      this._lastContainerRect = containerRect ?? null;
+      this._fitAutoResize();
     });
-    this.resizeObserver.observe(this.element);
+    this.resizeObserver.observe(probe);
+    if (this.autoResize) this.resizeObserver.observe(this.element);
+
+    // A software keyboard shrinks the visual viewport without resizing the
+    // element, so rows behind it would stay in the grid and hide the cursor.
+    const viewport = this.element.ownerDocument.defaultView?.visualViewport;
+    if (this.autoResize && viewport) {
+      this._visualViewport = viewport;
+      viewport.addEventListener("resize", this._onVisualViewportChange);
+      viewport.addEventListener("scroll", this._onVisualViewportChange);
+    }
+  }
+
+  private _lastContainerRect: DOMRectReadOnly | null = null;
+  /** Reserves the part of the element the keyboard covers, below the grid. */
+  private _keyboardSpacer: HTMLDivElement | null = null;
+  private _keyboardInset = 0;
+  private _visualViewport: VisualViewport | null = null;
+  private _visualViewportFrame = 0;
+
+  private _onVisualViewportChange = (): void => {
+    // The keyboard animates; fit once per frame instead of once per event.
+    if (this._visualViewportFrame || this._destroyed) return;
+    this._visualViewportFrame = requestAnimationFrame(() => {
+      this._visualViewportFrame = 0;
+      this._fitAutoResize();
+    });
+  };
+
+  /**
+   * Height of the element's content box not hidden by a software keyboard: the
+   * band between the visual viewport's bottom and the layout viewport's bottom.
+   * Parts of the element merely scrolled out of view still count as visible.
+   */
+  private _visibleContentHeight(contentHeight: number): number {
+    const viewport = this._visualViewport;
+    // Pinch zoom also shrinks the visual viewport; only a keyboard should refit.
+    if (!viewport || Math.abs(viewport.scale - 1) > 0.01) return contentHeight;
+    const layoutBottom =
+      this.element.ownerDocument.defaultView?.innerHeight ?? 0;
+    const coveredTop = viewport.offsetTop + viewport.height;
+    if (coveredTop >= layoutBottom) return contentHeight;
+    const rect = this.element.getBoundingClientRect();
+    const style = getComputedStyle(this.element);
+    const top =
+      rect.top +
+      (parseFloat(style.borderTopWidth) || 0) +
+      (parseFloat(style.paddingTop) || 0);
+    const covered = Math.max(
+      0,
+      Math.min(top + contentHeight, layoutBottom) - Math.max(top, coveredTop),
+    );
+    return contentHeight - covered;
+  }
+
+  /** Keeps the grid's last row above the keyboard while the element scrolls to the bottom. */
+  private _setKeyboardInset(px: number): void {
+    this._keyboardInset = Math.max(0, px);
+    if (px <= 0) {
+      this._keyboardSpacer?.remove();
+      this._keyboardSpacer = null;
+      return;
+    }
+    if (!this._keyboardSpacer) {
+      this._keyboardSpacer = document.createElement("div");
+      this._keyboardSpacer.className = "term-keyboard-spacer";
+      this._keyboardSpacer.setAttribute("aria-hidden", "true");
+      this.element.appendChild(this._keyboardSpacer);
+    }
+    this._keyboardSpacer.style.height = `${px}px`;
+  }
+
+  private _fitAutoResize(): void {
+    const containerRect = this._lastContainerRect;
+    const measured = this._measureCharSize();
+    if (!measured || !this.autoResize || !containerRect || this._destroyed)
+      return;
+    const { charWidth, rowHeight } = measured;
+    const contentHeight = containerRect.height;
+    const height = this._visibleContentHeight(contentHeight);
+    const newCols = Math.max(1, Math.floor(containerRect.width / charWidth));
+    const newRows = Math.max(1, Math.floor(height / rowHeight));
+    const atBottom = this._isScrolledToBottom();
+    this._setKeyboardInset(contentHeight - height);
+    if (newCols !== this.cols || newRows !== this.rows) {
+      this.resize(newCols, newRows);
+    } else if (atBottom) {
+      this._scrollToBottom();
+    }
   }
 
   destroy(): void {
     this._destroyed = true;
-    if (this._renderTimer != null) clearTimeout(this._renderTimer);
-    if (this.rafId != null) cancelAnimationFrame(this.rafId);
+    this.bridge?.setUpdateListener?.(null);
+    this._textCapture.cancel();
+    this._historySelection.destroy();
+    this._rectangleDrag.destroy();
+    this._outputAnnouncements.destroy();
+    this._search.cancel();
+    this.onSearchChange = null;
+    this._windowSizeQueryState = 0;
+    this._cancelScheduledRender();
+    this._cancelSynchronizedOutputFallback();
     if (this.resizeObserver) this.resizeObserver.disconnect();
+    if (this._visualViewportFrame)
+      cancelAnimationFrame(this._visualViewportFrame);
+    this._visualViewport?.removeEventListener(
+      "resize",
+      this._onVisualViewportChange,
+    );
+    this._visualViewport?.removeEventListener(
+      "scroll",
+      this._onVisualViewportChange,
+    );
+    this._visualViewport = null;
     if (this.input) this.input.destroy();
+    this.renderer?.destroy();
+    this.renderer = null;
     this.element.removeEventListener("click", this._onClickFocus);
+    this.element.removeEventListener("click", this._onMouseSelect);
+    this.element.removeEventListener("scroll", this._onScroll);
+    this.element.ownerDocument.removeEventListener("copy", this._onCopy);
+    this.element.ownerDocument.removeEventListener(
+      "visibilitychange",
+      this._onVisibilityChange,
+    );
+    this.element.ownerDocument.removeEventListener(
+      "keydown",
+      this._onModifierChange,
+    );
+    this.element.ownerDocument.removeEventListener(
+      "keyup",
+      this._onModifierChange,
+    );
+    this.element.ownerDocument.defaultView?.removeEventListener(
+      "blur",
+      this._onWindowBlur,
+    );
+    this.element.ownerDocument.defaultView?.removeEventListener(
+      "beforeprint",
+      this._onBeforePrint,
+    );
+    this.element.ownerDocument.defaultView?.removeEventListener(
+      "afterprint",
+      this._onAfterPrint,
+    );
+    this.element.classList.remove("link-modifier-active", "term-print-canvas");
     this.element.innerHTML = "";
     if (
       this.debug &&

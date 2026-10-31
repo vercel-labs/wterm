@@ -1,6 +1,8 @@
 export { WTerm } from "./wterm.js";
 export type { WTermOptions } from "./wterm.js";
+export type { SearchOptions, SearchState } from "./search.js";
 export { Renderer } from "./renderer.js";
+export type { GraphicsLayerOptions } from "./graphics-layer.js";
 export { InputHandler } from "./input.js";
 export { DebugAdapter } from "./debug.js";
 export type {

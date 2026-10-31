@@ -1,0 +1,487 @@
+---
+title: "Configuration"
+navTitle: "Configuration"
+---
+
+## Options
+
+The React, Vue, and Svelte `Terminal` components and the vanilla `WTerm` constructor accept the same core options — `cols`, `rows`, `core`, `wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, and `debug` — plus event callbacks `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onWorkingDirectory`, and `onResize` (exposed as `@data`, `@title`, `@bell`, `@clipboard-write`, `@shell-integration`, `@working-directory`, and `@resize` events in Vue).
+
+See the full [API Reference](/api-reference#terminal-options) for types, defaults, and descriptions.
+
+### Inactive panes
+
+Set `renderingPaused: true` for a pane that is not visible. Change it with
+`term.setRenderingPaused(paused)` in vanilla JavaScript, or the reactive
+`renderingPaused` prop in React, Vue, and Svelte. The local workspace does this
+automatically for sessions outside the visible layout. All visible split panes
+keep painting, including those without keyboard focus.
+
+Paused panes keep parsing output, retaining history, resizing the core, and
+delivering replies, titles, and bells. They stop scheduling terminal paints and
+show the latest state on the next eligible frame after resuming. Output is not
+queued for replay, and the PTY connection stays active. All terminals also pause
+painting while their browser document is hidden; returning does not override
+an explicitly paused pane.
+
+The option controls rendering only: hosts still manage visibility, focus,
+`inert`, and `aria-hidden`. CSS visibility alone does not set the option. New
+search scans, `readText()`, and Select All wait for a paint before starting;
+their existing cancellation rules still apply. Pending output announcements
+are discarded on pause. Synchronized drawing continues to hold a frame until
+the application ends the update or its recovery timeout expires.
+
+### Local workspace shortcuts
+
+The [local shell workspace](https://github.com/vercel-labs/wterm/tree/main/examples/local)
+includes **Keyboard shortcuts** in its sidebar. Customize bindings for sessions,
+splits, directional pane focus, zoom/restore, Find, and prompt navigation. **Change** records one
+combination; **Clear** disables a binding and **Reset defaults** restores the
+defaults. Conflicts are reported before settings change. Preferences persist in
+the browser and synchronize between tabs and engine routes.
+
+Find defaults to Command+F or Control+Shift+F. Pane focus defaults to
+Command+Option+arrows or Control+Alt+arrows. Other commands start unassigned.
+Custom combinations require Control or Command and use physical key positions.
+Common clipboard/browser commands and shell interruption keys remain reserved;
+Control+Alt text keys are reserved for AltGr. Browser or OS shortcuts may be
+unavailable to the page.
+
+Shortcuts act from terminal input; Find and New terminal session also work from
+workspace buttons. They do not take over Find fields, dialogs, composition, or
+AltGr. Assigned keys are consumed even at pane limits and do not repeat while
+held. Close current session terminates that shell. Escape cancels recording
+before closing the dialog. Storage failures leave changes active for the current
+page with a visible status. These controls belong to the local workspace; they
+do not change the terminal libraries' keyboard bindings. Session recovery is
+described below.
+
+### Scrollback rendering
+
+Scrollback keeps a bounded window of mounted rows. Small scrolls reuse this
+window until the viewport approaches its edge. When it moves, overlapping
+rows reuse their existing elements; unchanged text and links keep their DOM
+nodes when new output arrives. This reduces DOM work while reading history
+without changing selection, copy, or the amount of retained history. The
+behavior is automatic for both cores and all framework bindings.
+
+### PTY size
+
+With vanilla `WTerm` and `autoResize: true`, omitted `cols` and `rows` are
+measured from the container before the core is initialized. This avoids allocating
+an 80×24 grid and immediately resizing it. Explicit dimensions are respected at
+initialization; subsequent container changes still auto-resize. Hidden or
+unmeasurable containers use the 80×24 defaults until they can be measured.
+With `autoResize: false`, dimensions retain their explicit values or defaults.
+
+After `init()` or `resize()`, read `wt.cols` and `wt.rows` to size a connected
+PTY. `onResize(cols, rows)` also receives the applied grid size, including when
+initialization changes the requested size. A core can
+apply fewer cells than requested; the built-in core currently supports up to
+1024 columns and 512 rows. Keeping the PTY at the applied size prevents its output from
+wrapping at different columns than the browser terminal.
+
+### Bell notifications
+
+Both cores count BEL controls outside OSC sequences. `onBell(count)` runs as
+output is written, even if synchronized output is holding a paint. Several
+bells in one write chunk arrive as one count. WTerm leaves sound and visual
+alerts to the host application.
+
+### Working directories
+
+With Ghostty, `onWorkingDirectory(uri)` receives the latest shell-reported
+OSC 7 URI. React and Svelte use that callback prop; Vue uses
+`@working-directory`. Svelte also accepts `onworkingdirectory`. Events arrive
+during parsing, including in hidden panes and while synchronized output holds
+a paint. Missing callbacks discard updates. The built-in core and older WASM
+assets produce no events; update a manually served Ghostty binary when upgrading.
+
+The raw URI is untrusted metadata. It does not establish a local filesystem
+path or authenticate a remote host. Validate it for your application and render
+labels as text. WTerm does not open URLs, access directories, or change a
+shell's working directory in response.
+
+Ghostty retains at most 2047 UTF-8 bytes. Invalid UTF-8 and oversized reports
+are ignored; pending reports coalesce and identical repeats are suppressed.
+An empty report or full terminal reset (RIS) clears the value with `""`.
+`TerminalCore.getWorkingDirectory?()` consumes the same updates, with `null`
+meaning unchanged or unsupported. Reports apply to either screen and survive
+resizing; initialization starts without a directory.
+
+Enable OSC 7 in your shell integration, including the local shell when
+returning from SSH. WTerm does not install shell configuration. For example,
+this report displays `build-box:/home/me/project name` in the local `/ghostty`
+workspace:
+
+```sh
+printf '\033]7;%s\033\\' 'file://build-box/home/me/project%20name'
+```
+
+The workspace accepts `file://host/absolute/path` reports, decodes the path,
+and retains any nonempty host in the label. The tooltip identifies the value as
+shell-reported. Invalid/non-file URLs, credentials, ports, and control-bearing
+paths are ignored. The last valid report takes precedence over process polling;
+empty OSC 7 or RIS restores the latest local process directory. Directory
+reports restore through saved session output within the documented reload
+recovery limits.
+
+### Shell integration
+
+Ghostty forwards shell-reported OSC 133 state through
+`onShellIntegration({ phase, exitCode })`. React and Svelte use that callback
+prop; Vue uses `@shell-integration`. Svelte also accepts `onshellintegration`.
+The snapshot arrives as output is parsed, including in hidden panes and while
+synchronized output holds a paint. A missing callback discards changes; adding
+one later does not replay them.
+
+<table>
+  <thead><tr><th>Marker</th><th>Phase</th><th>Exit code</th></tr></thead>
+  <tbody>
+    <tr><td>OSC 133 A, N, or P</td><td><code>prompt</code></td><td>Retains the previous result</td></tr>
+    <tr><td>OSC 133 B or I</td><td><code>input</code></td><td>Retains the previous result</td></tr>
+    <tr><td>OSC 133 C</td><td><code>running</code></td><td>Cleared to <code>null</code></td></tr>
+    <tr><td>OSC 133 D</td><td><code>complete</code></td><td>Signed 32-bit code, or <code>null</code> if missing or invalid</td></tr>
+    <tr><td>Terminal reset (RIS)</td><td><code>unknown</code></td><td>Cleared to <code>null</code></td></tr>
+  </tbody>
+</table>
+
+Multiple markers within one parser chunk coalesce into the latest state. For
+example, D with exit code 7 followed by A and B produces `input` with code 7.
+This is a bounded current-state snapshot, not a command history or proof of
+process completion. No command text is retained. Alternate-screen markers do
+not replace the primary shell's state. The built-in core, custom cores without
+`getShellIntegrationState()`, and older Ghostty WASM assets report no state.
+Update a manually served WASM asset when upgrading.
+
+The local `/ghostty` workspace displays **Ready**, **Running**, **Done**, or
+**Exit N** for each participating session, including background sessions. It
+hides the indicator when disconnected or reset. These labels are separate from
+connection and PTY exit status.
+
+The workspace also provides **Previous prompt** and **Next prompt** controls for
+participating sessions. Assign either command in **Keyboard shortcuts**; both
+start unassigned. Navigation starts at the viewport's top row, skips continuation
+rows of multiline prompts, and stops at either end without wrapping. It can
+reach unmounted history and follows reflow and pruning. Full-screen applications
+on the alternate screen keep control of the terminal.
+
+Assigned navigation keys are consumed by the workspace. Applications requesting
+physical modifier-key reports still receive those reports without scrolling
+the viewport back to the bottom.
+
+In an embed, use the underlying `WTerm` instance:
+
+```ts
+term.scrollToPrompt(-1); // previous prompt
+term.scrollToPrompt(1);  // next prompt
+```
+
+The boolean result reports whether the viewport moved. Focus, selection, and
+the Find query are preserved, and no input is sent to the shell. Unsupported
+cores and older WASM assets return `false`, as do missing prompts, hidden/paused
+terminals, and synchronized output that is holding a paint. Navigation into
+the live screen stops at the bottom of the scrollable viewport. No shortcuts
+are installed by the terminal library.
+
+The shell must emit OSC 133. WTerm does not modify shell startup files. Enable
+markers in your existing shell integration, or try these minimal zsh hooks in a
+fresh interactive session that does not already emit them:
+
+```zsh
+autoload -Uz add-zsh-hook
+typeset -gi _wterm_command_running=0
+_wterm_command_start() {
+  _wterm_command_running=1
+  printf '\033]133;C\007'
+}
+_wterm_command_done() {
+  local result=$?
+  if (( _wterm_command_running )); then
+    printf '\033]133;D;%s\007' "$result"
+  fi
+  _wterm_command_running=0
+  printf '\033]133;A\007'
+}
+add-zsh-hook preexec _wterm_command_start
+add-zsh-hook precmd _wterm_command_done
+```
+
+These minimal hooks mark prompt start, command start, and completion. They do
+not rewrite the prompt or add an input-start marker. Existing themes or hooks
+can affect their ordering and the exit status they observe. Do not combine them
+with another OSC 133 integration.
+
+### Clipboard requests
+
+With Ghostty, `onClipboardWrite(text)` receives application OSC 52 clipboard
+writes. WTerm never reads or writes the browser clipboard automatically. A
+missing handler discards requests; installing one later does not replay them.
+React and Svelte use the callback prop; Vue uses `@clipboard-write`. Svelte also
+accepts `onclipboardwrite`.
+
+The host must apply its policy, for example by displaying a stable text preview
+and calling `navigator.clipboard.writeText(text)` from an explicit Copy button.
+Handle browser permission failures. The local Ghostty workspace provides
+**Review clipboard request**, **Copy**, and **Dismiss** controls.
+
+Ghostty accepts valid base64-encoded UTF-8 up to 65,536 decoded bytes for the
+default selector or `c`. Empty text requests a clear. Clipboard reads, other
+selectors, invalid text, and oversized writes are ignored. Only the latest
+valid pending write in a parsed chunk is retained. Delivery continues while
+painting is paused or synchronized. The optional `getClipboardWrite()` core
+method is absent from the built-in core; older Ghostty binaries produce no
+requests. Update any manually served WASM asset when upgrading.
+
+### Cursor appearance
+
+Both cores honor application requests for block, bar, and underline cursors
+(DECSCUSR), plus cursor blink mode (`CSI ? 12 h/l`). This lets editors change
+the cursor when switching between normal and insert mode. The cursor keeps its
+active appearance while the mouse is pressed inside the terminal, preserving
+native drag selection. Otherwise, unfocused terminals show a steady outline.
+Hiding the cursor with mode 25 takes effect even
+when no text changes.
+
+Omit `cursorBlink` to follow the application (initially steady). Set it to
+`true` to force blinking or `false` to keep the cursor steady, regardless of
+application requests. React, Vue, and Svelte also support changing this prop
+after mounting; set it back to `undefined` to follow the application again.
+Cursor shape always follows the core. Custom cores can omit the optional
+`CursorState.shape` and `blinking` fields for a steady block fallback.
+
+### Pluggable cores
+
+By default, wterm uses its built-in lightweight Zig WASM core (~26 KB). To use a different terminal emulation backend, pass a `TerminalCore` instance via the `core` option. See the [Ghostty Core](/ghostty) page for an example using libghostty.
+
+Graphics support is optional on `TerminalCore`. The built-in core safely
+consumes unsupported Kitty APC payloads without rendering image bytes;
+`@wterm/ghostty` provides bounded direct Kitty PNG/RGB/RGBA rendering. Its
+decoded image budget defaults to 32 MiB and can be disabled with
+`imageStorageLimit: 0`. Use `maxImageWidth` and/or `maxImageHeight` to cap the
+rendered dimensions of decoded images without changing that storage budget.
+The DOM wrapper answers Kitty pixel geometry queries (`CSI 14 t` and
+`CSI 16 t`) from the rendered terminal element and forwards the reports
+through `onData`.
+
+### Worker core
+
+`WorkerCore` from `@wterm/core/worker` runs the built-in core in a Web Worker. Parsing
+leaves the main thread, so pages with many busy panes can use more than one
+CPU core. Pair it with `renderer: "webgl"`:
+
+```ts
+import { WorkerCore } from "@wterm/core/worker";
+
+const core = await WorkerCore.load();
+const term = new WTerm(element, { core, renderer: "webgl" });
+```
+
+Writes return before they are parsed: cells, replies, titles, and bells arrive
+with the worker's next update. Each `WorkerCore` owns one worker; call
+`dispose()` when the terminal is gone. The worker uses code splitting, so set
+`worker: { format: "es" }` in a Vite config.
+
+### React-only
+
+The React `Terminal` component adds `theme`, `onReady`, and `onError` on top of the shared options. It also spreads standard HTML attributes onto the root `div`, so you can pass `className`, `style`, ARIA attributes, and other DOM props directly.
+
+See [React-Only Props](/api-reference#react-only-props) for details.
+
+### Vue-only
+
+The Vue `Terminal` component adds a `theme` prop. `onReady` and `onError` are exposed as `@ready` and `@error` events instead of props. Standard DOM attributes (`class`, `style`, `id`, ARIA props, etc.) are forwarded to the root `<div>` via the default `inheritAttrs` behavior.
+
+See [Vue-Only Props](/api-reference#vue-only-props) and [Vue Events](/api-reference#vue-events) for details.
+
+### Svelte-only
+
+The Svelte `Terminal` component adds the `theme` prop and forwards standard
+`<div>` attributes such as `class`, `style`, `id`, and ARIA attributes. Svelte 5
+applications can use the `onData`, `onTitle`, `onBell`, `onClipboardWrite`, `onShellIntegration`, `onWorkingDirectory`, `onResize`, `onReady`, and
+`onError` callback props.
+
+See [Svelte-only Props](/api-reference#svelte-only-props) for details.
+
+## Imperative Handle (React)
+
+When using `useTerminal`, the returned ref exposes an imperative handle:
+
+```tsx
+import { Terminal, useTerminal } from "@wterm/react";
+
+function App() {
+  const { ref } = useTerminal();
+
+  return (
+    <Terminal
+      ref={ref}
+      onReady={(wt) => {
+        wt.resize(120, 40);
+      }}
+    />
+  );
+}
+```
+
+See the full [Imperative Handle](/api-reference#imperative-handle-react) reference for all returned methods.
+
+## Template Ref (Vue)
+
+Access imperative methods on the Vue component via a template ref:
+
+```vue
+<script setup lang="ts">
+import { useTemplateRef } from "vue";
+import { Terminal, type WTerm } from "@wterm/vue";
+
+const term = useTemplateRef("term");
+
+function onReady(wt: WTerm) {
+  wt.resize(120, 40);
+}
+</script>
+
+<template>
+  <Terminal ref="term" @ready="onReady" />
+</template>
+```
+
+See the full [Template Ref (Vue)](/api-reference#template-ref-vue) reference for all exposed methods.
+
+## Imperative Handle (Svelte)
+
+Bind the Svelte component instance to call its imperative methods:
+
+```svelte
+<script lang="ts">
+import { Terminal, type TerminalHandle } from "@wterm/svelte";
+
+let terminal: TerminalHandle;
+</script>
+
+<Terminal bind:this={terminal} />
+```
+
+See the full [Imperative Handle (Svelte)](/api-reference#imperative-handle-svelte) reference for all exposed methods.
+
+## WebSocket Transport
+
+For connecting to a remote shell over WebSocket, use the built-in `WebSocketTransport`:
+
+```ts
+import { WTerm, WebSocketTransport } from "@wterm/dom";
+
+const ws = new WebSocketTransport({
+  url: "wss://your-server.example/shell",
+  reconnect: true,
+  maxReconnectDelay: 5000,
+  onBackpressure(paused) {
+    console.log(paused ? "Waiting for the connection to drain" : "Send buffer ready");
+  },
+  onData(data) {
+    term.write(data);
+  },
+  onOpen() {
+    console.log("connected");
+  },
+  onClose() {
+    console.log("disconnected");
+  },
+});
+
+const term = new WTerm(document.getElementById("terminal"), {
+  onData(data) {
+    try {
+      ws.send(data);
+    } catch (error) {
+      console.error("Input was not sent", error); // Show this in your app's UI.
+    }
+  },
+});
+
+await term.init();
+ws.connect();
+```
+
+See the full [WebSocketTransport](/api-reference#websockettransport) reference for all options, methods, and properties.
+
+The transport buffers sends within configurable byte/message limits and drains
+them in order. The defaults are 1 MiB across the transport and socket buffers,
+and 1,024 messages waiting in the transport. Use `onBackpressure` to pause
+producers and catch `RangeError` to report input that exceeded a limit. Explicit
+`close()` discards unsent data; reconnect never replays bytes already handed to
+the browser. See [Buffering and delivery](/api-reference#buffering-and-delivery)
+for thresholds, lifecycle behavior, and delivery limits.
+
+### Local split panes
+
+The [local example](https://github.com/vercel-labs/wterm/tree/main/examples/local)
+can display up to four shells using **Split right** and **Split down**. Drag a
+divider, or focus it and use arrow keys, to resize. Home/End move to its bounds;
+Enter centers it. Panes retain at least 320×220 CSS pixels, with workspace
+scrolling when needed. Each shell receives its own updated dimensions.
+
+Click a terminal to focus it. Command+Option+arrows on macOS or
+Control+Alt+arrows move from terminal input to the adjacent pane. Find and
+dialog text fields retain their keyboard behavior. Only the focused terminal
+receives keyboard input; all visible panes continue rendering.
+
+Selecting a hidden sidebar session replaces the focused pane without closing
+its shell. **Zoom pane** and **Restore panes** temporarily hide and restore
+the other panes. Closing a session collapses its split while other sessions
+keep their terminal state and connections. Layout changes preserve history
+and per-session Find queries. Reloading restores nested splits, divider
+proportions, the focused terminal, and zoom, including the arrangement behind a
+zoomed pane. Smaller windows retain the arrangement with minimum pane sizes and
+workspace scrolling. Hidden sessions remain accessible in the sidebar.
+
+### Local workspace recovery
+
+The [local example](https://github.com/vercel-labs/wterm/tree/main/examples/local)
+uses a paired client/server protocol to resume the same shell after a brief
+connection interruption. It preserves the existing page's terminal state and
+replays only output the terminal has not parsed. Detached PTYs pause, retained
+output stays bounded, and the server expires detached sessions after 30 seconds.
+The browser retries for up to 25 seconds after detecting an interruption.
+
+Input during reconnection is rejected visibly. Sequenced input is acknowledged
+after the server hands it to the PTY; duplicate accepted messages are ignored.
+The browser limits unacknowledged input to 64 KiB and 1,024 messages, and keeps
+only message lengths for tracking. Reattachment confirms the accepted prefix
+even if an acknowledgment was lost. If any input was not delivered, the workspace
+reports it and asks you to check the command line before continuing. If recovery
+fails, unconfirmed delivery remains visible. Input is never retried automatically.
+An acknowledgment confirms PTY acceptance, not command execution or completion.
+Reloading the page can restore saved terminal tabs and reconnect to their same
+shells. The workspace stores exact output, resize and theme events, attachment
+credentials, and input sequence counters in tab-scoped `sessionStorage`, separately
+for each engine route. A fresh terminal replays that complete prefix before
+reattaching; historical replies and clipboard requests are suppressed. Saved
+output may contain sensitive text and echoed commands. Closing a session removes
+its records, and closing the browser tab removes its session storage.
+
+Pane layout is stored separately in the same tab and engine route. Only sessions
+in the recovery registry can appear in the restored layout; closed sessions stay
+closed. Missing, stale, or malformed layout records fall back to a single pane
+with the first saved session selected. A layout storage failure shows a status
+without disabling terminal replay or interrupting live input and output.
+
+Replay records are capped at 1 MiB of output and 4,096 events per session, subject
+to browser storage quotas. A limit or storage failure disables refresh recovery
+with a visible status while the live terminal continues. Invalid or incomplete
+records, an expired session, an unavailable output range, or a server restart
+produce an explicit failure without starting a replacement shell. Reload must
+reattach within the 30-second server grace period. Find queries are not restored;
+normal navigation and duplicated tabs start independently.
+This behavior belongs to the local example, not `WebSocketTransport` alone.
+
+## Output announcements
+
+Opt in with `announceOutput` to announce terminal text changes politely while
+input has focus. The option defaults to `false`; component prop changes apply
+without restarting the terminal, and vanilla callers use
+`term.setOutputAnnouncements(enabled)`. Announcements are batched and stop
+when focus leaves input. Bursts are bounded to avoid overwhelming the speech
+queue. See [Output announcements](/api-reference#output-announcements) for
+capture limits, pause/resume behavior, and redraw semantics.
