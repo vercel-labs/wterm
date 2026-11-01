@@ -12,14 +12,20 @@ async function write(page: Page, value: string) {
 // through a transparent cell. PNG decoding uses the browser, not a dependency.
 async function expectBackgrounds(
   page: Page,
-  samples: { row: number; col?: number; tail?: boolean; color: string }[],
+  samples: {
+    row: number;
+    col?: number;
+    tail?: boolean;
+    bottom?: boolean;
+    color: string;
+  }[],
 ) {
   const grid = page.locator(".term-grid");
   const points = await grid.evaluate((el, samples) => {
     const rect = el.getBoundingClientRect();
     const rows = el.querySelectorAll(".term-row");
     const cols = window.ptyHarness.snapshot().cols;
-    return samples.map(({ row, col = 0, tail, color }) => {
+    return samples.map(({ row, col = 0, tail, bottom, color }) => {
       const rowEl = rows[row];
       const rowRect = rowEl.getBoundingClientRect();
       const range = document.createRange();
@@ -29,7 +35,9 @@ async function expectBackgrounds(
       return {
         x: Math.floor(tail ? rect.width - 4 : (col + 0.5) * cellWidth),
         // Above the glyphs, so font rasterization does not affect the sample.
-        y: Math.ceil(rowRect.top - rect.top) + 1,
+        y: bottom
+          ? Math.floor(rowRect.bottom - rect.top) - 2
+          : Math.ceil(rowRect.top - rect.top) + 1,
         color,
       };
     });
@@ -57,6 +65,19 @@ async function expectBackgrounds(
   }
 }
 
+/** Returns the core-resolved RGB background of a cell, or null when the theme supplies it. */
+async function coreBackground(page: Page, row: number, col: number) {
+  return page.evaluate(
+    ([row, col]) => {
+      const rgb = window.ptyHarness.snapshot().cells[row][col].bgRgb;
+      return rgb === undefined
+        ? null
+        : `rgb(${(rgb >> 16) & 255}, ${(rgb >> 8) & 255}, ${rgb & 255})`;
+    },
+    [row, col],
+  );
+}
+
 for (const core of ["builtin", "ghostty"]) {
   test(`${core} confines edge-cell backgrounds and preserves full-width status bars`, async ({
     page,
@@ -81,11 +102,13 @@ for (const core of ["builtin", "ghostty"]) {
     const background = await page
       .locator(".wterm")
       .evaluate((el) => getComputedStyle(el).backgroundColor);
-    const red = await rows
-      .nth(1)
-      .locator("span")
-      .last()
-      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    const red =
+      (await coreBackground(page, 1, 19)) ??
+      (await rows
+        .nth(1)
+        .locator("span")
+        .last()
+        .evaluate((el) => getComputedStyle(el).backgroundColor));
     const reversed = await rows
       .nth(0)
       .locator("span")
@@ -110,6 +133,26 @@ for (const core of ["builtin", "ghostty"]) {
       { row: 2, color: background },
       { row: 2, col: 19, color: red },
       { row: 2, tail: true, color: background },
+    ]);
+  });
+
+  test(`${core} paints truecolor block characters on the cell canvas`, async ({
+    page,
+  }) => {
+    await page.goto(`/?core=${core}&mode=replay`);
+    await expect(page.locator("#status")).toHaveText("Replay ready");
+    await page.evaluate(() => window.ptyHarness.resize(20, 3));
+    await write(
+      page,
+      "\x1b[?25l\x1b[38;2;255;0;0;48;2;0;0;255m▀\x1b[38;2;0;255;0m█\x1b[0m",
+    );
+    await expect(page.locator(".term-cell-canvas")).toBeVisible();
+    await expect(page.locator(".term-canvas-run")).toHaveText("▀█");
+    await expectBackgrounds(page, [
+      { row: 0, col: 0, color: "rgb(255, 0, 0)" },
+      { row: 0, col: 0, bottom: true, color: "rgb(0, 0, 255)" },
+      { row: 0, col: 1, color: "rgb(0, 255, 0)" },
+      { row: 0, col: 1, bottom: true, color: "rgb(0, 255, 0)" },
     ]);
   });
 

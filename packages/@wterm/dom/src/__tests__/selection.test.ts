@@ -63,6 +63,7 @@ function select(
       ...(backward ? focus : anchor),
       ...(backward ? anchor : focus),
     );
+  document.dispatchEvent(new Event("selectionchange"));
 }
 function copy(target: EventTarget = document) {
   const clipboardData = { setData: vi.fn() };
@@ -73,6 +74,17 @@ function copy(target: EventTarget = document) {
 }
 
 describe("terminal selection text", () => {
+  it("tracks a native selection set immediately before output", async () => {
+    term.resize(6, 3);
+    await write("first\r\nsecond\r\nthird");
+    document.getSelection()!.setBaseAndExtent(...point(1, 0), ...point(1, 6));
+
+    term.write("\r\nfourth");
+
+    await vi.runAllTimersAsync();
+    expect(term.getSelectionText()).toBe("second");
+  });
+
   it("releases tracked edges when selections change and when the terminal is destroyed", async () => {
     await write("abcdef");
     for (let i = 0; i < 70; i++) {

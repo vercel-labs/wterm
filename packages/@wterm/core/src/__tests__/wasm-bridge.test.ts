@@ -303,6 +303,70 @@ describe("WasmBridge", () => {
   });
 
   describe("dirty rows", () => {
+    it("distinguishes moved rows from content changes without breaking position dirtiness", () => {
+      bridge.init(4, 3);
+      bridge.writeString("A\r\nB\r\nC");
+      const ids = [0, 1, 2].map((row) => bridge.getRowId(row));
+      expect(ids.every((id) => id !== null)).toBe(true);
+      bridge.clearDirty();
+      bridge.writeString("\r\nD");
+
+      expect(bridge.getRowId(0)).toBe(ids[1]);
+      expect(bridge.getRowId(1)).toBe(ids[2]);
+      expect(ids).not.toContain(bridge.getRowId(2));
+      expect([0, 1, 2].map((row) => bridge.isDirtyRow(row))).toEqual([
+        true,
+        true,
+        true,
+      ]);
+      expect([0, 1, 2].map((row) => bridge.isRowContentDirty(row))).toEqual([
+        false,
+        false,
+        true,
+      ]);
+      expect([0, 1, 2].map((row) => bridge.getCell(row, 0).char)).toEqual([
+        66, 67, 68,
+      ]);
+      bridge.clearDirty();
+      expect([0, 1, 2].map((row) => bridge.isDirtyRow(row))).toEqual([
+        false,
+        false,
+        false,
+      ]);
+      bridge.writeString("\x1b[2;1HX\x1b[3;1H\r\nE");
+      expect([0, 1, 2].map((row) => bridge.isRowContentDirty(row))).toEqual([
+        true,
+        false,
+        true,
+      ]);
+    });
+
+    it("returns null for older WASM and unavailable or invalid row identities", () => {
+      const internals = bridge as unknown as {
+        exports: Record<string, WebAssembly.ExportValue>;
+      };
+      const exportsWithoutRowIds = { ...internals.exports };
+      delete exportsWithoutRowIds.getRowId;
+      internals.exports = exportsWithoutRowIds;
+      expect(bridge.getRowId(0)).toBeNull();
+      bridge.clearDirty();
+      expect(bridge.isDirtyRow(0)).toBe(false);
+      bridge.writeString("A");
+      expect(bridge.isDirtyRow(0)).toBe(true);
+
+      internals.exports = { ...exportsWithoutRowIds, getRowId: () => 0 };
+      expect(bridge.getRowId(0)).toBeNull();
+      bridge.clearDirty();
+      bridge.writeString("\x1b[24;1H\r\n");
+      expect(bridge.isRowContentDirty(0)).toBe(false);
+      expect(bridge.isDirtyRow(0)).toBe(true);
+      internals.exports = { ...exportsWithoutRowIds, getRowId: () => -1 };
+      expect(bridge.getRowId(0)).toBe(0xffffffff);
+      for (const row of [-1, 24, 0.5, NaN, Infinity]) {
+        expect(bridge.getRowId(row)).toBeNull();
+      }
+    });
+
     it("marks rows dirty after writing", () => {
       bridge.writeString("text");
       expect(bridge.isDirtyRow(0)).toBe(true);

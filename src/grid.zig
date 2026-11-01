@@ -9,6 +9,15 @@ pub const allocator = if (@import("builtin").target.cpu.arch == .wasm32)
 else
     std.heap.page_allocator;
 
+var next_row_id: u32 = 1;
+
+fn freshRowId() u32 {
+    if (next_row_id == 0) return 0;
+    const id = next_row_id;
+    next_row_id +%= 1;
+    return id;
+}
+
 fn grownCapacity(current: u16, needed: u16, maximum: u16) u16 {
     std.debug.assert(needed <= maximum);
     var capacity: u16 = if (current == 0) 1 else current;
@@ -21,6 +30,7 @@ fn grownCapacity(current: u16, needed: u16, maximum: u16) u16 {
 pub const Grid = struct {
     cells: []Cell = undefined,
     dirty: []u8 = undefined,
+    row_ids: []u32 = undefined,
     stride: u16 = 0,
     capacity_rows: u16 = 0,
     /// Physical row holding logical row 0. Full-screen scrolls advance it
@@ -39,6 +49,7 @@ pub const Grid = struct {
         if (self.stride != 0) {
             allocator.free(self.cells);
             allocator.free(self.dirty);
+            allocator.free(self.row_ids);
         }
         self.* = .{};
     }
@@ -56,20 +67,26 @@ pub const Grid = struct {
         errdefer allocator.free(cells);
         const dirty = try allocator.alloc(u8, capacity_rows);
         errdefer allocator.free(dirty);
+        const row_ids = try allocator.alloc(u32, capacity_rows);
+        errdefer allocator.free(row_ids);
         @memset(dirty, 1);
+        @memset(row_ids, 0);
 
         var r: u16 = 0;
         while (r < self.rows) : (r += 1) {
             const start = @as(usize, r) * stride;
             @memcpy(cells[start .. start + self.cols], self.rowConst(r)[0..self.cols]);
             dirty[r] = self.dirty[r];
+            row_ids[r] = self.row_ids[r];
         }
         if (self.stride != 0) {
             allocator.free(self.cells);
             allocator.free(self.dirty);
+            allocator.free(self.row_ids);
         }
         self.cells = cells;
         self.dirty = dirty;
+        self.row_ids = row_ids;
         self.stride = stride;
         self.capacity_rows = capacity_rows;
         self.top_row = 0;
@@ -141,6 +158,7 @@ pub const Grid = struct {
             self.getRow(row)[c] = blank;
         }
         self.dirty[row] = 1;
+        self.row_ids[row] = freshRowId();
     }
 
     pub fn clearRange(self: *Grid, row: u16, start_col: u16, end_col: u16) void {
@@ -168,6 +186,7 @@ pub const Grid = struct {
             self.getRow(row)[c] = blank;
         }
         self.dirty[row] = 1;
+        if (start == 0 and end == self.cols) self.row_ids[row] = freshRowId();
     }
 
     pub fn clearWideCellAt(self: *Grid, row: u16, col: u16, blank: Cell) void {
@@ -271,9 +290,10 @@ pub const Grid = struct {
             if (@as(u32, self.top_row) + n + self.rows > self.capacity_rows) self.normalize();
             if (@as(u32, self.top_row) + n + self.rows <= self.capacity_rows) {
                 self.top_row += n;
+                std.mem.copyForwards(u8, self.dirty[0 .. self.rows - n], self.dirty[n..self.rows]);
+                std.mem.copyForwards(u32, self.row_ids[0 .. self.rows - n], self.row_ids[n..self.rows]);
                 var r: u16 = self.rows - n;
                 while (r < self.rows) : (r += 1) self.clearRowAs(r, blank);
-                @memset(self.dirty[0..self.rows], 1);
                 return;
             }
         }
@@ -281,7 +301,8 @@ pub const Grid = struct {
         var row = top;
         while (row + n < bottom) : (row += 1) {
             @memcpy(self.getRow(row)[0..self.cols], self.getRow(row + n)[0..self.cols]);
-            self.dirty[row] = 1;
+            self.dirty[row] = self.dirty[row + n];
+            self.row_ids[row] = self.row_ids[row + n];
         }
         while (row < bottom) : (row += 1) {
             self.clearRowAs(row, blank);
@@ -308,7 +329,8 @@ pub const Grid = struct {
             const dst = bottom - 1 - i;
             const src = dst - n;
             @memcpy(self.getRow(dst)[0..self.cols], self.getRow(src)[0..self.cols]);
-            self.dirty[dst] = 1;
+            self.dirty[dst] = self.dirty[src];
+            self.row_ids[dst] = self.row_ids[src];
         }
         var row = top;
         while (row < top + n) : (row += 1) {
@@ -323,3 +345,19 @@ pub const Grid = struct {
         }
     }
 };
+
+test "exhausted row identities disable reuse instead of wrapping" {
+    const saved_next_row_id = next_row_id;
+    defer next_row_id = saved_next_row_id;
+    var grid = Grid.init(2, 2);
+    defer grid.deinit();
+    next_row_id = std.math.maxInt(u32);
+    grid.clearRow(0);
+    const final_id = grid.row_ids[0];
+    grid.clearRow(1);
+    try std.testing.expectEqual(@as(u32, 0), grid.row_ids[1]);
+    grid.scrollUp(0, 2, 1, Cell{});
+    try std.testing.expectEqual(@as(u32, 0), grid.row_ids[0]);
+    try std.testing.expectEqual(@as(u32, 0), grid.row_ids[1]);
+    try std.testing.expect(final_id != grid.row_ids[1]);
+}

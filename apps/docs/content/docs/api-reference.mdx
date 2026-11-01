@@ -573,8 +573,8 @@ Outside synchronized output, writes request the next animation frame directly. W
       <td>Load WASM and start rendering</td>
     </tr>
     <tr>
-      <td><code>setThemeColors(colors: TerminalThemeColors): void</code></td>
-      <td>Update host CSS and supported core defaults without parsing input; see <a href="/themes#updating-host-colors">Updating host colors</a></td>
+      <td><code>setThemeColors(colors: TerminalThemeColors | null): void</code></td>
+      <td>Update host CSS and supported core defaults without parsing input; <code>null</code> returns to the CSS theme. See <a href="/themes#updating-host-colors">Updating host colors</a></td>
     </tr>
     <tr>
       <td><code>write(data: string | Uint8Array)</code></td>
@@ -1138,6 +1138,14 @@ When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string 
     <tr>
       <td><code>isDirtyRow(row): boolean</code></td>
       <td>Check if a row has changed since last <code>clearDirty()</code></td>
+    </tr>
+    <tr>
+      <td><code>getRowId(row): number | null</code></td>
+      <td>Optional. Live row identity that follows scrolling; null when unavailable</td>
+    </tr>
+    <tr>
+      <td><code>isRowContentDirty(row): boolean</code></td>
+      <td>Optional. Whether the row's content changed since <code>clearDirty()</code>, ignoring movement</td>
     </tr>
     <tr>
       <td><code>clearDirty()</code></td>

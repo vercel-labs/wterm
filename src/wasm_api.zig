@@ -53,6 +53,14 @@ export fn writeBytes(len: u32) void {
     terminal.grid.normalize();
 }
 
+// -- Theme --
+
+/// Host theme defaults for OSC 10 and OSC 11 queries, as 0xRRGGBB.
+export fn setThemeColors(foreground: u32, background: u32) void {
+    terminal.theme_fg = foreground & 0xffffff;
+    terminal.theme_bg = background & 0xffffff;
+}
+
 // -- Grid data --
 
 export fn getGridPtr() [*]const u8 {
@@ -62,6 +70,12 @@ export fn getGridPtr() [*]const u8 {
 
 export fn getDirtyPtr() [*]const u8 {
     return @ptrCast(terminal.grid.dirty.ptr);
+}
+
+/// Return the live row identity, or zero for an invalid row or exhausted identities.
+export fn getRowId(row: u32) u32 {
+    if (row >= terminal.rows) return 0;
+    return terminal.grid.row_ids[row];
 }
 
 export fn clearDirty() void {
@@ -215,6 +229,10 @@ export fn getColorRgb(index: u32) u32 {
 
 export fn getScrollbackCount() u32 {
     return scrollback.count;
+}
+
+export fn getScrollbackClearCount() u32 {
+    return scrollback.clears;
 }
 
 export fn getScrollbackDiscardedCount() u32 {
