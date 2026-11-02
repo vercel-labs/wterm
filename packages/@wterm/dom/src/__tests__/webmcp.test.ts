@@ -257,10 +257,45 @@ describe("WebMCP", () => {
     const pending = tools
       .get("type_in_terminal")!
       .execute({ text: "rm", submit: true }, { signal: controller.signal });
+    await new Promise((resolve) => setTimeout(resolve, 50));
     controller.abort(new DOMException("Cancelled", "AbortError"));
     await expect(pending).rejects.toThrow("Cancelled");
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(onData.mock.calls).toEqual([["rm"]]);
+  });
+
+  it("runs overlapping input calls one at a time", async () => {
+    const onData = vi.fn();
+    await terminal({ onData });
+    await Promise.all([
+      call("type_in_terminal", { text: "ls", submit: true }),
+      call("type_in_terminal", { text: "pwd", submit: true }),
+      call("press_terminal_keys", { keys: ["Ctrl+C"] }),
+    ]);
+    expect(onData.mock.calls.map(([data]) => data)).toEqual([
+      "ls",
+      "\r",
+      "pwd",
+      "\r",
+      "\x03",
+    ]);
+  });
+
+  it("keeps the queue moving after a failed or cancelled call", async () => {
+    const onData = vi.fn();
+    await terminal({ onData });
+    const controller = new AbortController();
+    const first = call("type_in_terminal", { text: "a", submit: true });
+    const cancelled = tools
+      .get("type_in_terminal")!
+      .execute({ text: "b", submit: true }, { signal: controller.signal });
+    const failed = call("press_terminal_keys", { keys: ["F99"] });
+    const last = call("type_in_terminal", { text: "c" });
+    controller.abort(new DOMException("Cancelled", "AbortError"));
+    await expect(cancelled).rejects.toThrow("Cancelled");
+    expect((await failed).error).toContain('Unknown key "F99"');
+    await Promise.all([first, last]);
+    expect(onData.mock.calls.map(([data]) => data)).toEqual(["a", "\r", "c"]);
   });
 
   it("echoes typed text locally without onData", async () => {

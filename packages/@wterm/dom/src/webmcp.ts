@@ -51,6 +51,8 @@ interface Entry {
   readOnly: boolean;
   /** Aborted when the terminal is withdrawn, ending calls already in progress. */
   withdrawn: AbortController;
+  /** Settles when the last queued input call finishes; input calls run one at a time. */
+  input: Promise<unknown>;
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -115,6 +117,7 @@ class Registry {
       description: options.description?.trim() || undefined,
       readOnly: options.readOnly === true,
       withdrawn: new AbortController(),
+      input: Promise.resolve(),
     };
     this.terminals.set(name, entry);
     this.sync();
@@ -321,16 +324,20 @@ class Registry {
           throw new TypeError("text must be a string.");
         if (input.submit !== undefined && typeof input.submit !== "boolean")
           throw new TypeError("submit must be a boolean.");
-        liveCore(entry);
-        if (input.text) entry.terminal.sendText(input.text);
-        if (input.submit) {
-          // Programs that detect pastes by input speed, such as agent CLIs,
-          // treat an Enter that arrives with the text as a pasted newline.
-          if (input.text)
-            await delay(SUBMIT_DELAY_MS, callSignal(entry, context?.signal));
+        const text = input.text;
+        const submit = input.submit === true;
+        const signal = callSignal(entry, context?.signal);
+        await inTurn(entry, signal, async () => {
           liveCore(entry);
-          entry.terminal.sendKey(parseKey("Enter")!);
-        }
+          if (text) entry.terminal.sendText(text);
+          if (submit) {
+            // Programs that detect pastes by input speed, such as agent CLIs,
+            // treat an Enter that arrives with the text as a pasted newline.
+            if (text) await delay(SUBMIT_DELAY_MS, signal);
+            liveCore(entry);
+            entry.terminal.sendKey(parseKey("Enter")!);
+          }
+        });
         return JSON.stringify({
           terminal: entry.name,
           typed: input.text.length,
@@ -362,7 +369,7 @@ class Registry {
         required: ["keys"],
         additionalProperties: false,
       },
-      execute: async (input) => {
+      execute: async (input, context) => {
         const entry = this.resolve(input.terminal, true);
         const keys = input.keys;
         if (
@@ -380,12 +387,14 @@ class Registry {
           if (!press) throw new Error(`Unknown key "${key}".`);
           return press;
         });
-        liveCore(entry);
-        parsed.forEach((press, index) => {
-          if (!entry.terminal.sendKey(press))
-            throw new Error(
-              `"${keys[index]}" has no encoding in this terminal's current keyboard mode${index > 0 ? `; the ${index} key(s) before it were pressed` : ""}.`,
-            );
+        await inTurn(entry, callSignal(entry, context?.signal), async () => {
+          liveCore(entry);
+          parsed.forEach((press, index) => {
+            if (!entry.terminal.sendKey(press))
+              throw new Error(
+                `"${keys[index]}" has no encoding in this terminal's current keyboard mode${index > 0 ? `; the ${index} key(s) before it were pressed` : ""}.`,
+              );
+          });
         });
         return JSON.stringify({ terminal: entry.name, pressed: keys.length });
       },
@@ -506,6 +515,25 @@ function contentRows(core: TerminalCore): number {
 }
 
 /** Ends when the agent cancels the call or the terminal is withdrawn. */
+/**
+ * Run an input call once earlier input calls to the same terminal have
+ * finished, so overlapping calls never interleave, such as a second command
+ * typed during the pause before the first one's Enter.
+ */
+function inTurn(
+  entry: Entry,
+  signal: AbortSignal,
+  run: () => Promise<void>,
+): Promise<void> {
+  const turn = entry.input.then(() => {
+    // Calls cancelled or withdrawn while waiting send nothing.
+    if (signal.aborted) throw signal.reason;
+    return run();
+  });
+  entry.input = turn.catch(() => {});
+  return turn;
+}
+
 function callSignal(entry: Entry, signal?: AbortSignal): AbortSignal {
   return signal
     ? AbortSignal.any([signal, entry.withdrawn.signal])
