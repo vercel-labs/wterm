@@ -233,6 +233,12 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
       <td>Suspend painting for an inactive pane. Parsing, replies, titles, bells, and core resizing continue. Mutable in all framework bindings; see <a href="/configuration#inactive-panes">Inactive panes</a>.</td>
     </tr>
     <tr>
+      <td><code>webmcp</code></td>
+      <td><code>{"boolean | { name?: string; description?: string; readOnly?: boolean }"}</code></td>
+      <td><code>false</code></td>
+      <td>Let in-page agents list, read, and type into the terminal through WebMCP. Mutable in all framework bindings; see <a href="/webmcp">WebMCP</a>.</td>
+    </tr>
+    <tr>
       <td><code>onData</code></td>
       <td><code>(data: string) =&gt; void</code></td>
       <td>—</td>
@@ -589,6 +595,10 @@ Outside synchronized output, writes request the next animation frame directly. W
     <tr>
       <td><code>setRenderingPaused(paused)</code></td>
       <td>Pause pane painting or schedule the latest state when resuming. Browser document visibility also gates painting.</td>
+    </tr>
+    <tr>
+      <td><code>setWebMCP(options)</code></td>
+      <td>Expose the terminal to in-page agents with <code>true</code> or <a href="/webmcp">WebMCP options</a>, or withdraw it with <code>false</code>. Unchanged options are a no-op.</td>
     </tr>
     <tr>
       <td><code>destroy()</code></td>

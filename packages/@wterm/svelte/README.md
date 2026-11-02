@@ -41,7 +41,7 @@ when input needs to be sent to a PTY or another backend:
 ## Props
 
 The terminal accepts the shared `WTerm` options `cols`, `rows`, `core`,
-`wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, and
+`wasmUrl`, `autoResize`, `maxImageWidth`, `maxImageHeight`, `cursorBlink`, `announceOutput`, `renderingPaused`, `webmcp`, and
 `debug`, plus these Svelte callbacks:
 
 | Prop       | Type                                   | Default | Description                                                                               |

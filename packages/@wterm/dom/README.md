@@ -108,6 +108,29 @@ cores should expose `getScrollbackDiscardedCount()` to avoid rereading shifted
 rows when their history limit is reached. Route writes and resizes through
 WTerm so announcements follow completed paints.
 
+## WebMCP
+
+Set `webmcp` to let agents in the browser drive the terminal through
+[WebMCP](https://github.com/webmachinelearning/webmcp). It is off by default and
+does nothing without a WebMCP provider.
+
+```ts
+const term = new WTerm(element, {
+  webmcp: { name: "shell", description: "Project shell" },
+  onData: (data) => socket.send(data),
+});
+```
+
+All terminals in a document share four tools: `list_terminals`,
+`read_terminal` (screen or scrollback text, optionally after waiting for text or
+idle output), `type_in_terminal`, and `press_terminal_keys` (for example
+`"Ctrl+C"` or `"ArrowUp"`, encoded for the program's current keyboard modes).
+Agent input follows the keyboard path to `onData`. Pass `readOnly: true` to
+expose only the read tools. Failed calls return `{"error": "..."}` because
+providers drop thrown messages. Change the options later with
+`term.setWebMCP(options)`, or withdraw the terminal with `term.setWebMCP(false)`.
+See [WebMCP](https://wterm.dev/webmcp) for tool inputs and security guidance.
+
 ## WebSocket transport
 
 `WebSocketTransport`, re-exported from `@wterm/core`, bounds outgoing data to
@@ -156,6 +179,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
 | `announceOutput` | `boolean` | `false` | Politely announce bounded text changes while terminal input has focus; mutable via `setOutputAnnouncements()` |
 | `renderingPaused` | `boolean` | `false` | Suspend painting for an inactive pane while parsing and terminal effects continue; mutable without restarting |
+| `webmcp` | `boolean \| WebMCPOptions` | `false` | Let in-page agents list, read, and type into the terminal through WebMCP; mutable without restarting. See [WebMCP](https://wterm.dev/webmcp). |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onBinary` | `(data: Uint8Array) => void` | — | Called with raw X10 mouse bytes when supplied. Send the bytes unchanged to a binary-capable transport. |
@@ -177,6 +201,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `focus()` | Focus the terminal element |
 | `setOutputAnnouncements(enabled)` | Enable or stop polite output announcements without moving focus |
 | `setRenderingPaused(paused)` | Pause pane painting while parsing and terminal effects continue; resuming schedules the latest state |
+| `setWebMCP(options)` | Expose the terminal to in-page agents with `true` or `WebMCPOptions`, or withdraw it with `false` |
 | `fit()` | Resize the grid to the element's current content box and font metrics; hidden or uninitialized terminals stay unchanged |
 | `search(query, { caseSensitive? })` | Start plain-text search over retained history and the active screen |
 | `findNext()` / `findPrevious()` | Select and reveal a match, wrapping at either end; return false if there are none |
