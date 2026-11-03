@@ -107,6 +107,7 @@ function snapshot() {
       bracketedPaste: core.bracketedPaste(),
       cursorKeysApp: core.cursorKeysApp(),
       synchronizedOutput: core.synchronizedOutput?.() ?? false,
+      modifyOtherKeys: core.modifyOtherKeys?.() ?? 0,
     },
     scrollbackCount: core.getScrollbackCount(),
     history: Array.from(

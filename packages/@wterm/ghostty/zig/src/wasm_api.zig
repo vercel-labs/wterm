@@ -526,6 +526,9 @@ const State = struct {
     rejected_images: u32,
     evicted_images: u32,
     positions: PositionTracker,
+    /// Bytes of a `CSI ? 4 m` query the parser has consumed so far, so a
+    /// query split across writes is still answered.
+    modify_keys_query: u8,
     /// History limit in lines; null keeps the byte budget passed to init.
     scrollback_lines: ?u32,
 };
@@ -775,6 +778,7 @@ export fn init(
     state.rejected_images = 0;
     state.evicted_images = 0;
     state.positions = .{};
+    state.modify_keys_query = 0;
     state.scrollback_lines = null;
     state.stream = .initAlloc(allocator, .init(
         allocator,
@@ -892,16 +896,54 @@ export fn write(ptr: usize, data_ptr: [*]const u8, data_len: u32) void {
                 continue;
             }
         } else if (stream.parser.state == .ground and stream.utf8decoder.state == 0) {
-            const used = if (rem[0] == 0x1b) fastCsi(stream, rem) else fastPrint(stream, rem);
+            const used = if (rem[0] == 0x1b)
+                queryModifyKeys(state, rem) orelse fastCsi(stream, rem)
+            else
+                fastPrint(stream, rem);
             if (used > 0) {
                 rem = rem[used..];
                 continue;
             }
         }
+        const from_ground = stream.parser.state == .ground;
         stream.next(rem[0]) catch {};
+        trackModifyKeysQuery(state, rem[0], from_ground);
         rem = rem[1..];
     }
     refreshGraphicsGeneration(state);
+}
+
+const modify_keys_query = "\x1b[?4m";
+
+/// Answers XTQMODKEYS for modifyOtherKeys (`CSI ? 4 m`), which upstream
+/// Ghostty ignores. Returns the bytes consumed, or null for anything else.
+fn queryModifyKeys(state: *State, bytes: []const u8) ?usize {
+    if (!std.mem.startsWith(u8, bytes, modify_keys_query)) return null;
+    answerModifyKeysQuery(state);
+    return modify_keys_query.len;
+}
+
+/// Follows a query fed to the parser one byte at a time, as happens when a
+/// write ends partway through it.
+fn trackModifyKeysQuery(state: *State, byte: u8, from_ground: bool) void {
+    const matched = state.modify_keys_query;
+    if (matched > 0 and byte == modify_keys_query[matched]) {
+        if (matched + 1 == modify_keys_query.len) {
+            state.modify_keys_query = 0;
+            answerModifyKeysQuery(state);
+        } else {
+            state.modify_keys_query = matched + 1;
+        }
+        return;
+    }
+    // ESC starts a new sequence from ground or inside an unfinished one.
+    state.modify_keys_query = if (byte == 0x1b and (from_ground or matched > 0)) 1 else 0;
+}
+
+fn answerModifyKeysQuery(state: *State) void {
+    state.stream.handler.queue.push(
+        if (state.terminal.flags.modify_other_keys_2) "\x1b[>4;2m" else "\x1b[>4;0m",
+    );
 }
 
 /// Dispatches a complete `ESC [ params final` with only digits and `;`, as
@@ -1412,6 +1454,11 @@ export fn synchronized_output(ptr: usize) u32 {
 export fn synchronized_output_generation(ptr: usize) u32 {
     const state = stateFromPtr(ptr);
     return state.synchronized_output_generation;
+}
+
+/// 2 while xterm modifyOtherKeys level 2 is active, otherwise 0.
+export fn modify_other_keys(ptr: usize) u32 {
+    return if (stateFromPtr(ptr).terminal.flags.modify_other_keys_2) 2 else 0;
 }
 
 export fn kitty_keyboard_flags(ptr: usize) u32 {
