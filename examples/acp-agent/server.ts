@@ -1,7 +1,8 @@
 // Serves the page through Vite and bridges each browser tab to its own ACP
 // agent process over a WebSocket.
 import { spawn } from "child_process";
-import { createServer } from "http";
+import { randomBytes, timingSafeEqual } from "crypto";
+import { createServer, type IncomingMessage } from "http";
 import { createInterface } from "readline";
 import { createServer as createVite } from "vite";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -140,16 +141,67 @@ function startSession(ws: WebSocket) {
   };
 }
 
+// The agent can run commands in the workspace, so only this page may drive it.
+// A token per run, embedded in the page, keeps other sites from connecting.
+const token = randomBytes(32).toString("hex");
+
+/** Local names only, so a DNS-rebound domain can't load the page or its token. */
+function isLocalHost(host: string | undefined): boolean {
+  if (!host) return false;
+  const name = host.replace(/:\d+$/, "").toLowerCase();
+  return (
+    name === "localhost" ||
+    name.endsWith(".localhost") ||
+    name === "127.0.0.1" ||
+    name === "[::1]"
+  );
+}
+
+function isTrustedUpgrade(req: IncomingMessage): boolean {
+  if (!isLocalHost(req.headers.host)) return false;
+  let originHost = "";
+  try {
+    originHost = new URL(req.headers.origin ?? "").host;
+  } catch {
+    return false;
+  }
+  if (originHost !== req.headers.host) return false;
+  const given = Buffer.from(
+    new URL(req.url ?? "", "http://local").searchParams.get("token") ?? "",
+  );
+  const expected = Buffer.from(token);
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}
+
 const server = createServer();
 const vite = await createVite({
   server: { middlewareMode: true, hmr: { server } },
   appType: "spa",
+  plugins: [
+    {
+      name: "acp-session-token",
+      transformIndexHtml: () => [
+        { tag: "meta", attrs: { name: "acp-token", content: token } },
+      ],
+    },
+  ],
 });
-server.on("request", vite.middlewares);
+server.on("request", (req, res) => {
+  if (!isLocalHost(req.headers.host)) {
+    res.writeHead(403).end();
+    return;
+  }
+  vite.middlewares(req, res);
+});
 const wss = new WebSocketServer({ noServer: true });
 
 server.on("upgrade", (req, socket, head) => {
-  if (req.url !== "/ws") return; // Vite's HMR socket handles its own path.
+  // Vite's HMR socket handles its own path.
+  if (new URL(req.url ?? "", "http://local").pathname !== "/ws") return;
+  if (!isTrustedUpgrade(req)) {
+    socket.end("HTTP/1.1 403 Forbidden\r\n\r\n");
+    return;
+  }
   wss.handleUpgrade(req, socket, head, (ws) => {
     const session = startSession(ws);
     ws.on("message", (raw) => session.onClient(JSON.parse(String(raw))));

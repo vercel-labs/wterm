@@ -355,8 +355,12 @@ function handle(event: UiEvent) {
   }
 }
 
+// The server embeds a token for this run; it rejects sockets without it.
+const token =
+  document.querySelector<HTMLMetaElement>('meta[name="acp-token"]')?.content ??
+  "";
 const socket = new WebSocket(
-  `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`,
+  `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?token=${token}`,
 );
 const send = (event: ClientEvent) => socket.send(JSON.stringify(event));
 socket.onmessage = (message) => {
