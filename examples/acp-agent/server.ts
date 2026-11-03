@@ -122,6 +122,7 @@ function startSession(ws: WebSocket) {
         write({ method: "session/cancel", params: { sessionId } });
       } else if (event.type === "prompt" && !busy && sessionId) {
         busy = true;
+        events.endBlock();
         emit([{ type: "user", text: event.text }]);
         const response = await request("session/prompt", {
           sessionId,

@@ -85,25 +85,37 @@ type Tool = { kind: ToolKind; streamed: boolean; finished: boolean };
 
 export class AcpEvents {
   private tools = new Map<string, Tool>();
-  private thought = 0;
-  private inThought = false;
+  // Consecutive chunks of the same kind form one block. `messageId` is
+  // optional in ACP, so blocks also separate messages that lack it.
+  private block = 0;
+  private open: "message" | "thought" | null = null;
+
+  /** Ends the current block, for example when the user sends a prompt. */
+  endBlock(): void {
+    this.open = null;
+  }
+
+  private blockId(kind: "message" | "thought"): string {
+    if (this.open !== kind) {
+      this.block++;
+      this.open = kind;
+    }
+    return `${kind}-${this.block}`;
+  }
 
   update(u: Record<string, unknown>): UiEvent[] {
     const kind = u.sessionUpdate;
     const text = (u.content as { text?: string } | undefined)?.text ?? "";
     if (kind === "agent_message_chunk") {
-      this.inThought = false;
-      const id = String(u.messageId ?? "message");
+      const block = this.blockId("message");
+      const id = typeof u.messageId === "string" ? u.messageId : block;
       return text ? [{ type: "message", id, text }] : [];
     }
     if (kind === "agent_thought_chunk") {
-      if (!this.inThought) this.thought++;
-      this.inThought = true;
-      return text
-        ? [{ type: "thought", id: `thought-${this.thought}`, text }]
-        : [];
+      const id = this.blockId("thought");
+      return text ? [{ type: "thought", id, text }] : [];
     }
-    this.inThought = false;
+    this.open = null;
     if (kind === "tool_call") return this.toolCall(u);
     if (kind === "tool_call_update") return this.toolUpdate(u);
     if (kind === "session_info_update" && typeof u.title === "string")

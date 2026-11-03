@@ -133,9 +133,14 @@ function writeOutput(card: Card, data: string) {
     let cut = card.log.length;
     for (let n = 0; n < KEEP_LINES && cut > 0; n++)
       cut = card.log.lastIndexOf("\n", cut - 1);
-    card.log = card.log.slice(cut + 1);
+    // slice() can return a view that keeps the whole original string alive;
+    // a JSON round trip copies the tail so the dropped output is freed.
+    card.log = JSON.parse(JSON.stringify(card.log.slice(cut + 1)));
     card.logLines = KEEP_LINES;
   }
+  // A terminal that isn't mounted yet starts from the log, so only a live
+  // terminal needs the pending queue.
+  if (!card.term) return;
   card.pending += data;
   dirty.add(card);
   scheduleFlush();
@@ -377,7 +382,8 @@ function setBusy(busy: boolean) {
 form.onsubmit = (event) => {
   event.preventDefault();
   const text = prompt.value.trim();
-  if (!text) return;
+  // The agent takes one prompt at a time; keep the draft until it is ready.
+  if (!text || $<HTMLButtonElement>("send").disabled) return;
   setBusy(true);
   send({ type: "prompt", text });
   prompt.value = "";
