@@ -107,6 +107,24 @@ describe("GhosttyCore terminal responses", () => {
     expect(core.modifyOtherKeys()).toBe(0);
   });
 
+  it("answers a modifyOtherKeys query split across writes", async () => {
+    const query = "\x1b[?4m";
+    for (let split = 1; split < query.length; split++) {
+      const core = await newCore();
+      core.writeString(`a${query.slice(0, split)}`);
+      core.writeString(`${query.slice(split)}b`);
+      expect(drain(core)).toEqual(["\x1b[>4;0m"]);
+    }
+    const core = await newCore();
+    for (const byte of query) core.writeString(byte);
+    expect(drain(core)).toEqual(["\x1b[>4;0m"]);
+    // A sequence that only shares the prefix is not answered.
+    core.writeString("\x1b[?");
+    core.writeString("5m\x1b[?4");
+    core.writeString("1m");
+    expect(drain(core)).toEqual([]);
+  });
+
   it("tracks and queries Kitty keyboard flags from the active screen", async () => {
     const core = await newCore();
     expect(core.kittyKeyboardFlags()).toBe(0);
