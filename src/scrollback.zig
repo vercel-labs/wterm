@@ -15,6 +15,8 @@ pub const Scrollback = struct {
     count: u32 = 0,
     write_pos: u32 = 0,
     discarded: u32 = 0,
+    /// Times the history was cleared; lets a mirror tell a clear from growth.
+    clears: u32 = 0,
 
     /// Free retained rows when a terminal session is reset.
     pub fn reset(self: *Scrollback) void {
@@ -25,6 +27,7 @@ pub const Scrollback = struct {
         self.count = 0;
         self.write_pos = 0;
         self.discarded = 0;
+        self.clears +%= 1;
     }
 
     pub fn push(self: *Scrollback, row: []const Cell, len: u16) void {

@@ -1,4 +1,5 @@
 import type { TerminalRowMetadata } from "@wterm/core";
+import { markSelectionChanged, selectionMayExist } from "./selection-state.js";
 
 /** Text offsets are UTF-16 offsets in a rendered row, not terminal columns. */
 export interface RenderedRowText {
@@ -48,6 +49,7 @@ export function getSelectionText(
   terminal: HTMLElement,
   rows: Iterable<SelectedRow>,
 ): string | null {
+  markSelectionChanged(terminal.ownerDocument);
   return readSelection(terminal, rows)?.text ?? null;
 }
 
@@ -55,6 +57,7 @@ export function readSelection(
   terminal: HTMLElement,
   rows: Iterable<SelectedRow>,
 ) {
+  if (!selectionMayExist(terminal.ownerDocument)) return null;
   const selection = terminal.ownerDocument.getSelection();
   if (!selection || selection.isCollapsed || selection.rangeCount !== 1)
     return null;

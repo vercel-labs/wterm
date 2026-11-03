@@ -1,6 +1,9 @@
 import { Samples } from "./metrics";
 
-/** Keyboard echo observed in DOM, followed by a frame opportunity. */
+/**
+ * Keyboard echo observed in DOM, followed by a frame opportunity and, for the
+ * local echo, the first task after that frame's rendering update.
+ */
 export class EchoProbe {
   private observer: MutationObserver;
   private pending: {
@@ -17,6 +20,8 @@ export class EchoProbe {
   private completed = 0;
   private dispatchToDOM = new Samples(1024);
   private dispatchToFrame = new Samples(1024);
+  private dispatchToAfterPaint = new Samples(1024);
+  private afterPaint = new MessageChannel();
 
   constructor(
     private element: HTMLElement,
@@ -104,6 +109,7 @@ export class EchoProbe {
     if (
       this.stopped ||
       !probe?.output ||
+      probe.domAt !== null ||
       this.frame !== null ||
       !this.matches()
     )
@@ -124,12 +130,28 @@ export class EchoProbe {
       }
       this.dispatchToDOM.add(probe.domAt! - probe.start);
       this.dispatchToFrame.add(elapsed);
-      this.completed++;
-      this.pending = null;
-      if (this.timer !== null) clearTimeout(this.timer);
-      this.timer = null;
-      this.remote?.observed("frame", this.completed);
+      // The PTY driver paces keys on the frame report; keep that unchanged.
+      if (this.remote) {
+        this.complete();
+        return;
+      }
+      // A message posted from the frame callback runs after the rendering
+      // update that included the echo.
+      this.afterPaint.port1.onmessage = () => {
+        if (this.stopped || this.pending !== probe) return;
+        this.dispatchToAfterPaint.add(performance.now() - probe.start);
+        this.complete();
+      };
+      this.afterPaint.port2.postMessage(null);
     });
+  }
+
+  private complete(): void {
+    this.completed++;
+    this.pending = null;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    this.remote?.observed("frame", this.completed);
   }
 
   progress() {
@@ -145,6 +167,10 @@ export class EchoProbe {
       ...this.progress(),
       keyDispatchToDOMMs: this.dispatchToDOM.report(),
       keyDispatchToFrameMs: this.dispatchToFrame.report(),
+      // Local echo only; null when a PTY driver paces probes on frame reports.
+      keyDispatchToAfterPaintMs: this.remote
+        ? null
+        : this.dispatchToAfterPaint.report(),
     };
   }
 
@@ -156,5 +182,7 @@ export class EchoProbe {
     if (this.timer !== null) clearTimeout(this.timer);
     if (this.frame !== null) cancelAnimationFrame(this.frame);
     this.timer = this.frame = null;
+    this.afterPaint.port1.onmessage = null;
+    this.afterPaint.port1.close();
   }
 }

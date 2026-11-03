@@ -128,6 +128,9 @@ pub const Terminal = struct {
     saved_bg: u16 = cell_mod.DEFAULT_COLOR,
     saved_flags: u8 = 0,
 
+    /// Host theme defaults reported to OSC 10 and OSC 11 queries.
+    theme_fg: u32 = 0xd4d4d4,
+    theme_bg: u32 = 0x1e1e1e,
     current_fg: u16 = cell_mod.DEFAULT_COLOR,
     current_bg: u16 = cell_mod.DEFAULT_COLOR,
     current_flags: u8 = 0,
@@ -319,6 +322,9 @@ pub const Terminal = struct {
                     i += n;
                     continue;
                 }
+            } else if (self.parser.state == .csi_param) {
+                i += self.parser.feedCsiParams(data[i..]);
+                if (i == data.len) break;
             }
             self.processByte(data[i]);
             i += 1;
@@ -1293,6 +1299,23 @@ pub const Terminal = struct {
         }
     }
 
+    fn reportThemeColor(self: *Terminal, number: u8, rgb: u32) void {
+        var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
+        const channel = struct {
+            fn get(value: u32, shift: u5) u16 {
+                return @as(u16, @intCast((value >> shift) & 0xff)) * 257;
+            }
+        };
+        const out = std.fmt.bufPrint(&buf, "\x1b]{d};rgb:{x:0>4}/{x:0>4}/{x:0>4}{s}", .{
+            number,
+            channel.get(rgb, 16),
+            channel.get(rgb, 8),
+            channel.get(rgb, 0),
+            if (self.parser.osc_bel) "\x07" else "\x1b\\",
+        }) catch return;
+        self.enqueueResponse(out);
+    }
+
     // -- Tab stops --
 
     fn clearTabStop(self: *Terminal, mode: u16) void {
@@ -1406,6 +1429,19 @@ pub const Terminal = struct {
     fn handleOsc(self: *Terminal) void {
         if (self.parser.osc_len < 2) return;
         const data = self.parser.osc_data[0..self.parser.osc_len];
+
+        // OSC 10 and 11 report the theme foreground and background. Each `?`
+        // queries the next color, as in `OSC 10 ; ? ; ?`.
+        if (data.len >= 3 and data[0] == '1' and (data[1] == '0' or data[1] == '1') and data[2] == ';') {
+            var number: u8 = if (data[1] == '0') 10 else 11;
+            var it = std.mem.splitScalar(u8, data[3..], ';');
+            while (it.next()) |param| : (number += 1) {
+                if (number > 11) break;
+                if (!std.mem.eql(u8, param, "?")) continue;
+                self.reportThemeColor(number, if (number == 10) self.theme_fg else self.theme_bg);
+            }
+            return;
+        }
 
         if ((data[0] == '0' or data[0] == '2') and data[1] == ';') {
             const title = data[2..];
@@ -2564,6 +2600,8 @@ test "printable runs match byte-at-a-time parsing" {
     const inputs = [_][]const u8{
         "plain ascii that runs past the last column of a narrow grid",
         "\x1b[31;44mstyled\x1b[0m \x1b]8;;https://x.test\x07link\x1b]8;;\x07 done",
+        "\x1b[38;2;12;34;56;48;2;78;90;123m▀▀\x1b[38;5;255;48;5;16m▄█\x1b[0mend",
+        "\x1b[1;4:0;38:2:12:34:56m▀\x1b[38;2;65536;2;3m▄\x1b[mreset",
         "\u{754C}\u{1F600}\u{E9} wide at the edge \u{8A9E}\u{8A9E}\u{8A9E}\u{8A9E}",
         "\x1b(0lqqk\x1b(B mapped then ascii",
         "bad \xC3 utf8 \xE2\x82 cut \xFF\xFE end",
@@ -2622,6 +2660,132 @@ test "full-screen scrolls keep logical rows and normalize for the host" {
     }
     try testExpectRowsLogical(&t, 'x');
     for (t.grid.dirty[0..t.rows]) |d| try std.testing.expectEqual(@as(u8, 1), d);
+}
+
+test "full-screen scrolls carry row identities and content dirtiness through normalization" {
+    for ([_]u16{ 3, grid_mod.MAX_ROWS }) |rows| {
+        var t = Terminal.init(4, rows);
+        defer t.grid.deinit();
+        var iteration: u16 = 0;
+        while (iteration < 32) : (iteration += 1) {
+            t.grid.clearDirty();
+            t.grid.setCell(rows - 1, 0, Cell{ .char = 'A' + iteration });
+            var ids: [grid_mod.MAX_ROWS]u32 = undefined;
+            var chars: [grid_mod.MAX_ROWS]u32 = undefined;
+            @memcpy(ids[0..rows], t.grid.row_ids[0..rows]);
+            for (0..rows) |row| chars[row] = t.grid.getCell(@intCast(row), 0).char;
+            const count = iteration % 3 + 1;
+            t.grid.scrollUp(0, rows, count, Cell{});
+            t.grid.normalize();
+            for (0..rows) |row| {
+                if (row + count < rows) {
+                    try std.testing.expectEqual(ids[row + count], t.grid.row_ids[row]);
+                    try std.testing.expectEqual(chars[row + count], t.grid.getCell(@intCast(row), 0).char);
+                    try std.testing.expectEqual(@as(u8, if (row + count == rows - 1) 1 else 0), t.grid.dirty[row]);
+                } else {
+                    for (ids[0..rows]) |id| try std.testing.expect(id != t.grid.row_ids[row]);
+                    try std.testing.expectEqual(@as(u32, ' '), t.grid.getCell(@intCast(row), 0).char);
+                    try std.testing.expectEqual(@as(u8, 1), t.grid.dirty[row]);
+                }
+            }
+        }
+    }
+}
+
+test "scroll regions reverse index and line edits carry row identities and dirty flags" {
+    const scenarios = [_]struct { sequence: []const u8, sources: [5]?usize }{
+        .{ .sequence = "\x1b[2;4r\x1b[S", .sources = .{ 0, 2, 3, null, 4 } },
+        .{ .sequence = "\x1b[2;4r\x1b[T", .sources = .{ 0, null, 1, 2, 4 } },
+        .{ .sequence = "\x1b[2;4r\x1b[2;1H\x1b[L", .sources = .{ 0, null, 1, 2, 4 } },
+        .{ .sequence = "\x1b[2;4r\x1b[2;1H\x1b[M", .sources = .{ 0, 2, 3, null, 4 } },
+        .{ .sequence = "\x1b[2;4r\x1b[2;1H\x1bM", .sources = .{ 0, null, 1, 2, 4 } },
+        .{ .sequence = "\x1b[2;4r\x1b[99S", .sources = .{ 0, null, null, null, 4 } },
+        .{ .sequence = "\x1b[2;4r\x1b[99T", .sources = .{ 0, null, null, null, 4 } },
+    };
+    for (scenarios) |scenario| {
+        var t = Terminal.init(4, 5);
+        defer t.grid.deinit();
+        t.write("A\r\nB\r\nC\r\nD\r\nE");
+        const ids = t.grid.row_ids[0..5].*;
+        t.grid.clearDirty();
+        t.write("\x1b[3;1HX");
+        t.write(scenario.sequence);
+        for (scenario.sources, 0..) |source, row| {
+            if (source) |original| {
+                try std.testing.expectEqual(ids[original], t.grid.row_ids[row]);
+                try std.testing.expectEqual(@as(u32, if (original == 2) 'X' else 'A' + @as(u32, @intCast(original))), t.grid.getCell(@intCast(row), 0).char);
+                try std.testing.expectEqual(@as(u8, if (original == 2) 1 else 0), t.grid.dirty[row]);
+            } else {
+                for (ids) |id| try std.testing.expect(id != t.grid.row_ids[row]);
+                try std.testing.expectEqual(@as(u32, ' '), t.grid.getCell(@intCast(row), 0).char);
+                try std.testing.expectEqual(@as(u8, 1), t.grid.dirty[row]);
+            }
+        }
+    }
+}
+
+test "row identities survive screen switches but not clearing and reset" {
+    var t = Terminal.init(4, 3);
+    defer t.grid.deinit();
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.alt_grid = &alt;
+    t.write("A\r\nB\r\nC");
+    const primary_ids = t.grid.row_ids[0..3].*;
+    t.grid.clearDirty();
+    t.write("\x1b[?1049h");
+    const alt_ids = t.grid.row_ids[0..3].*;
+    for (alt_ids) |id| {
+        for (primary_ids) |primary_id| try std.testing.expect(id != primary_id);
+    }
+    t.write("\x1b[?1049l");
+    try std.testing.expectEqualSlices(u32, &primary_ids, t.grid.row_ids[0..3]);
+    try std.testing.expectEqualSlices(u8, &.{ 1, 1, 1 }, t.grid.dirty[0..3]);
+    t.write("\x1b[2;1H\x1b[K");
+    try std.testing.expect(t.grid.row_ids[1] != primary_ids[1]);
+    try std.testing.expectEqual(primary_ids[0], t.grid.row_ids[0]);
+    t.write("\x1b[2J");
+    const cleared_ids = t.grid.row_ids[0..3].*;
+    for (cleared_ids) |id| {
+        for (primary_ids) |primary_id| try std.testing.expect(id != primary_id);
+        for (alt_ids) |alt_id| try std.testing.expect(id != alt_id);
+    }
+    t.write("\x1bc");
+    for (t.grid.row_ids[0..3]) |id| {
+        for (cleared_ids) |cleared_id| try std.testing.expect(id != cleared_id);
+    }
+}
+
+test "resize preserves retained row identities and creates new identities for restored history" {
+    const sb = try std.testing.allocator.create(Scrollback);
+    defer std.testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(4, 3);
+    defer t.grid.deinit();
+    var alt = Grid.init(4, 3);
+    defer alt.deinit();
+    t.scrollback = sb;
+    t.alt_grid = &alt;
+    t.write("A\r\nB\r\nC");
+    const ids = t.grid.row_ids[0..3].*;
+    t.resize(4, 2);
+    try std.testing.expectEqual(ids[1], t.grid.row_ids[0]);
+    try std.testing.expectEqual(ids[2], t.grid.row_ids[1]);
+    t.resize(4, 3);
+    try std.testing.expect(t.grid.row_ids[0] != ids[0]);
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 0).char);
+    try std.testing.expectEqualSlices(u32, ids[1..], t.grid.row_ids[1..3]);
+    const restored_ids = t.grid.row_ids[0..3].*;
+    t.write("\x1b[?1049h");
+    t.resize(40, 5);
+    t.write("\x1b[?1049l");
+    try std.testing.expectEqualSlices(u32, &restored_ids, t.grid.row_ids[0..3]);
+    for (t.grid.row_ids[3..5]) |id| {
+        try std.testing.expect(id != 0);
+        for (restored_ids) |restored_id| try std.testing.expect(id != restored_id);
+    }
+    for (t.grid.dirty[0..5]) |dirty| try std.testing.expectEqual(@as(u8, 1), dirty);
 }
 
 test "a scroll region interleaved with full-screen scrolls" {
@@ -2705,4 +2869,23 @@ test "a cursor saved before a shrink is clamped when restored" {
     try std.testing.expect(t.cursor_row < t.rows);
     try std.testing.expect(t.cursor_col < t.cols);
     try std.testing.expectEqual(@as(u32, 'x'), t.grid.getCell(3, 9).char);
+}
+
+test "OSC 10 and 11 report the theme colors with the query's terminator" {
+    var t = Terminal.init(10, 2);
+    t.theme_fg = 0x112233;
+    t.theme_bg = 0xfafafa;
+    t.write("\x1b]10;?\x07");
+    try std.testing.expectEqualStrings("\x1b]10;rgb:1111/2222/3333\x07", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    t.write("\x1b]11;?\x1b\\");
+    try std.testing.expectEqualStrings("\x1b]11;rgb:fafa/fafa/fafa\x1b\\", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    // One OSC can query both, and setting a color is not answered.
+    t.write("\x1b]10;?;?\x07\x1b]10;#ffffff\x07");
+    try std.testing.expectEqualStrings("\x1b]10;rgb:1111/2222/3333\x07", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try std.testing.expectEqualStrings("\x1b]11;rgb:fafa/fafa/fafa\x07", t.responsePtr()[0..t.responseLen()]);
+    t.popResponse();
+    try std.testing.expectEqual(@as(u8, 0), t.responseLen());
 }

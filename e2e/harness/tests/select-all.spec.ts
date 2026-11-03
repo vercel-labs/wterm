@@ -125,6 +125,17 @@ test("selection cancels on Escape, input, resize and pending output", async ({
   expect(
     await page.evaluate(() => window.ptyHarness.selectionText()),
   ).toBeNull();
+
+  // The sticky status line adds to the scroll height; output must still follow.
+  await expect(page.locator(".term-selection-status")).toHaveText(
+    /Terminal changed/,
+  );
+  for (let i = 0; i < 2; i++) await write(page, "line\r\n".repeat(40));
+  expect(
+    await page
+      .locator("#terminal")
+      .evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight),
+  ).toBeLessThan(5);
 });
 
 test("Ctrl+Shift+C copies Select All with Kitty modifier reporting enabled", async ({

@@ -178,6 +178,10 @@ export interface TerminalCore {
   getCell(row: number, col: number): CellData;
   /** Zero-based live row. Null means unavailable or out of range. */
   getRowMetadata?(row: number): TerminalRowMetadata | null;
+  /** Live row identity that follows content across scrolls; null when unavailable. */
+  getRowId?(row: number): number | null;
+  /** Whether a row's content changed since clearDirty(), ignoring movement. */
+  isRowContentDirty?(row: number): boolean;
   isDirtyRow(row: number): boolean;
   clearDirty(): void;
   /** Applied grid dimensions after init() or resize(), which may differ from the request. */
@@ -236,4 +240,9 @@ export interface TerminalCore {
 
   // -- Debug --
   getUnhandledSequences(): UnhandledSequence[];
+  /**
+   * Cores that apply writes asynchronously, such as a worker-backed core,
+   * call this listener whenever new state is available to read.
+   */
+  setUpdateListener?(listener: (() => void) | null): void;
 }
