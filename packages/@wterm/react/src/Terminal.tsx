@@ -33,6 +33,8 @@ export interface TerminalProps extends Omit<
   maxImageWidth?: number;
   /** Maximum rendered Kitty image height in CSS pixels. */
   maxImageHeight?: number;
+  /** Paints live output with WebGL2; DOM text stays for selection, search and accessibility. Fixed at mount. */
+  renderer?: "dom" | "webgl";
   /** Force blinking on/off; omit to follow the terminal application's request. */
   cursorBlink?: boolean;
   /** Politely announce terminal text changes while input has focus. */
@@ -74,6 +76,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     autoResize = false,
     maxImageWidth,
     maxImageHeight,
+    renderer,
     cursorBlink,
     announceOutput = false,
     renderingPaused = false,
@@ -158,6 +161,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         autoResize: autoResizeRef.current,
         maxImageWidth,
         maxImageHeight,
+        renderer,
         cursorBlink,
         announceOutput,
         renderingPaused,
@@ -212,9 +216,9 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         wtermRef.current = null;
       };
     },
-    // Re-run when the WASM source or image sizing options change
+    // Re-run when the WASM source, image sizing or renderer change
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [core, wasmUrl, maxImageWidth, maxImageHeight],
+    [core, wasmUrl, maxImageWidth, maxImageHeight, renderer],
   );
 
   // Sync props to the existing instance (render-time checks)
