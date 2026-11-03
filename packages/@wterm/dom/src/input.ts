@@ -1,6 +1,7 @@
 import type { TerminalCore } from "@wterm/core";
 import { InputAccessibility } from "./input-accessibility.js";
 import { isLinkActivationModifier } from "./hyperlink.js";
+import { markSelectionChanged } from "./selection-state.js";
 import {
   encodeKittyKey,
   KITTY_REPORT_ALL,
@@ -76,6 +77,20 @@ const FIXED_KEYS: Record<string, string> = {
   F11: "\x1b[23~",
   F12: "\x1b[24~",
 };
+
+/** A key press that did not come from a physical keyboard. */
+export interface SyntheticKey {
+  key: string;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  metaKey: boolean;
+}
+
+type KeyLike = Pick<
+  KeyboardEvent,
+  "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey"
+>;
 
 const COMPOSITION_INPUT_DEDUP_MS = 250;
 const SCROLLBACK_BOTTOM_TOLERANCE = 5;
@@ -440,10 +455,12 @@ export class InputHandler {
         this.onData("\x15");
       } else if (e.key === "a") {
         e.preventDefault();
-        const sel = window.getSelection();
+        const doc = this.element.ownerDocument;
+        const sel = doc.getSelection();
         if (sel) {
-          const range = document.createRange();
+          const range = doc.createRange();
           range.selectNodeContents(this.element);
+          markSelectionChanged(doc);
           sel.removeAllRanges();
           sel.addRange(range);
         }
@@ -522,7 +539,38 @@ export class InputHandler {
     this.sendPaste(text);
   }
 
-  private sendPaste(text: string): void {
+  /** Encode a key press with the rules a physical keydown would use. */
+  encodeKey(key: SyntheticKey): string | null {
+    const bridge = this.getBridge();
+    const kittyFlags = bridge?.kittyKeyboardFlags?.() ?? 0;
+    if (kittyFlags === 0) return this.keyToSequence(key);
+    const event = { ...key, code: "", getModifierState: () => false };
+    const cursorKeysApp = bridge?.cursorKeysApp?.() ?? false;
+    const press = encodeKittyKey(
+      event,
+      kittyFlags,
+      "press",
+      undefined,
+      cursorKeysApp,
+    );
+    if (press === null) {
+      // Kitty leaves unmodified text to the input event.
+      return key.key.length === 1 && !key.ctrlKey && !key.altKey && !key.metaKey
+        ? key.key
+        : null;
+    }
+    const release = encodeKittyKey(
+      event,
+      kittyFlags,
+      "release",
+      undefined,
+      cursorKeysApp,
+    );
+    return press + (release ?? "");
+  }
+
+  /** Send text the way a clipboard paste would. */
+  sendPaste(text: string): void {
     this.selectionActions?.clearSelection();
     const bridge = this.getBridge();
     if (bridge && bridge.bracketedPaste()) {
@@ -935,7 +983,7 @@ export class InputHandler {
     view?.removeEventListener("mouseup", this._onMouseUp);
   }
 
-  private keyToSequence(e: KeyboardEvent): string | null {
+  private keyToSequence(e: KeyLike): string | null {
     if (e.ctrlKey && !e.altKey && !e.metaKey) {
       const control = legacyControlByte(e.key);
       if (control !== null) return control;

@@ -1,0 +1,22 @@
+{
+  "name": "acp-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "command -v portless >/dev/null 2>&1 || (echo '\\nportless is required but not installed. Run: npm i -g portless\\nSee: https://github.com/vercel-labs/portless\\n' && exit 1)",
+    "dev": "portless acp-agent-example.wterm tsx server.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@wterm/dom": "workspace:*",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.4",
+    "typescript": "^6.0.2",
+    "vite": "^6.3.5"
+  }
+}

@@ -1,4 +1,24 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+
+/** Samples the painted pixel just inside the top-left corner of an element. */
+async function paintedColor(page: Page, locator: Locator) {
+  const box = (await locator.boundingBox())!;
+  const png = await page.screenshot({
+    clip: { x: box.x + 1, y: box.y + 1, width: 1, height: 1 },
+    scale: "css",
+  });
+  return page.evaluate(async (png) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${png}`;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext("2d")!;
+    context.drawImage(image, 0, 0);
+    const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+    return `rgb(${r}, ${g}, ${b})`;
+  }, png.toString("base64"));
+}
 
 async function write(page: Page, value: string) {
   await page.evaluate((data) => {
@@ -68,7 +88,7 @@ test("ghostty applies and resets application colors without replacing host theme
   await expect(reverse).toHaveCSS("color", "rgb(16, 32, 48)");
   await expect(reverse).toHaveCSS("background-color", "rgb(254, 220, 186)");
   await expect(explicit).toHaveCSS("color", "rgb(1, 2, 3)");
-  await expect(explicit).toHaveCSS("background-color", "rgb(4, 5, 6)");
+  expect(await paintedColor(page, explicit)).toBe("rgb(4, 5, 6)");
   expect(
     await root.evaluate((el) => el.style.getPropertyValue("--term-fg")),
   ).toBe("#abcdef");

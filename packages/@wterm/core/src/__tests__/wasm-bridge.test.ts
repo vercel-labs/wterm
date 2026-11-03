@@ -95,6 +95,17 @@ describe("WasmBridge", () => {
     expect(bridge.getScrollbackCell(offset, 0).fgRgb).toBe(0xff6400);
   });
 
+  it("keeps a surrogate pair whole across write chunk boundaries", () => {
+    // 8191 puts the pair across the edge of the first 8192-unit encode window.
+    for (const pad of [8190, 8191, 8192]) {
+      bridge.init(80, 24);
+      bridge.writeString("a".repeat(pad) + "\u{1F600}");
+      const row = bridge.getCursor().row;
+      const col = pad % 80;
+      expect(bridge.getCell(row, col).char, `offset ${pad}`).toBe(0x1f600);
+    }
+  });
+
   it("keeps 256-color cells on the palette", () => {
     bridge.writeString("\x1b[38;5;208mA");
     expect(bridge.getCell(0, 0).fg).toBe(208);
@@ -322,7 +333,122 @@ describe("WasmBridge", () => {
     });
   });
 
+  describe("setScrollbackLines", () => {
+    const fill = (from: number, count: number) => {
+      let text = "";
+      for (let i = from; i < from + count; i++) text += `line ${i}\r\n`;
+      bridge.writeString(text);
+    };
+    const line = (offset: number) => {
+      let text = "";
+      for (let col = 0; col < bridge.getScrollbackLineLen(offset); col++)
+        text += String.fromCodePoint(
+          bridge.getScrollbackCell(offset, col).char,
+        );
+      return text.trimEnd();
+    };
+
+    it("keeps 1000 lines by default", () => {
+      fill(0, 3000);
+      expect(bridge.getScrollbackCount()).toBe(1000);
+    });
+
+    it("keeps more lines when raised", () => {
+      bridge.setScrollbackLines(5000);
+      fill(0, 8000);
+      expect(bridge.getScrollbackCount()).toBe(5000);
+      expect(line(0)).toBe("line 7976");
+      expect(line(4999)).toBe("line 2977");
+    });
+
+    it("keeps the newest lines when lowered", () => {
+      fill(0, 500);
+      bridge.setScrollbackLines(10);
+      expect(bridge.getScrollbackCount()).toBe(10);
+      expect(line(0)).toBe("line 476");
+      expect(line(9)).toBe("line 467");
+      expect(
+        bridge.getScrollbackDiscardedCount() + bridge.getScrollbackCount(),
+      ).toBe(477);
+    });
+
+    it("keeps no history at zero", () => {
+      bridge.setScrollbackLines(0);
+      fill(0, 100);
+      expect(bridge.getScrollbackCount()).toBe(0);
+    });
+
+    it("rejects counts that are not whole non-negative numbers", () => {
+      for (const lines of [-1, 1.5, Number.NaN, 2 ** 32])
+        expect(() => bridge.setScrollbackLines(lines)).toThrow(RangeError);
+    });
+  });
+
   describe("dirty rows", () => {
+    it("distinguishes moved rows from content changes without breaking position dirtiness", () => {
+      bridge.init(4, 3);
+      bridge.writeString("A\r\nB\r\nC");
+      const ids = [0, 1, 2].map((row) => bridge.getRowId(row));
+      expect(ids.every((id) => id !== null)).toBe(true);
+      bridge.clearDirty();
+      bridge.writeString("\r\nD");
+
+      expect(bridge.getRowId(0)).toBe(ids[1]);
+      expect(bridge.getRowId(1)).toBe(ids[2]);
+      expect(ids).not.toContain(bridge.getRowId(2));
+      expect([0, 1, 2].map((row) => bridge.isDirtyRow(row))).toEqual([
+        true,
+        true,
+        true,
+      ]);
+      expect([0, 1, 2].map((row) => bridge.isRowContentDirty(row))).toEqual([
+        false,
+        false,
+        true,
+      ]);
+      expect([0, 1, 2].map((row) => bridge.getCell(row, 0).char)).toEqual([
+        66, 67, 68,
+      ]);
+      bridge.clearDirty();
+      expect([0, 1, 2].map((row) => bridge.isDirtyRow(row))).toEqual([
+        false,
+        false,
+        false,
+      ]);
+      bridge.writeString("\x1b[2;1HX\x1b[3;1H\r\nE");
+      expect([0, 1, 2].map((row) => bridge.isRowContentDirty(row))).toEqual([
+        true,
+        false,
+        true,
+      ]);
+    });
+
+    it("returns null for older WASM and unavailable or invalid row identities", () => {
+      const internals = bridge as unknown as {
+        exports: Record<string, WebAssembly.ExportValue>;
+      };
+      const exportsWithoutRowIds = { ...internals.exports };
+      delete exportsWithoutRowIds.getRowId;
+      internals.exports = exportsWithoutRowIds;
+      expect(bridge.getRowId(0)).toBeNull();
+      bridge.clearDirty();
+      expect(bridge.isDirtyRow(0)).toBe(false);
+      bridge.writeString("A");
+      expect(bridge.isDirtyRow(0)).toBe(true);
+
+      internals.exports = { ...exportsWithoutRowIds, getRowId: () => 0 };
+      expect(bridge.getRowId(0)).toBeNull();
+      bridge.clearDirty();
+      bridge.writeString("\x1b[24;1H\r\n");
+      expect(bridge.isRowContentDirty(0)).toBe(false);
+      expect(bridge.isDirtyRow(0)).toBe(true);
+      internals.exports = { ...exportsWithoutRowIds, getRowId: () => -1 };
+      expect(bridge.getRowId(0)).toBe(0xffffffff);
+      for (const row of [-1, 24, 0.5, NaN, Infinity]) {
+        expect(bridge.getRowId(row)).toBeNull();
+      }
+    });
+
     it("marks rows dirty after writing", () => {
       bridge.writeString("text");
       expect(bridge.isDirtyRow(0)).toBe(true);

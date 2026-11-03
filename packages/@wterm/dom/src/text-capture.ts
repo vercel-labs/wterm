@@ -6,6 +6,7 @@ const MAX_TEXT_LENGTH = 16 * 1024 * 1024;
 export function* scanText(
   core: TerminalCore,
   limit = MAX_TEXT_LENGTH,
+  startRow = 0,
 ): Generator<void, string> {
   const history = core.getScrollbackCount();
   const parts: string[] = [];
@@ -25,13 +26,14 @@ export function* scanText(
       chunk = "";
     }
   };
-  for (let row = 0; row < history + core.getRows(); row++) {
+  for (let row = startRow; row < history + core.getRows(); row++) {
     const offset = history - row - 1;
     const metadata =
       row < history
         ? core.getScrollbackRowMetadata?.(offset)
         : core.getRowMetadata?.(row - history);
-    if (row > 0 && !(previousWrap && metadata?.continuesPrevious)) append("\n");
+    if (row > startRow && !(previousWrap && metadata?.continuesPrevious))
+      append("\n");
     previousWrap = metadata?.wrapsToNext ?? false;
     const cols =
       row < history ? core.getScrollbackLineLen(offset) : core.getCols();

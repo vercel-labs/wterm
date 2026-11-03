@@ -13,6 +13,7 @@ import {
   WTerm,
   type TerminalCore,
   type ShellIntegrationState,
+  type WebMCPOptions,
 } from "@wterm/dom";
 
 /**
@@ -89,6 +90,8 @@ const Terminal = defineComponent({
     maxImageWidth: Number,
     /** Maximum rendered Kitty image height in CSS pixels. */
     maxImageHeight: Number,
+    /** Paints live output with WebGL2; DOM text stays for selection, search and accessibility. Fixed at mount. */
+    renderer: String as PropType<"dom" | "webgl">,
     /**
      * Force blinking on/off; omit to follow the terminal application's request.
      */
@@ -97,6 +100,17 @@ const Terminal = defineComponent({
     announceOutput: Boolean,
     /** Suspend painting for an inactive pane; parsing and terminal effects continue. */
     renderingPaused: Boolean,
+    /** Lines of history the core keeps; omit for the core's default. */
+    scrollbackLines: Number,
+    /**
+     * Let in-page agents read and type into this terminal through WebMCP.
+     * Pass an object to name the terminal or make it read-only.
+     * @defaultValue false
+     */
+    webmcp: {
+      type: [Boolean, Object] as PropType<boolean | WebMCPOptions>,
+      default: false,
+    },
     /**
      * Enable debug mode (init-only — changing after mount has no effect).
      * Exposes a `DebugAdapter` on the underlying `WTerm` instance.
@@ -162,9 +176,12 @@ const Terminal = defineComponent({
         autoResize: props.autoResize,
         maxImageWidth: props.maxImageWidth,
         maxImageHeight: props.maxImageHeight,
+        renderer: props.renderer,
         cursorBlink: props.cursorBlink,
         announceOutput: props.announceOutput,
         renderingPaused: props.renderingPaused,
+        scrollbackLines: props.scrollbackLines,
+        webmcp: props.webmcp,
         debug: props.debug,
         onData: hasDataListener
           ? (data: string) => emit("data", data)
@@ -228,9 +245,23 @@ const Terminal = defineComponent({
     );
 
     watch(
+      () => props.scrollbackLines,
+      (lines) => {
+        if (lines !== undefined) wterm.value?.setScrollbackLines(lines);
+      },
+      { flush: "post" },
+    );
+
+    watch(
       () => props.renderingPaused,
       (paused) => wterm.value?.setRenderingPaused(paused),
       { flush: "post" },
+    );
+
+    watch(
+      () => props.webmcp,
+      (options) => wterm.value?.setWebMCP(options),
+      { deep: true, flush: "post" },
     );
 
     // Returning bindings from setup is the typed equivalent of defineExpose:

@@ -61,6 +61,16 @@ The input's accessible description includes the exit instructions after any host
 
 Mounted output remains readable separately from input. Use `readText()` to present retained history in an accessible reader; live output announcements are off by default. Ancestor `aria-hidden` and `inert` still control whether a terminal is available.
 
+## WebGL renderer
+
+Pass `renderer: "webgl"` to paint live output on a WebGL2 canvas. Full-screen
+redraws, images and large pane grids stop paying for DOM layout on every frame,
+and all terminals on a page share one WebGL2 context. DOM text stays current for
+selection, browser find and screen readers: it catches up when output goes
+quiet and whenever the pointer or wheel touches the terminal. Selection, search
+and scrolled-back history show the DOM text until the next live output. Without
+WebGL2 the option falls back to `"dom"`.
+
 ## Inactive panes
 
 Use `renderingPaused: true` when creating an inactive pane and
@@ -75,6 +85,22 @@ alone does not pause rendering. New search scans, `readText()`, and Select All
 wait for a paint before starting, and retain their normal cancellation rules.
 Pending output announcements are discarded. Synchronized-output holds and
 their recovery timeout still apply.
+
+## Many terminals on one page
+
+Each terminal using the built-in core is a separate WebAssembly instance. In
+Chrome, a page can hold about a hundred live instances before the next `init()`
+rejects with `WebAssembly.instantiate(): Out of memory`, although each one uses
+about 2 MB. `destroy()` releases the instance, so the limit counts terminals
+that exist at the same time.
+
+`renderingPaused` stops painting but keeps the instance. For a page that can
+show many terminals, such as a transcript or a log viewer, create each terminal
+when it scrolls into view and destroy it when it leaves. Keep the output it
+received and write it into a new terminal when it comes back. The built-in core
+retains 1,000 scrollback lines, so that is all a new terminal needs. The
+[ACP agent example](https://github.com/vercel-labs/wterm/tree/main/examples/acp-agent)
+works this way.
 
 ## Output announcements
 
@@ -107,6 +133,29 @@ read produce the same pause notice without announcing partial text. Custom
 cores should expose `getScrollbackDiscardedCount()` to avoid rereading shifted
 rows when their history limit is reached. Route writes and resizes through
 WTerm so announcements follow completed paints.
+
+## WebMCP
+
+Set `webmcp` to let agents in the browser drive the terminal through
+[WebMCP](https://github.com/webmachinelearning/webmcp). It is off by default and
+does nothing without a WebMCP provider.
+
+```ts
+const term = new WTerm(element, {
+  webmcp: { name: "shell", description: "Project shell" },
+  onData: (data) => socket.send(data),
+});
+```
+
+All terminals in a document share four tools: `list_terminals`,
+`read_terminal` (screen or scrollback text, optionally after waiting for text or
+idle output), `type_in_terminal`, and `press_terminal_keys` (for example
+`"Ctrl+C"` or `"ArrowUp"`, encoded for the program's current keyboard modes).
+Agent input follows the keyboard path to `onData`. Pass `readOnly: true` to
+expose only the read tools. Failed calls return `{"error": "..."}` because
+providers drop thrown messages. Change the options later with
+`term.setWebMCP(options)`, or withdraw the terminal with `term.setWebMCP(false)`.
+See [WebMCP](https://wterm.dev/webmcp) for tool inputs and security guidance.
 
 ## WebSocket transport
 
@@ -155,7 +204,10 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels. Images larger than the limit are scaled down proportionally. |
 | `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
 | `announceOutput` | `boolean` | `false` | Politely announce bounded text changes while terminal input has focus; mutable via `setOutputAnnouncements()` |
+| `scrollbackLines` | `number` | core default | Lines of history the core keeps (1,000 for the built-in and Ghostty cores); mutable without restarting |
 | `renderingPaused` | `boolean` | `false` | Suspend painting for an inactive pane while parsing and terminal effects continue; mutable without restarting |
+| `renderer` | `"dom" \| "webgl"` | `"dom"` | Paint live output with WebGL2 while DOM text keeps selection, search and screen readers; falls back to `"dom"` without WebGL2; fixed at mount |
+| `webmcp` | `boolean \| WebMCPOptions` | `false` | Let in-page agents list, read, and type into the terminal through WebMCP; mutable without restarting. See [WebMCP](https://wterm.dev/webmcp). |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onBinary` | `(data: Uint8Array) => void` | — | Called with raw X10 mouse bytes when supplied. Send the bytes unchanged to a binary-capable transport. |
@@ -176,7 +228,9 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `resize(cols, rows)` | Resize the terminal grid |
 | `focus()` | Focus the terminal element |
 | `setOutputAnnouncements(enabled)` | Enable or stop polite output announcements without moving focus |
+| `setScrollbackLines(lines)` | Change how many lines of history the core keeps, dropping the oldest |
 | `setRenderingPaused(paused)` | Pause pane painting while parsing and terminal effects continue; resuming schedules the latest state |
+| `setWebMCP(options)` | Expose the terminal to in-page agents with `true` or `WebMCPOptions`, or withdraw it with `false` |
 | `fit()` | Resize the grid to the element's current content box and font metrics; hidden or uninitialized terminals stay unchanged |
 | `search(query, { caseSensitive? })` | Start plain-text search over retained history and the active screen |
 | `findNext()` / `findPrevious()` | Select and reveal a match, wrapping at either end; return false if there are none |
@@ -503,6 +557,12 @@ are applied. Values are copied and can be set before `init()`. Indices 16–255 
 explicit RGB cell colors are unchanged. Application overrides take precedence;
 OSC resets return to the latest host defaults. The inline properties set by this
 method take precedence over theme classes; call it again to change those colors.
+Pass `null` to remove them and return to the CSS theme.
+
+OSC 10 and OSC 11 color queries are answered, in both cores, with the colors
+the terminal element's CSS resolves to when the query arrives, so theme classes
+and `prefers-color-scheme` changes need no extra calls. Colors set with
+`setThemeColors()` take precedence until it is called with `null`.
 
 With Ghostty, use the updated bundled WASM asset to synchronize indexed colors
 and foreground/background query replies. Older WASM assets retain their existing

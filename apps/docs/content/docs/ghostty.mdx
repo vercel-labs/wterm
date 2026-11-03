@@ -185,15 +185,28 @@ can negotiate their display size before transferring image data.
     </tr>
     <tr>
       <td>
+        <code>scrollbackLines</code>
+      </td>
+      <td>
+        <code>number</code>
+      </td>
+      <td>
+        Lines of history to keep (default: 1000). Ghostty stores history in
+        pages, so up to a few pages of extra rows stay allocated but are not
+        reported.
+      </td>
+    </tr>
+    <tr>
+      <td>
         <code>scrollbackLimit</code>
       </td>
       <td>
         <code>number</code>
       </td>
       <td>
-        Scrollback budget in bytes, not lines (default: 10000). ghostty
-        allocates history in pages, so the retained row count depends on the
-        terminal width.
+        Scrollback budget in bytes instead of lines. Ignored when
+        <code>scrollbackLines</code> is set; the retained row count depends on
+        the terminal width.
       </td>
     </tr>
     <tr>
@@ -355,7 +368,7 @@ retained row. Read metadata again after output, resize, or screen changes.
 Invalid positions, disposed cores, and older WASM binaries return `null`.
 See [Row Metadata](/api-reference#row-metadata) for the optional core contract.
 
-Terminal applications can query the Ghostty core's foreground and background colors with OSC 10 and OSC 11. The core starts with its configured colors and tracks later OSC color changes and resets.
+Terminal applications can query the Ghostty core's foreground and background colors with OSC 10 and OSC 11. Attached to `WTerm`, the core answers with the terminal's CSS theme colors (see [Color queries](/themes#color-queries)); headless, it starts with its configured colors. It tracks later OSC color changes and resets either way.
 
 Ghostty also exposes synchronized-output mode (`CSI ? 2026 h/l`) and its generation to the DOM renderer, so updates inside a synchronized block paint as one final frame.
 

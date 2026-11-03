@@ -1,4 +1,5 @@
 import type {
+  TerminalThemeColors,
   CellData,
   CursorState,
   MouseEncoding,
@@ -20,6 +21,7 @@ interface WasmExports {
   writeBytes(len: number): void;
   getGridPtr(): number;
   getDirtyPtr(): number;
+  getRowId?(row: number): number;
   clearDirty(): void;
   getCursorRow(): number;
   getCursorCol(): number;
@@ -56,6 +58,9 @@ interface WasmExports {
   getScrollbackDiscardedCount(): number;
   getScrollbackLine(offset: number): number;
   getScrollbackLineLen(offset: number): number;
+  setThemeColors?(foreground: number, background: number): void;
+  getScrollbackClearCount?(): number;
+  setScrollbackLines?(lines: number): number;
   getResponsePtr(): number;
   getResponseLen(): number;
   clearResponse(): void;
@@ -84,6 +89,8 @@ export class WasmBridge implements TerminalCore {
     number,
     { linkUri: string; linkId?: string; linkKey: string }
   >();
+
+  private clearedRowIds = new Uint32Array(0);
 
   private get dv(): DataView {
     if (this._dvBuffer !== this.memory.buffer) {
@@ -120,8 +127,22 @@ export class WasmBridge implements TerminalCore {
   }
 
   writeString(str: string, afterChunk?: () => void): void {
-    const encoded = this.encoder.encode(str);
-    this.writeRaw(encoded, afterChunk);
+    // Encode straight into the input buffer: no intermediate byte array.
+    let index = 0;
+    while (index < str.length) {
+      // A window of 8192 units never fits a trailing lone surrogate (at least
+      // 8191 bytes plus 3), so encodeInto stops before splitting a pair.
+      const buf = new Uint8Array(this.memory.buffer, this.writeBufferPtr, 8192);
+      const { read, written } = this.encoder.encodeInto(
+        str.substring(index, index + 8192),
+        buf,
+      );
+      this.exports.writeBytes(written);
+      // Escape sequences can swap the active screen and its backing storage.
+      this._updatePointers();
+      index += read;
+      afterChunk?.();
+    }
   }
 
   writeRaw(data: Uint8Array, afterChunk?: () => void): void {
@@ -154,14 +175,68 @@ export class WasmBridge implements TerminalCore {
     return result;
   }
 
+  /** Theme defaults reported to OSC 10 and OSC 11 queries. */
+  setThemeColors(colors: TerminalThemeColors): void {
+    this.exports.setThemeColors?.(colors.foreground, colors.background);
+  }
+
+  /** Lines of history to keep; extra lines are dropped from the oldest end. */
+  setScrollbackLines(lines: number): void {
+    assertScrollbackLines(lines);
+    const set = this.exports.setScrollbackLines;
+    if (!set) throw new Error("This WASM build cannot change its scrollback");
+    if (!set(lines)) throw new Error("Could not allocate the scrollback");
+  }
+
+  /** Times the history was cleared, as by CSI 3 J or reinitialization. */
+  getScrollbackClearCount(): number {
+    return this.exports.getScrollbackClearCount?.() ?? 0;
+  }
+
+  /** Raw hyperlink table index of a grid cell; 0 when it has no link. */
+  getCellLinkIndex(row: number, col: number): number {
+    const offset = this.gridPtr + (row * this.gridStride + col) * this.cellSize;
+    return this.dv.getUint16(offset + 10, true);
+  }
+
+  /** Raw hyperlink table index of a scrollback cell; 0 when it has no link. */
+  getScrollbackLinkIndex(offset: number, col: number): number {
+    const ptr = this.exports.getScrollbackLine(offset);
+    return this.dv.getUint16(ptr + col * this.cellSize + 10, true);
+  }
+
   isDirtyRow(row: number): boolean {
+    if (this.isRowContentDirty(row)) return true;
+    const id = this.getRowId(row);
+    return id === null
+      ? this.exports.getRowId !== undefined
+      : id !== this.clearedRowIds[row];
+  }
+
+  isRowContentDirty(row: number): boolean {
     return (
       new Uint8Array(this.memory.buffer, this.dirtyPtr, this.getRows())[row] !==
       0
     );
   }
 
+  getRowId(row: number): number | null {
+    if (!Number.isInteger(row) || row < 0 || row >= this.getRows()) return null;
+    const id = this.exports.getRowId?.(row) ?? 0;
+    return id === 0 ? null : id >>> 0;
+  }
+
   clearDirty(): void {
+    const getRowId = this.exports.getRowId;
+    if (getRowId) {
+      const rows = this.getRows();
+      if (this.clearedRowIds.length !== rows) {
+        this.clearedRowIds = new Uint32Array(rows);
+      }
+      for (let row = 0; row < rows; row++) {
+        this.clearedRowIds[row] = getRowId(row);
+      }
+    }
     this.exports.clearDirty();
   }
 
@@ -415,4 +490,10 @@ export class WasmBridge implements TerminalCore {
     this.linkCache.set(index, value);
     return value;
   }
+}
+
+/** Throws unless `lines` is a whole number of lines a core can count. */
+function assertScrollbackLines(lines: number): void {
+  if (!Number.isInteger(lines) || lines < 0 || lines > 0xffffffff)
+    throw new RangeError(`Invalid scrollback line count: ${lines}`);
 }

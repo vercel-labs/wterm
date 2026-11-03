@@ -1,10 +1,12 @@
 import type {
   CellData,
+  CursorState,
   TerminalCore,
   TerminalPosition,
   TerminalColorOverrides,
 } from "@wterm/core";
 import { GraphicsLayer, type GraphicsLayerOptions } from "./graphics-layer.js";
+import { GpuGrid, type GpuCursor, type GpuPalette } from "./gpu-renderer.js";
 import {
   getSelectionText,
   offsetAtCell,
@@ -13,6 +15,7 @@ import {
 } from "./selection.js";
 import { selectionRange, type SelectionUnit } from "./selection-range.js";
 import { rectangleSelection } from "./rectangle-selection.js";
+import { markSelectionChanged, selectionMayExist } from "./selection-state.js";
 import {
   TrackedSelection,
   MAX_TRACKED_SELECTION_ROWS,
@@ -38,6 +41,8 @@ export interface RenderViewport {
   scrollbackDiscardedCount?: number;
   charWidth?: number;
   selectedRows?: { start: number; end: number };
+  /** Following live output at the bottom; lets the GPU path paint the grid. */
+  live?: boolean;
 }
 
 function rgbToCSS(packed: number): string {
@@ -50,15 +55,40 @@ function rgbToCSS(packed: number): string {
 function colorToCSS(index: number): string | null {
   if (index === DEFAULT_COLOR) return null;
   if (index < 16) return `var(--term-color-${index})`;
+  return rgbToCSS(paletteRgb(index));
+}
+
+/** Packed RGB for xterm palette indices 16-255. */
+function paletteRgb(index: number): number {
   if (index < 232) {
     const n = index - 16;
-    const r = Math.floor(n / 36) * 51;
-    const g = (Math.floor(n / 6) % 6) * 51;
-    const b = (n % 6) * 51;
-    return `rgb(${r},${g},${b})`;
+    return (
+      ((Math.floor(n / 36) * 51) << 16) |
+      (((Math.floor(n / 6) % 6) * 51) << 8) |
+      ((n % 6) * 51)
+    );
   }
   const level = (index - 232) * 10 + 8;
-  return `rgb(${level},${level},${level})`;
+  return (level << 16) | (level << 8) | level;
+}
+
+const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+
+function cellColorPixel(
+  index: number,
+  rgb: number | undefined,
+): number | undefined {
+  if (rgb === undefined) {
+    if (index < 16 || index > 255) return undefined;
+    rgb = paletteRgb(index);
+  }
+  return LITTLE_ENDIAN
+    ? (0xff000000 |
+        ((rgb & 0xff) << 16) |
+        (rgb & 0xff00) |
+        ((rgb >>> 16) & 0xff)) >>>
+        0
+    : ((rgb << 8) | 0xff) >>> 0;
 }
 
 function cellFgCSS(fg: number, fgRgb: number | undefined): string | null {
@@ -71,20 +101,25 @@ function cellBgCSS(bg: number, bgRgb: number | undefined): string | null {
   return colorToCSS(bg);
 }
 
-function buildCellStyle({
-  fg,
-  bg,
-  flags,
-  fgRgb,
-  bgRgb,
-  underlineStyle,
-  underlineRgb,
-}: CellData): string {
-  let fgCSS = cellFgCSS(fg, fgRgb);
-  let bgCSS = cellBgCSS(bg, bgRgb);
-  if (flags & FLAG_REVERSE) {
-    [fgCSS, bgCSS] = [bgCSS ?? DEFAULT_BG_CSS, fgCSS ?? DEFAULT_FG_CSS];
-  }
+function cellBackgroundPixel(cell: CellData): number | undefined {
+  return cell.flags & FLAG_REVERSE
+    ? cellColorPixel(cell.fg, cell.fgRgb)
+    : cellColorPixel(cell.bg, cell.bgRgb);
+}
+
+function buildCellStyle(
+  { fg, bg, flags, fgRgb, bgRgb, underlineStyle, underlineRgb }: CellData,
+  includeBackground = true,
+): string {
+  const reverse = flags & FLAG_REVERSE;
+  const fgCSS = reverse
+    ? (cellBgCSS(bg, bgRgb) ?? DEFAULT_BG_CSS)
+    : cellFgCSS(fg, fgRgb);
+  const bgCSS = includeBackground
+    ? reverse
+      ? (cellFgCSS(fg, fgRgb) ?? DEFAULT_FG_CSS)
+      : cellBgCSS(bg, bgRgb)
+    : null;
 
   let style = "";
   if (fgCSS) style += `color:${fgCSS};`;
@@ -394,7 +429,7 @@ export class Renderer {
   private prevCursorRow = -1;
   private prevCursorCol = -1;
   private prevCursorVisible = false;
-  private prevRowBg: string[] = [];
+  private rowIds: (number | null)[] = [];
 
   private _scrollbackRowEls: HTMLDivElement[] = [];
   private _scrollbackKeys: number[] = [];
@@ -415,6 +450,33 @@ export class Renderer {
   private painted = false;
   private colorHost: HTMLElement;
   private viewport: RenderViewport | undefined;
+  private gpu: GpuGrid | null = null;
+  private gpuWanted = false;
+  private gpuShown = false;
+  /** Every GPU row must be rebuilt: the DOM path painted frames the GPU missed. */
+  private gpuAllDirty = true;
+  /** Grid rows whose DOM text lags the GPU frame. */
+  private staleRows = new Set<number>();
+  private staleScrollback = false;
+  private forceText = false;
+  private searchActive = false;
+  private gpuPalette: GpuPalette | null = null;
+  private gpuCursor: GpuCursor | null = null;
+  private gpuCoreCursor: CursorState | null = null;
+  private hostObserver: MutationObserver | null = null;
+  private blinkTimer: ReturnType<typeof setInterval> | null = null;
+  private cellCanvas: HTMLCanvasElement;
+  private cellContext: CanvasRenderingContext2D | null = null;
+  private cellImage: ImageData | null = null;
+  private cellPixels: Uint32Array | null = null;
+  private cellEdges: Int32Array | null = null;
+  private cellTop: Uint32Array | null = null;
+  private cellBottom: Uint32Array | null = null;
+  private cellBandUsed: boolean[] = [];
+  private cellEnabled = false;
+  private cellSuspended = false;
+  private cellRowHeight = 0;
+  private cellCharWidth = 0;
 
   get hasImageFlow(): boolean {
     return (
@@ -425,14 +487,24 @@ export class Renderer {
 
   constructor(
     container: HTMLElement,
-    options: GraphicsLayerOptions & { colorHost?: HTMLElement } = {},
+    options: GraphicsLayerOptions & {
+      colorHost?: HTMLElement;
+      renderer?: "dom" | "webgl";
+    } = {},
   ) {
     this.container = container;
+    this.gpuWanted = options.renderer === "webgl";
     this.colorHost = options.colorHost ?? container;
     this.graphics = new GraphicsLayer(container, options);
     this.searchLayer = document.createElement("div");
     this.searchLayer.className = "term-search-layer";
     this.searchLayer.setAttribute("aria-hidden", "true");
+    this.cellCanvas = document.createElement("canvas");
+    this.cellCanvas.className = "term-cell-canvas";
+    this.cellCanvas.setAttribute("aria-hidden", "true");
+    this.cellCanvas.addEventListener("contextrestored", () => {
+      if (this.cellImage) this.cellContext?.putImageData(this.cellImage, 0, 0);
+    });
   }
 
   setup(cols: number, rows: number): void {
@@ -443,12 +515,16 @@ export class Renderer {
     this.rowParts = new WeakMap();
     this.rowBackground = new WeakMap();
     this.rowEls = [];
-    this.prevRowBg = [];
+    this.rowIds = [];
     this._scrollbackRowEls = [];
     this._scrollbackKeys = [];
     this._scrollbackGapSpacers = [];
     this._renderedScrollbackCount = -1;
     this._renderedDiscardedCount = -1;
+    this.cellEnabled = false;
+    this.cellRowHeight = 0;
+    this.cellCharWidth = 0;
+    this.releaseCellImage();
 
     const fragment = document.createDocumentFragment();
     this._scrollbackTopSpacer = document.createElement("div");
@@ -462,15 +538,130 @@ export class Renderer {
     for (let r = 0; r < rows; r++) {
       const rowEl = document.createElement("div");
       rowEl.className = "term-row";
+      this.rowBackground.set(rowEl, "");
       fragment.appendChild(rowEl);
       this.rowEls.push(rowEl);
     }
     this.container.appendChild(fragment);
+    this.container.appendChild(this.cellCanvas);
     this.searchLayer.replaceChildren();
     this.container.appendChild(this.searchLayer);
+    if (this.gpu) this.container.appendChild(this.gpu.canvas);
+    this.gpuAllDirty = true;
+    this.staleRows.clear();
+    this.staleScrollback = false;
     this.graphics.setup();
     this.prevCursorRow = -1;
     this.prevCursorCol = -1;
+  }
+
+  /**
+   * Sizes the live-row color canvas to the grid. Cell edges sit on whole CSS
+   * pixels, matching where the browser paints DOM cell backgrounds.
+   */
+  private syncCellCanvas(viewport?: RenderViewport): boolean {
+    const rowHeight = viewport?.rowHeight ?? 0;
+    const charWidth = viewport?.charWidth ?? 0;
+    const enabled =
+      Number.isInteger(rowHeight) &&
+      rowHeight > 0 &&
+      Number.isFinite(charWidth) &&
+      charWidth > 0 &&
+      !this.hasImageFlow &&
+      !this.cellSuspended &&
+      (this.cellContext ??= this.cellCanvas.getContext("2d")) !== null;
+    if (!enabled) {
+      const changed = this.cellEnabled;
+      this.cellEnabled = false;
+      if (changed) this.releaseCellImage();
+      return changed;
+    }
+    if (
+      this.cellEnabled &&
+      this.cellRowHeight === rowHeight &&
+      this.cellCharWidth === charWidth
+    )
+      return false;
+    const edges = new Int32Array(this.cols + 1);
+    for (let col = 0; col <= this.cols; col++)
+      edges[col] = Math.round(col * charWidth);
+    this.releaseCellImage();
+    this.cellEnabled = true;
+    this.cellRowHeight = rowHeight;
+    this.cellCharWidth = charWidth;
+    this.cellEdges = edges;
+    this.cellTop = new Uint32Array(this.cols);
+    this.cellBottom = new Uint32Array(this.cols);
+    return true;
+  }
+
+  /** Frees the canvas bitmap and pixel buffer until a row needs them again. */
+  private releaseCellImage(): void {
+    this.cellImage = null;
+    this.cellPixels = null;
+    this.cellBandUsed = [];
+    this.cellCanvas.width = 0;
+    this.cellCanvas.height = 0;
+    this.cellCanvas.hidden = true;
+  }
+
+  /** Allocates the canvas bitmap on the first row that has canvas cells. */
+  private ensureCellImage(): boolean {
+    if (this.cellImage) return true;
+    if (!this.cellContext) return false;
+    const width = Math.max(1, this.cellEdges![this.cols]);
+    const height = this.rows * this.cellRowHeight;
+    this.cellCanvas.width = width;
+    this.cellCanvas.height = height;
+    this.cellCanvas.style.width = `${width}px`;
+    this.cellCanvas.style.height = `${height}px`;
+    this.cellCanvas.hidden = false;
+    this.cellImage = this.cellContext.createImageData(width, height);
+    this.cellPixels = new Uint32Array(this.cellImage.data.buffer);
+    return true;
+  }
+
+  /** Expands one row's cell colors into its canvas band and uploads it. */
+  private paintCellBand(rowIndex: number, used: boolean): void {
+    if (!used && !this.cellBandUsed[rowIndex]) return;
+    if (!this.ensureCellImage()) return;
+    const pixels = this.cellPixels!;
+    const image = this.cellImage!;
+    const width = image.width;
+    const height = this.cellRowHeight;
+    const band = rowIndex * height * width;
+    if (!used) {
+      pixels.fill(0, band, band + height * width);
+    } else {
+      const edges = this.cellEdges!;
+      const top = this.cellTop!;
+      const bottom = this.cellBottom!;
+      const split = Math.round(height / 2);
+      const bottomLine = band + split * width;
+      for (let col = 0; col < this.cols; col++) {
+        pixels.fill(top[col], band + edges[col], band + edges[col + 1]);
+        pixels.fill(
+          bottom[col],
+          bottomLine + edges[col],
+          bottomLine + edges[col + 1],
+        );
+      }
+      for (let line = 1; line < height; line++) {
+        if (line === split) continue;
+        const source = line < split ? band : bottomLine;
+        pixels.copyWithin(band + line * width, source, source + width);
+      }
+    }
+    this.cellBandUsed[rowIndex] = used;
+    this.cellContext!.putImageData(
+      image,
+      0,
+      0,
+      0,
+      rowIndex * height,
+      width,
+      height,
+    );
   }
 
   private _buildRowContent(
@@ -511,6 +702,15 @@ export class Renderer {
     let outputLinkKey = "";
     let rowBackground: string | undefined;
     let uniformBackground = lineLen >= this.cols;
+    const canvasTop = rowIndex >= 0 && this.cellEnabled ? this.cellTop : null;
+    const canvasBottom = this.cellBottom!;
+    if (canvasTop) {
+      canvasTop.fill(0);
+      canvasBottom.fill(0);
+    }
+    let canvasUsed = false;
+    let canvasText = "";
+    let canvasCols = 0;
 
     const appendContent = (
       content: RowPart,
@@ -573,6 +773,18 @@ export class Renderer {
       appendContent(cellSpanPart(className, style, text), linkKey, linkUri);
     };
 
+    const flushCanvasRun = () => {
+      if (!canvasCols) return;
+      appendStyledSpan(
+        "term-canvas-run",
+        columnStyle(canvasCols),
+        canvasText,
+        "",
+      );
+      canvasText = "";
+      canvasCols = 0;
+    };
+
     for (let col = 0; col < this.cols; col++) {
       const cell = getCell(col);
       const inBounds = col < lineLen;
@@ -580,6 +792,57 @@ export class Renderer {
       const width = inBounds ? (cell.width ?? 1) : 1;
       const cellLinkKey = inBounds ? linkIdentity(cell) : "";
       const cellLinkUri = inBounds ? cell.linkUri : undefined;
+
+      if (
+        canvasTop &&
+        inBounds &&
+        width === 1 &&
+        col !== cursorCol &&
+        !cellLinkUri &&
+        !(
+          cell.flags &
+          (FLAG_DIM | FLAG_INVISIBLE | FLAG_UNDERLINE | FLAG_STRIKETHROUGH)
+        ) &&
+        (!cell.underlineStyle || cell.underlineStyle === "none") &&
+        (cp === 0x2580 || cp === 0x2584 || cp === 0x2588)
+      ) {
+        let foreground = cellColorPixel(cell.fg, cell.fgRgb);
+        let background = cellColorPixel(cell.bg, cell.bgRgb);
+        if (cell.flags & FLAG_REVERSE)
+          [foreground, background] = [background, foreground];
+        if (
+          foreground !== undefined &&
+          (cp === 0x2588 || background !== undefined)
+        ) {
+          flushRun(col);
+          canvasTop[col] = cp === 0x2584 ? background! : foreground;
+          canvasBottom[col] = cp === 0x2580 ? background! : foreground;
+          canvasUsed = true;
+          const text = cell.chars ?? String.fromCodePoint(cp);
+          recordText(text, col);
+          canvasText += text;
+          canvasCols++;
+          uniformBackground = false;
+          runStart = col + 1;
+          continue;
+        }
+      }
+      const canvasBackground =
+        canvasTop &&
+        inBounds &&
+        width === 1 &&
+        col !== cursorCol &&
+        !cellLinkKey &&
+        !(cell.flags & (FLAG_DIM | FLAG_INVISIBLE)) &&
+        !(cp >= 0x2580 && cp <= 0x259f)
+          ? cellBackgroundPixel(cell)
+          : undefined;
+      if (canvasTop && canvasBackground !== undefined) {
+        canvasTop[col] = canvasBackground;
+        canvasBottom[col] = canvasBackground;
+        canvasUsed = true;
+      }
+      flushCanvasRun();
 
       // Only a shared, opaque background can fill the unused row width.
       // Otherwise it would also show through default, dim, or hidden cells.
@@ -717,7 +980,9 @@ export class Renderer {
         const ch =
           cell.chars ?? (inBounds && cp >= 32 ? String.fromCodePoint(cp) : " ");
         recordText(ch, col, 1, cell.spacerHead === true);
-        const style = inBounds ? buildCellStyle(cell) : "";
+        const style = inBounds
+          ? buildCellStyle(cell, canvasBackground === undefined)
+          : "";
 
         // Font fallback can give a narrow Unicode glyph a different advance
         // from ASCII. Bound each such cell (including complete graphemes) so
@@ -759,21 +1024,18 @@ export class Renderer {
       }
     }
     flushRun(this.cols);
+    flushCanvasRun();
     if (outputLinkKey) parts.push({ html: linkHtml + "</a>" });
 
     this.updateRowParts(rowEl, parts);
     this.rowText.set(rowEl, content);
+    if (canvasTop) this.paintCellBand(rowIndex, canvasUsed);
 
     const bgCss =
       uniformBackground && rowBackground !== DEFAULT_BG_CSS
         ? (rowBackground ?? "")
         : "";
-    if (rowIndex >= 0) {
-      if (bgCss !== (this.prevRowBg[rowIndex] ?? "")) {
-        rowEl.style.background = bgCss;
-        this.prevRowBg[rowIndex] = bgCss;
-      }
-    } else if (this.rowBackground.get(rowEl) !== bgCss) {
+    if (this.rowBackground.get(rowEl) !== bgCss) {
       rowEl.style.background = bgCss;
       this.rowBackground.set(rowEl, bgCss);
     }
@@ -889,7 +1151,9 @@ export class Renderer {
           Math.min(scrollbackCount, firstVisible + visibleRows + overscan),
         )
       : scrollbackCount;
-    const selection = this.container.ownerDocument.getSelection();
+    const selection = selectionMayExist(this.container.ownerDocument)
+      ? this.container.ownerDocument.getSelection()
+      : null;
     const selectionInContainer =
       selection !== null &&
       !selection.isCollapsed &&
@@ -1020,7 +1284,9 @@ export class Renderer {
     }
   }
 
-  private syncColorOverrides(colors: TerminalColorOverrides = {}): void {
+  /** Applies application color overrides; true when any changed. */
+  private syncColorOverrides(colors: TerminalColorOverrides = {}): boolean {
+    let changed = false;
     for (const [key, property] of [
       ["foreground", "--term-app-fg"],
       ["background", "--term-app-bg"],
@@ -1029,13 +1295,82 @@ export class Renderer {
       const value = colors[key];
       const css = value === undefined ? "" : rgbToCSS(value);
       if (this.colorHost.style.getPropertyValue(property) === css) continue;
+      changed = true;
       if (css) this.colorHost.style.setProperty(property, css);
       else this.colorHost.style.removeProperty(property);
     }
+    return changed;
+  }
+
+  /** Reuses live row nodes and canvas bands by the core's content identity. */
+  private syncLiveRows(core: TerminalCore): Set<number> | null {
+    const ids = core.getRowId
+      ? Array.from({ length: this.rows }, (_, row) => core.getRowId!(row))
+      : [];
+    const previous = this.rowIds;
+    this.rowIds = ids.includes(null) ? [] : ids;
+    if (!this.rowIds.length) return null;
+    if (previous.length !== ids.length)
+      return new Set(ids.map((_, row) => row));
+    if (ids.every((id, row) => id === previous[row])) return null;
+
+    const oldRows = new Map<number | null, number>();
+    for (let row = 0; row < previous.length; row++)
+      oldRows.set(previous[row], row);
+    const sources = ids.map((id) => oldRows.get(id) ?? -1);
+    const retained = new Set(sources);
+    const available = this.rowEls
+      .map((_, row) => row)
+      .filter((row) => !retained.has(row))
+      .reverse();
+    const fresh = new Set<number>();
+    for (let row = 0; row < this.rows; row++) {
+      if (sources[row] < 0) {
+        sources[row] = available.pop()!;
+        fresh.add(row);
+      }
+    }
+    this.rowEls = sources.map((source) => this.rowEls[source]);
+    this.prevCursorRow = sources.indexOf(this.prevCursorRow);
+
+    const firstMoved = sources.findIndex(
+      (source, row) => !fresh.has(row) && source !== row,
+    );
+    if (firstMoved >= 0 && sources[firstMoved] > firstMoved) {
+      let next: Node = this.cellCanvas;
+      for (let row = this.rows - 1; row >= 0; row--) {
+        const element = this.rowEls[row];
+        if (element.nextSibling !== next)
+          this.container.insertBefore(element, next);
+        next = element;
+      }
+    } else {
+      let next = this._scrollbackBottomSpacer!.nextSibling;
+      for (const element of this.rowEls) {
+        if (element !== next) this.container.insertBefore(element, next);
+        next = element.nextSibling;
+      }
+    }
+
+    if (this.cellPixels && this.cellBandUsed.some(Boolean)) {
+      const pixels = this.cellPixels.slice();
+      const bandSize = this.cellImage!.width * this.cellRowHeight;
+      for (let row = 0; row < this.rows; row++) {
+        const start = sources[row] * bandSize;
+        this.cellPixels.set(
+          pixels.subarray(start, start + bandSize),
+          row * bandSize,
+        );
+      }
+      this.cellContext!.putImageData(this.cellImage!, 0, 0);
+    }
+    this.cellBandUsed = sources.map((source) => this.cellBandUsed[source]);
+    return fresh;
   }
 
   render(core: TerminalCore, viewport?: RenderViewport): void {
-    this.syncColorOverrides(core.getColorOverrides?.());
+    if (this.syncColorOverrides(core.getColorOverrides?.()))
+      this.gpuPalette = null;
     this.viewport = viewport;
     this.selection ??= new TrackedSelection(
       this.container.parentElement ?? this.container,
@@ -1051,6 +1386,17 @@ export class Renderer {
       resized = true;
     }
 
+    const gpuEligible = this._gpuEligible(core, viewport, positions !== null);
+    if (
+      gpuEligible &&
+      !this.forceText &&
+      this._gpuFrame(core, viewport!, resized)
+    )
+      return;
+    // A text-only render leaves the matching GPU frame on screen; any other
+    // DOM frame, including one the GPU path declined, shows the DOM text.
+    if (!gpuEligible || !this.forceText) this._hideGpu();
+
     this.syncScrollback(
       core,
       viewport && {
@@ -1060,6 +1406,18 @@ export class Renderer {
           : undefined,
       },
     );
+
+    this.graphics.reconcile(core, {
+      scrollTop: viewport?.scrollTop ?? 0,
+      clientHeight: viewport?.clientHeight ?? 0,
+      rowHeight: viewport?.rowHeight ?? 0,
+      charWidth: viewport?.charWidth ?? 0,
+      overscanRows: viewport?.overscanRows ?? DEFAULT_SCROLLBACK_OVERSCAN_ROWS,
+      scrollbackCount: core.getScrollbackCount(),
+    });
+    const canvasChanged = this.syncCellCanvas(viewport);
+    const freshRows = this.syncLiveRows(core);
+    this.cellCanvas.style.top = `${core.getScrollbackCount() * (viewport?.rowHeight ?? 0)}px`;
 
     const cursor = core.getCursor();
     const cursorVisible = cursor.visible;
@@ -1077,7 +1435,15 @@ export class Renderer {
       cursorVisible !== this.prevCursorVisible;
 
     for (let r = 0; r < this.rows; r++) {
-      const isDirty = this.colorsChanged || resized || core.isDirtyRow(r);
+      const isDirty =
+        this.colorsChanged ||
+        resized ||
+        canvasChanged ||
+        freshRows?.has(r) ||
+        this.staleRows.has(r) ||
+        (this.rowIds.length
+          ? (core.isRowContentDirty?.(r) ?? core.isDirtyRow(r))
+          : core.isDirtyRow(r));
       const hadCursor = r === this.prevCursorRow && needsCursorUpdate;
       const hasCursor = r === cursor.row;
 
@@ -1103,17 +1469,15 @@ export class Renderer {
     this.prevCursorVisible = cursorVisible;
 
     core.clearDirty();
+    this.staleRows.clear();
+    this.staleScrollback = false;
+    this.forceText = false;
+    // Newly mounted history moves the live rows; keep the canvas over them.
+    if (this.gpuShown) this._placeGpuCanvas();
+    this.gpuAllDirty = true;
     this.colorsChanged = false;
     this.selection.afterRender(this.selectionRows(), positions);
     this.painted = true;
-    this.graphics.reconcile(core, {
-      scrollTop: viewport?.scrollTop ?? 0,
-      clientHeight: viewport?.clientHeight ?? 0,
-      rowHeight: viewport?.rowHeight ?? 0,
-      charWidth: viewport?.charWidth ?? 0,
-      overscanRows: viewport?.overscanRows ?? DEFAULT_SCROLLBACK_OVERSCAN_ROWS,
-      scrollbackCount: core.getScrollbackCount(),
-    });
   }
 
   /** Mounted rows in chronological, retained-buffer coordinates. */
@@ -1199,6 +1563,7 @@ export class Renderer {
       end = edge(range.end, true);
     const native = this.container.ownerDocument.getSelection();
     if (!start || !end || !native) return false;
+    markSelectionChanged(this.container.ownerDocument);
     native.setBaseAndExtent(...start, ...end);
     this.selection?.capture(core, this.selectionRows());
     return true;
@@ -1244,6 +1609,11 @@ export class Renderer {
     return nearest && { row: nearest.row, col: nearest.col };
   }
 
+  /** Turns the color canvas off so block cells keep their own colored spans. */
+  setCanvasSuspended(suspended: boolean): void {
+    this.cellSuspended = suspended;
+  }
+
   requestSetup(): void {
     this.needsSetup = true;
   }
@@ -1255,11 +1625,246 @@ export class Renderer {
 
   /** Replaces decorations only, preserving native text selection. */
   setSearchDecorations(decorations: DocumentFragment): void {
+    this.searchActive = decorations.firstChild !== null;
     if (!decorations.firstChild && !this.searchLayer.firstChild) return;
     this.searchLayer.replaceChildren(decorations);
   }
 
+  /** DOM text lags the painted GPU frame; a text render brings it current. */
+  get textStale(): boolean {
+    return this.staleRows.size > 0 || this.staleScrollback;
+  }
+
+  /** The next render rebuilds DOM text even when the GPU path could paint. */
+  requestText(): void {
+    this.forceText = true;
+  }
+
+  /** Shows the DOM text until the GPU path is eligible again, e.g. for selection. */
+  yieldToDom(): void {
+    this._hideGpu();
+    this.gpuAllDirty = true;
+  }
+
+  /** The GPU path can show this frame: live output with nothing that needs DOM. */
+  private _gpuEligible(
+    core: TerminalCore,
+    viewport: RenderViewport | undefined,
+    selecting: boolean,
+  ): boolean {
+    return (
+      this.gpuWanted &&
+      !selecting &&
+      !this.searchActive &&
+      viewport?.live === true &&
+      !!viewport.charWidth &&
+      !!viewport.rowHeight &&
+      GpuGrid.fits(
+        this.cols,
+        this.rows,
+        viewport.charWidth,
+        viewport.rowHeight,
+      ) &&
+      !this.hasImageFlow &&
+      // Image positions follow the DOM scrollback, which the GPU path defers.
+      ((core.getGraphicsState?.()?.placements.length ?? 0) === 0 ||
+        core.getScrollbackCount() === this._renderedScrollbackCount)
+    );
+  }
+
+  private _gpuFrame(
+    core: TerminalCore,
+    viewport: RenderViewport,
+    resized: boolean,
+  ): boolean {
+    if (!this.gpu) {
+      this.gpu = GpuGrid.create();
+      if (!this.gpu) {
+        this.gpuWanted = false;
+        return false;
+      }
+      // Hidden until a GPU frame paints it; a declined first frame keeps DOM.
+      this.gpu.canvas.hidden = true;
+      this.container.appendChild(this.gpu.canvas);
+      this._observeHost();
+    }
+    if (this.gpu.contextLost) {
+      this.gpu.destroy();
+      this.gpu = null;
+      this.gpuWanted = false;
+      return false;
+    }
+    if (this.colorsChanged || !this.gpuPalette)
+      this.gpuPalette = this._readPalette();
+    const style = getComputedStyle(this.container);
+    const reconfigured = this.gpu.configure(
+      this.cols,
+      this.rows,
+      {
+        charWidth: viewport.charWidth ?? 0,
+        rowHeight: viewport.rowHeight,
+        fontFamily: style.fontFamily,
+        fontSize: parseFloat(style.fontSize),
+      },
+      this.gpuPalette,
+    );
+    const all =
+      this.gpuAllDirty || reconfigured || resized || this.colorsChanged;
+    for (let r = 0; r < this.rows; r++) {
+      if (all || core.isDirtyRow(r)) {
+        this.gpu.updateRow(core, r);
+        this.staleRows.add(r);
+      }
+    }
+    // Filling the atlas clears it, leaving rows built earlier this frame
+    // pointing at freed slots: rebuild every row against the fresh atlas.
+    if (this.gpu.atlasStale) {
+      this.gpu.acknowledgeAtlas();
+      for (let r = 0; r < this.rows; r++) this.gpu.updateRow(core, r);
+      // More distinct glyphs on screen than the atlas holds: paint this
+      // frame as DOM text and rebuild the GPU rows on the next one.
+      if (this.gpu.atlasStale) {
+        this.gpu.acknowledgeAtlas();
+        this.staleRows.clear();
+        this.gpuAllDirty = true;
+        return false;
+      }
+    }
+    if (core.getScrollbackCount() !== this._renderedScrollbackCount)
+      this.staleScrollback = true;
+    const cursor = core.getCursor();
+    this.gpuCoreCursor = cursor;
+    this._applyGpuCursor();
+    core.clearDirty();
+    this.gpuAllDirty = false;
+    this.colorsChanged = false;
+    this.prevCursorRow = -1;
+    this.gpu.draw();
+    this.graphics.reconcile(core, {
+      scrollTop: viewport.scrollTop,
+      clientHeight: viewport.clientHeight,
+      rowHeight: viewport.rowHeight,
+      charWidth: viewport.charWidth ?? 0,
+      overscanRows: viewport.overscanRows ?? DEFAULT_SCROLLBACK_OVERSCAN_ROWS,
+      scrollbackCount: core.getScrollbackCount(),
+    });
+    this._placeGpuCanvas();
+
+    if (!this.gpuShown) {
+      this.gpu.canvas.hidden = false;
+      this.container.classList.add("term-gpu-active");
+      this.gpuShown = true;
+    }
+    this.painted = true;
+    return true;
+  }
+
+  /** Cursor focus and blink from the host, as the CSS reads them. */
+  private _applyGpuCursor(): void {
+    const cursor = this.gpuCoreCursor;
+    if (!this.gpu || !cursor) return;
+    const host = this.container.parentElement;
+    // Mirrors the CSS: solid and blinking only while the terminal has focus.
+    const focused = host?.matches(".focused, :active") ?? false;
+    const blinking =
+      focused &&
+      ((host?.classList.contains("cursor-blink") ?? false) ||
+        (!(host?.classList.contains("cursor-steady") ?? false) &&
+          cursor.blinking === true));
+    this.gpuCursor = {
+      row: cursor.row,
+      col: cursor.col,
+      shape: cursor.shape ?? "block",
+      visible: cursor.visible,
+      focused,
+    };
+    this._syncBlink(blinking);
+    this.gpu.setCursor(this._blinkedCursor(blinking));
+  }
+
+  /** Focus and blink classes change without output; redraw the cursor then. */
+  private _observeHost(): void {
+    const host = this.container.parentElement;
+    if (!host || this.hostObserver) return;
+    this.hostObserver = new MutationObserver(() => {
+      if (!this.gpu || !this.gpuShown) return;
+      this._applyGpuCursor();
+      this.gpu.draw();
+    });
+    this.hostObserver.observe(host, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+  }
+
+  /** The cursor with the CSS blink phase applied: on for the first half second. */
+  private _blinkedCursor(blinking: boolean): GpuCursor | null {
+    const c = this.gpuCursor;
+    if (!c || !blinking) return c;
+    return { ...c, visible: c.visible && performance.now() % 1000 < 500 };
+  }
+
+  private _syncBlink(blinking: boolean): void {
+    if (!blinking) {
+      if (this.blinkTimer !== null) clearInterval(this.blinkTimer);
+      this.blinkTimer = null;
+      return;
+    }
+    this.blinkTimer ??= setInterval(() => {
+      if (!this.gpu || !this.gpuShown) return;
+      this.gpu.setCursor(this._blinkedCursor(true));
+      this.gpu.draw();
+    }, 500);
+  }
+
+  private _placeGpuCanvas(): void {
+    const first = this.rowEls[0];
+    if (!first || !this.gpu) return;
+    const transform = `translate(${first.offsetLeft}px, ${first.offsetTop}px)`;
+    if (this.gpu.canvas.style.transform !== transform)
+      this.gpu.canvas.style.transform = transform;
+  }
+
+  private _hideGpu(): void {
+    this._syncBlink(false);
+    if (!this.gpuShown || !this.gpu) return;
+    this.gpu.canvas.hidden = true;
+    this.container.classList.remove("term-gpu-active");
+    this.gpuShown = false;
+  }
+
+  /** Resolves the theme's CSS colors to RGB for the GPU path. */
+  private _readPalette(): GpuPalette {
+    const probe = document.createElement("span");
+    probe.style.display = "none";
+    this.colorHost.appendChild(probe);
+    const read = (name: string, fallback: string) => {
+      probe.style.color = `var(${name}, ${fallback})`;
+      const m = getComputedStyle(probe).color.match(/\d+(\.\d+)?/g);
+      return m ? (Number(m[0]) << 16) | (Number(m[1]) << 8) | Number(m[2]) : 0;
+    };
+    const palette = {
+      // Application overrides win over the theme, as in the CSS.
+      fg: read("--term-app-fg", "var(--term-fg, #e5e5e5)"),
+      bg: read("--term-app-bg", "var(--term-bg, #000)"),
+      cursor: read(
+        "--term-app-cursor",
+        "var(--term-cursor, var(--term-app-fg, var(--term-fg, #e5e5e5)))",
+      ),
+      ansi: Array.from({ length: 16 }, (_, i) =>
+        read(`--term-color-${i}`, "#000"),
+      ),
+    };
+    probe.remove();
+    return palette;
+  }
+
   destroy(): void {
+    this.hostObserver?.disconnect();
+    this.hostObserver = null;
+    this._syncBlink(false);
+    this.gpu?.destroy();
+    this.gpu = null;
     this.syncColorOverrides();
     this.painted = false;
     this.selection?.dispose();
@@ -1267,5 +1872,8 @@ export class Renderer {
     this.container.innerHTML = "";
     this.rowEls = [];
     this._scrollbackRowEls = [];
+    this.cellImage = null;
+    this.cellPixels = null;
+    this.cellContext = null;
   }
 }

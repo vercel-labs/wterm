@@ -77,8 +77,30 @@ jobs:
       - name: Type check
         run: pnpm type-check
 
+      - name: Read Playwright version
+        id: playwright
+        run: |
+          echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageOS" >> "$GITHUB_OUTPUT"
+
+      # The browser system packages come from the Ubuntu mirror, which can
+      # stall for over 30 minutes. Keep the downloaded packages next to the
+      # browsers so a cache hit installs without network.
+      - name: Cache Playwright browsers and system packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/playwright-apt
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.image }}-${{ steps.playwright.outputs.version }}
+
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
+        run: |
+          mkdir -p ~/.cache/playwright-apt/partial
+          printf 'Dir::Cache::Archives "%s/";\nAPT::Sandbox::User "root";\n' ~/.cache/playwright-apt \
+            | sudo tee /etc/apt/apt.conf.d/99playwright-cache > /dev/null
+          pnpm exec playwright install --with-deps chromium firefox webkit
+          sudo chown -R "$(id -u):$(id -g)" ~/.cache/playwright-apt
 
       - name: E2E tests
         run: pnpm test:e2e

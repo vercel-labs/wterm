@@ -85,11 +85,21 @@ const BLANK_CELL: CellData = {
 
 export interface GhosttyOptions {
   wasmPath?: string;
+  /** Scrollback budget in bytes. Ignored when `scrollbackLines` is set. */
   scrollbackLimit?: number;
+  /** Lines of history to keep (default: 1000 unless `scrollbackLimit` is set). */
+  scrollbackLines?: number;
   foregroundColor?: string;
   backgroundColor?: string;
   /** Decoded Kitty image bytes per screen. Zero disables image support. */
   imageStorageLimit?: number;
+}
+
+const DEFAULT_SCROLLBACK_LINES = 1000;
+
+function assertScrollbackLines(lines: number): void {
+  if (!Number.isInteger(lines) || lines < 0 || lines > 0xffffffff)
+    throw new RangeError(`Invalid scrollback line count: ${lines}`);
 }
 
 function parseColor(value: string, option: string): number {
@@ -143,6 +153,7 @@ export class GhosttyCore implements TerminalCore {
   private _foregroundRgb: number;
   private _backgroundRgb: number;
   private _themeColors: TerminalThemeColors | null = null;
+  private _scrollbackLines: number | null;
 
   private _viewportBufPtr = 0;
   private _viewportBufSize = 0;
@@ -183,6 +194,17 @@ export class GhosttyCore implements TerminalCore {
       options.backgroundColor ?? DEFAULT_BACKGROUND,
       "backgroundColor",
     );
+    if (options.scrollbackLines !== undefined) {
+      assertScrollbackLines(options.scrollbackLines);
+      if (!wasm.exports.set_scrollback_lines)
+        throw new Error("This WASM build cannot set scrollback in lines");
+    }
+    this._scrollbackLines =
+      options.scrollbackLines ??
+      (options.scrollbackLimit === undefined &&
+      wasm.exports.set_scrollback_lines
+        ? DEFAULT_SCROLLBACK_LINES
+        : null);
   }
 
   /**
@@ -211,6 +233,11 @@ export class GhosttyCore implements TerminalCore {
       imageStorageLimit(this._options),
     );
     if (this.termPtr === 0) return;
+    if (this._scrollbackLines !== null)
+      this.wasm.exports.set_scrollback_lines?.(
+        this.termPtr,
+        this._scrollbackLines,
+      );
     if (this._themeColors) this.setThemeColors(this._themeColors);
     if (this._graphemeBufPtr !== 0)
       freeBuffer(this.wasm, this._graphemeBufPtr, this._graphemeBufSize);
@@ -833,6 +860,17 @@ export class GhosttyCore implements TerminalCore {
       wrapsToNext: (flags & 1) !== 0,
       continuesPrevious: (flags & 2) !== 0,
     };
+  }
+
+  /** Lines of history to keep; extra lines are dropped from the oldest end. */
+  setScrollbackLines(lines: number): void {
+    assertScrollbackLines(lines);
+    const apply = this.wasm.exports.set_scrollback_lines;
+    if (!apply)
+      throw new Error("This WASM build cannot set scrollback in lines");
+    if (this._disposed) return;
+    this._scrollbackLines = lines;
+    if (this.termPtr) apply(this.termPtr, lines);
   }
 
   /** Update host defaults while preserving application overrides and parser state. */
