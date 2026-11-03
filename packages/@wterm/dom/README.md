@@ -76,6 +76,22 @@ wait for a paint before starting, and retain their normal cancellation rules.
 Pending output announcements are discarded. Synchronized-output holds and
 their recovery timeout still apply.
 
+## Many terminals on one page
+
+Each terminal using the built-in core is a separate WebAssembly instance. In
+Chrome, a page can hold about a hundred live instances before the next `init()`
+rejects with `WebAssembly.instantiate(): Out of memory`, although each one uses
+about 2 MB. `destroy()` releases the instance, so the limit counts terminals
+that exist at the same time.
+
+`renderingPaused` stops painting but keeps the instance. For a page that can
+show many terminals, such as a transcript or a log viewer, create each terminal
+when it scrolls into view and destroy it when it leaves. Keep the output it
+received and write it into a new terminal when it comes back. The built-in core
+retains 1,000 scrollback lines, so that is all a new terminal needs. The
+[ACP agent example](https://github.com/vercel-labs/wterm/tree/main/examples/acp-agent)
+works this way.
+
 ## Output announcements
 
 Set `announceOutput: true` in vanilla JavaScript, or pass the `announceOutput`
