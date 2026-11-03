@@ -94,6 +94,42 @@ describe("GhosttyCore scrollbackLines", () => {
     expect(core.getScrollbackCount()).toBe(4000);
   });
 
+  it("keeps rows dropped by a lower limit discarded once it is raised", async () => {
+    const core = await filled({}, 500);
+    core.setScrollbackLines(10);
+    expect(core.getScrollbackCount()).toBe(10);
+    expect(core.getScrollbackDiscardedCount()).toBe(467);
+    core.setScrollbackLines(1000);
+    expect(core.getScrollbackCount()).toBe(10);
+    expect(core.getScrollbackDiscardedCount()).toBe(467);
+    expect(text(core, 9)).toBe("line 467");
+  });
+
+  it("keeps output written under a zero limit discarded once it is raised", async () => {
+    const core = await filled({ scrollbackLines: 0 }, 500);
+    core.setScrollbackLines(1000);
+    expect(core.getScrollbackCount()).toBe(0);
+    expect(core.getScrollbackDiscardedCount()).toBe(477);
+    write(core, 30, 500);
+    expect(core.getScrollbackCount()).toBe(30);
+    expect(text(core, 29)).toBe("line 477");
+  });
+
+  it("drops positions and images in rows a lower limit discarded", async () => {
+    const core = await filled({}, 0);
+    const pixel = Buffer.from([255, 0, 0]).toString("base64");
+    core.writeString(
+      `img \x1b_Ga=T,f=24,s=1,v=1,i=5,c=1,r=1;${pixel}\x1b\\\r\n`,
+    );
+    write(core, 500);
+    const tracked = core.trackPosition({ row: 0, col: 0 })!;
+    expect(core.getGraphicsState()?.placements).toHaveLength(1);
+    core.setScrollbackLines(10);
+    core.setScrollbackLines(1000);
+    expect(tracked.resolve()).toBeNull();
+    expect(core.getGraphicsState()?.placements ?? []).toHaveLength(0);
+  });
+
   it("keeps the byte budget when only scrollbackLimit is set", async () => {
     const core = await filled({ scrollbackLimit: 10000 }, 5000);
     expect(core.getScrollbackCount()).toBeLessThan(1000);

@@ -818,8 +818,45 @@ export fn resize(ptr: usize, cols: u16, rows: u16) void {
 /// width; rows retained past the limit are reported as discarded.
 export fn set_scrollback_lines(ptr: usize, lines: u32) void {
     const state = stateFromPtr(ptr);
+    // Rows hidden under the old limit were already reported as discarded, so
+    // they go before a higher limit could show them again.
+    dropHiddenHistory(state);
     state.scrollback_lines = lines;
     applyScrollbackLines(state, lines);
+    dropHiddenHistory(state);
+}
+
+/// Erase primary history rows past the line limit and count them as
+/// discarded, as Ghostty does when it prunes a page.
+fn dropHiddenHistory(state: *State) void {
+    const lines = state.scrollback_lines orelse return;
+    const primary = state.terminal.screens.get(.primary) orelse return;
+    const pages = &primary.pages;
+    const excess = (pages.total_rows -| state.terminal.rows) -| lines;
+    if (excess == 0) return;
+    for (state.positions.entries) |slot| if (slot) |entry| {
+        if (entry.screen != primary) continue;
+        const pt = pages.pointFromPin(.history, entry.pin.*) orelse continue;
+        if (pt.history.y < excess) entry.pin.garbage = true;
+    };
+    const storage = &primary.kitty_images;
+    var it = storage.placements.iterator();
+    while (it.next()) |entry| {
+        const pin = switch (entry.value_ptr.location) {
+            .pin => |p| p,
+            .virtual => continue,
+        };
+        const pt = pages.pointFromPin(.history, pin.*) orelse continue;
+        if (pt.history.y >= excess) continue;
+        entry.value_ptr.deinit(primary);
+        storage.placements.removeByPtr(entry.key_ptr);
+        storage.dirty = true;
+    }
+    primary.eraseRows(
+        .{ .history = .{} },
+        .{ .history = .{ .y = @intCast(excess - 1) } },
+    );
+    pages.discarded_rows += excess;
 }
 
 fn applyScrollbackLines(state: *State, lines: u32) void {
