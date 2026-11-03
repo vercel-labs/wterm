@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>wterm ACP agent</title>
+  </head>
+  <body>
+    <header class="bar">
+      <span id="title" class="title">New session</span>
+      <span id="agent" class="agent">connecting</span>
+    </header>
+    <main id="transcript" class="transcript"></main>
+    <form id="composer" class="composer">
+      <textarea
+        id="prompt"
+        rows="1"
+        placeholder="Ask the agent"
+        aria-label="Prompt"
+      ></textarea>
+      <button id="send" type="submit" disabled>Send</button>
+    </form>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
