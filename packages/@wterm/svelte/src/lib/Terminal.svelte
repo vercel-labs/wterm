@@ -53,10 +53,14 @@
   export let autoResize = false;
   export let maxImageWidth: number | undefined = undefined;
   export let maxImageHeight: number | undefined = undefined;
+  /** Paints live output with WebGL2; DOM text stays for selection, search and accessibility. Fixed at mount. */
+  export let renderer: "dom" | "webgl" | undefined = undefined;
   export let cursorBlink: boolean | undefined = undefined;
   export let announceOutput = false;
   /** Suspend painting for an inactive pane; parsing and terminal effects continue. */
   export let renderingPaused = false;
+  /** Lines of history the core keeps; omit for the core's default. */
+  export let scrollbackLines: number | undefined = undefined;
   /** Let in-page agents read and type into this terminal through WebMCP. */
   export let webmcp: boolean | WebMCPOptions = false;
   export let debug = false;
@@ -176,9 +180,11 @@
       autoResize,
       maxImageWidth,
       maxImageHeight,
+      renderer,
       cursorBlink,
       announceOutput,
       renderingPaused,
+      scrollbackLines,
       webmcp,
       debug,
       onData: hasDataHandler() ? handleData : undefined,
@@ -230,6 +236,9 @@
     instance.setRenderingPaused(renderingPaused);
   }
 
+  $: if (instance && scrollbackLines !== undefined) {
+    instance.setScrollbackLines(scrollbackLines);
+  }
   $: instance?.setWebMCP(webmcp);
 </script>
 

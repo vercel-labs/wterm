@@ -61,6 +61,16 @@ The input's accessible description includes the exit instructions after any host
 
 Mounted output remains readable separately from input. Use `readText()` to present retained history in an accessible reader; live output announcements are off by default. Ancestor `aria-hidden` and `inert` still control whether a terminal is available.
 
+## WebGL renderer
+
+Pass `renderer: "webgl"` to paint live output on a WebGL2 canvas. Full-screen
+redraws, images and large pane grids stop paying for DOM layout on every frame,
+and all terminals on a page share one WebGL2 context. DOM text stays current for
+selection, browser find and screen readers: it catches up when output goes
+quiet and whenever the pointer or wheel touches the terminal. Selection, search
+and scrolled-back history show the DOM text until the next live output. Without
+WebGL2 the option falls back to `"dom"`.
+
 ## Inactive panes
 
 Use `renderingPaused: true` when creating an inactive pane and
@@ -178,7 +188,9 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels. Images larger than the limit are scaled down proportionally. |
 | `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
 | `announceOutput` | `boolean` | `false` | Politely announce bounded text changes while terminal input has focus; mutable via `setOutputAnnouncements()` |
+| `scrollbackLines` | `number` | core default | Lines of history the core keeps (1,000 for the built-in and Ghostty cores); mutable without restarting |
 | `renderingPaused` | `boolean` | `false` | Suspend painting for an inactive pane while parsing and terminal effects continue; mutable without restarting |
+| `renderer` | `"dom" \| "webgl"` | `"dom"` | Paint live output with WebGL2 while DOM text keeps selection, search and screen readers; falls back to `"dom"` without WebGL2; fixed at mount |
 | `webmcp` | `boolean \| WebMCPOptions` | `false` | Let in-page agents list, read, and type into the terminal through WebMCP; mutable without restarting. See [WebMCP](https://wterm.dev/webmcp). |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
@@ -200,6 +212,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `resize(cols, rows)` | Resize the terminal grid |
 | `focus()` | Focus the terminal element |
 | `setOutputAnnouncements(enabled)` | Enable or stop polite output announcements without moving focus |
+| `setScrollbackLines(lines)` | Change how many lines of history the core keeps, dropping the oldest |
 | `setRenderingPaused(paused)` | Pause pane painting while parsing and terminal effects continue; resuming schedules the latest state |
 | `setWebMCP(options)` | Expose the terminal to in-page agents with `true` or `WebMCPOptions`, or withdraw it with `false` |
 | `fit()` | Resize the grid to the element's current content box and font metrics; hidden or uninitialized terminals stay unchanged |

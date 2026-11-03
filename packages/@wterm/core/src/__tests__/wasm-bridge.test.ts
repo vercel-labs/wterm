@@ -85,6 +85,17 @@ describe("WasmBridge", () => {
     expect(bridge.getResponse()).toBe("\x1b[>4;0m");
   });
 
+  it("keeps a surrogate pair whole across write chunk boundaries", () => {
+    // 8191 puts the pair across the edge of the first 8192-unit encode window.
+    for (const pad of [8190, 8191, 8192]) {
+      bridge.init(80, 24);
+      bridge.writeString("a".repeat(pad) + "\u{1F600}");
+      const row = bridge.getCursor().row;
+      const col = pad % 80;
+      expect(bridge.getCell(row, col).char, `offset ${pad}`).toBe(0x1f600);
+    }
+  });
+
   it("keeps 256-color cells on the palette", () => {
     bridge.writeString("\x1b[38;5;208mA");
     expect(bridge.getCell(0, 0).fg).toBe(208);
@@ -309,6 +320,57 @@ describe("WasmBridge", () => {
       const cursor = bridge.getCursor();
       expect(cursor.row).toBe(1);
       expect(cursor.col).toBe(1);
+    });
+  });
+
+  describe("setScrollbackLines", () => {
+    const fill = (from: number, count: number) => {
+      let text = "";
+      for (let i = from; i < from + count; i++) text += `line ${i}\r\n`;
+      bridge.writeString(text);
+    };
+    const line = (offset: number) => {
+      let text = "";
+      for (let col = 0; col < bridge.getScrollbackLineLen(offset); col++)
+        text += String.fromCodePoint(
+          bridge.getScrollbackCell(offset, col).char,
+        );
+      return text.trimEnd();
+    };
+
+    it("keeps 1000 lines by default", () => {
+      fill(0, 3000);
+      expect(bridge.getScrollbackCount()).toBe(1000);
+    });
+
+    it("keeps more lines when raised", () => {
+      bridge.setScrollbackLines(5000);
+      fill(0, 8000);
+      expect(bridge.getScrollbackCount()).toBe(5000);
+      expect(line(0)).toBe("line 7976");
+      expect(line(4999)).toBe("line 2977");
+    });
+
+    it("keeps the newest lines when lowered", () => {
+      fill(0, 500);
+      bridge.setScrollbackLines(10);
+      expect(bridge.getScrollbackCount()).toBe(10);
+      expect(line(0)).toBe("line 476");
+      expect(line(9)).toBe("line 467");
+      expect(
+        bridge.getScrollbackDiscardedCount() + bridge.getScrollbackCount(),
+      ).toBe(477);
+    });
+
+    it("keeps no history at zero", () => {
+      bridge.setScrollbackLines(0);
+      fill(0, 100);
+      expect(bridge.getScrollbackCount()).toBe(0);
+    });
+
+    it("rejects counts that are not whole non-negative numbers", () => {
+      for (const lines of [-1, 1.5, Number.NaN, 2 ** 32])
+        expect(() => bridge.setScrollbackLines(lines)).toThrow(RangeError);
     });
   });
 

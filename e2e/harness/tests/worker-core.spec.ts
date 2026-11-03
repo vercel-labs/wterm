@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-// Pieces of terminal output mixed at random: styles, links, scrollback and its
-// clears, titles, replies (including a flood larger than one parsing chunk),
+// Pieces of terminal output mixed at random: styles, links, scrollback, its
+// clears and a lowered line limit, titles, replies (including a flood larger than one parsing chunk),
 // the alternate screen, and multi-code-point clusters.
 const PIECES = [
   "plain text ",
@@ -113,6 +113,10 @@ for (let seed = 1; seed <= 12; seed++) {
           if (i === 100) {
             direct.resize(30, 12);
             worker.resize(30, 12);
+          }
+          if (i === 150) {
+            direct.setScrollbackLines(7);
+            worker.setScrollbackLines(7);
           }
         });
         // Updates are batched; wait until the worker goes quiet.

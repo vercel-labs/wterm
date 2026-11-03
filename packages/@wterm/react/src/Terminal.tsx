@@ -33,12 +33,16 @@ export interface TerminalProps extends Omit<
   maxImageWidth?: number;
   /** Maximum rendered Kitty image height in CSS pixels. */
   maxImageHeight?: number;
+  /** Paints live output with WebGL2; DOM text stays for selection, search and accessibility. Fixed at mount. */
+  renderer?: "dom" | "webgl";
   /** Force blinking on/off; omit to follow the terminal application's request. */
   cursorBlink?: boolean;
   /** Politely announce terminal text changes while input has focus. */
   announceOutput?: boolean;
   /** Suspend painting for an inactive pane; parsing and terminal effects continue. */
   renderingPaused?: boolean;
+  /** Lines of history the core keeps; omit for the core's default. */
+  scrollbackLines?: number;
   /** Let in-page agents read and type into this terminal through WebMCP. */
   webmcp?: boolean | WebMCPOptions;
   /** Enable debug mode (init-only — changing after mount has no effect). */
@@ -72,9 +76,11 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     autoResize = false,
     maxImageWidth,
     maxImageHeight,
+    renderer,
     cursorBlink,
     announceOutput = false,
     renderingPaused = false,
+    scrollbackLines,
     webmcp = false,
     debug = false,
     onData,
@@ -155,9 +161,11 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         autoResize: autoResizeRef.current,
         maxImageWidth,
         maxImageHeight,
+        renderer,
         cursorBlink,
         announceOutput,
         renderingPaused,
+        scrollbackLines,
         webmcp,
         debug,
         onData: callbacksRef.current.onData
@@ -208,9 +216,9 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         wtermRef.current = null;
       };
     },
-    // Re-run when the WASM source or image sizing options change
+    // Re-run when the WASM source, image sizing or renderer change
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [core, wasmUrl, maxImageWidth, maxImageHeight],
+    [core, wasmUrl, maxImageWidth, maxImageHeight, renderer],
   );
 
   // Sync props to the existing instance (render-time checks)
@@ -244,6 +252,8 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     const el = wtermRef.current?.element;
     wtermRef.current?.setOutputAnnouncements(announceOutput);
     wtermRef.current?.setRenderingPaused(renderingPaused);
+    if (scrollbackLines !== undefined)
+      wtermRef.current?.setScrollbackLines(scrollbackLines);
     wtermRef.current?.setWebMCP(webmcp);
     el?.classList.toggle("cursor-blink", cursorBlink === true);
     el?.classList.toggle("cursor-steady", cursorBlink === false);

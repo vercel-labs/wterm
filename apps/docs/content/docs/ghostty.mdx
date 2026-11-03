@@ -185,15 +185,28 @@ can negotiate their display size before transferring image data.
     </tr>
     <tr>
       <td>
+        <code>scrollbackLines</code>
+      </td>
+      <td>
+        <code>number</code>
+      </td>
+      <td>
+        Lines of history to keep (default: 1000). Ghostty stores history in
+        pages, so up to a few pages of extra rows stay allocated but are not
+        reported.
+      </td>
+    </tr>
+    <tr>
+      <td>
         <code>scrollbackLimit</code>
       </td>
       <td>
         <code>number</code>
       </td>
       <td>
-        Scrollback budget in bytes, not lines (default: 10000). ghostty
-        allocates history in pages, so the retained row count depends on the
-        terminal width.
+        Scrollback budget in bytes instead of lines. Ignored when
+        <code>scrollbackLines</code> is set; the retained row count depends on
+        the terminal width.
       </td>
     </tr>
     <tr>

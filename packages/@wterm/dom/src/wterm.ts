@@ -27,6 +27,30 @@ import {
 
 const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
 const PROGRAMMATIC_SCROLL_TOLERANCE = 1;
+const TEXT_SYNC_IDLE_MS = 150;
+
+function findQueryPrefix(data: string | Uint8Array, from: number): number {
+  if (typeof data === "string") return data.indexOf("\x1b[1", from);
+  for (
+    let i = data.indexOf(0x1b, from);
+    i >= 0;
+    i = data.indexOf(0x1b, i + 1)
+  ) {
+    if (data[i + 1] === 0x5b && data[i + 2] === 0x31) return i;
+  }
+  return -1;
+}
+
+/** Query state for an `ESC` or `ESC [` that ends the data. */
+function trailingQueryState(data: string | Uint8Array): 0 | 1 | 2 {
+  const at = (i: number) =>
+    typeof data === "string" ? data.charCodeAt(i) : data[i];
+  const n = data.length;
+  if (n >= 1 && at(n - 1) === 0x1b) return 1;
+  if (n >= 2 && at(n - 2) === 0x1b && at(n - 1) === 0x5b) return 2;
+  return 0;
+}
+
 const pendingRenders = new Set<WTerm>();
 let renderFrameId: number | null = null;
 
@@ -49,6 +73,11 @@ const THEME_PROPERTIES = [
   "--term-cursor",
   ...Array.from({ length: 16 }, (_, index) => `--term-color-${index}`),
 ];
+
+function assertScrollbackLines(lines: number): void {
+  if (!Number.isInteger(lines) || lines < 0 || lines > 0xffffffff)
+    throw new RangeError(`Invalid scrollback line count: ${lines}`);
+}
 
 /** Whether the data may hold an OSC 10 or OSC 11 color query. */
 function mayQueryThemeColors(data: string | Uint8Array): boolean {
@@ -124,6 +153,8 @@ export interface WTermOptions {
    */
   core?: TerminalCore;
   wasmUrl?: string;
+  /** Lines of history the core keeps (default: the core's own, 1000 for the built-in core). */
+  scrollbackLines?: number;
   autoResize?: boolean;
   /** Maximum rendered Kitty image width in CSS pixels. */
   maxImageWidth?: number;
@@ -135,6 +166,12 @@ export interface WTermOptions {
   announceOutput?: boolean;
   /** Suspend painting for an inactive pane while continuing to parse output. */
   renderingPaused?: boolean;
+  /**
+   * `"webgl"` paints live output on a WebGL2 canvas and keeps the DOM text for
+   * selection, search and accessibility, updating it when output goes idle.
+   * Falls back to `"dom"` when WebGL2 is unavailable. Defaults to `"dom"`.
+   */
+  renderer?: "dom" | "webgl";
   /** Let in-page agents read and type into this terminal through WebMCP. */
   webmcp?: boolean | WebMCPOptions;
   debug?: boolean;
@@ -166,6 +203,7 @@ export class WTerm {
   private _initialColsExplicit: boolean;
   private _initialRowsExplicit: boolean;
   private _themeColors: TerminalThemeColors | null = null;
+  private _scrollbackLines: number | null = null;
   /** Colors last read from CSS and handed to the core, to skip repeat updates. */
   private _cssThemeKey: string | null = null;
   private wasmUrl: string | undefined;
@@ -182,6 +220,13 @@ export class WTerm {
   private _rendererNeedsSetup = false;
   private resizeObserver: ResizeObserver | null = null;
   private _destroyed = false;
+  private _rendererOption: "dom" | "webgl";
+  private _textSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Selection and wheel scrolling start from current DOM text. */
+  private _onTextNeeded = (): void => {
+    this._syncText();
+    this.renderer?.yieldToDom();
+  };
   private _shouldScrollToBottom = false;
   private _pinnedToBottom = true;
   private _scrollbackDiscardedCount = 0;
@@ -229,6 +274,18 @@ export class WTerm {
     this._initialColsExplicit = options.cols !== undefined;
     this._initialRowsExplicit = options.rows !== undefined;
     this.wasmUrl = options.wasmUrl;
+    this._rendererOption = options.renderer ?? "dom";
+    if (this._rendererOption === "webgl") {
+      element.addEventListener("mousedown", this._onTextNeeded, true);
+      element.addEventListener("wheel", this._onTextNeeded, {
+        capture: true,
+        passive: true,
+      });
+    }
+    if (options.scrollbackLines !== undefined) {
+      assertScrollbackLines(options.scrollbackLines);
+      this._scrollbackLines = options.scrollbackLines;
+    }
     this.maxImageWidth = options.maxImageWidth;
     this.maxImageHeight = options.maxImageHeight;
     this.cols = options.cols || 80;
@@ -483,6 +540,7 @@ export class WTerm {
         }
       }
       this.bridge.init(this.cols, this.rows);
+      if (this._scrollbackLines !== null) this._applyScrollbackLines();
       if (this._themeColors) this.bridge.setThemeColors?.(this._themeColors);
       else this._syncCssThemeColors();
       this.cols = this.bridge.getCols();
@@ -500,6 +558,7 @@ export class WTerm {
         colorHost: this.element,
         maxImageWidth: this.maxImageWidth,
         maxImageHeight: this.maxImageHeight,
+        renderer: this._rendererOption,
       });
       this.renderer.setup(this.cols, this.rows);
 
@@ -588,6 +647,23 @@ export class WTerm {
       this._programmaticScrollTop = target;
     }
     this.element.scrollTop = target;
+  }
+
+  /** Change how many lines of history the core keeps, dropping the oldest. */
+  setScrollbackLines(lines: number): void {
+    assertScrollbackLines(lines);
+    if (this._destroyed || lines === this._scrollbackLines) return;
+    this._scrollbackLines = lines;
+    if (!this.bridge) return;
+    this._applyScrollbackLines();
+    this._invalidateSearch();
+    this._scheduleRender();
+  }
+
+  private _applyScrollbackLines(): void {
+    if (!this.bridge?.setScrollbackLines)
+      throw new Error("This terminal core cannot change its scrollback");
+    this.bridge.setScrollbackLines(this._scrollbackLines!);
   }
 
   /**
@@ -1195,6 +1271,21 @@ export class WTerm {
     }
   }
 
+  /** Brings the DOM text current once GPU-painted output goes quiet. */
+  private _scheduleTextSync(): void {
+    if (this._textSyncTimer !== null) clearTimeout(this._textSyncTimer);
+    this._textSyncTimer = setTimeout(() => {
+      this._textSyncTimer = null;
+      this._syncText();
+    }, TEXT_SYNC_IDLE_MS);
+  }
+
+  private _syncText(): void {
+    if (!this.renderer?.textStale || this._destroyed) return;
+    this.renderer.requestText();
+    this._doRender();
+  }
+
   private _scheduleRender(): void {
     if (
       !this._canRender() ||
@@ -1428,7 +1519,9 @@ export class WTerm {
       rowHeight: frame.rowHeight,
       scrollbackDiscardedCount: frame.discardedCount,
       charWidth: this._charWidth,
+      live: frame.followOutput,
     });
+    if (this.renderer.textStale) this._scheduleTextSync();
 
     if (this.debug) {
       this.debug.recordRender(performance.now() - t0, frame.dirtyCount);
@@ -1538,15 +1631,18 @@ export class WTerm {
     let index = 0;
     while (index < data.length) {
       if (state === 0) {
-        // Skip ordinary output in bulk. ASCII queries can be recognized in
+        // Skip ordinary output in bulk, jumping straight to `ESC [ 1`: SGR-heavy
+        // output has an ESC every few bytes. ASCII queries can be recognized in
         // raw bytes without allocating or decoding a copy of every write.
-        index =
-          typeof data === "string"
-            ? data.indexOf("\x1b", index)
-            : data.indexOf(0x1b, index);
-        if (index < 0) break;
-        state = 1;
-        index++;
+        const found = findQueryPrefix(data, index);
+        if (found < 0) {
+          // A prefix cut by the end of this write resumes in the next one.
+          state = trailingQueryState(data);
+          index = data.length;
+          break;
+        }
+        state = 3;
+        index = found + 3;
         continue;
       }
       const code =
@@ -1809,6 +1905,10 @@ export class WTerm {
     this._windowSizeQueryState = 0;
     this._cancelScheduledRender();
     this._cancelSynchronizedOutputFallback();
+    if (this._textSyncTimer !== null) clearTimeout(this._textSyncTimer);
+    this._textSyncTimer = null;
+    this.element.removeEventListener("mousedown", this._onTextNeeded, true);
+    this.element.removeEventListener("wheel", this._onTextNeeded, true);
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this._visualViewportFrame)
       cancelAnimationFrame(this._visualViewportFrame);
