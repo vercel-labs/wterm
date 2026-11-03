@@ -138,6 +138,7 @@ const cursor = bridge.getCursor();  // { row, col, visible, shape, blinking }
 | `getResourceState()` | Get optional core resource state, including built-in hyperlink identity saturation |
 | `getScrollbackCount()` | Number of lines in the scrollback buffer |
 | `getScrollbackDiscardedCount()` | Cumulative rows discarded from the oldest end, when supported |
+| `setScrollbackLines(lines)` | Keep this many lines of history (default: 1,000), dropping the oldest |
 | `getScrollbackCell(offset, col)` | Get cell data from scrollback |
 | `getScrollbackLineLen(offset)` | Get length of a scrollback line |
 | `cursorKeysApp()` | Whether cursor keys are in application mode |

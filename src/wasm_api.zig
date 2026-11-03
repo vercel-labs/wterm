@@ -227,6 +227,12 @@ export fn getColorRgb(index: u32) u32 {
 
 // -- Scrollback --
 
+/// Lines of history to keep, newest first. Returns 0 when the new history
+/// could not be allocated, leaving the previous limit in place.
+export fn setScrollbackLines(lines: u32) u32 {
+    return @intFromBool(scrollback.setLimit(lines));
+}
+
 export fn getScrollbackCount() u32 {
     return scrollback.count;
 }
