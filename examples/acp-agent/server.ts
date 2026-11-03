@@ -40,8 +40,11 @@ function startSession(ws: WebSocket) {
     }, 8);
   };
 
-  const write = (message: Json) =>
-    agent.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
+  const write = (message: Json) => {
+    if (agent.stdin.writable)
+      agent.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
+  };
+  agent.stdin.on("error", () => {});
   const request = (method: string, params: unknown) =>
     new Promise<Json>((resolve) => {
       const id = nextId++;
@@ -51,7 +54,13 @@ function startSession(ws: WebSocket) {
 
   createInterface({ input: agent.stdout }).on("line", (line) => {
     if (!line.trim()) return;
-    const message = JSON.parse(line) as Json;
+    let message: Json;
+    try {
+      message = JSON.parse(line) as Json;
+    } catch {
+      emit([{ type: "error", text: `${agentCommand}: ${line}` }]);
+      return;
+    }
     const id = message.id as number | undefined;
     if (id !== undefined && message.method === undefined) {
       pending.get(id)?.(message);
@@ -83,6 +92,16 @@ function startSession(ws: WebSocket) {
   agent.on("error", (error) =>
     emit([{ type: "error", text: `${agentCommand}: ${error.message}` }]),
   );
+
+  // Settle open requests so a turn in progress ends instead of waiting forever.
+  agent.on("exit", (code, signal) => {
+    const text = `${agentCommand} exited (${signal ?? code})`;
+    sessionId = "";
+    emit([{ type: "error", text }]);
+    for (const resolve of pending.values())
+      resolve({ error: { message: text } });
+    pending.clear();
+  });
 
   (async () => {
     const init = await request("initialize", {
@@ -205,7 +224,15 @@ server.on("upgrade", (req, socket, head) => {
   }
   wss.handleUpgrade(req, socket, head, (ws) => {
     const session = startSession(ws);
-    ws.on("message", (raw) => session.onClient(JSON.parse(String(raw))));
+    ws.on("message", (raw) => {
+      let event: ClientEvent;
+      try {
+        event = JSON.parse(String(raw)) as ClientEvent;
+      } catch {
+        return;
+      }
+      session.onClient(event);
+    });
     ws.on("close", () => session.close());
   });
 });
