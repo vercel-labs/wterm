@@ -268,13 +268,13 @@ through `onData`.
 
 `WorkerCore` from `@wterm/core/worker` runs the built-in core in a Web Worker. Parsing
 leaves the main thread, so pages with many busy panes can use more than one
-CPU core. Pair it with `renderer: "webgl"`:
+CPU core:
 
 ```ts
 import { WorkerCore } from "@wterm/core/worker";
 
 const core = await WorkerCore.load();
-const term = new WTerm(element, { core, renderer: "webgl" });
+const term = new WTerm(element, { core });
 ```
 
 Writes return before they are parsed: cells, replies, titles, and bells arrive
