@@ -30,6 +30,7 @@ vi.mock("@wterm/dom", () => {
     this.focus = vi.fn();
     this.setOutputAnnouncements = vi.fn();
     this.setRenderingPaused = vi.fn();
+    this.setWebMCP = vi.fn();
     this.destroy = vi.fn();
     this.init = vi.fn().mockImplementation(async () => {
       this.bridge = {};
@@ -80,6 +81,22 @@ describe("Terminal component", () => {
     expect(lastWTermInstance).toBe(instance);
     expect(instance.destroy).not.toHaveBeenCalled();
     expect(instance.element.hasAttribute("announceOutput")).toBe(false);
+  });
+
+  it("exposes the terminal to WebMCP without replacing it or leaking a DOM attribute", async () => {
+    const Terminal = (await import("../Terminal.js")).default;
+    const { WTerm } = await import("@wterm/dom");
+    const { rerender } = render(<Terminal webmcp={{ name: "shell" }} />);
+    const instance = lastWTermInstance;
+    expect(vi.mocked(WTerm).mock.calls.at(-1)?.[1]?.webmcp).toEqual({
+      name: "shell",
+    });
+    expect(instance.setWebMCP).toHaveBeenLastCalledWith({ name: "shell" });
+    rerender(<Terminal />);
+    expect(instance.setWebMCP).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
+    expect(instance.element.hasAttribute("webmcp")).toBe(false);
   });
 
   it("pauses painting without replacing the terminal or leaking a DOM attribute", async () => {
@@ -206,6 +223,7 @@ describe("Terminal component", () => {
       this.destroy = vi.fn();
       this.setOutputAnnouncements = vi.fn();
       this.setRenderingPaused = vi.fn();
+      this.setWebMCP = vi.fn();
       this.init = vi.fn().mockRejectedValue(new Error("WASM failed"));
       lastWTermInstance = this;
     });

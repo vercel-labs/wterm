@@ -1,8 +1,20 @@
 # Changelog
 
-## 0.5.7
+## 0.5.8
 
 <!-- release:start -->
+
+### New Features
+
+- **WebMCP:** terminals can register tools that in-page agents call to list terminals, read output, type commands, and press keys, instead of scraping the DOM. Opt in with the `webmcp` option in `@wterm/dom` or the `webmcp` prop on the React, Vue, and Svelte components, and change it later with `setWebMCP()`. `readOnly` lets agents read without typing. It does nothing in browsers without a WebMCP provider (#261).
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.5.7
 
 ### New Features
 
@@ -20,8 +32,6 @@
 
 - @Railly
 - @lahfir
-
-<!-- release:end -->
 
 ## 0.5.6
 

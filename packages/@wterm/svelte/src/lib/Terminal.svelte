@@ -43,7 +43,7 @@
 
 <script lang="ts">
   import { onMount } from "svelte";
-  import { WTerm, type TerminalCore } from "@wterm/dom";
+  import { WTerm, type TerminalCore, type WebMCPOptions } from "@wterm/dom";
 
   export let cols = 80;
   export let rows = 24;
@@ -59,6 +59,8 @@
   export let renderingPaused = false;
   /** Lines of history the core keeps; omit for the core's default. */
   export let scrollbackLines: number | undefined = undefined;
+  /** Let in-page agents read and type into this terminal through WebMCP. */
+  export let webmcp: boolean | WebMCPOptions = false;
   export let debug = false;
   export let className = "";
   export let onData: ((data: string) => void) | undefined = undefined;
@@ -180,6 +182,7 @@
       announceOutput,
       renderingPaused,
       scrollbackLines,
+      webmcp,
       debug,
       onData: hasDataHandler() ? handleData : undefined,
       onBinary: hasBinaryHandler() ? handleBinary : undefined,
@@ -233,6 +236,7 @@
   $: if (instance && scrollbackLines !== undefined) {
     instance.setScrollbackLines(scrollbackLines);
   }
+  $: instance?.setWebMCP(webmcp);
 </script>
 
 <div
