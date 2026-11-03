@@ -258,6 +258,11 @@ function HeroTerminal({
             rows={fullscreen ? 24 : 16}
             autoResize={fullscreen}
             theme={theme}
+            webmcp={{
+              name: "demo",
+              description:
+                "Sandboxed bash running in this page with just-bash. It has no access to a real machine.",
+            }}
             onReady={handleReady}
             onData={handleData}
             onError={onError}
