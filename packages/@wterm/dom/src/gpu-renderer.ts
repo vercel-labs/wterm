@@ -608,17 +608,20 @@ export class GpuGrid {
       let fg = this.rgb(cell.fg, cell.fgRgb, p.fg);
       let bg = this.rgb(cell.bg, cell.bgRgb, p.bg);
       if (flags & FLAG_REVERSE) [fg, bg] = [bg, fg];
-      if (flags & FLAG_INVISIBLE) fg = bg;
+      // Concealed cells paint only their background, like visibility:hidden
+      // text in the DOM path. Color glyphs ignore fg, so drop the glyph itself.
+      const hidden = (flags & FLAG_INVISIBLE) !== 0;
       // Dim blends toward the background on the CPU so the shader keeps one mix.
       if (flags & FLAG_DIM) fg = blend(fg, bg, 0.5);
       const wide = cell.width === 2 && col + 1 < this.cols;
-      const text =
-        (cell as CellData & { chars?: string }).chars ??
-        (cell.char > 32 ? String.fromCodePoint(cell.char) : "");
-      const mask = text.length <= 2 ? blockMask(cell.char) : 0;
+      const text = hidden
+        ? ""
+        : ((cell as CellData & { chars?: string }).chars ??
+          (cell.char > 32 ? String.fromCodePoint(cell.char) : ""));
+      const mask = text && text.length <= 2 ? blockMask(cell.char) : 0;
       let deco = 0;
-      if (flags & FLAG_UNDERLINE) deco |= DECO_UNDERLINE;
-      if (flags & FLAG_STRIKETHROUGH) deco |= DECO_STRIKE;
+      if (!hidden && flags & FLAG_UNDERLINE) deco |= DECO_UNDERLINE;
+      if (!hidden && flags & FLAG_STRIKETHROUGH) deco |= DECO_STRIKE;
       let slot = 0;
       if (!mask && text) {
         const packed = atlas.slot(
