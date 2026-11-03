@@ -32,6 +32,7 @@ vi.mock("@wterm/dom", () => {
     this.focus = vi.fn();
     this.setOutputAnnouncements = vi.fn();
     this.setRenderingPaused = vi.fn();
+    this.setWebMCP = vi.fn();
     this.destroy = vi.fn();
     this.init = vi.fn().mockImplementation(async () => {
       this.bridge = {};
@@ -77,6 +78,21 @@ describe("Terminal component", () => {
     expect(lastWTermInstance).toBe(instance);
     expect(instance.destroy).not.toHaveBeenCalled();
     expect(instance.element.hasAttribute("announceOutput")).toBe(false);
+  });
+
+  it("exposes the terminal to WebMCP without replacing it or leaking an attribute", async () => {
+    const result = render(Terminal, { props: { webmcp: { name: "shell" } } });
+    await tick();
+    const instance = lastWTermInstance;
+    const { WTerm } = await import("@wterm/dom");
+    expect(vi.mocked(WTerm).mock.calls[0][1]?.webmcp).toEqual({
+      name: "shell",
+    });
+    await result.rerender({ webmcp: false });
+    expect(instance.setWebMCP).toHaveBeenLastCalledWith(false);
+    expect(lastWTermInstance).toBe(instance);
+    expect(instance.destroy).not.toHaveBeenCalled();
+    expect(instance.element.hasAttribute("webmcp")).toBe(false);
   });
 
   it("pauses painting without replacing the terminal or leaking an attribute", async () => {
@@ -248,6 +264,7 @@ describe("Terminal component", () => {
       this.focus = vi.fn();
       this.setOutputAnnouncements = vi.fn();
       this.setRenderingPaused = vi.fn();
+      this.setWebMCP = vi.fn();
       this.destroy = vi.fn();
       this.init = vi.fn(() =>
         pendingInit.then(() => {
@@ -435,6 +452,7 @@ describe("Terminal component", () => {
       this.focus = vi.fn();
       this.setOutputAnnouncements = vi.fn();
       this.setRenderingPaused = vi.fn();
+      this.setWebMCP = vi.fn();
       this.destroy = vi.fn();
       this.init = vi.fn(() =>
         pendingInit.then(() => {
@@ -490,6 +508,7 @@ describe("Terminal component", () => {
       this.focus = vi.fn();
       this.setOutputAnnouncements = vi.fn();
       this.setRenderingPaused = vi.fn();
+      this.setWebMCP = vi.fn();
       this.destroy = vi.fn();
       this.init = vi.fn().mockRejectedValue(new Error("WASM failed"));
       lastWTermInstance = this;

@@ -55,6 +55,7 @@ The WASM binary is embedded in the package — no extra setup required. To serve
 | `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
 | `announceOutput` | `boolean` | `false` | Politely announce bounded terminal text changes while input has focus; updates without restarting |
 | `renderingPaused` | `boolean` | `false` | Suspend painting for an inactive pane while parsing and terminal effects continue; mutable without restarting |
+| `webmcp` | `boolean \| WebMCPOptions` | `false` | Let in-page agents list, read, and type into the terminal through WebMCP; mutable without restarting. See [WebMCP](https://wterm.dev/webmcp). |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the underlying `WTerm` instance for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
 | `onData` | `(data: string) => void` | — | Called when the terminal produces data (user input or host response). When omitted, input is echoed back automatically. |
 | `onBinary` | `(data: Uint8Array) => void` | — | Called with raw X10 mouse reports for a binary-capable transport. Without it, only ASCII-safe X10 reports reach `onData`. |

@@ -9,6 +9,14 @@ import {
 } from "./input-workloads";
 import { Samples } from "./metrics";
 
+/**
+ * How the active terminal paints its echo: on the next animation frame, as
+ * WTerm schedules it, or synchronously right after the echo write. The second
+ * is a measured alternative, reached through WTerm internals.
+ */
+export type InputScheduler = "frame" | "sync";
+export const INPUT_SCHEDULERS: readonly InputScheduler[] = ["frame", "sync"];
+
 export interface InputSession {
   terminal: WTerm;
   core: TerminalCore;
@@ -30,6 +38,7 @@ export class InputRun {
     private sessions: InputSession[],
     private workload: InputWorkload,
     private expectedProbes: number,
+    private scheduler: InputScheduler = "frame",
   ) {
     // Generation and memory sampling precede the timed producer/probe interval.
     const chunks = inputFixture(workload);
@@ -53,9 +62,14 @@ export class InputRun {
       }
     };
     const active = sessions[0].terminal;
+    const flush = () =>
+      (active as unknown as { _doRender(): void })._doRender();
     this.probe = new EchoProbe(
       active.element,
-      (text) => active.write(text),
+      (text) => {
+        active.write(text);
+        if (scheduler === "sync") flush();
+      },
       this.abort,
     );
     active.onData = (data) => this.probe.input(data);
@@ -162,8 +176,9 @@ export class InputRun {
     });
     const style = getComputedStyle(this.sessions[0].terminal.element);
     this.saved = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       source: "local-keyboard-echo",
+      scheduler: this.scheduler,
       complete: error === null,
       error,
       workload: this.workload,
@@ -206,6 +221,7 @@ export class InputRun {
 
 export interface InputReport {
   schemaVersion: number;
+  scheduler: InputScheduler;
   source: "local-keyboard-echo";
   complete: boolean;
   error: string | null;

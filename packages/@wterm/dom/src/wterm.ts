@@ -13,14 +13,107 @@ import { TextCapture } from "./text-capture.js";
 import { OutputAnnouncements } from "./output-announcements.js";
 import { DebugAdapter } from "./debug.js";
 import { isLinkActivationModifier } from "./hyperlink.js";
+import { markSelectionChanged } from "./selection-state.js";
 import {
   SearchController,
   type SearchOptions,
   type SearchState,
 } from "./search.js";
+import {
+  registerWebMCPTerminal,
+  type WebMCPOptions,
+  type WebMCPTerminal,
+} from "./webmcp.js";
 
 const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
 const PROGRAMMATIC_SCROLL_TOLERANCE = 1;
+const pendingRenders = new Set<WTerm>();
+let renderFrameId: number | null = null;
+
+interface RenderFrame {
+  scrollTop: number;
+  viewportScrollTop: number;
+  clientHeight: number;
+  maxScrollTop: number;
+  rowHeight: number;
+  scrollbackCount: number;
+  discardedCount: number | undefined;
+  dirtyCount: number;
+  followOutput: boolean;
+  restoreScroll: boolean;
+}
+
+const THEME_PROPERTIES = [
+  "--term-fg",
+  "--term-bg",
+  "--term-cursor",
+  ...Array.from({ length: 16 }, (_, index) => `--term-color-${index}`),
+];
+
+/** Whether the data may hold an OSC 10 or OSC 11 color query. */
+function mayQueryThemeColors(data: string | Uint8Array): boolean {
+  if (typeof data === "string")
+    return data.includes("\x1b]10;") || data.includes("\x1b]11;");
+  for (let i = data.indexOf(0x1b); i >= 0; i = data.indexOf(0x1b, i + 1)) {
+    if (
+      data[i + 1] === 0x5d &&
+      data[i + 2] === 0x31 &&
+      (data[i + 3] === 0x30 || data[i + 3] === 0x31) &&
+      data[i + 4] === 0x3b
+    )
+      return true;
+  }
+  return false;
+}
+
+/** Resolves the theme custom properties on `element` to 24-bit RGB values. */
+function readCssThemeColors(element: HTMLElement): TerminalThemeColors | null {
+  const probe = element.ownerDocument.createElement("span");
+  probe.style.display = "none";
+  element.appendChild(probe);
+  try {
+    const values: number[] = [];
+    for (const property of THEME_PROPERTIES) {
+      probe.style.color = `var(${property})`;
+      const rgb = parseCssColor(getComputedStyle(probe).color);
+      if (rgb === null) return null;
+      values.push(rgb);
+    }
+    return {
+      foreground: values[0],
+      background: values[1],
+      cursor: values[2],
+      palette: values.slice(3),
+    };
+  } finally {
+    probe.remove();
+  }
+}
+
+/** 0xRRGGBB for a computed CSS color, or null when it cannot be read. */
+function parseCssColor(color: string | undefined): number | null {
+  if (typeof color !== "string") return null;
+  const rgb = color.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/);
+  if (rgb)
+    return (
+      (Math.round(Number(rgb[1])) << 16) |
+      (Math.round(Number(rgb[2])) << 8) |
+      Math.round(Number(rgb[3]))
+    );
+  // Modern color spaces (oklch, color(), ...) resolve through a canvas.
+  try {
+    const context = document.createElement("canvas").getContext("2d", {
+      willReadFrequently: true,
+    });
+    if (!context) return null;
+    context.fillStyle = color;
+    context.fillRect(0, 0, 1, 1);
+    const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+    return (r << 16) | (g << 8) | b;
+  } catch {
+    return null;
+  }
+}
 
 export interface WTermOptions {
   cols?: number;
@@ -42,6 +135,8 @@ export interface WTermOptions {
   announceOutput?: boolean;
   /** Suspend painting for an inactive pane while continuing to parse output. */
   renderingPaused?: boolean;
+  /** Let in-page agents read and type into this terminal through WebMCP. */
+  webmcp?: boolean | WebMCPOptions;
   debug?: boolean;
   onData?: (data: string) => void;
   /** Raw input bytes, used by X10 mouse reports. */
@@ -71,13 +166,14 @@ export class WTerm {
   private _initialColsExplicit: boolean;
   private _initialRowsExplicit: boolean;
   private _themeColors: TerminalThemeColors | null = null;
+  /** Colors last read from CSS and handed to the core, to skip repeat updates. */
+  private _cssThemeKey: string | null = null;
   private wasmUrl: string | undefined;
   private maxImageWidth: number | undefined;
   private maxImageHeight: number | undefined;
   private _debugEnabled: boolean;
   private renderer: Renderer | null = null;
   private input: InputHandler | null = null;
-  private rafId: number | null = null;
   private _renderingPaused: boolean;
   private _onVisibilityChange: () => void;
   private _synchronizedOutputTimer: ReturnType<typeof setTimeout> | null = null;
@@ -87,6 +183,7 @@ export class WTerm {
   private resizeObserver: ResizeObserver | null = null;
   private _destroyed = false;
   private _shouldScrollToBottom = false;
+  private _pinnedToBottom = true;
   private _scrollbackDiscardedCount = 0;
   private _programmaticScrollTop: number | null = null;
   private _pendingResizeScrollTop: number | null = null;
@@ -103,8 +200,16 @@ export class WTerm {
   private _onScroll: () => void;
   private _onModifierChange: (event: KeyboardEvent) => void;
   private _onWindowBlur: () => void;
+  private _onBeforePrint: () => void;
+  private _onAfterPrint: () => void;
   private _onCopy: (event: ClipboardEvent) => void;
   private _onMouseSelect: (event: MouseEvent) => void;
+  private _webmcp: WebMCPOptions | null;
+  private _unregisterWebMCP: (() => void) | null = null;
+  private _outputListeners = new Set<() => void>();
+  private _title: string | null = null;
+  private _workingDirectory: string | null = null;
+  private _shellIntegration: ShellIntegrationState | null = null;
 
   onData: ((data: string) => void) | null;
   onBinary: ((data: Uint8Array) => void) | null;
@@ -131,6 +236,7 @@ export class WTerm {
     this.autoResize = options.autoResize !== false;
     this._debugEnabled = options.debug ?? false;
     this._renderingPaused = options.renderingPaused ?? false;
+    this._webmcp = webmcpOptions(options.webmcp);
 
     this.onData = options.onData || null;
     this.onBinary = options.onBinary || null;
@@ -206,7 +312,7 @@ export class WTerm {
       () => this.bridge,
       () =>
         this._canRender() &&
-        this.rafId === null &&
+        !pendingRenders.has(this) &&
         this._synchronizedOutputState !== "held",
     );
     this._outputAnnouncements.setEnabled(options.announceOutput ?? false);
@@ -304,9 +410,20 @@ export class WTerm {
       "blur",
       this._onWindowBlur,
     );
+    this._onBeforePrint = () => this._setPrintMode(true);
+    this._onAfterPrint = () => this._setPrintMode(false);
+    this.element.ownerDocument.defaultView?.addEventListener(
+      "beforeprint",
+      this._onBeforePrint,
+    );
+    this.element.ownerDocument.defaultView?.addEventListener(
+      "afterprint",
+      this._onAfterPrint,
+    );
     this._onScroll = () => {
       if (this._pendingResizeScrollTop !== null) return;
-      if (this._shouldScrollToBottom && this._isScrolledToBottom()) {
+      const atBottom = this._isScrolledToBottom();
+      if (this._shouldScrollToBottom && atBottom) {
         this._programmaticScrollTop = null;
         return;
       }
@@ -354,6 +471,7 @@ export class WTerm {
         this.bridge = await WasmBridge.load(this.wasmUrl);
       }
       if (this._destroyed) return this;
+      this.bridge.setUpdateListener?.(this._onCoreUpdate);
       const initialCols = this.cols;
       const initialRows = this.rows;
       this._setRowHeight();
@@ -366,6 +484,7 @@ export class WTerm {
       }
       this.bridge.init(this.cols, this.rows);
       if (this._themeColors) this.bridge.setThemeColors?.(this._themeColors);
+      else this._syncCssThemeColors();
       this.cols = this.bridge.getCols();
       this.rows = this.bridge.getRows();
 
@@ -386,17 +505,8 @@ export class WTerm {
 
       this.input = new InputHandler(
         this.element,
-        (data, preserveScroll = false) => {
-          if (!preserveScroll) {
-            this._outputAnnouncements.input();
-            this._scrollToBottom();
-          }
-          if (this.onData) {
-            this.onData(data);
-          } else {
-            this.write(data);
-          }
-        },
+        (data, preserveScroll = false) =>
+          this._deliverInput(data, preserveScroll),
         () => this.bridge,
         () =>
           this._charWidth > 0 && this._rowHeight > 0
@@ -439,6 +549,7 @@ export class WTerm {
 
       this.input.focus();
       this._initialRender();
+      this._registerWebMCP();
       if (this.cols !== initialCols || this.rows !== initialRows)
         this.onResize?.(this.cols, this.rows);
     } catch (err) {
@@ -453,23 +564,48 @@ export class WTerm {
 
   private _isScrolledToBottom(): boolean {
     const el = this.element;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 5;
+    this._pinnedToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 5;
+    return this._pinnedToBottom;
   }
 
   private _scrollToBottom(): void {
     this._setScrollTop(this.element.scrollHeight);
   }
 
-  private _setScrollTop(value: number): void {
-    const before = this.element.scrollTop;
-    this.element.scrollTop = value;
-    const after = this.element.scrollTop;
-    if (after === before) return;
-    this._programmaticScrollTop = after;
+  private _setScrollTop(value: number, frame?: RenderFrame): void {
+    if (!frame) {
+      const before = this.element.scrollTop;
+      this.element.scrollTop = value;
+      const after = this.element.scrollTop;
+      this._isScrolledToBottom();
+      if (after !== before) this._programmaticScrollTop = after;
+      return;
+    }
+    const maxScrollTop = frame.maxScrollTop;
+    const target = Math.max(0, Math.min(value, maxScrollTop));
+    this._pinnedToBottom = maxScrollTop - target < 5;
+    if (target !== frame.viewportScrollTop || frame.restoreScroll) {
+      this._programmaticScrollTop = target;
+    }
+    this.element.scrollTop = target;
   }
 
-  /** Apply host colors without writing terminal input or restarting the session. */
-  setThemeColors(colors: TerminalThemeColors): void {
+  /**
+   * Apply host colors without writing terminal input or restarting the session.
+   * Pass `null` to drop them and answer color queries from the page's CSS again.
+   */
+  setThemeColors(colors: TerminalThemeColors | null): void {
+    if (colors === null) {
+      if (this._destroyed) return;
+      this._themeColors = null;
+      for (const property of THEME_PROPERTIES)
+        this.element.style.removeProperty(property);
+      this._cssThemeKey = null;
+      this._syncCssThemeColors();
+      this.renderer?.invalidateColors();
+      this._scheduleRender();
+      return;
+    }
     const values = [
       colors.foreground,
       colors.background,
@@ -489,15 +625,9 @@ export class WTerm {
     const copy = { ...colors, palette: [...colors.palette] };
     this.bridge?.setThemeColors?.(copy);
     this._themeColors = copy;
-    const properties = [
-      "--term-fg",
-      "--term-bg",
-      "--term-cursor",
-      ...colors.palette.map((_, index) => `--term-color-${index}`),
-    ];
     values.forEach((value, index) =>
       this.element.style.setProperty(
-        properties[index],
+        THEME_PROPERTIES[index],
         `#${value.toString(16).padStart(6, "0")}`,
       ),
     );
@@ -507,12 +637,15 @@ export class WTerm {
 
   write(data: string | Uint8Array): void {
     if (!this.bridge || this._destroyed) return;
+    markSelectionChanged(this.element.ownerDocument);
     this._textCapture.cancel();
     this._rectangleDrag.cancel();
     this._historySelection.invalidate();
     this.renderer?.beforeMutation(this.bridge);
     if (this.debug) this.debug.traceWrite(data);
-    this._shouldScrollToBottom = this._isScrolledToBottom();
+    this._shouldScrollToBottom = this._pinnedToBottom;
+    // Answer theme color queries with the colors the page shows right now.
+    if (mayQueryThemeColors(data)) this._syncCssThemeColors();
     const windowSizeQueries = this._collectWindowSizeQueries(data);
     let deliveryError: unknown;
     let hasDeliveryError = false;
@@ -522,41 +655,8 @@ export class WTerm {
       deliveryError = error;
     };
     const drain = () => {
-      const result = this._drainResponses();
+      const result = this._deliverCoreEffects();
       if (result.hasError) recordDeliveryError(result.error);
-      const bells = this.bridge?.getBellCount?.() ?? 0;
-      if (bells > 0) {
-        try {
-          this.onBell?.(bells);
-        } catch (error) {
-          recordDeliveryError(error);
-        }
-      }
-      // Titles, like replies and bells, must reach the host even without paint.
-      try {
-        this._deliverTitle();
-      } catch (error) {
-        recordDeliveryError(error);
-      }
-      try {
-        const text = this.bridge?.getClipboardWrite?.() ?? null;
-        if (text !== null && !this._destroyed) this.onClipboardWrite?.(text);
-      } catch (error) {
-        recordDeliveryError(error);
-      }
-      try {
-        const state = this.bridge?.getShellIntegrationState?.() ?? null;
-        if (state !== null && !this._destroyed)
-          this.onShellIntegration?.(state);
-      } catch (error) {
-        recordDeliveryError(error);
-      }
-      try {
-        const uri = this.bridge?.getWorkingDirectory?.() ?? null;
-        if (uri !== null && !this._destroyed) this.onWorkingDirectory?.(uri);
-      } catch (error) {
-        recordDeliveryError(error);
-      }
     };
     if (typeof data === "string") {
       this.bridge.writeString(data, drain);
@@ -572,6 +672,7 @@ export class WTerm {
       this._scheduleRender();
     }
     drain();
+    for (const listener of this._outputListeners) listener();
     for (const query of windowSizeQueries) {
       try {
         this.onData?.(this._windowSizeResponse(query));
@@ -581,6 +682,110 @@ export class WTerm {
     }
     if (hasDeliveryError) throw deliveryError;
   }
+
+  /**
+   * Hands the core the theme colors the page's CSS resolves to, unless the
+   * host set explicit colors with setThemeColors().
+   */
+  private _syncCssThemeColors(): void {
+    if (this._themeColors || !this.bridge?.setThemeColors || this._destroyed)
+      return;
+    let colors: TerminalThemeColors | null;
+    try {
+      colors = readCssThemeColors(this.element);
+    } catch {
+      // Detection is best effort; the core keeps its previous colors.
+      return;
+    }
+    if (!colors) return;
+    const key = [
+      colors.foreground,
+      colors.background,
+      colors.cursor,
+      ...colors.palette,
+    ].join();
+    if (key === this._cssThemeKey) return;
+    this._cssThemeKey = key;
+    this.bridge.setThemeColors(colors);
+  }
+
+  /**
+   * Hands replies, bells, titles, clipboard writes, shell state and the
+   * working directory to the host. Returns the first host callback error.
+   */
+  private _deliverCoreEffects(): { hasError: boolean; error?: unknown } {
+    let hasError = false;
+    let firstError: unknown;
+    const record = (error: unknown) => {
+      if (hasError) return;
+      hasError = true;
+      firstError = error;
+    };
+    const result = this._drainResponses();
+    if (result.hasError) record(result.error);
+    const bells = this.bridge?.getBellCount?.() ?? 0;
+    if (bells > 0) {
+      try {
+        this.onBell?.(bells);
+      } catch (error) {
+        record(error);
+      }
+    }
+    // Titles, like replies and bells, must reach the host even without paint.
+    try {
+      this._deliverTitle();
+    } catch (error) {
+      record(error);
+    }
+    try {
+      const text = this.bridge?.getClipboardWrite?.() ?? null;
+      if (text !== null && !this._destroyed) this.onClipboardWrite?.(text);
+    } catch (error) {
+      record(error);
+    }
+    try {
+      const state = this.bridge?.getShellIntegrationState?.() ?? null;
+      if (state !== null) this._shellIntegration = state;
+      if (state !== null && !this._destroyed) this.onShellIntegration?.(state);
+    } catch (error) {
+      record(error);
+    }
+    try {
+      const uri = this.bridge?.getWorkingDirectory?.() ?? null;
+      if (uri !== null) this._workingDirectory = uri || null;
+      if (uri !== null && !this._destroyed) this.onWorkingDirectory?.(uri);
+    } catch (error) {
+      record(error);
+    }
+    return { hasError, error: firstError };
+  }
+
+  /** New state from a core that applies writes asynchronously. */
+  private _onCoreUpdate = (): void => {
+    if (!this.bridge || this._destroyed) return;
+    // The core changed, as after a write: stale captures and drags end.
+    this._textCapture.cancel();
+    this._rectangleDrag.cancel();
+    this.renderer?.beforeMutation(this.bridge);
+    this._historySelection.invalidate();
+    const result = this._deliverCoreEffects();
+    const synchronized = this.bridge.synchronizedOutput?.() ?? false;
+    const generation = this.bridge.synchronizedOutputGeneration?.() ?? 0;
+    this._updateSynchronizedOutput(synchronized, generation);
+    this._invalidateSearch();
+    if (this._synchronizedOutputState !== "held") {
+      this._setupRendererIfNeeded();
+      this._scheduleRender();
+    }
+    for (const listener of this._outputListeners) listener();
+    if (result.hasError) {
+      // There is no write call to throw from; surface it like an event handler.
+      const error = result.error;
+      queueMicrotask(() => {
+        throw error;
+      });
+    }
+  };
 
   /** Fit the grid to the current element and font metrics. */
   fit(): void {
@@ -628,6 +833,7 @@ export class WTerm {
 
   resize(cols: number, rows: number): void {
     if (!this.bridge || this._destroyed) return;
+    markSelectionChanged(this.element.ownerDocument);
     this._textCapture.cancel();
     this._rectangleDrag.cancel();
     this._historySelection.invalidate();
@@ -729,6 +935,72 @@ export class WTerm {
   /** Enable or stop polite announcements without changing terminal focus. */
   setOutputAnnouncements(enabled: boolean): void {
     if (!this._destroyed) this._outputAnnouncements.setEnabled(enabled);
+  }
+
+  /** Expose this terminal to in-page agents through WebMCP, or withdraw it. */
+  setWebMCP(options: boolean | WebMCPOptions): void {
+    if (this._destroyed) return;
+    const next = webmcpOptions(options);
+    const current = this._webmcp;
+    if (
+      next === current ||
+      (next &&
+        current &&
+        next.name === current.name &&
+        next.description === current.description &&
+        next.readOnly === current.readOnly)
+    )
+      return;
+    this._webmcp = next;
+    if (this.bridge) this._registerWebMCP();
+  }
+
+  private _registerWebMCP(): void {
+    this._unregisterWebMCP?.();
+    this._unregisterWebMCP = null;
+    if (this._webmcp && !this._destroyed)
+      this._unregisterWebMCP = registerWebMCPTerminal(
+        this._webmcpTerminal(),
+        this._webmcp,
+      );
+  }
+
+  private _webmcpTerminal(): WebMCPTerminal {
+    return {
+      element: this.element,
+      core: () => (this._destroyed ? null : this.bridge),
+      title: () => this._title,
+      workingDirectory: () => this._workingDirectory,
+      shellIntegration: () => this._shellIntegration,
+      sendText: (text) => {
+        if (!this.input) return;
+        if (/[\r\n]/.test(text) && this.bridge?.bracketedPaste())
+          this.input.sendPaste(text);
+        else this._deliverInput(text.replace(/\r?\n/g, "\r"));
+      },
+      sendKey: (key) => {
+        const sequence = this.input?.encodeKey(key) ?? null;
+        if (sequence === null) return false;
+        this._deliverInput(sequence);
+        return true;
+      },
+      onOutput: (listener) => {
+        this._outputListeners.add(listener);
+        return () => this._outputListeners.delete(listener);
+      },
+    };
+  }
+
+  private _deliverInput(data: string, preserveScroll = false): void {
+    if (!preserveScroll) {
+      this._outputAnnouncements.input();
+      this._scrollToBottom();
+    }
+    if (this.onData) {
+      this.onData(data);
+    } else {
+      this.write(data);
+    }
   }
 
   /** Pause pane painting without buffering output or stopping terminal effects. */
@@ -833,6 +1105,7 @@ export class WTerm {
       )
         return;
     }
+    markSelectionChanged(this.element.ownerDocument);
     selection.removeAllRanges();
   }
 
@@ -926,19 +1199,54 @@ export class WTerm {
     if (
       !this._canRender() ||
       this._synchronizedOutputState === "held" ||
-      this.rafId != null
+      pendingRenders.has(this)
     )
       return;
-    this.rafId = requestAnimationFrame(() => {
-      this.rafId = null;
-      this._doRender();
-    });
+    pendingRenders.add(this);
+    if (renderFrameId === null) {
+      const frameId = requestAnimationFrame(WTerm._flushRenders);
+      if (pendingRenders.size > 0) renderFrameId = frameId;
+    }
   }
 
   private _cancelScheduledRender(): void {
-    if (this.rafId != null) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
+    pendingRenders.delete(this);
+    if (pendingRenders.size === 0 && renderFrameId !== null) {
+      cancelAnimationFrame(renderFrameId);
+      renderFrameId = null;
+    }
+  }
+
+  private static _flushRenders(): void {
+    renderFrameId = null;
+    const frames = new Map<WTerm, RenderFrame>();
+    const terminals = Array.from(pendingRenders);
+    for (const document of new Set(
+      terminals.map((terminal) => terminal.element.ownerDocument),
+    ))
+      markSelectionChanged(document);
+    for (const phase of ["read", "render", "measure", "scroll", "finish"]) {
+      for (const terminal of terminals) {
+        try {
+          if (phase === "read") {
+            if (!pendingRenders.delete(terminal)) continue;
+            const frame = terminal._readRender();
+            if (frame) frames.set(terminal, frame);
+            continue;
+          }
+          const frame = frames.get(terminal);
+          if (!frame) continue;
+          if (phase === "render") terminal._renderFrame(frame);
+          else if (phase === "measure") terminal._measureRenderScroll(frame);
+          else if (phase === "scroll") terminal._scrollRender(frame);
+          else terminal._finishRender();
+        } catch (error) {
+          frames.delete(terminal);
+          queueMicrotask(() => {
+            throw error;
+          });
+        }
+      }
     }
   }
 
@@ -998,6 +1306,19 @@ export class WTerm {
     this._synchronizedOutputTimer = null;
   }
 
+  /** Prepares colored print output without advancing a paused or synchronized screen. */
+  private _setPrintMode(printing: boolean): void {
+    if (!this.renderer || this._destroyed) return;
+    const keepCanvas =
+      printing &&
+      (!this._canRender() || this._synchronizedOutputState === "held");
+    this.element.classList.toggle("term-print-canvas", keepCanvas);
+    this.renderer.setCanvasSuspended(printing && !keepCanvas);
+    if (keepCanvas) return;
+    if (printing) this._doRender();
+    else this._scheduleRender();
+  }
+
   private _setupRendererIfNeeded(): void {
     if (!this._rendererNeedsSetup) return;
     this._setupRenderer();
@@ -1016,16 +1337,26 @@ export class WTerm {
   }
 
   private _doRender(): void {
+    this._cancelScheduledRender();
+    markSelectionChanged(this.element.ownerDocument);
+    const frame = this._readRender();
+    if (!frame) return;
+    this._renderFrame(frame);
+    this._measureRenderScroll(frame);
+    this._scrollRender(frame);
+    this._finishRender();
+  }
+
+  private _readRender(): RenderFrame | null {
     if (
       !this._canRender() ||
       !this.bridge ||
       !this.renderer ||
       this._synchronizedOutputState === "held"
     )
-      return;
+      return null;
 
     let dirtyCount = 0;
-    const t0 = this.debug ? performance.now() : 0;
     if (this.debug) {
       for (let r = 0; r < this.rows; r++) {
         if (this.bridge.isDirtyRow(r)) dirtyCount++;
@@ -1033,6 +1364,14 @@ export class WTerm {
     }
 
     const rowHeight = this._rowHeight || 17;
+    const viewportScrollTop = this.element.scrollTop;
+    const clientHeight = this.element.clientHeight;
+    this._pinnedToBottom =
+      this.element.scrollHeight - viewportScrollTop - clientHeight < 5;
+    const style = getComputedStyle(this.element);
+    const padding =
+      (parseFloat(style.paddingTop) || 0) +
+      (parseFloat(style.paddingBottom) || 0);
     const scrollbackCount = this.bridge.getScrollbackCount();
     const discardedCount = this.bridge.getScrollbackDiscardedCount?.();
     const discardedDelta =
@@ -1046,47 +1385,88 @@ export class WTerm {
     let scrollTop =
       this._pendingResizeScrollTop !== null
         ? this._pendingResizeScrollTop
-        : this.element.scrollTop;
+        : viewportScrollTop;
     if (!this._shouldScrollToBottom && discardedDelta > 0) {
       scrollTop = Math.max(0, scrollTop - discardedDelta * rowHeight);
-      if (this._pendingResizeScrollTop !== null) {
-        this._pendingResizeScrollTop = scrollTop;
-      } else {
-        this._setScrollTop(scrollTop);
-      }
     }
 
+    return {
+      scrollTop,
+      viewportScrollTop,
+      clientHeight,
+      maxScrollTop: Math.max(
+        0,
+        Math.round(
+          (scrollbackCount + this.rows) * rowHeight +
+            padding +
+            this._keyboardInset +
+            this._historySelection.statusHeight,
+        ) - clientHeight,
+      ),
+      rowHeight,
+      scrollbackCount,
+      discardedCount,
+      dirtyCount,
+      followOutput: this._shouldScrollToBottom,
+      restoreScroll:
+        this._pendingResizeScrollTop !== null || discardedDelta > 0,
+    };
+  }
+
+  private _renderFrame(frame: RenderFrame): void {
+    if (!this.bridge || !this.renderer) return;
+    const t0 = this.debug ? performance.now() : 0;
     this.renderer.render(this.bridge, {
-      scrollTop: this._shouldScrollToBottom
+      scrollTop: frame.followOutput
         ? Math.max(
             0,
-            (scrollbackCount + this.rows) * rowHeight -
-              this.element.clientHeight,
+            (frame.scrollbackCount + this.rows) * frame.rowHeight -
+              frame.clientHeight,
           )
-        : scrollTop,
-      clientHeight: this.element.clientHeight,
-      rowHeight,
-      scrollbackDiscardedCount: discardedCount,
+        : frame.scrollTop,
+      clientHeight: frame.clientHeight,
+      rowHeight: frame.rowHeight,
+      scrollbackDiscardedCount: frame.discardedCount,
       charWidth: this._charWidth,
     });
 
     if (this.debug) {
-      this.debug.recordRender(performance.now() - t0, dirtyCount);
+      this.debug.recordRender(performance.now() - t0, frame.dirtyCount);
     }
 
-    const hasScrollback = scrollbackCount > 0 || this.renderer.hasImageFlow;
+    const hasScrollback =
+      frame.scrollbackCount > 0 || this.renderer.hasImageFlow;
     this.element.classList.toggle("has-scrollback", hasScrollback);
+  }
 
-    if (this._shouldScrollToBottom) {
-      this._scrollToBottom();
-    } else if (this._pendingResizeScrollTop !== null) {
-      const pendingScrollTop = this._pendingResizeScrollTop;
-      this._pendingResizeScrollTop = null;
-      this._setScrollTop(pendingScrollTop);
-    } else if (!hasScrollback && this.element.scrollTop !== 0) {
-      this._setScrollTop(0);
+  private _measureRenderScroll(frame: RenderFrame): void {
+    if (this.renderer?.hasImageFlow) {
+      frame.maxScrollTop = Math.max(
+        0,
+        this.element.scrollHeight - frame.clientHeight,
+      );
     }
+  }
 
+  private _scrollRender(frame: RenderFrame): void {
+    this._pendingResizeScrollTop = null;
+    if (frame.followOutput) {
+      this._setScrollTop(frame.maxScrollTop, frame);
+    } else if (frame.restoreScroll) {
+      this._setScrollTop(frame.scrollTop, frame);
+    } else if (!frame.scrollbackCount && !this.renderer?.hasImageFlow) {
+      this._setScrollTop(0, frame);
+    }
+  }
+
+  private _finishRender(): void {
+    if (
+      !this.bridge ||
+      !this.renderer ||
+      !this._canRender() ||
+      this._synchronizedOutputState === "held"
+    )
+      return;
     this.input?.syncInputPosition();
     if (this._searchReveal) {
       this._searchReveal = false;
@@ -1124,7 +1504,9 @@ export class WTerm {
 
   private _deliverTitle(): void {
     const title = this.bridge?.getTitle() ?? null;
-    if (title !== null) this.onTitle?.(title);
+    if (title === null) return;
+    this._title = title || null;
+    this.onTitle?.(title);
   }
 
   private _drainResponses(): { hasError: boolean; error?: unknown } {
@@ -1275,16 +1657,31 @@ export class WTerm {
     probe.style.width = "auto";
     probe.textContent = "W";
     row.appendChild(probe);
+    const block = document.createElement("span");
+    block.style.width = "auto";
+    block.style.letterSpacing = "0";
+    block.textContent = "\u2580";
+    row.appendChild(block);
 
     this._container.appendChild(row);
     const charWidth = probe.getBoundingClientRect().width;
+    const blockWidth = block.getBoundingClientRect().width;
     const rowHeight = row.getBoundingClientRect().height;
     row.remove();
 
     if (charWidth === 0 || rowHeight === 0) return null;
+    const changed =
+      this._charWidth > 0 &&
+      (charWidth !== this._charWidth || rowHeight !== this._rowHeight);
     this._charWidth = charWidth;
     this._rowHeight = rowHeight;
     this.element.style.setProperty("--term-cell-width", `${charWidth}px`);
+    const drift = blockWidth > 0 ? charWidth - blockWidth : 0;
+    this.element.style.setProperty(
+      "--term-block-spacing",
+      Math.abs(drift) > 0.01 ? `${drift}px` : "0px",
+    );
+    if (changed && this.renderer) this._scheduleRender();
     return { charWidth, rowHeight };
   }
 
@@ -1322,6 +1719,7 @@ export class WTerm {
   private _lastContainerRect: DOMRectReadOnly | null = null;
   /** Reserves the part of the element the keyboard covers, below the grid. */
   private _keyboardSpacer: HTMLDivElement | null = null;
+  private _keyboardInset = 0;
   private _visualViewport: VisualViewport | null = null;
   private _visualViewportFrame = 0;
 
@@ -1362,6 +1760,7 @@ export class WTerm {
 
   /** Keeps the grid's last row above the keyboard while the element scrolls to the bottom. */
   private _setKeyboardInset(px: number): void {
+    this._keyboardInset = Math.max(0, px);
     if (px <= 0) {
       this._keyboardSpacer?.remove();
       this._keyboardSpacer = null;
@@ -1397,6 +1796,10 @@ export class WTerm {
 
   destroy(): void {
     this._destroyed = true;
+    this._unregisterWebMCP?.();
+    this._unregisterWebMCP = null;
+    this._outputListeners.clear();
+    this.bridge?.setUpdateListener?.(null);
     this._textCapture.cancel();
     this._historySelection.destroy();
     this._rectangleDrag.destroy();
@@ -1441,7 +1844,15 @@ export class WTerm {
       "blur",
       this._onWindowBlur,
     );
-    this.element.classList.remove("link-modifier-active");
+    this.element.ownerDocument.defaultView?.removeEventListener(
+      "beforeprint",
+      this._onBeforePrint,
+    );
+    this.element.ownerDocument.defaultView?.removeEventListener(
+      "afterprint",
+      this._onAfterPrint,
+    );
+    this.element.classList.remove("link-modifier-active", "term-print-canvas");
     this.element.innerHTML = "";
     if (
       this.debug &&
@@ -1451,4 +1862,16 @@ export class WTerm {
     }
     this.debug = null;
   }
+}
+
+function webmcpOptions(
+  options: boolean | WebMCPOptions | undefined,
+): WebMCPOptions | null {
+  if (!options) return null;
+  if (options === true) return {};
+  return {
+    name: options.name,
+    description: options.description,
+    readOnly: options.readOnly,
+  };
 }
