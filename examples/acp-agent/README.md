@@ -9,6 +9,7 @@ From the monorepo root:
 ```bash
 pnpm install
 zig build
+pnpm turbo run build --filter='acp-agent^...'
 pnpm --filter acp-agent dev
 ```
 
