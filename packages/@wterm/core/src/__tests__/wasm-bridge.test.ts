@@ -75,6 +75,16 @@ describe("WasmBridge", () => {
     expect(bridge.getScrollbackCell(offset, 0).fgRgb).toBe(0xff6400);
   });
 
+  it("tracks and reports modifyOtherKeys level 2", () => {
+    expect(bridge.modifyOtherKeys()).toBe(0);
+    bridge.writeString("\x1b[>4;2m\x1b[?4m");
+    expect(bridge.modifyOtherKeys()).toBe(2);
+    expect(bridge.getResponse()).toBe("\x1b[>4;2m");
+    bridge.writeString("\x1b[>4m\x1b[?4m");
+    expect(bridge.modifyOtherKeys()).toBe(0);
+    expect(bridge.getResponse()).toBe("\x1b[>4;0m");
+  });
+
   it("keeps a surrogate pair whole across write chunk boundaries", () => {
     // 8191 puts the pair across the edge of the first 8192-unit encode window.
     for (const pad of [8190, 8191, 8192]) {

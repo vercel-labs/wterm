@@ -538,6 +538,71 @@ describe("InputHandler", () => {
     });
   });
 
+  describe("modifyOtherKeys level 2", () => {
+    const press = (key: string, opts: Partial<KeyboardEventInit> = {}) => {
+      received.length = 0;
+      getTextarea().dispatchEvent(createKeyboardEvent(key, opts));
+      return received.join("");
+    };
+
+    it.each([
+      ["Tab", { shiftKey: true }, "\x1b[27;2;9~"],
+      ["Tab", { altKey: true }, "\x1b[27;3;9~"],
+      ["Enter", { altKey: true }, "\x1b[27;3;13~"],
+      ["Backspace", { shiftKey: true }, "\x1b[27;2;127~"],
+      ["Backspace", { ctrlKey: true, shiftKey: true }, "\x1b[27;6;127~"],
+      ["A", { shiftKey: true }, "\x1b[27;2;65~"],
+      [" ", { shiftKey: true }, "\x1b[27;2;32~"],
+      ["a", { altKey: true }, "\x1b[27;3;97~"],
+      ["A", { ctrlKey: true, shiftKey: true }, "\x1b[27;6;65~"],
+      ["1", { ctrlKey: true }, "\x1b[27;5;49~"],
+      ["e", { ctrlKey: true }, "\x1b[27;5;101~"],
+      ["e", { ctrlKey: true, altKey: true }, "\x1b[27;7;101~"],
+      ["!", { altKey: true }, "\x1b[27;3;33~"],
+    ] as const)("encodes %s with %o", (key, opts, expected) => {
+      bridgeMock = {
+        modifyOtherKeys: () => 2,
+        cursorKeysApp: () => false,
+      } as any;
+      expect(press(key, opts)).toBe(expected);
+    });
+
+    it.each([
+      ["Backspace", { ctrlKey: true }, "\x08"],
+      ["!", { shiftKey: true }, "!"],
+      ["a", {}, "a"],
+      ["ArrowUp", { shiftKey: true }, "\x1b[1;2A"],
+      ["Enter", { shiftKey: true }, "\x1b[13;2u"],
+    ] as const)(
+      "keeps the legacy encoding of %s with %o",
+      (key, opts, expected) => {
+        bridgeMock = {
+          modifyOtherKeys: () => 2,
+          cursorKeysApp: () => false,
+        } as any;
+        expect(press(key, opts)).toBe(expected);
+      },
+    );
+
+    it("leaves legacy input unchanged when level 2 is off", () => {
+      bridgeMock = {
+        modifyOtherKeys: () => 0,
+        cursorKeysApp: () => false,
+      } as any;
+      expect(press("Tab", { shiftKey: true })).toBe("\x1b[Z");
+      expect(press("a", { altKey: true })).toBe("\x1ba");
+      expect(press("A", { shiftKey: true })).toBe("A");
+    });
+
+    it("yields to a negotiated Kitty keyboard protocol", () => {
+      bridgeMock = {
+        modifyOtherKeys: () => 2,
+        kittyKeyboardFlags: () => 1,
+      } as any;
+      expect(press("Tab", { shiftKey: true })).not.toContain("27;");
+    });
+  });
+
   describe("Kitty keyboard protocol", () => {
     it.each([1, 1 | 2 | 8 | 16])(
       "accepts native AltGr text with Kitty flags %i without a stray release",
