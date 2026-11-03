@@ -1709,10 +1709,8 @@ fn trimmedLen(cells: []const Cell) u16 {
 }
 
 /// Output rows of a reflow, each `cols` cells wide.
-/// Row markers in `Grid.wrapped` and `ScrollbackLine.wrapped`.
-const WRAPPED: u8 = 1;
-/// Wrapped, and the last cell is padding left by a wide glyph that moved on.
-const WRAPPED_PADDED: u8 = 2;
+const WRAPPED = grid_mod.WRAPPED;
+const WRAPPED_PADDED = grid_mod.WRAPPED_PADDED;
 
 const Rewrap = struct {
     cols: u16,
@@ -3303,4 +3301,36 @@ test "OSC 10 and 11 report the theme colors with the query's terminator" {
     try std.testing.expectEqualStrings("\x1b]11;rgb:fafa/fafa/fafa\x07", t.responsePtr()[0..t.responseLen()]);
     t.popResponse();
     try std.testing.expectEqual(@as(u8, 0), t.responseLen());
+}
+
+test "reflow keeps a character written over wide-glyph padding" {
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(5, 3);
+    t.scrollback = sb;
+    t.write("abcd\u{4e2d}X");
+    t.write("\x1b[1;5HZ");
+    t.resize(10, 3);
+    var buf: [64]u8 = undefined;
+    try testing.expectEqualStrings("abcdZ\u{4e2d}X", testRowText(&t, 0, &buf));
+}
+
+test "inserting characters over wide-glyph padding ends the wrap without loss" {
+    const testing = std.testing;
+    const sb = try testing.allocator.create(Scrollback);
+    defer testing.allocator.destroy(sb);
+    sb.* = .{};
+    defer sb.reset();
+    var t = Terminal.init(5, 3);
+    t.scrollback = sb;
+    t.write("abcd\u{4e2d}X");
+    // Inserting a blank pushes the padding off the end and ends the wrap.
+    t.write("\x1b[1;1H\x1b[@");
+    t.resize(10, 3);
+    var buf: [64]u8 = undefined;
+    try testing.expectEqualStrings(" abcd", testRowText(&t, 0, &buf));
+    try testing.expectEqualStrings("\u{4e2d}X", testRowText(&t, 1, &buf));
 }

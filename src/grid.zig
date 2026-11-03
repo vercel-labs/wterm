@@ -27,6 +27,11 @@ fn grownCapacity(current: u16, needed: u16, maximum: u16) u16 {
 
 /// Wide cells and their continuations stay paired within each visible row.
 /// Column edits blank split pairs without changing the requested shift.
+/// Row markers in `Grid.wrapped` and `ScrollbackLine.wrapped`.
+pub const WRAPPED: u8 = 1;
+/// Wrapped, and the last cell is padding left by a wide glyph that moved on.
+pub const WRAPPED_PADDED: u8 = 2;
+
 pub const Grid = struct {
     cells: []Cell = undefined,
     dirty: []u8 = undefined,
@@ -147,6 +152,8 @@ pub const Grid = struct {
         if (row >= self.rows or col >= self.cols) return;
         self.getRow(row)[col] = cell;
         self.dirty[row] = 1;
+        // A write to the last column replaces any wide-glyph padding there.
+        if (col + 1 == self.cols and self.wrapped[row] == WRAPPED_PADDED) self.wrapped[row] = WRAPPED;
     }
 
     pub fn clear(self: *Grid) void {
