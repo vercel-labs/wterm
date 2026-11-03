@@ -178,6 +178,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `maxImageHeight` | `number` | — | Maximum rendered Kitty image height in CSS pixels. Images larger than the limit are scaled down proportionally. |
 | `cursorBlink` | `boolean` | Application-controlled | Force blinking on (`true`) or off (`false`); omit to follow the terminal (initially steady) |
 | `announceOutput` | `boolean` | `false` | Politely announce bounded text changes while terminal input has focus; mutable via `setOutputAnnouncements()` |
+| `scrollbackLines` | `number` | core default | Lines of history the core keeps (1,000 for the built-in and Ghostty cores); mutable without restarting |
 | `renderingPaused` | `boolean` | `false` | Suspend painting for an inactive pane while parsing and terminal effects continue; mutable without restarting |
 | `webmcp` | `boolean \| WebMCPOptions` | `false` | Let in-page agents list, read, and type into the terminal through WebMCP; mutable without restarting. See [WebMCP](https://wterm.dev/webmcp). |
 | `debug` | `boolean` | `false` | Enable debug mode. Exposes a `DebugAdapter` on the instance (`wt.debug`) for inspecting escape sequences, cell data, render performance, and unhandled CSI sequences. |
@@ -200,6 +201,7 @@ new WTerm(element: HTMLElement, options?: WTermOptions)
 | `resize(cols, rows)` | Resize the terminal grid |
 | `focus()` | Focus the terminal element |
 | `setOutputAnnouncements(enabled)` | Enable or stop polite output announcements without moving focus |
+| `setScrollbackLines(lines)` | Change how many lines of history the core keeps, dropping the oldest |
 | `setRenderingPaused(paused)` | Pause pane painting while parsing and terminal effects continue; resuming schedules the latest state |
 | `setWebMCP(options)` | Expose the terminal to in-page agents with `true` or `WebMCPOptions`, or withdraw it with `false` |
 | `fit()` | Resize the grid to the element's current content box and font metrics; hidden or uninitialized terminals stay unchanged |

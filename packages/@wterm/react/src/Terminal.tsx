@@ -39,6 +39,8 @@ export interface TerminalProps extends Omit<
   announceOutput?: boolean;
   /** Suspend painting for an inactive pane; parsing and terminal effects continue. */
   renderingPaused?: boolean;
+  /** Lines of history the core keeps; omit for the core's default. */
+  scrollbackLines?: number;
   /** Let in-page agents read and type into this terminal through WebMCP. */
   webmcp?: boolean | WebMCPOptions;
   /** Enable debug mode (init-only — changing after mount has no effect). */
@@ -75,6 +77,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     cursorBlink,
     announceOutput = false,
     renderingPaused = false,
+    scrollbackLines,
     webmcp = false,
     debug = false,
     onData,
@@ -158,6 +161,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
         cursorBlink,
         announceOutput,
         renderingPaused,
+        scrollbackLines,
         webmcp,
         debug,
         onData: callbacksRef.current.onData
@@ -244,6 +248,8 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
     const el = wtermRef.current?.element;
     wtermRef.current?.setOutputAnnouncements(announceOutput);
     wtermRef.current?.setRenderingPaused(renderingPaused);
+    if (scrollbackLines !== undefined)
+      wtermRef.current?.setScrollbackLines(scrollbackLines);
     wtermRef.current?.setWebMCP(webmcp);
     el?.classList.toggle("cursor-blink", cursorBlink === true);
     el?.classList.toggle("cursor-steady", cursorBlink === false);

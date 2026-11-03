@@ -98,6 +98,8 @@ const Terminal = defineComponent({
     announceOutput: Boolean,
     /** Suspend painting for an inactive pane; parsing and terminal effects continue. */
     renderingPaused: Boolean,
+    /** Lines of history the core keeps; omit for the core's default. */
+    scrollbackLines: Number,
     /**
      * Let in-page agents read and type into this terminal through WebMCP.
      * Pass an object to name the terminal or make it read-only.
@@ -175,6 +177,7 @@ const Terminal = defineComponent({
         cursorBlink: props.cursorBlink,
         announceOutput: props.announceOutput,
         renderingPaused: props.renderingPaused,
+        scrollbackLines: props.scrollbackLines,
         webmcp: props.webmcp,
         debug: props.debug,
         onData: hasDataListener
@@ -235,6 +238,14 @@ const Terminal = defineComponent({
     watch(
       () => props.announceOutput,
       (enabled) => wterm.value?.setOutputAnnouncements(enabled),
+      { flush: "post" },
+    );
+
+    watch(
+      () => props.scrollbackLines,
+      (lines) => {
+        if (lines !== undefined) wterm.value?.setScrollbackLines(lines);
+      },
       { flush: "post" },
     );
 

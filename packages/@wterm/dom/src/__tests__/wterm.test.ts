@@ -79,6 +79,49 @@ describe("WTerm", () => {
     vi.restoreAllMocks();
   });
 
+  describe("scrollback lines", () => {
+    it("hands the option to the core after init and skips repeat values", async () => {
+      const apply = vi.fn();
+      (mockBridge as TerminalCore).setScrollbackLines = apply;
+      const term = new WTerm(element, {
+        autoResize: false,
+        scrollbackLines: 5000,
+      });
+      await term.init();
+      expect(apply).toHaveBeenCalledWith(5000);
+      expect(
+        vi.mocked(mockBridge.init).mock.invocationCallOrder[0],
+      ).toBeLessThan(apply.mock.invocationCallOrder[0]);
+      term.setScrollbackLines(5000);
+      expect(apply).toHaveBeenCalledTimes(1);
+      term.setScrollbackLines(200);
+      expect(apply).toHaveBeenLastCalledWith(200);
+      term.destroy();
+    });
+
+    it("leaves the core's default alone when the option is omitted", async () => {
+      const apply = vi.fn();
+      (mockBridge as TerminalCore).setScrollbackLines = apply;
+      const term = new WTerm(element, { autoResize: false });
+      await term.init();
+      expect(apply).not.toHaveBeenCalled();
+      term.destroy();
+    });
+
+    it("rejects invalid counts and cores that cannot change their scrollback", async () => {
+      for (const scrollbackLines of [-1, 1.5, Number.NaN])
+        expect(
+          () => new WTerm(element, { autoResize: false, scrollbackLines }),
+        ).toThrow(RangeError);
+      const term = new WTerm(element, {
+        autoResize: false,
+        scrollbackLines: 10,
+      });
+      await expect(term.init()).rejects.toThrow(/cannot change its scrollback/);
+      term.destroy();
+    });
+  });
+
   describe("host theme colors", () => {
     const theme = (): TerminalThemeColors => ({
       foreground: 0x112233,
