@@ -77,3 +77,56 @@ for (const coreName of ["builtin", "ghostty"] as const) {
     expect(replies.restored).toEqual(replies.dark);
   });
 }
+
+for (const coreName of ["builtin", "ghostty"] as const) {
+  test(`${coreName} answers dark/light queries with the page's current CSS theme`, async ({
+    page,
+  }) => {
+    await page.route("**/theme.wasm", (route) =>
+      route.fulfill({ body: ghosttyWasm, contentType: "application/wasm" }),
+    );
+    await page.goto("/wasm-loading.html");
+    await page.waitForFunction(() => Boolean(window.terminalSizing));
+    const replies = await page.evaluate(async (coreName) => {
+      const style = document.createElement("style");
+      style.textContent = `
+        .light { --term-fg: #102030; --term-bg: #fafafa; }
+        .dark { --term-fg: #c8d2dc; --term-bg: #101010; }
+      `;
+      document.head.append(style);
+      const host = document.createElement("div");
+      host.className = "dark";
+      document.body.append(host);
+      const core =
+        coreName === "builtin"
+          ? await window.builtinLoading.load()
+          : await window.ghosttyLoading.load({ wasmPath: "/theme.wasm" });
+      const data: string[] = [];
+      const term = new window.terminalSizing(host, {
+        cols: 20,
+        rows: 4,
+        autoResize: false,
+        core,
+        onData: (d) => data.push(d),
+      });
+      await term.init();
+      const ask = (bytes = false) => {
+        data.length = 0;
+        const query = "\x1b[?996n";
+        term.write(bytes ? new TextEncoder().encode(query) : query);
+        return [...data];
+      };
+      const dark = ask();
+      host.className = "light";
+      // PTY hosts write bytes; both input forms must refresh the CSS theme.
+      const light = ask(true);
+      host.className = "dark";
+      const darkAgain = ask();
+      return { dark, light, darkAgain };
+    }, coreName);
+
+    expect(replies.dark).toEqual(["\x1b[?997;1n"]);
+    expect(replies.light).toEqual(["\x1b[?997;2n"]);
+    expect(replies.darkAgain).toEqual(["\x1b[?997;1n"]);
+  });
+}

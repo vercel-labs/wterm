@@ -80,15 +80,29 @@ function assertScrollbackLines(lines: number): void {
 }
 
 /** Whether the data may hold an OSC 10 or OSC 11 color query. */
+/** OSC 10/11 color queries and the CSI ? 996 n dark/light query. */
 function mayQueryThemeColors(data: string | Uint8Array): boolean {
   if (typeof data === "string")
-    return data.includes("\x1b]10;") || data.includes("\x1b]11;");
+    return (
+      data.includes("\x1b]10;") ||
+      data.includes("\x1b]11;") ||
+      data.includes("\x1b[?996n")
+    );
   for (let i = data.indexOf(0x1b); i >= 0; i = data.indexOf(0x1b, i + 1)) {
     if (
       data[i + 1] === 0x5d &&
       data[i + 2] === 0x31 &&
       (data[i + 3] === 0x30 || data[i + 3] === 0x31) &&
       data[i + 4] === 0x3b
+    )
+      return true;
+    if (
+      data[i + 1] === 0x5b &&
+      data[i + 2] === 0x3f &&
+      data[i + 3] === 0x39 &&
+      data[i + 4] === 0x39 &&
+      data[i + 5] === 0x36 &&
+      data[i + 6] === 0x6e
     )
       return true;
   }
