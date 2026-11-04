@@ -374,7 +374,9 @@ const ResponseHandler = struct {
                     ) catch return;
                     self.queue.push(out);
                 },
-                else => {},
+                .color_scheme => self.queue.push(
+                    colorSchemeReport(self.inner.terminal.colors.background.default),
+                ),
             },
             .request_mode => {
                 // DECRPM reads the same mode state the set/reset path writes,
@@ -721,10 +723,25 @@ fn themeRgb(value: u32) color.RGB {
     return .{ .r = @truncate(value >> 16), .g = @truncate(value >> 8), .b = @truncate(value) };
 }
 
+/// Dark when the relative luminance (Rec. 709 weights) is below one half.
+/// The host theme decides the scheme; OSC color overrides do not.
+fn isDarkColor(rgb: ?color.RGB) bool {
+    const value = rgb orelse return true;
+    const luminance = 2126 * @as(u32, value.r) + 7152 * @as(u32, value.g) + 722 * @as(u32, value.b);
+    return luminance < 10000 * 128;
+}
+
+/// CSI ? 997 ; 1 n for a dark theme, CSI ? 997 ; 2 n for a light one.
+fn colorSchemeReport(background: ?color.RGB) []const u8 {
+    return if (isDarkColor(background)) "\x1b[?997;1n" else "\x1b[?997;2n";
+}
+
 // Host configuration is separate from OSC application overrides and stream parsing.
+// With mode 2031 on, a background that crosses between dark and light is reported.
 export fn set_theme_colors(ptr: usize, values: [*]const u32) void {
     const state = stateFromPtr(ptr);
     const colors = &state.terminal.colors;
+    const was_dark = isDarkColor(colors.background.default);
     colors.foreground.default = themeRgb(values[0]);
     colors.background.default = themeRgb(values[1]);
     colors.cursor.default = themeRgb(values[2]);
@@ -732,6 +749,11 @@ export fn set_theme_colors(ptr: usize, values: [*]const u32) void {
     for (0..16) |index| palette[index] = themeRgb(values[index + 3]);
     colors.palette.changeDefault(palette);
     state.terminal.flags.dirty.palette = true;
+    if (state.terminal.modes.get(.report_color_scheme) and
+        isDarkColor(colors.background.default) != was_dark)
+    {
+        state.responses.push(colorSchemeReport(colors.background.default));
+    }
 }
 
 export fn init(

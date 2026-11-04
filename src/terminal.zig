@@ -79,6 +79,14 @@ pub const MouseEncoding = enum(u8) {
 
 // DECSET reports keep independent states even when mouse modes share one
 // effective tracking mode or wire encoding.
+/// Dark when the relative luminance (Rec. 709 weights) is below one half.
+fn isDarkColor(rgb: u32) bool {
+    const r: u32 = (rgb >> 16) & 0xff;
+    const g: u32 = (rgb >> 8) & 0xff;
+    const b: u32 = rgb & 0xff;
+    return 2126 * r + 7152 * g + 722 * b < 10000 * 128;
+}
+
 fn privateModeBit(mode: u16) ?u4 {
     return switch (mode) {
         47 => 0,
@@ -152,6 +160,8 @@ pub const Terminal = struct {
     mouse_encoding: MouseEncoding = .x10,
     private_mode_bits: u16 = 0,
     focus_events: bool = false,
+    /// Mode 2031: report dark/light changes of the theme background.
+    report_color_scheme: bool = false,
     synchronized_output: bool = false,
     synchronized_output_generation: u32 = 0,
     linefeed_mode: bool = false,
@@ -291,6 +301,7 @@ pub const Terminal = struct {
         self.mouse_tracking = 0;
         self.mouse_encoding = .x10;
         self.private_mode_bits = 0;
+        self.report_color_scheme = false;
         self.focus_events = false;
         self.synchronized_output = false;
         self.linefeed_mode = false;
@@ -1018,6 +1029,13 @@ pub const Terminal = struct {
         switch (final) {
             'h' => self.setPrivateMode(true),
             'l' => self.setPrivateMode(false),
+            'n' => {
+                if (self.parser.param_count == 1 and !self.parser.subparam[0] and
+                    self.parser.params[0] == 996)
+                {
+                    self.reportColorScheme();
+                } else self.logUnhandled(final, '?');
+            },
             else => self.logUnhandled(final, '?'),
         }
     }
@@ -1053,6 +1071,7 @@ pub const Terminal = struct {
                 },
                 1049 => self.switchScreen(enabled, true),
                 2004 => self.bracketed_paste = enabled,
+                2031 => self.report_color_scheme = enabled,
                 2026 => {
                     if (enabled and !self.synchronized_output) {
                         self.synchronized_output_generation +%= 1;
@@ -1074,6 +1093,7 @@ pub const Terminal = struct {
             1004 => self.focus_events,
             2004 => self.bracketed_paste,
             2026 => self.synchronized_output,
+            2031 => self.report_color_scheme,
             else => if (privateModeBit(mode)) |bit|
                 self.private_mode_bits & (@as(u16, 1) << bit) != 0
             else
@@ -1333,6 +1353,22 @@ pub const Terminal = struct {
             self.cursor_col = 0;
             self.wrap_pending = false;
         }
+    }
+
+    /// Sets the host theme defaults. With mode 2031 on, a background that
+    /// crosses between dark and light is reported to the application.
+    pub fn setThemeColors(self: *Terminal, foreground: u32, background: u32) void {
+        const was_dark = isDarkColor(self.theme_bg);
+        self.theme_fg = foreground & 0xffffff;
+        self.theme_bg = background & 0xffffff;
+        if (self.report_color_scheme and isDarkColor(self.theme_bg) != was_dark) {
+            self.reportColorScheme();
+        }
+    }
+
+    /// CSI ? 997 ; 1 n for a dark theme, CSI ? 997 ; 2 n for a light one.
+    fn reportColorScheme(self: *Terminal) void {
+        self.enqueueResponse(if (isDarkColor(self.theme_bg)) "\x1b[?997;1n" else "\x1b[?997;2n");
     }
 
     fn reportThemeColor(self: *Terminal, number: u8, rgb: u32) void {
@@ -2930,6 +2966,45 @@ test "modifyOtherKeys level 2 state, query and reset" {
     // RIS clears it.
     t.write("\x1bc");
     try testing.expect(!t.modify_other_keys_2);
+}
+
+test "mode 2031 reports dark and light theme changes" {
+    var t = Terminal.init(10, 2);
+    const expectResponse = struct {
+        fn f(term: *Terminal, expected: []const u8) !void {
+            try std.testing.expectEqualStrings(expected, term.responsePtr()[0..term.responseLen()]);
+            term.popResponse();
+        }
+    }.f;
+    // CSI ? 996 n answers with the current scheme whether or not 2031 is on.
+    t.write("\x1b[?996n");
+    try expectResponse(&t, "\x1b[?997;1n");
+    t.setThemeColors(0x111111, 0xfafafa);
+    t.write("\x1b[?996n");
+    try expectResponse(&t, "\x1b[?997;2n");
+
+    // Without the mode, a theme change sends nothing.
+    t.setThemeColors(0xd4d4d4, 0x1e1e1e);
+    try std.testing.expectEqual(@as(u8, 0), t.responseLen());
+
+    t.write("\x1b[?2031h\x1b[?2031$p");
+    try expectResponse(&t, "\x1b[?2031;1$y");
+    t.setThemeColors(0x111111, 0xfafafa);
+    try expectResponse(&t, "\x1b[?997;2n");
+    // A new background on the same side is not a scheme change.
+    t.setThemeColors(0x222222, 0xeeeeee);
+    try std.testing.expectEqual(@as(u8, 0), t.responseLen());
+    t.setThemeColors(0xd4d4d4, 0x101010);
+    try expectResponse(&t, "\x1b[?997;1n");
+
+    t.write("\x1b[?2031l");
+    t.setThemeColors(0x111111, 0xfafafa);
+    try std.testing.expectEqual(@as(u8, 0), t.responseLen());
+
+    // Full reset turns the mode off.
+    t.write("\x1b[?2031h\x1bc");
+    t.setThemeColors(0xd4d4d4, 0x1e1e1e);
+    try std.testing.expectEqual(@as(u8, 0), t.responseLen());
 }
 
 test "OSC 10 and 11 report the theme colors with the query's terminator" {

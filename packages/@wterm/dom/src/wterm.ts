@@ -680,6 +680,7 @@ export class WTerm {
       this._syncCssThemeColors();
       this.renderer?.invalidateColors();
       this._scheduleRender();
+      this._deliverThemeReport();
       return;
     }
     const values = [
@@ -709,6 +710,16 @@ export class WTerm {
     );
     this.renderer?.invalidateColors();
     this._scheduleRender();
+    this._deliverThemeReport();
+  }
+
+  /**
+   * A core with color scheme reporting (mode 2031) on answers a dark/light
+   * change right away, so the reply goes out without waiting for output.
+   */
+  private _deliverThemeReport(): void {
+    const result = this._drainResponses();
+    if (result.hasError) throw result.error;
   }
 
   write(data: string | Uint8Array): void {
