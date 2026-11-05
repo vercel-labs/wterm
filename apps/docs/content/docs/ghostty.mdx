@@ -56,7 +56,7 @@ Ghostty-backed terminals also render direct Kitty Graphics Protocol PNG, RGB,
 and RGBA data through the optional graphics contract. The DOM layer draws
 bounded, transient canvas overlays for pinned placements and follows scrollback,
 resize, and primary/alternate screen changes. Non-direct media is rejected
-before file or shared-memory access; Sixel, iTerm2/OSC 1337, animation, virtual
+before file, shared-memory, or URL access; Sixel, iTerm2/OSC 1337, animation, virtual
 Unicode placements, and persistence are outside the supported boundary. The
 common auto-sized Kitty placement also reserves its rendered height in the
 visual DOM flow, keeping a following shell prompt below the image.
@@ -156,7 +156,10 @@ The equivalent React, Vue, and Svelte props are `maxImageWidth` and
 
 `WTerm` answers Kitty's pixel geometry queries from the browser viewport, so
 direct image commands such as `kitten icat --transfer-mode=stream image.png`
-can negotiate their display size before transferring image data.
+can negotiate their display size before transferring image data. The
+[local shell example](https://github.com/vercel-labs/wterm/tree/main/examples/local)
+forwards the browser's pixel dimensions to its PTY, so `kitten icat --detect-support`
+also works from that shell.
 
 ## Options
 

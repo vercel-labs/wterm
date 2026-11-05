@@ -111,7 +111,7 @@ With `autoResize: false`, dimensions retain their explicit values or defaults.
 After `init()` or `resize()`, read `wt.cols` and `wt.rows` to size a connected
 PTY. `onResize(cols, rows)` also receives the applied grid size, including when
 initialization changes the requested size. A core can
-apply fewer cells than requested; the built-in core currently supports up to
+apply fewer cells than requested; the built-in core grows its cell storage as needed, up to
 1024 columns and 512 rows. Keeping the PTY at the applied size prevents its output from
 wrapping at different columns than the browser terminal.
 

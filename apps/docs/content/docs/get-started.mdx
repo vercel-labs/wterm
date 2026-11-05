@@ -113,4 +113,5 @@ Requires [Zig](https://ziglang.org/) 0.16.0
 zig build -Doptimize=ReleaseSmall
 ```
 
-The compiled binary is output to `web/wterm.wasm`.
+The build writes `zig-out/bin/wterm.wasm` and `web/wterm.wasm`. The packages ship
+`packages/@wterm/core/wasm/wterm.wasm`, so copy the build there to use it.
