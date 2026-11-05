@@ -39,7 +39,7 @@
   "devDependencies": {
     "@internal/ts": "workspace:*",
     "jsdom": "^30.1.1",
-    "tsc-ts": "0.1.0",
+    "tsc-ts": "0.1.2",
     "typescript": "^7.0.2"
   },
   "keywords": [

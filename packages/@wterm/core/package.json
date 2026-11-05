@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@internal/ts": "workspace:*",
-    "tsc-ts": "0.1.0",
+    "tsc-ts": "0.1.2",
     "typescript": "^7.0.2"
   },
   "keywords": [
