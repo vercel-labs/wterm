@@ -30,7 +30,8 @@
     "bench:stability": "turbo run build --filter='@internal/pty-harness^...' && pnpm --filter @internal/pty-harness bench:stability",
     "bench:performance": "turbo run build --filter='@internal/pty-harness^...' && pnpm --filter @internal/pty-harness bench:performance",
     "test:libghostty": "node experiments/libghostty/build.mjs && node --test experiments/libghostty/probe.test.mjs experiments/libghostty/browser.test.mjs",
-    "type-check": "turbo run type-check"
+    "type-check": "turbo run type-check",
+    "type-check:tsc": "turbo run type-check:tsc"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

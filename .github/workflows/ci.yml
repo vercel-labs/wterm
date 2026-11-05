@@ -77,6 +77,10 @@ jobs:
       - name: Type check
         run: pnpm type-check
 
+      # Also check with the official TypeScript compiler while tsc-ts is new.
+      - name: Type check (tsc)
+        run: pnpm type-check:tsc
+
       - name: Read Playwright version
         id: playwright
         run: |
