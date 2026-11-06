@@ -9,7 +9,8 @@
     "prebuild": "fumadocs-mdx && mkdir -p public && cp node_modules/@wterm/core/wasm/wterm.wasm public/wterm.wasm && cp node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm public/ghostty-vt.wasm",
     "build": "next build",
     "start": "next start",
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc-ts --noEmit",
+    "type-check:tsc": "tsc --noEmit",
     "test:routes": "node scripts/test-routes.mjs",
     "test:terminal": "node scripts/test-routes.mjs --terminal",
     "test:responsive": "node scripts/test-responsive.mjs",
@@ -52,6 +53,7 @@
     "@types/react-dom": "^19.2.3",
     "oxlint": "^1.91.0",
     "tailwindcss": "^4",
+    "tsc-ts": "0.1.2",
     "typescript": "^7.0.2"
   }
 }
