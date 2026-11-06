@@ -9,7 +9,7 @@
 
 A terminal emulator for the web.
 
-wterm ("dub-term") renders terminal rows as DOM text, so native text selection, copy and paste, browser find, and screen readers work on the mounted rows. The core is a VT parser written in Zig and compiled to a ~26 KB WASM binary.
+wterm ("dub-term") renders terminal rows as DOM text, so native text selection, copy and paste, browser find, and screen readers work on the mounted rows. The core is a VT parser written in Zig and compiled to a ~49 KB WASM binary.
 
 ## Install
 
@@ -40,7 +40,7 @@ const term = new WTerm(document.getElementById("terminal"));
 await term.init();
 ```
 
-To connect a shell, send keyboard input from `onData` to a PTY backend and write its output back with `term.write()`, or use `WebSocketTransport` from `@wterm/core`. The [Next.js](examples/nextjs), [SSH](examples/ssh), and [local shell](examples/local) examples show both ends. Every framework is covered in [Get started](https://wterm.dev/get-started).
+To connect a shell, send keyboard input from `onData` to a PTY backend and write its output back with `term.write()`, or use `WebSocketTransport` from `@wterm/core`. The [SSH](examples/ssh) and [local shell](examples/local) examples show both ends. Every framework is covered in [Get started](https://wterm.dev/get-started).
 
 ## How it works
 
@@ -99,7 +99,7 @@ pnpm build
 pnpm test
 ```
 
-`zig build -Doptimize=ReleaseSmall` writes `zig-out/bin/wterm.wasm` and `web/wterm.wasm`. The committed binary is `packages/@wterm/core/wasm/wterm.wasm`, and CI fails when it does not match the Zig sources, so copy the release build there and commit it with any change under `src/`.
+`zig build -Doptimize=ReleaseSmall` writes `zig-out/bin/wterm.wasm` and `web/wterm.wasm`. The committed binary is `packages/@wterm/core/wasm/wterm.wasm`, and CI fails when it does not match the Zig sources, so copy the release build there, run `pnpm --filter @wterm/core build` to regenerate the embedded copy, and commit the binary with any change under `src/`.
 
 [CONTRIBUTING.md](CONTRIBUTING.md#development) covers the Ghostty WASM build, the docs site, the examples, and the PTY, replay, and performance suites. [AGENTS.md](AGENTS.md) lists the files to update with each change and the release process.
 

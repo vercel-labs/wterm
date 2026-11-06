@@ -286,7 +286,7 @@ Cursor shape always follows the core. Custom cores can omit the optional
 
 ### Pluggable cores
 
-By default, wterm uses its built-in lightweight Zig WASM core (~26 KB). To use a different terminal emulation backend, pass a `TerminalCore` instance via the `core` option. See the [Ghostty Core](/ghostty) page for an example using libghostty.
+By default, wterm uses its built-in lightweight Zig WASM core (~49 KB). To use a different terminal emulation backend, pass a `TerminalCore` instance via the `core` option. See the [Ghostty Core](/ghostty) page for an example using libghostty.
 
 Graphics support is optional on `TerminalCore`. The built-in core safely
 consumes unsupported Kitty APC payloads without rendering image bytes;

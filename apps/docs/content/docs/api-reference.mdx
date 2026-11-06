@@ -188,7 +188,7 @@ The React, Vue, and Svelte `<Terminal>` components and the vanilla `WTerm` const
       <td><code>wasmUrl</code></td>
       <td><code>string</code></td>
       <td>—</td>
-      <td>URL to serve the WASM binary separately. When omitted, the ~26 KB binary is decoded from an inlined base64 string. Ignored when <code>core</code> is provided.</td>
+      <td>URL to serve the WASM binary separately. When omitted, the ~49 KB binary is decoded from an inlined base64 string. Ignored when <code>core</code> is provided.</td>
     </tr>
     <tr>
       <td><code>autoResize</code></td>
@@ -1105,7 +1105,7 @@ const bridge = await WasmBridge.load();
 const bridge = await WasmBridge.load("/wterm.wasm");
 ```
 
-When no URL is provided, the ~26 KB WASM binary is decoded from a base64 string inlined in the package. Pass a URL when you want to serve the binary separately for caching or CDN use.
+When no URL is provided, the ~49 KB WASM binary is decoded from a base64 string inlined in the package. Pass a URL when you want to serve the binary separately for caching or CDN use.
 
 ### Methods
 

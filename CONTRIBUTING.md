@@ -38,8 +38,9 @@ zig build -Doptimize=ReleaseSmall
 
 The release build writes `zig-out/bin/wterm.wasm` and `web/wterm.wasm`. The
 packages ship `packages/@wterm/core/wasm/wterm.wasm`, and CI fails if that file
-does not match a release build of the Zig sources. Copy the new binary there and
-commit it with any change under `src/`.
+does not match a release build of the Zig sources. Copy the new binary there,
+run `pnpm --filter @wterm/core build` to regenerate the embedded copy in
+`src/wasm-inline.ts`, and commit the binary with any change under `src/`.
 
 `src/unicode_width_table.zig` holds the East Asian Width ranges the core uses to
 decide cell width. It is generated. When Unicode publishes a new version, bump
