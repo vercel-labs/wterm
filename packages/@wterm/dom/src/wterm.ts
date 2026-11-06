@@ -79,15 +79,32 @@ function assertScrollbackLines(lines: number): void {
     throw new RangeError(`Invalid scrollback line count: ${lines}`);
 }
 
-/** Whether the data may hold an OSC 10 or OSC 11 color query. */
-/** OSC 10/11 color queries and the CSI ? 996 n dark/light query. */
-function mayQueryThemeColors(data: string | Uint8Array): boolean {
+const THEME_QUERIES = ["\x1b]10;", "\x1b]11;", "\x1b[?996n"];
+/** Longest theme query prefix that can be cut by the end of a write. */
+const THEME_QUERY_CARRY = 6;
+
+/** The first or last `count` code units of `data` as a string. */
+function edge(data: string | Uint8Array, count: number, end: boolean): string {
+  const start = end ? Math.max(0, data.length - count) : 0;
+  const stop = end ? data.length : Math.min(count, data.length);
+  if (typeof data === "string") return data.slice(start, stop);
+  return String.fromCharCode(...data.subarray(start, stop));
+}
+
+/**
+ * Whether `carry` (the end of the previous writes) followed by `data` holds an
+ * OSC 10/11 color query or the CSI ? 996 n dark/light query.
+ */
+function mayQueryThemeColors(
+  data: string | Uint8Array,
+  carry: string,
+): boolean {
+  if (carry) {
+    const seam = carry + edge(data, THEME_QUERY_CARRY, false);
+    if (THEME_QUERIES.some((query) => seam.includes(query))) return true;
+  }
   if (typeof data === "string")
-    return (
-      data.includes("\x1b]10;") ||
-      data.includes("\x1b]11;") ||
-      data.includes("\x1b[?996n")
-    );
+    return THEME_QUERIES.some((query) => data.includes(query));
   for (let i = data.indexOf(0x1b); i >= 0; i = data.indexOf(0x1b, i + 1)) {
     if (
       data[i + 1] === 0x5d &&
@@ -249,6 +266,7 @@ export class WTerm {
   private _rowHeight = 0;
   private _charWidth = 0;
   private _windowSizeQueryState: 0 | 1 | 2 | 3 | 4 | 6 = 0;
+  private _themeQueryCarry = "";
   private _search: SearchController;
   private _historySelection: HistorySelection;
   private _rectangleDrag: RectangleDrag;
@@ -746,7 +764,12 @@ export class WTerm {
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._pinnedToBottom;
     // Answer theme color queries with the colors the page shows right now.
-    if (mayQueryThemeColors(data)) this._syncCssThemeColors();
+    // A query cut by the end of a write is recognized when it completes.
+    const carry = this._themeQueryCarry;
+    this._themeQueryCarry = (carry + edge(data, THEME_QUERY_CARRY, true)).slice(
+      -THEME_QUERY_CARRY,
+    );
+    if (mayQueryThemeColors(data, carry)) this._syncCssThemeColors();
     const windowSizeQueries = this._collectWindowSizeQueries(data);
     let deliveryError: unknown;
     let hasDeliveryError = false;
@@ -1928,6 +1951,7 @@ export class WTerm {
     this._search.cancel();
     this.onSearchChange = null;
     this._windowSizeQueryState = 0;
+    this._themeQueryCarry = "";
     this._cancelScheduledRender();
     this._cancelSynchronizedOutputFallback();
     if (this._textSyncTimer !== null) clearTimeout(this._textSyncTimer);

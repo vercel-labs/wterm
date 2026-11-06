@@ -57,7 +57,12 @@ for (const coreName of ["builtin", "ghostty"] as const) {
       const explicit = ask();
       term.setThemeColors(null);
       const restored = ask();
-      return { light, dark, explicit, restored };
+      host.className = "light";
+      data.length = 0;
+      term.write(new TextEncoder().encode("\x1b]1"));
+      term.write("1;?\x07");
+      const lightSplit = [...data];
+      return { light, dark, explicit, restored, lightSplit };
     }, coreName);
 
     expect(replies.light).toEqual([
@@ -75,6 +80,7 @@ for (const coreName of ["builtin", "ghostty"] as const) {
       "\x1b]11;rgb:0404/0505/0606\x1b\\",
     ]);
     expect(replies.restored).toEqual(replies.dark);
+    expect(replies.lightSplit).toEqual(["\x1b]11;rgb:fafa/fafa/fafa\x07"]);
   });
 }
 
@@ -110,10 +116,10 @@ for (const coreName of ["builtin", "ghostty"] as const) {
         onData: (d) => data.push(d),
       });
       await term.init();
-      const ask = (bytes = false) => {
+      const ask = (bytes = false, parts = ["\x1b[?996n"]) => {
         data.length = 0;
-        const query = "\x1b[?996n";
-        term.write(bytes ? new TextEncoder().encode(query) : query);
+        for (const part of parts)
+          term.write(bytes ? new TextEncoder().encode(part) : part);
         return [...data];
       };
       const dark = ask();
@@ -122,11 +128,18 @@ for (const coreName of ["builtin", "ghostty"] as const) {
       const light = ask(true);
       host.className = "dark";
       const darkAgain = ask();
-      return { dark, light, darkAgain };
+      // PTY and WebSocket chunks can cut the query anywhere.
+      host.className = "light";
+      const lightSplit = ask(false, ["\x1b[?99", "6n"]);
+      host.className = "dark";
+      const darkSplit = ask(true, ["\x1b", "[?9", "", "96n"]);
+      return { dark, light, darkAgain, lightSplit, darkSplit };
     }, coreName);
 
     expect(replies.dark).toEqual(["\x1b[?997;1n"]);
     expect(replies.light).toEqual(["\x1b[?997;2n"]);
     expect(replies.darkAgain).toEqual(["\x1b[?997;1n"]);
+    expect(replies.lightSplit).toEqual(["\x1b[?997;2n"]);
+    expect(replies.darkSplit).toEqual(["\x1b[?997;1n"]);
   });
 }
