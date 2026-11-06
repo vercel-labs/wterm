@@ -110,3 +110,25 @@ it("rejects invalid colors before changing any defaults", async () => {
   core.writeString("\x1b]11;?\x07");
   expect(core.getResponse()).toBe("\x1b]11;rgb:fafa/fafa/fafa\x07");
 });
+
+it("reports dark and light theme changes while mode 2031 is on", async () => {
+  const core = await create();
+  const dark = theme(0x1e1e1e);
+  core.setThemeColors(dark);
+  core.writeString("\x1b[?996n");
+  expect(core.getResponse()).toBe("\x1b[?997;1n");
+  core.setThemeColors(theme());
+  expect(core.getResponse()).toBeNull();
+  core.writeString("\x1b[?996n\x1b[?2031h\x1b[?2031$p");
+  expect(core.getResponse()).toBe("\x1b[?997;2n");
+  expect(core.getResponse()).toBe("\x1b[?2031;1$y");
+  core.setThemeColors(dark);
+  expect(core.getResponse()).toBe("\x1b[?997;1n");
+  // A new background on the same side, or an OSC 11 override, is not a change.
+  core.setThemeColors(theme(0x101010));
+  core.writeString("\x1b]11;#ffffff\x07");
+  expect(core.getResponse()).toBeNull();
+  core.writeString("\x1b[?2031l");
+  core.setThemeColors(theme());
+  expect(core.getResponse()).toBeNull();
+});

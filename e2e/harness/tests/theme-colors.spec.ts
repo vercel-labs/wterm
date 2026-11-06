@@ -43,11 +43,14 @@ for (const coreName of ["builtin", "ghostty", "worker"] as const) {
       });
       await term.init();
       // WorkerCore answers after the worker's next update, not inside write().
-      const ask = async () => {
+      const ask = async (
+        parts: (string | Uint8Array)[] = ["\x1b]10;?\x07\x1b]11;?\x1b\\"],
+        replies = 2,
+      ) => {
         data.length = 0;
-        term.write("\x1b]10;?\x07\x1b]11;?\x1b\\");
+        for (const part of parts) term.write(part);
         const deadline = performance.now() + 2000;
-        while (data.length < 2 && performance.now() < deadline)
+        while (data.length < replies && performance.now() < deadline)
           await new Promise((resolve) => setTimeout(resolve, 10));
         return [...data];
       };
@@ -63,7 +66,13 @@ for (const coreName of ["builtin", "ghostty", "worker"] as const) {
       const explicit = await ask();
       term.setThemeColors(null);
       const restored = await ask();
-      return { light, dark, explicit, restored };
+      // PTY and WebSocket chunks can cut the query anywhere.
+      host.className = "light";
+      const lightSplit = await ask(
+        [new TextEncoder().encode("\x1b]1"), "1;?\x07"],
+        1,
+      );
+      return { light, dark, explicit, restored, lightSplit };
     }, coreName);
 
     expect(replies.light).toEqual([
@@ -81,5 +90,66 @@ for (const coreName of ["builtin", "ghostty", "worker"] as const) {
       "\x1b]11;rgb:0404/0505/0606\x1b\\",
     ]);
     expect(replies.restored).toEqual(replies.dark);
+    expect(replies.lightSplit).toEqual(["\x1b]11;rgb:fafa/fafa/fafa\x07"]);
+  });
+}
+
+for (const coreName of ["builtin", "ghostty"] as const) {
+  test(`${coreName} answers dark/light queries with the page's current CSS theme`, async ({
+    page,
+  }) => {
+    await page.route("**/theme.wasm", (route) =>
+      route.fulfill({ body: ghosttyWasm, contentType: "application/wasm" }),
+    );
+    await page.goto("/wasm-loading.html");
+    await page.waitForFunction(() => Boolean(window.terminalSizing));
+    const replies = await page.evaluate(async (coreName) => {
+      const style = document.createElement("style");
+      style.textContent = `
+        .light { --term-fg: #102030; --term-bg: #fafafa; }
+        .dark { --term-fg: #c8d2dc; --term-bg: #101010; }
+      `;
+      document.head.append(style);
+      const host = document.createElement("div");
+      host.className = "dark";
+      document.body.append(host);
+      const core =
+        coreName === "builtin"
+          ? await window.builtinLoading.load()
+          : await window.ghosttyLoading.load({ wasmPath: "/theme.wasm" });
+      const data: string[] = [];
+      const term = new window.terminalSizing(host, {
+        cols: 20,
+        rows: 4,
+        autoResize: false,
+        core,
+        onData: (d) => data.push(d),
+      });
+      await term.init();
+      const ask = (bytes = false, parts = ["\x1b[?996n"]) => {
+        data.length = 0;
+        for (const part of parts)
+          term.write(bytes ? new TextEncoder().encode(part) : part);
+        return [...data];
+      };
+      const dark = ask();
+      host.className = "light";
+      // PTY hosts write bytes; both input forms must refresh the CSS theme.
+      const light = ask(true);
+      host.className = "dark";
+      const darkAgain = ask();
+      // PTY and WebSocket chunks can cut the query anywhere.
+      host.className = "light";
+      const lightSplit = ask(false, ["\x1b[?99", "6n"]);
+      host.className = "dark";
+      const darkSplit = ask(true, ["\x1b", "[?9", "", "96n"]);
+      return { dark, light, darkAgain, lightSplit, darkSplit };
+    }, coreName);
+
+    expect(replies.dark).toEqual(["\x1b[?997;1n"]);
+    expect(replies.light).toEqual(["\x1b[?997;2n"]);
+    expect(replies.darkAgain).toEqual(["\x1b[?997;1n"]);
+    expect(replies.lightSplit).toEqual(["\x1b[?997;2n"]);
+    expect(replies.darkSplit).toEqual(["\x1b[?997;1n"]);
   });
 }
