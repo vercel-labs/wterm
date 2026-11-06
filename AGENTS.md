@@ -32,7 +32,7 @@ Do **not** add `--port` flags — portless handles port assignment automatically
 For any user-facing change (new feature, option, API change, bug fix, etc.), update all relevant documentation:
 
 - **Docs content** (`apps/docs/content/docs/`): Update the corresponding MDX pages (e.g. `get-started.mdx`, `vanilla.mdx`, `react.mdx`, `configuration.mdx`, `themes.mdx`). Geistdocs renders the frontmatter title; do not repeat it as an H1 in the body. Tables in MDX must use `<table>` HTML elements, not markdown table syntax. Public URLs remain at the site root.
-- **Root README** (`README.md`): Keep the package table, features list, and development instructions current.
+- **Root README** (`README.md`): Keep it short. It covers install, the quick start, how it works, the package table, agent setup, a docs table, and core development commands. Feature details belong on the docs site, and contributor workflows belong in `CONTRIBUTING.md`.
 - **Package READMEs**: Each package under `packages/@wterm/` has its own `README.md`. Update the relevant one when its API, options, or usage changes.
 - **`@wterm/core` README**: Must link to every other `@wterm/*` package. When adding or removing a package, update the "Related Packages" section in `packages/@wterm/core/README.md`.
 - **Navigation** (`apps/docs/content/docs/meta.json`): Update if adding or renaming pages. Shared docs behavior and WebMCP are configured in `apps/docs/src/lib/geistdocs/config.tsx`.

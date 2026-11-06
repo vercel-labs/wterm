@@ -286,7 +286,7 @@ While the terminal is focused, handled key presses do not bubble to page-level
 shortcut listeners. Control+K can reach the terminal instead of opening search.
 
 Without Kitty keyboard negotiation, Control+Space sends NUL, Control+/ sends
-US, and Control+Backspace sends BS. Control+Alt printable input stays on the
+US, Control+? sends DEL, and Control+Backspace sends BS. Control+Alt printable input stays on the
 native text path in this mode so keyboard layouts using AltGr can enter
 characters.
 
