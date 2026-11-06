@@ -32,7 +32,7 @@
     "@vue/test-utils": "^2.4.6",
     "@wterm/dom": "workspace:*",
     "jsdom": "^29.0.2",
-    "typescript": "^6.0.2",
+    "typescript": "^7.0.2",
     "vitest": "^5.0.2",
     "vue": "^3.5.0"
   },
