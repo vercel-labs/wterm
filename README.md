@@ -65,11 +65,13 @@ For pages with many busy terminals, `renderer: "webgl"` paints from one shared W
 
 ## For AI agents
 
-Set `webmcp` on a terminal to register [WebMCP](https://wterm.dev/webmcp) tools. In-page agents can then list terminals, read the screen and scrollback, wait for output, type commands, and press keys. A read-only mode lets agents watch a terminal without typing into it:
+Set `webmcp` on a terminal to register [WebMCP](https://wterm.dev/webmcp) tools. In-page agents can then list terminals, read the screen and scrollback, wait for output, type commands, and press keys:
 
 ```tsx
 <Terminal webmcp={{ name: "shell" }} onData={send} />
 ```
+
+Add `readOnly: true` to the `webmcp` options when agents should read a terminal without typing into it or pressing keys.
 
 `term.readText()` returns a text snapshot of retained history and the active screen. The docs are also available as Markdown from [wterm.dev/llms.txt](https://wterm.dev/llms.txt).
 
