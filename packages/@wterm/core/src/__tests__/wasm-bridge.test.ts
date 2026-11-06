@@ -74,6 +74,18 @@ describe("WasmBridge", () => {
     expect(bridge.getScrollbackCell(offset, 0).chars).toBe(family);
   });
 
+  it("lays out a text-presentation emoji (VS15) as one cell", () => {
+    bridge.writeString("⚡︎A\r\n⚡A");
+    expect(bridge.getCell(0, 0)).toMatchObject({
+      char: 0x26a1,
+      chars: "⚡︎",
+      width: 1,
+    });
+    expect(bridge.getCell(0, 1).char).toBe(0x41);
+    expect(bridge.getCell(1, 0)).toMatchObject({ char: 0x26a1, width: 2 });
+    expect(bridge.getCell(1, 2).char).toBe(0x41);
+  });
+
   it("leaves single code point cells without chars", () => {
     bridge.writeString("A\u4e2d");
     expect(bridge.getCell(0, 0).chars).toBeUndefined();
