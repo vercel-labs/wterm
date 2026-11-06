@@ -8,7 +8,7 @@ const ghosttyWasm = readFileSync(
   ),
 );
 
-for (const coreName of ["builtin", "ghostty"] as const) {
+for (const coreName of ["builtin", "ghostty", "worker"] as const) {
   test(`${coreName} answers color queries with the page's theme colors`, async ({
     page,
   }) => {
@@ -30,7 +30,9 @@ for (const coreName of ["builtin", "ghostty"] as const) {
       const core =
         coreName === "builtin"
           ? await window.builtinLoading.load()
-          : await window.ghosttyLoading.load({ wasmPath: "/theme.wasm" });
+          : coreName === "worker"
+            ? await window.workerLoading.load()
+            : await window.ghosttyLoading.load({ wasmPath: "/theme.wasm" });
       const data: string[] = [];
       const term = new window.terminalSizing(host, {
         cols: 20,
@@ -40,23 +42,27 @@ for (const coreName of ["builtin", "ghostty"] as const) {
         onData: (d) => data.push(d),
       });
       await term.init();
-      const ask = () => {
+      // WorkerCore answers after the worker's next update, not inside write().
+      const ask = async () => {
         data.length = 0;
         term.write("\x1b]10;?\x07\x1b]11;?\x1b\\");
+        const deadline = performance.now() + 2000;
+        while (data.length < 2 && performance.now() < deadline)
+          await new Promise((resolve) => setTimeout(resolve, 10));
         return [...data];
       };
-      const light = ask();
+      const light = await ask();
       host.className = "dark";
-      const dark = ask();
+      const dark = await ask();
       term.setThemeColors({
         foreground: 0x010203,
         background: 0x040506,
         cursor: 0x070809,
         palette: Array.from({ length: 16 }, () => 0),
       });
-      const explicit = ask();
+      const explicit = await ask();
       term.setThemeColors(null);
-      const restored = ask();
+      const restored = await ask();
       return { light, dark, explicit, restored };
     }, coreName);
 

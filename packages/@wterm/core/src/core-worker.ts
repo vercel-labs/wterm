@@ -169,6 +169,10 @@ self.onmessage = async (event: MessageEvent<ToWorker>) => {
       bridge.resize(msg.cols, msg.rows);
       scrollbackReset = true;
       allDirty = true;
+    } else if (msg.t === "theme") {
+      // Color query and color scheme replies use the host theme from here on.
+      bridge.setThemeColors(msg.colors);
+      drainReplies(bridge);
     } else if (msg.t === "scrollbackLines") {
       bridge.setScrollbackLines(msg.lines);
       // A lower limit drops lines the mirror still holds.
