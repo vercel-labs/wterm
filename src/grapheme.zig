@@ -24,6 +24,8 @@ pub const Props = struct {
     gcb: Gcb,
     ext_pict: bool,
     incb: InCb,
+    /// Listed in emoji-variation-sequences.txt, so VS15 and VS16 select its presentation.
+    emoji_vs_base: bool,
 };
 
 pub fn props(cp: u21) Props {
@@ -37,7 +39,8 @@ pub fn props(cp: u21) Props {
     return .{
         .gcb = @enumFromInt(p & 0x0f),
         .ext_pict = p & 0x10 != 0,
-        .incb = @enumFromInt(p >> 5),
+        .incb = @enumFromInt((p >> 5) & 0x03),
+        .emoji_vs_base = p & 0x80 != 0,
     };
 }
 
