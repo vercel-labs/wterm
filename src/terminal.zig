@@ -862,6 +862,19 @@ pub const Terminal = struct {
             } else {
                 self.cursor_col = self.cols - 1;
             }
+        } else if (cp == 0xFE0E and cell.width == cell_mod.WIDTH_WIDE and self.cursor_row == row) {
+            // Text presentation: a default-emoji base followed by VS15 takes one cell.
+            const base = std.unicode.utf8Decode(buf[0..(std.unicode.utf8ByteSequenceLength(buf[0]) catch 1)]) catch 0;
+            const after_base = if (col + 2 < self.cols)
+                !self.wrap_pending and self.cursor_col == col + 2
+            else
+                self.cursor_col == self.cols - 1 and (self.wrap_pending or !self.auto_wrap);
+            if (grapheme_mod.props(base).ext_pict and after_base) {
+                cell.width = cell_mod.WIDTH_NARROW;
+                self.grid.setCell(row, col + 1, self.blankCell());
+                self.cursor_col = col + 1;
+                self.wrap_pending = false;
+            }
         }
         self.grid.setCell(row, col, cell);
     }
@@ -2943,6 +2956,46 @@ test "a control sequence ends the cluster" {
     t.write("e\x1b[1m\u{301}");
     try std.testing.expectEqual(@as(u32, 'e'), t.grid.getCell(0, 0).char);
     try std.testing.expectEqual(@as(u32, 0x301), t.grid.getCell(0, 1).char);
+}
+
+test "VS15 narrows a default-emoji base to one cell" {
+    var t = Terminal.init(20, 2);
+    t.write("\u{26A1}\u{FE0E}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 0).width);
+    try std.testing.expectEqualStrings("\u{26A1}\u{FE0E}", testClusterText(&t, 0, 0));
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 1).char);
+    try std.testing.expectEqual(@as(u16, 2), t.cursor_col);
+}
+
+test "VS15 keeps later absolute positioning aligned" {
+    var t = Terminal.init(20, 2);
+    t.write("\u{26A1}\u{FE0E}x\x1b[1;5HZ");
+    try std.testing.expectEqual(@as(u32, 'x'), t.grid.getCell(0, 1).char);
+    try std.testing.expectEqual(@as(u32, 'Z'), t.grid.getCell(0, 4).char);
+}
+
+test "VS15 at the end of a row clears the pending wrap" {
+    var t = Terminal.init(4, 2);
+    t.write("ab\u{26A1}\u{FE0E}c");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 2).width);
+    try std.testing.expectEqual(@as(u32, 'c'), t.grid.getCell(0, 3).char);
+    try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+}
+
+test "VS15 leaves a wide CJK base alone" {
+    var t = Terminal.init(20, 2);
+    t.write("\u{4E2D}\u{FE0E}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(0, 0).width);
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 2).char);
+}
+
+test "VS16 still widens and plain emoji stay wide" {
+    var t = Terminal.init(20, 3);
+    t.write("\u{2764}\u{FE0F}A\r\n\u{26A1}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(0, 0).width);
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 2).char);
+    try std.testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(1, 0).width);
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(1, 2).char);
 }
 
 test "VS16 at the last column keeps the cell narrow" {
