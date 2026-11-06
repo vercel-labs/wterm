@@ -27,4 +27,24 @@ describe("WorkerCore", () => {
     worker.dispatchEvent(new MessageEvent("message", { data: { t: "ready" } }));
     await expect(loading).resolves.toBeInstanceOf(WorkerCore);
   });
+
+  it("forwards a copy of the host theme colors to the worker", async () => {
+    const worker = new FakeWorker();
+    const loading = WorkerCore.load({ worker: worker as unknown as Worker });
+    worker.dispatchEvent(new MessageEvent("message", { data: { t: "ready" } }));
+    const core = await loading;
+    const palette = Array.from({ length: 16 }, (_, i) => i);
+    const colors = { foreground: 1, background: 2, cursor: 3, palette };
+    core.setThemeColors(colors);
+    palette[0] = 0xffffff;
+    expect(worker.posted.at(-1)).toEqual({
+      t: "theme",
+      colors: {
+        foreground: 1,
+        background: 2,
+        cursor: 3,
+        palette: Array.from({ length: 16 }, (_, i) => i),
+      },
+    });
+  });
 });

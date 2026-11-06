@@ -3,6 +3,7 @@ import type {
   CursorState,
   MouseEncoding,
   TerminalResourceState,
+  TerminalThemeColors,
 } from "./terminal-core.js";
 
 /** 32-bit words per packed cell. */
@@ -17,7 +18,8 @@ export type ToWorker =
   | { t: "init"; cols: number; rows: number }
   | { t: "write"; data: string | Uint8Array }
   | { t: "resize"; cols: number; rows: number }
-  | { t: "scrollbackLines"; lines: number };
+  | { t: "scrollbackLines"; lines: number }
+  | { t: "theme"; colors: TerminalThemeColors };
 
 export interface CoreModes {
   cursorKeysApp: boolean;

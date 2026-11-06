@@ -1,6 +1,6 @@
 {
   "name": "@wterm/core",
-  "version": "0.5.8",
+  "version": "0.5.9",
   "description": "Headless terminal emulator core for the web — WASM bridge and WebSocket transport",
   "type": "module",
   "main": "dist/index.js",
@@ -27,10 +27,12 @@
     "build": "tsc",
     "prepublishOnly": "pnpm build",
     "test": "vitest run",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc-ts --noEmit",
+    "type-check:tsc": "tsc --noEmit"
   },
   "devDependencies": {
     "@internal/ts": "workspace:*",
+    "tsc-ts": "0.1.2",
     "typescript": "^7.0.2"
   },
   "keywords": [

@@ -37,6 +37,26 @@ describe("WasmBridge", () => {
     });
   });
 
+  it("reflows soft-wrapped lines when the width shrinks and grows", () => {
+    const row = (y: number, n: number) => {
+      let s = "";
+      for (let x = 0; x < n; x++) {
+        const c = bridge.getCell(y, x);
+        s += c.char ? String.fromCodePoint(c.char) : " ";
+      }
+      return s.trimEnd();
+    };
+    bridge.writeString("R".repeat(80) + "\r\nsecond\r\n");
+    bridge.resize(40, 24);
+    expect([row(0, 40), row(1, 40), row(2, 40)]).toEqual([
+      "R".repeat(40),
+      "R".repeat(40),
+      "second",
+    ]);
+    bridge.resize(80, 24);
+    expect([row(0, 80), row(1, 80)]).toEqual(["R".repeat(80), "second"]);
+  });
+
   it("reads grapheme clusters from visible and scrollback cells", () => {
     const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
     bridge.writeString(`${family}x e\u0301z`);

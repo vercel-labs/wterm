@@ -11,6 +11,10 @@ pub const ScrollbackLine = struct {
     cells: []Cell = undefined,
     capacity: u16 = 0,
     len: u16 = 0,
+    /// The line continues on the next line through autowrap.
+    /// 0, or the grid row marker it was pushed with: 1 wrapped, 2 wrapped
+    /// with a padding cell left by a wide glyph that moved to the next row.
+    wrapped: u8 = 0,
 
     fn free(self: *ScrollbackLine) void {
         if (self.capacity != 0) grid_mod.allocator.free(self.cells);
@@ -78,7 +82,7 @@ pub const Scrollback = struct {
         return (self.write_pos + len - 1 - offset % len) % len;
     }
 
-    pub fn push(self: *Scrollback, row: []const Cell, len: u16) void {
+    pub fn push(self: *Scrollback, row: []const Cell, len: u16, wrapped: u8) void {
         if (self.limit == 0) {
             self.discarded +%= 1;
             return;
@@ -97,6 +101,7 @@ pub const Scrollback = struct {
         }
         @memcpy(line.cells[0..len], row[0..len]);
         line.len = len;
+        line.wrapped = wrapped;
 
         self.write_pos += 1;
         if (self.write_pos == self.limit) self.write_pos = 0;
@@ -133,7 +138,7 @@ const testing = @import("std").testing;
 
 fn pushChar(sb: *Scrollback, char: u32) void {
     const row = [_]Cell{Cell{ .char = char }};
-    sb.push(&row, 1);
+    sb.push(&row, 1, 0);
 }
 
 test "a lower limit keeps the newest lines in order" {

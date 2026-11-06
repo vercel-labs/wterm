@@ -1,8 +1,26 @@
 # Changelog
 
-## 0.5.8
+## 0.5.9
 
 <!-- release:start -->
+
+### New Features
+
+- **WebGL2 renderer:** `renderer: "webgl"` in `@wterm/dom` paints live output with one instanced WebGL2 draw per frame from a shared glyph atlas. All terminals on a page share one WebGL2 context, so pane grids are not limited by the browser's cap on live contexts. DOM text stays the source for selection, find, and screen readers, and catches up when output goes idle. Without WebGL2 it falls back to `"dom"` (#250).
+- **Scrollback in lines:** the `scrollbackLines` option, `setScrollbackLines()`, and a `scrollbackLines` prop in React, Vue, and Svelte set how much history a terminal keeps, in lines, for every core. The built-in core's history grows toward its limit instead of reserving 1000 rows up front, and lowering the limit drops older rows for good (#263).
+- **modifyOtherKeys level 2:** both cores track and report xterm `modifyOtherKeys` level 2, and the DOM input encodes keys whose legacy encoding loses a modifier as `CSI 27 ; modifier ; code ~`. Vim and other apps can tell Ctrl+Shift+E apart from Ctrl+E. `TerminalCore.modifyOtherKeys()` exposes the level (#254).
+
+### Documentation
+
+- **ACP agent example:** `examples/acp-agent` shows one terminal per tool call in an agent UI, with terminals that start when a card scrolls into view and pause off screen. The configuration guide adds a section on many terminals on one page (#270).
+
+### Contributors
+
+- @Railly
+
+<!-- release:end -->
+
+## 0.5.8
 
 ### New Features
 
@@ -11,8 +29,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.5.7
 

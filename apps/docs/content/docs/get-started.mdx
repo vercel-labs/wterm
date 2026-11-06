@@ -82,7 +82,7 @@ await term.init();
 
 ## Serving WASM separately
 
-By default the ~26 KB WASM binary is embedded in the package and imported when
+By default the ~49 KB WASM binary is embedded in the package and imported when
 the built-in core is first loaded. Bundlers with code splitting emit it in a
 separate JavaScript chunk, so deploy all emitted application assets. Ghostty and
 custom `wasmUrl` loads do not request that chunk. To serve it as a separate static file instead (for caching or CDN), copy it from the package and pass `wasmUrl`:
@@ -113,4 +113,7 @@ Requires [Zig](https://ziglang.org/) 0.16.0
 zig build -Doptimize=ReleaseSmall
 ```
 
-The compiled binary is output to `web/wterm.wasm`.
+The build writes `zig-out/bin/wterm.wasm` and `web/wterm.wasm`. The packages ship
+`packages/@wterm/core/wasm/wterm.wasm`. Copy the build there, then run
+`pnpm --filter @wterm/core build` to regenerate the embedded binary that loads
+when `wasmUrl` is not set.

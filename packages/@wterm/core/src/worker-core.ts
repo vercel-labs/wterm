@@ -4,6 +4,7 @@ import type {
   MouseEncoding,
   TerminalCore,
   TerminalResourceState,
+  TerminalThemeColors,
   UnhandledSequence,
 } from "./terminal-core.js";
 import {
@@ -225,6 +226,14 @@ export class WorkerCore implements TerminalCore {
     if (!Number.isInteger(lines) || lines < 0 || lines > 0xffffffff)
       throw new RangeError(`Invalid scrollback line count: ${lines}`);
     this.post({ t: "scrollbackLines", lines });
+  }
+
+  /** Host theme defaults for color queries, applied in order with writes. */
+  setThemeColors(colors: TerminalThemeColors): void {
+    this.post({
+      t: "theme",
+      colors: { ...colors, palette: [...colors.palette] },
+    });
   }
 
   writeString(str: string): void {
