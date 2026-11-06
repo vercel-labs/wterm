@@ -129,6 +129,9 @@ importers:
       tailwindcss:
         specifier: ^4
         version: 4.2.2
+      tsc-ts:
+        specifier: 0.1.2
+        version: 0.1.2
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -648,6 +651,9 @@ importers:
       just-bash:
         specifier: ^3.4.2
         version: 3.4.2
+      tsc-ts:
+        specifier: 0.1.2
+        version: 0.1.2
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -657,6 +663,9 @@ importers:
       '@internal/ts':
         specifier: workspace:*
         version: link:../../@internal/ts
+      tsc-ts:
+        specifier: 0.1.2
+        version: 0.1.2
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -690,6 +699,9 @@ importers:
       react-dom:
         specifier: ^19.2.5
         version: 19.2.5(react@19.2.5)
+      tsc-ts:
+        specifier: 0.1.2
+        version: 0.1.2
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -738,6 +750,9 @@ importers:
       jsdom:
         specifier: ^29.0.2
         version: 29.0.2(@noble/hashes@1.8.0)
+      tsc-ts:
+        specifier: 0.1.2
+        version: 0.1.2
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -6733,6 +6748,7 @@ packages:
   image-size@2.0.2:
     resolution: {integrity: sha512-IRqXKlaXwgSMAMtpNzZa1ZAe8m+Sa1770Dhk8VkSsP9LS+iHD62Zd8FQKs8fbPiagBE7BzoFX23cxFnwshpV6w==}
     engines: {node: '>=16.x'}
+    deprecated: Use latest 2.x please
     hasBin: true
 
   immediate@3.0.6:

@@ -19,7 +19,8 @@
     "build": "tsc",
     "prepublishOnly": "pnpm build",
     "test": "vitest run",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc-ts --noEmit",
+    "type-check:tsc": "tsc --noEmit"
   },
   "peerDependencies": {
     "just-bash": "^3.4.2"
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@internal/ts": "workspace:*",
     "just-bash": "^3.4.2",
+    "tsc-ts": "0.1.2",
     "typescript": "^7.0.2"
   },
   "keywords": [
