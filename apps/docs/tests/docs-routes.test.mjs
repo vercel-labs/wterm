@@ -20,6 +20,7 @@ const routes = [
   "/ghostty",
   "/just-bash",
   "/markdown",
+  "/serialize",
   "/core",
 ];
 const headers = { "user-agent": "Mozilla/5.0", accept: "text/html" };
