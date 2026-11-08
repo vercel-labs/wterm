@@ -1,8 +1,23 @@
 # Changelog
 
-## 0.5.9
+## 0.5.10
 
 <!-- release:start -->
+
+### Bug Fixes
+
+- **Reflow on resize:** when the primary screen changes width, the built-in core rewraps soft-wrapped lines in scrollback and on screen together, instead of cutting each row at the new width and dropping the rest. Wide characters stay paired and the cursor stays in its line. The alternate screen still truncates, as other terminals do (#240).
+- **WorkerCore theme colors:** `WorkerCore` now has `setThemeColors()`, so OSC 10 and OSC 11 queries answer with the page's theme colors instead of the core's defaults, as the built-in and Ghostty cores already do. The worker applies the colors in order with writes (#278).
+- **Ghostty scrollback lines:** with `scrollbackLines` set, `@wterm/ghostty` keeps the requested number of lines for styled output. Output with many colors, graphemes, or hyperlinks used to keep fewer, such as 91,166 of 100,000 colored log lines at 80 columns. History memory is capped at twice what plain text needs at the same width, so very dense output can still keep fewer lines (#286).
+
+### Contributors
+
+- @Railly
+- @ctate
+
+<!-- release:end -->
+
+## 0.5.9
 
 ### New Features
 
@@ -17,8 +32,6 @@
 ### Contributors
 
 - @Railly
-
-<!-- release:end -->
 
 ## 0.5.8
 
