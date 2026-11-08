@@ -196,7 +196,9 @@ also works from that shell.
       <td>
         Lines of history to keep (default: 1000). Ghostty stores history in
         pages, so up to a few pages of extra rows stay allocated but are not
-        reported.
+        reported. History memory is capped at twice what plain text needs at
+        the same width, so output dense with distinct colors, graphemes, or
+        hyperlinks can keep fewer lines.
       </td>
     </tr>
     <tr>

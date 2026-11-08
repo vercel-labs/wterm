@@ -162,7 +162,7 @@ onMount(() => {
 | Option | Type | Description |
 |---|---|---|
 | `wasmPath` | `string` | Custom path to the ghostty-vt WASM binary |
-| `scrollbackLines` | `number` | Lines of history to keep (default: 1000). Ghostty stores history in pages, so up to a few pages of extra rows stay allocated but are not reported |
+| `scrollbackLines` | `number` | Lines of history to keep (default: 1000). Ghostty stores history in pages, so up to a few pages of extra rows stay allocated but are not reported. History memory is capped at twice what plain text needs at the same width, so output dense with distinct colors, graphemes, or hyperlinks can keep fewer lines |
 | `scrollbackLimit` | `number` | Scrollback budget in bytes instead of lines. Ignored when `scrollbackLines` is set; the retained row count depends on the terminal width |
 | `foregroundColor` | `string` | Foreground reported by OSC 10 in `#RRGGBB` format (default: `#d4d4d4`) |
 | `backgroundColor` | `string` | Background reported by OSC 11 in `#RRGGBB` format (default: `#1e1e1e`) |

@@ -58,6 +58,26 @@ function write(core: GhosttyCore, lines: number, from = 0): void {
   core.writeString(text);
 }
 
+/** Write `count` lines from `line`, 500 lines per write. */
+function writeLines(
+  core: GhosttyCore,
+  count: number,
+  line: (i: number) => string,
+  perWrite = 500,
+): void {
+  for (let start = 0; start < count; start += perWrite) {
+    let text = "";
+    for (let i = start; i < Math.min(start + perWrite, count); i++)
+      text += `${line(i)}\r\n`;
+    core.writeString(text);
+  }
+}
+
+// A log line with a level colour and one of 256 indexed colours, so a page of
+// history holds more distinct styles than a standard page has room for.
+const styled = (i: number) =>
+  `\x1b[3${i % 8}mINFO\x1b[0m \x1b[1;38;5;${i % 256}mline ${i}\x1b[0m`;
+
 describe("GhosttyCore scrollbackLines", () => {
   it("keeps 1000 lines by default", async () => {
     const core = await filled({}, 5000);
@@ -80,6 +100,77 @@ describe("GhosttyCore scrollbackLines", () => {
     core.resize(300, 24);
     write(core, 8000, 100);
     expect(core.getScrollbackCount()).toBe(3000);
+  });
+
+  it("keeps the requested lines of styled output", async () => {
+    const core = await filled({ scrollbackLines: 20000 }, 0);
+    writeLines(core, 20024, styled);
+    expect(core.getScrollbackCount()).toBe(20000);
+    expect(text(core, 0)).toBe("INFO line 20000");
+    expect(text(core, 19999)).toBe("INFO line 1");
+    expect(core.getScrollbackDiscardedCount()).toBe(1);
+  });
+
+  it("keeps the requested lines of styled output at a wide terminal", async () => {
+    const core = await filled({ scrollbackLines: 20000 }, 0, 200);
+    writeLines(core, 20024, styled);
+    expect(core.getScrollbackCount()).toBe(20000);
+    expect(text(core, 19999)).toBe("INFO line 1");
+  });
+
+  it("keeps the requested lines of output with graphemes", async () => {
+    const core = await filled({ scrollbackLines: 20000 }, 0);
+    writeLines(core, 20024, (i) => `line ${i} 👍🏽 👨\u200d👩\u200d👧 é`);
+    expect(core.getScrollbackCount()).toBe(20000);
+    expect(text(core, 19999)).toMatch(/^line 1 /);
+  });
+
+  it("keeps the requested lines of styled output that wraps", async () => {
+    const core = await filled({ scrollbackLines: 20000 }, 0);
+    // Each line wraps onto three rows.
+    writeLines(core, 7000, (i) => `${styled(i)} ${"x".repeat(200)}`);
+    expect(core.getScrollbackCount()).toBe(20000);
+    // 21000 rows, 23 of them still on screen: the oldest kept row is the
+    // last row of line 325.
+    expect(core.getScrollbackDiscardedCount()).toBe(977);
+    expect(text(core, 19999)).toBe("x".repeat(54));
+    expect(text(core, 19998)).toBe(`INFO line 326 ${"x".repeat(66)}`);
+  });
+
+  it("keeps the requested lines of styled output written a line at a time", async () => {
+    const core = await filled({ scrollbackLines: 20000 }, 0);
+    writeLines(core, 20024, styled, 1);
+    expect(core.getScrollbackCount()).toBe(20000);
+    expect(text(core, 19999)).toBe("INFO line 1");
+  });
+
+  it("keeps the requested lines of styled output written at once", async () => {
+    const core = await filled({ scrollbackLines: 20000 }, 0);
+    writeLines(core, 20024, styled, 20024);
+    expect(core.getScrollbackCount()).toBe(20000);
+    expect(text(core, 19999)).toBe("INFO line 1");
+  });
+
+  it("keeps the requested lines of styled output after the terminal gets narrower", async () => {
+    const core = await filled({ scrollbackLines: 20000 }, 0, 200);
+    writeLines(core, 20024, styled);
+    core.resize(80, 24);
+    writeLines(core, 1000, styled);
+    expect(core.getScrollbackCount()).toBe(20000);
+  });
+
+  it("bounds history when every cell has its own style", async () => {
+    const core = await filled({ scrollbackLines: 20000 }, 0);
+    writeLines(core, 20024, (i) => {
+      let line = "";
+      for (let col = 0; col < 79; col++)
+        line += `\x1b[38;2;${(i + col) % 256};${(i * 3 + col) % 256};${col}m#`;
+      return `${line}\x1b[0m`;
+    });
+    // These pages need several times the bytes of a standard page, so the
+    // memory bound applies before the line limit.
+    expect(core.getScrollbackCount()).toBeGreaterThan(0);
+    expect(core.getScrollbackCount()).toBeLessThan(20000);
   });
 
   it("keeps no history at zero", async () => {
