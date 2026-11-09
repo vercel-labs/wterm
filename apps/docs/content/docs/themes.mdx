@@ -259,8 +259,8 @@ CSS color space. Replies end with the query's own terminator, BEL or ST.
 
 Colors set with `setThemeColors()` take precedence until it is called with
 `null`. A Ghostty application's own OSC `10`/`11` color changes are reported
-until it resets them. A query split across two `write()` calls is answered
-with the colors read at the previous query or at `init()`.
+until it resets them. A query split across several `write()` calls, as PTY
+and WebSocket chunks can be, gets the same answer as one written whole.
 
 Headless Ghostty cores, which have no CSS, answer with their `foregroundColor`
 and `backgroundColor` options. See [Ghostty options](/ghostty).
