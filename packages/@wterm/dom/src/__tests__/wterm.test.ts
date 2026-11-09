@@ -1200,26 +1200,6 @@ describe("WTerm", () => {
     });
   });
 
-  it("builds deferred history rows before a wheel or touch scroll starts", async () => {
-    const term = new WTerm(element, { autoResize: false });
-    await term.init();
-    const renderer = (term as unknown as { renderer: Renderer }).renderer;
-    const stale = vi.spyOn(renderer, "textStale", "get").mockReturnValue(true);
-    const requestText = vi.spyOn(renderer, "requestText");
-    const render = vi.spyOn(renderer, "render");
-    for (const type of ["wheel", "touchstart", "mousedown"]) {
-      element.dispatchEvent(new Event(type, { bubbles: true }));
-      expect(requestText, type).toHaveBeenCalledTimes(1);
-      expect(render, type).toHaveBeenCalledTimes(1);
-      requestText.mockClear();
-      render.mockClear();
-    }
-    stale.mockReturnValue(false);
-    element.dispatchEvent(new Event("wheel", { bubbles: true }));
-    expect(render).not.toHaveBeenCalled();
-    term.destroy();
-  });
-
   describe("paused rendering", () => {
     beforeEach(() => {
       vi.useFakeTimers();

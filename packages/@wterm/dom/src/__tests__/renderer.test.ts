@@ -587,7 +587,7 @@ describe("Renderer", () => {
   });
 
   describe("render", () => {
-    it("paints repeated horizontal lines and uniform blocks with one span", () => {
+    it("paints repeated uniform blocks with one span and box lines per cell", () => {
       const line = makeCell("─");
       const red = makeCell("─", 1);
       const cells = [
@@ -609,16 +609,14 @@ describe("Renderer", () => {
           ],
         );
 
-      // The cursor and a color change end a run; vertical strokes do not join.
+      // Box strokes keep one span per cell, so each glyph stays bounded by
+      // its own cell when a fallback font gives it a different advance.
       expect(columns(top)).toEqual([
-        ["──", "2"],
-        ["─", "1"],
-        ["──", "2"],
-        ["──", "2"],
+        ...Array.from({ length: 7 }, () => ["─", "1"]),
         ["│", "1"],
         ["│", "1"],
       ]);
-      expect(top.children[1].classList.contains("term-cursor")).toBe(true);
+      expect(top.children[2].classList.contains("term-cursor")).toBe(true);
       // Blocks that vary across the cell's width keep one span per cell.
       expect(columns(bottom)).toEqual([
         ["██", "2"],
@@ -1429,47 +1427,6 @@ describe("Renderer", () => {
         30,
       );
       expect(container.querySelectorAll(".term-row").length).toBe(33);
-    });
-
-    it("builds history above a live view once streaming output pauses", () => {
-      let count = 100;
-      const bridge = createMockBridge(4, 3);
-      bridge.getScrollbackCount = () => count;
-      bridge.getScrollbackLineLen = () => 4;
-      bridge.getScrollbackCell = (offset: number) =>
-        makeCell(String(offset % 10));
-      const renderer = new Renderer(container);
-      const live = (scrollbackCount: number) => ({
-        // Following output: the viewport shows the last 5 history rows.
-        scrollTop: (scrollbackCount - 5) * 10,
-        clientHeight: 80,
-        rowHeight: 10,
-        overscanRows: 10,
-        live: true,
-      });
-      const history = () =>
-        container.querySelectorAll(".term-scrollback-row").length;
-
-      renderer.render(bridge as any, live(count));
-      expect(history()).toBe(15);
-      expect(renderer.textStale).toBe(false);
-
-      // Output scrolled the history: only the visible rows are rebuilt.
-      count = 140;
-      renderer.render(bridge as any, live(count));
-      expect(history()).toBe(5);
-      expect(renderer.textStale).toBe(true);
-
-      renderer.requestText();
-      renderer.render(bridge as any, live(count));
-      expect(history()).toBe(15);
-      expect(renderer.textStale).toBe(false);
-
-      // A view that does not follow output keeps its overscan.
-      count = 150;
-      renderer.render(bridge as any, { ...live(count), live: false });
-      expect(history()).toBe(15);
-      expect(renderer.textStale).toBe(false);
     });
 
     it("refreshes visible scrollback when a full ring rolls over", () => {

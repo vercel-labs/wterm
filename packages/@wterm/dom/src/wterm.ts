@@ -190,7 +190,7 @@ export class WTerm {
   private _destroyed = false;
   private _rendererOption: "dom" | "webgl";
   private _textSyncTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Selection and scrolling start from current DOM text and history rows. */
+  /** Selection and wheel scrolling start from current DOM text. */
   private _onTextNeeded = (): void => {
     this._syncText();
     this.renderer?.yieldToDom();
@@ -243,15 +243,13 @@ export class WTerm {
     this._initialRowsExplicit = options.rows !== undefined;
     this.wasmUrl = options.wasmUrl;
     this._rendererOption = options.renderer ?? "dom";
-    element.addEventListener("mousedown", this._onTextNeeded, true);
-    element.addEventListener("wheel", this._onTextNeeded, {
-      capture: true,
-      passive: true,
-    });
-    element.addEventListener("touchstart", this._onTextNeeded, {
-      capture: true,
-      passive: true,
-    });
+    if (this._rendererOption === "webgl") {
+      element.addEventListener("mousedown", this._onTextNeeded, true);
+      element.addEventListener("wheel", this._onTextNeeded, {
+        capture: true,
+        passive: true,
+      });
+    }
     if (options.scrollbackLines !== undefined) {
       assertScrollbackLines(options.scrollbackLines);
       this._scrollbackLines = options.scrollbackLines;
@@ -1843,7 +1841,6 @@ export class WTerm {
     this._textSyncTimer = null;
     this.element.removeEventListener("mousedown", this._onTextNeeded, true);
     this.element.removeEventListener("wheel", this._onTextNeeded, true);
-    this.element.removeEventListener("touchstart", this._onTextNeeded, true);
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this._visualViewportFrame)
       cancelAnimationFrame(this._visualViewportFrame);
