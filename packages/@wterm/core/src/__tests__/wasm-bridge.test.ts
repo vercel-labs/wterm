@@ -623,6 +623,11 @@ describe("WasmBridge", () => {
       expect(bridge.getResponse()).toBe("\x1b[?997;2n");
       bridge.setThemeColors(theme(0xeeeeee));
       expect(bridge.getResponse()).toBeNull();
+      bridge.setThemeColors(theme(0x1e1e1e), { quiet: true });
+      expect(bridge.getResponse()).toBeNull();
+      bridge.writeString("\x1b[?996n");
+      expect(bridge.getResponse()).toBe("\x1b[?997;1n");
+      expect(bridge.getResponse()).toBeNull();
     });
 
     it("tracks Kitty keyboard flags per screen with Ghostty-compatible resets", () => {

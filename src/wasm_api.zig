@@ -56,8 +56,9 @@ export fn writeBytes(len: u32) void {
 // -- Theme --
 
 /// Host theme defaults for OSC 10 and OSC 11 queries and mode 2031, as 0xRRGGBB.
-export fn setThemeColors(foreground: u32, background: u32) void {
-    terminal.setThemeColors(foreground, background);
+/// A nonzero `quiet` skips the mode 2031 change report.
+export fn setThemeColors(foreground: u32, background: u32, quiet: u32) void {
+    terminal.setThemeColors(foreground, background, quiet == 0);
 }
 
 // -- Grid data --

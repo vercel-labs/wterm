@@ -1533,13 +1533,14 @@ pub const Terminal = struct {
         }
     }
 
-    /// Sets the host theme defaults. With mode 2031 on, a background that
-    /// crosses between dark and light is reported to the application.
-    pub fn setThemeColors(self: *Terminal, foreground: u32, background: u32) void {
+    /// Sets the host theme defaults. With mode 2031 on and `report` set, a
+    /// background that crosses between dark and light is reported to the
+    /// application.
+    pub fn setThemeColors(self: *Terminal, foreground: u32, background: u32, report: bool) void {
         const was_dark = isDarkColor(self.theme_bg);
         self.theme_fg = foreground & 0xffffff;
         self.theme_bg = background & 0xffffff;
-        if (self.report_color_scheme and isDarkColor(self.theme_bg) != was_dark) {
+        if (report and self.report_color_scheme and isDarkColor(self.theme_bg) != was_dark) {
             self.reportColorScheme();
         }
     }
@@ -3392,31 +3393,40 @@ test "mode 2031 reports dark and light theme changes" {
     // CSI ? 996 n answers with the current scheme whether or not 2031 is on.
     t.write("\x1b[?996n");
     try expectResponse(&t, "\x1b[?997;1n");
-    t.setThemeColors(0x111111, 0xfafafa);
+    t.setThemeColors(0x111111, 0xfafafa, true);
     t.write("\x1b[?996n");
     try expectResponse(&t, "\x1b[?997;2n");
 
     // Without the mode, a theme change sends nothing.
-    t.setThemeColors(0xd4d4d4, 0x1e1e1e);
+    t.setThemeColors(0xd4d4d4, 0x1e1e1e, true);
     try std.testing.expectEqual(@as(u8, 0), t.responseLen());
 
     t.write("\x1b[?2031h\x1b[?2031$p");
     try expectResponse(&t, "\x1b[?2031;1$y");
-    t.setThemeColors(0x111111, 0xfafafa);
+    t.setThemeColors(0x111111, 0xfafafa, true);
     try expectResponse(&t, "\x1b[?997;2n");
     // A new background on the same side is not a scheme change.
-    t.setThemeColors(0x222222, 0xeeeeee);
+    t.setThemeColors(0x222222, 0xeeeeee, true);
     try std.testing.expectEqual(@as(u8, 0), t.responseLen());
-    t.setThemeColors(0xd4d4d4, 0x101010);
+    t.setThemeColors(0xd4d4d4, 0x101010, true);
+    try expectResponse(&t, "\x1b[?997;1n");
+
+    // A quiet update changes the scheme that queries report without a change report.
+    t.setThemeColors(0x111111, 0xfafafa, false);
+    try std.testing.expectEqual(@as(u8, 0), t.responseLen());
+    t.write("\x1b[?996n");
+    try expectResponse(&t, "\x1b[?997;2n");
+    try std.testing.expectEqual(@as(u8, 0), t.responseLen());
+    t.setThemeColors(0xd4d4d4, 0x101010, true);
     try expectResponse(&t, "\x1b[?997;1n");
 
     t.write("\x1b[?2031l");
-    t.setThemeColors(0x111111, 0xfafafa);
+    t.setThemeColors(0x111111, 0xfafafa, true);
     try std.testing.expectEqual(@as(u8, 0), t.responseLen());
 
     // Full reset turns the mode off.
     t.write("\x1b[?2031h\x1bc");
-    t.setThemeColors(0xd4d4d4, 0x1e1e1e);
+    t.setThemeColors(0xd4d4d4, 0x1e1e1e, true);
     try std.testing.expectEqual(@as(u8, 0), t.responseLen());
 }
 

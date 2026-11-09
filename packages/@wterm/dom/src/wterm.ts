@@ -3,6 +3,7 @@ import {
   type TerminalCore,
   type TerminalPosition,
   type TerminalThemeColors,
+  type ThemeColorsOptions,
   type ShellIntegrationState,
 } from "@wterm/core";
 import { Renderer } from "./renderer.js";
@@ -764,12 +765,14 @@ export class WTerm {
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._pinnedToBottom;
     // Answer theme color queries with the colors the page shows right now.
-    // A query cut by the end of a write is recognized when it completes.
+    // A query cut by the end of a write is recognized when it completes. The
+    // reply carries the new theme, so the update skips the mode 2031 report.
     const carry = this._themeQueryCarry;
     this._themeQueryCarry = (carry + edge(data, THEME_QUERY_CARRY, true)).slice(
       -THEME_QUERY_CARRY,
     );
-    if (mayQueryThemeColors(data, carry)) this._syncCssThemeColors();
+    if (mayQueryThemeColors(data, carry))
+      this._syncCssThemeColors({ quiet: true });
     const windowSizeQueries = this._collectWindowSizeQueries(data);
     let deliveryError: unknown;
     let hasDeliveryError = false;
@@ -811,7 +814,7 @@ export class WTerm {
    * Hands the core the theme colors the page's CSS resolves to, unless the
    * host set explicit colors with setThemeColors().
    */
-  private _syncCssThemeColors(): void {
+  private _syncCssThemeColors(options?: ThemeColorsOptions): void {
     if (this._themeColors || !this.bridge?.setThemeColors || this._destroyed)
       return;
     let colors: TerminalThemeColors | null;
@@ -830,7 +833,7 @@ export class WTerm {
     ].join();
     if (key === this._cssThemeKey) return;
     this._cssThemeKey = key;
-    this.bridge.setThemeColors(colors);
+    this.bridge.setThemeColors(colors, options);
   }
 
   /**

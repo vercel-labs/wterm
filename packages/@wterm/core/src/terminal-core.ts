@@ -158,6 +158,14 @@ export interface TerminalThemeColors {
   palette: readonly number[];
 }
 
+export interface ThemeColorsOptions {
+  /**
+   * Skip the CSI ? 997 report that mode 2031 sends when the background moves
+   * between dark and light. Use it when a query reply already carries the change.
+   */
+  quiet?: boolean;
+}
+
 /**
  * Abstract terminal emulation core. Both the built-in Zig WASM core
  * (`WasmBridge`) and alternative backends (e.g. `@wterm/ghostty`) implement
@@ -168,7 +176,10 @@ export interface TerminalCore {
   init(cols: number, rows: number): void;
   resize(cols: number, rows: number): void;
   /** Update host defaults without parsing input or replacing application overrides. */
-  setThemeColors?(colors: TerminalThemeColors): void;
+  setThemeColors?(
+    colors: TerminalThemeColors,
+    options?: ThemeColorsOptions,
+  ): void;
 
   // -- I/O --
   writeString(str: string, afterChunk?: () => void): void;

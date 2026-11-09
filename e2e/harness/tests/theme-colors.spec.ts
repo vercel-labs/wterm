@@ -143,7 +143,21 @@ for (const coreName of ["builtin", "ghostty"] as const) {
       const lightSplit = ask(false, ["\x1b[?99", "6n"]);
       host.className = "dark";
       const darkSplit = ask(true, ["\x1b", "[?9", "", "96n"]);
-      return { dark, light, darkAgain, lightSplit, darkSplit };
+      // With mode 2031 on, the query reply is the only report of the change.
+      ask(false, ["\x1b[?2031h"]);
+      host.className = "light";
+      const lightReporting = ask();
+      host.className = "dark";
+      const darkBackground = ask(false, ["\x1b]11;?\x07"]);
+      return {
+        dark,
+        light,
+        darkAgain,
+        lightSplit,
+        darkSplit,
+        lightReporting,
+        darkBackground,
+      };
     }, coreName);
 
     expect(replies.dark).toEqual(["\x1b[?997;1n"]);
@@ -151,5 +165,7 @@ for (const coreName of ["builtin", "ghostty"] as const) {
     expect(replies.darkAgain).toEqual(["\x1b[?997;1n"]);
     expect(replies.lightSplit).toEqual(["\x1b[?997;2n"]);
     expect(replies.darkSplit).toEqual(["\x1b[?997;1n"]);
+    expect(replies.lightReporting).toEqual(["\x1b[?997;2n"]);
+    expect(replies.darkBackground).toEqual(["\x1b]11;rgb:1010/1010/1010\x07"]);
   });
 }

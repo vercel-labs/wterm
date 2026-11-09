@@ -261,7 +261,10 @@ and `cursor` colors plus exactly 16 `palette` entries. The optional
 `TerminalCore.setThemeColors(colors)` updates host defaults without parsing bytes,
 resetting state, or replacing application overrides. Both the built-in core and
 Ghostty implement this hook and answer OSC 10/11 queries with these defaults;
-other cores remain compatible without it. Use `WTerm.setThemeColors()` for an
+other cores remain compatible without it. While an application has mode 2031
+on, an update that moves the background between dark and light queues a
+`CSI ? 997` report; pass `{ quiet: true }` (`ThemeColorsOptions`) as the second
+argument to skip it. Use `WTerm.setThemeColors()` for an
 attached browser terminal so CSS and live/retained rendering update together.
 
 ## Clipboard write requests

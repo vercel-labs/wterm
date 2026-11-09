@@ -128,6 +128,11 @@ it("reports dark and light theme changes while mode 2031 is on", async () => {
   core.setThemeColors(theme(0x101010));
   core.writeString("\x1b]11;#ffffff\x07");
   expect(core.getResponse()).toBeNull();
+  core.setThemeColors(theme(), { quiet: true });
+  expect(core.getResponse()).toBeNull();
+  core.writeString("\x1b[?996n");
+  expect(core.getResponse()).toBe("\x1b[?997;2n");
+  expect(core.getResponse()).toBeNull();
   core.writeString("\x1b[?2031l");
   core.setThemeColors(theme());
   expect(core.getResponse()).toBeNull();

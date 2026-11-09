@@ -739,8 +739,9 @@ fn colorSchemeReport(background: ?color.RGB) []const u8 {
 }
 
 // Host configuration is separate from OSC application overrides and stream parsing.
-// With mode 2031 on, a background that crosses between dark and light is reported.
-export fn set_theme_colors(ptr: usize, values: [*]const u32) void {
+// With mode 2031 on, a background that crosses between dark and light is reported
+// unless `quiet` is nonzero.
+export fn set_theme_colors(ptr: usize, values: [*]const u32, quiet: u32) void {
     const state = stateFromPtr(ptr);
     const colors = &state.terminal.colors;
     const was_dark = isDarkColor(colors.background.default);
@@ -751,7 +752,7 @@ export fn set_theme_colors(ptr: usize, values: [*]const u32) void {
     for (0..16) |index| palette[index] = themeRgb(values[index + 3]);
     colors.palette.changeDefault(palette);
     state.terminal.flags.dirty.palette = true;
-    if (state.terminal.modes.get(.report_color_scheme) and
+    if (quiet == 0 and state.terminal.modes.get(.report_color_scheme) and
         isDarkColor(colors.background.default) != was_dark)
     {
         state.responses.push(colorSchemeReport(colors.background.default));
