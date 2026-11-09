@@ -523,8 +523,28 @@ pub const Terminal = struct {
         const row = self.grid.getRow(self.cursor_row);
         var col: u16 = self.cursor_col;
         var i: usize = 0;
+        // SGR cannot change inside a run, so every cell shares these fields.
+        var cell: Cell = .{
+            .fg = self.current_fg,
+            .bg = self.current_bg,
+            .flags = self.current_flags,
+            .link = self.current_link,
+        };
+        // After printable ASCII the segmenter always breaks before the next
+        // printable ASCII and stays in the same state, so it can be skipped.
+        var after_ascii = false;
         while (i < data.len) {
             const b = data[i];
+            if (after_ascii and b >= 0x20 and b < 0x7F) {
+                if (col + 1 >= cols or row[col].width != cell_mod.WIDTH_NARROW) break;
+                self.cluster_col = col;
+                cell.char = b;
+                cell.width = cell_mod.WIDTH_NARROW;
+                row[col] = cell;
+                col += 1;
+                i += 1;
+                continue;
+            }
             var cp: u21 = undefined;
             var len: usize = 1;
             if (b >= 0x20 and b < 0x7F) {
@@ -544,22 +564,19 @@ pub const Terminal = struct {
                 self.extendCluster(cp);
                 col = self.cursor_col;
                 i += len;
+                after_ascii = false;
                 if (self.wrap_pending) break;
                 continue;
             }
             self.cluster_row = self.cursor_row;
             self.cluster_col = col;
-            row[col] = .{
-                .char = cp,
-                .fg = self.current_fg,
-                .bg = self.current_bg,
-                .flags = self.current_flags,
-                .width = @intCast(width),
-                .link = self.current_link,
-            };
+            cell.char = cp;
+            cell.width = @intCast(width);
+            row[col] = cell;
             if (width == 2) row[col + 1] = self.continuationCell();
             col += width;
             i += len;
+            after_ascii = cp < 0x7F;
         }
         if (i > 0) {
             self.cursor_col = col;

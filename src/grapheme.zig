@@ -27,19 +27,35 @@ pub const Props = struct {
 };
 
 pub fn props(cp: u21) Props {
+    return runProps(findRun(cp));
+}
+
+/// Index of the table run holding `cp`.
+fn findRun(cp: u21) usize {
     var low: usize = 0;
     var high: usize = table.runs.len;
     while (high - low > 1) {
         const mid = low + (high - low) / 2;
         if (table.runs[mid] >> 8 <= cp) low = mid else high = mid;
     }
-    const p: u8 = @truncate(table.runs[low]);
+    return low;
+}
+
+fn runProps(run: usize) Props {
+    const p: u8 = @truncate(table.runs[run]);
     return .{
         .gcb = @enumFromInt(p & 0x0f),
         .ext_pict = p & 0x10 != 0,
         .incb = @enumFromInt(p >> 5),
     };
 }
+
+fn inRun(run: usize, cp: u21) bool {
+    return table.runs[run] >> 8 <= cp and (run + 1 == table.runs.len or cp < table.runs[run + 1] >> 8);
+}
+
+/// Printable ASCII: Other, with no other property.
+const ascii_props: Props = .{ .gcb = .other, .ext_pict = false, .incb = .none };
 
 /// Extended grapheme cluster segmentation (UAX #29), fed one code point at a time.
 pub const Segmenter = struct {
@@ -52,10 +68,21 @@ pub const Segmenter = struct {
     /// GB9c: a consonant followed by Extend/Linker, and whether a Linker was seen.
     conjunct: bool = false,
     conjunct_linker: bool = false,
+    /// Table run of the last non-ASCII lookup. Text tends to stay in one
+    /// script, so the next code point usually falls in the same run.
+    run: u16 = 0,
 
     /// Returns true when a cluster boundary falls before `cp`.
     pub fn breaksBefore(self: *Segmenter, cp: u21) bool {
-        const cur = props(cp);
+        if (cp >= 0x20 and cp < 0x7f) {
+            // Other breaks after everything but Prepend (GB9b, GB999) and
+            // ends every open sequence, which leaves only `prev` set.
+            const result = if (self.prev) |prev| prev.gcb != .prepend else true;
+            self.* = .{ .prev = ascii_props, .run = self.run };
+            return result;
+        }
+        if (!inRun(self.run, cp)) self.run = @intCast(findRun(cp));
+        const cur = runProps(self.run);
         const result = if (self.prev) |prev| self.rule(prev, cur) else true;
         self.advance(cur);
         return result;

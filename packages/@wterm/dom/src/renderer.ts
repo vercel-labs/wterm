@@ -8,6 +8,11 @@ import type {
 import { GraphicsLayer, type GraphicsLayerOptions } from "./graphics-layer.js";
 import { GpuGrid, type GpuCursor, type GpuPalette } from "./gpu-renderer.js";
 import {
+  GlyphAdvances,
+  joinsNarrowRuns,
+  joinsWideRuns,
+} from "./glyph-advances.js";
+import {
   getSelectionText,
   offsetAtCell,
   textPoint,
@@ -183,8 +188,10 @@ function escapeHTML(text: string): string {
 
 interface RowPart {
   html: string;
-  /** Flat spans can keep their element and text node when only text changes. */
+  /** Flat spans can keep their element and text node, updated in place. */
   opening?: string;
+  className?: string;
+  style?: string;
   text?: string;
 }
 
@@ -204,10 +211,13 @@ function cellSpanPart(className: string, style: string, text: string): RowPart {
   const classAttr = className ? ` class="${className}"` : "";
   const styleAttr = style ? ` style="${style}"` : "";
   const opening = `<span${classAttr}${styleAttr}>`;
+  if (!flat) return { html: `${opening}${content}</span>` };
   return {
     html: `${opening}${content}</span>`,
-    opening: flat ? opening : undefined,
-    text: flat ? text : undefined,
+    opening,
+    className,
+    style,
+    text,
   };
 }
 
@@ -333,6 +343,11 @@ function getBlockBackground(cp: number, fg: string, bg: string): string {
   }
 }
 
+/** Block elements whose background does not vary across the cell's width. */
+function isUniformBlock(cp: number): boolean {
+  return (cp >= 0x2580 && cp <= 0x2588) || (cp >= 0x2591 && cp <= 0x2594);
+}
+
 // Keep box characters as text for selection and copy while painting their
 // strokes to cell edges. Some fallback fonts leave gaps at those boundaries.
 const LIGHT_BOX_ARMS: Record<number, string> = {
@@ -376,7 +391,12 @@ const ROUNDED_BOX_CORNERS: Record<number, string> = {
   0x2570: "bl", // ╰
 };
 
-type BoxStyle = { className: string; style: string };
+type BoxStyle = {
+  className: string;
+  style: string;
+  /** Strokes span the whole cell width, so repeats can share one span. */
+  repeatable?: boolean;
+};
 const BOX_STYLES: Record<number, BoxStyle> = {};
 
 function addBoxStyles(
@@ -407,6 +427,7 @@ function addBoxStyles(
     BOX_STYLES[Number(codepoint)] = {
       className,
       style: `background-image:${selected.map(() => "linear-gradient(currentColor,currentColor)").join(",")};background-position:${selected.map(([position]) => position).join(",")};background-size:${selected.map(([, size]) => size).join(",")};background-repeat:no-repeat;`,
+      repeatable: arms === "lr",
     };
   }
 }
@@ -443,6 +464,8 @@ export class Renderer {
   private searchLayer: HTMLDivElement;
   private rowText = new WeakMap<HTMLElement, RenderedRowText>();
   private rowParts = new WeakMap<HTMLElement, RowPart[]>();
+  private glyphs = new GlyphAdvances();
+  private glyphCellWidth = 0;
   private rowBackground = new WeakMap<HTMLElement, string>();
   private selection: TrackedSelection | null = null;
   private needsSetup = false;
@@ -458,6 +481,8 @@ export class Renderer {
   /** Grid rows whose DOM text lags the GPU frame. */
   private staleRows = new Set<number>();
   private staleScrollback = false;
+  /** History rows above the viewport were skipped while output streamed. */
+  private overscanDeferred = false;
   private forceText = false;
   private searchActive = false;
   private gpuPalette: GpuPalette | null = null;
@@ -785,6 +810,78 @@ export class Renderer {
       canvasCols = 0;
     };
 
+    // How many cells from `col` repeat its character, style and link, so that
+    // one span can paint them all. The cursor cell always has its own span,
+    // and repeats share the first cell's canvas background, if it has one.
+    const repeats = (
+      col: number,
+      cell: CellData,
+      style: string,
+      linkKey: string,
+      canvasBackground?: number,
+    ): number => {
+      if (col === cursorCol || cell.chars !== undefined) return 1;
+      const end = Math.min(lineLen, this.cols);
+      let next = col + 1;
+      for (; next < end && next !== cursorCol; next++) {
+        const other = getCell(next);
+        if (
+          other.char !== cell.char ||
+          other.chars !== undefined ||
+          (other.width ?? 1) !== 1 ||
+          other.spacerHead ||
+          linkIdentity(other) !== linkKey ||
+          buildCellStyle(other, canvasBackground === undefined) !== style
+        )
+          break;
+        if (canvasBackground !== undefined) {
+          if (cellBackgroundPixel(other) !== canvasBackground) break;
+          canvasTop![next] = canvasBackground;
+          canvasBottom[next] = canvasBackground;
+        }
+      }
+      return next - col;
+    };
+
+    // Wide glyphs from `col` on that share one advance, with the letter
+    // spacing that pads each one to its two cells, or null for a lone glyph.
+    const charWidth = this.viewport?.charWidth ?? 0;
+    const wideRun = (
+      col: number,
+      cell: CellData,
+      ch: string,
+      style: string,
+      linkKey: string,
+    ): { cells: string[]; style: string } | null => {
+      if (cell.chars !== undefined || !joinsWideRuns(cell.char)) return null;
+      const advance = this.glyphs.advance(cell.char, ch, cell.flags);
+      if (advance === undefined) return null;
+      const cells = [ch];
+      const end = Math.min(lineLen, this.cols);
+      for (let next = col + 2; next + 1 < end; next += 2) {
+        if (next === cursorCol || next + 1 === cursorCol) break;
+        const other = getCell(next);
+        if (
+          other.chars !== undefined ||
+          other.width !== 2 ||
+          (getCell(next + 1).width ?? 1) !== 0 ||
+          !joinsWideRuns(other.char) ||
+          linkIdentity(other) !== linkKey ||
+          buildCellStyle(other) !== style
+        )
+          break;
+        const text = String.fromCodePoint(other.char);
+        if (this.glyphs.advance(other.char, text, other.flags) !== advance)
+          break;
+        cells.push(text);
+      }
+      if (cells.length === 1) return null;
+      return {
+        cells,
+        style: `${columnStyle(2 * cells.length)}letter-spacing:${2 * charWidth - advance}px;`,
+      };
+    };
+
     for (let col = 0; col < this.cols; col++) {
       const cell = getCell(col);
       const inBounds = col < lineLen;
@@ -929,14 +1026,20 @@ export class Renderer {
         const style = buildCellStyle(cell);
         const cursor = cursorCol >= col && cursorCol < col + 2;
         const cls = cursor ? "term-wide term-cursor" : "term-wide";
+        const run = cursor ? null : wideRun(col, cell, ch, style, cellLinkKey);
+        if (run) {
+          for (let k = 1; k < run.cells.length; k++)
+            recordText(run.cells[k], col + 2 * k, 2);
+        }
         appendStyledSpan(
           cls,
-          cursor ? cursorCellStyle(style) : style,
-          ch,
+          run ? run.style + style : cursor ? cursorCellStyle(style) : style,
+          run ? run.cells.join("") : ch,
           cellLinkKey,
           cellLinkUri,
         );
 
+        if (run) col += 2 * (run.cells.length - 1);
         runStyle = "";
         runLinkKey = "";
         runLinkUri = undefined;
@@ -949,7 +1052,11 @@ export class Renderer {
       if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
         flushRun(col);
         const ch = cell.chars ?? String.fromCodePoint(cp);
-        recordText(ch, col);
+        const cellStyle = buildCellStyle(cell);
+        const count = isUniformBlock(cp)
+          ? repeats(col, cell, cellStyle, cellLinkKey)
+          : 1;
+        for (let k = 0; k < count; k++) recordText(ch, col + k);
 
         const colors = resolveColors(
           cell.fg,
@@ -961,15 +1068,18 @@ export class Renderer {
         const cls = col === cursorCol ? "term-block term-cursor" : "term-block";
         const bg = getBlockBackground(cp, colors.fg, colors.bg);
         const style =
-          buildCellStyle(cell) + `color:${colors.fg};background:${bg};`;
+          columnStyle(count) +
+          cellStyle +
+          `color:${colors.fg};background:${bg};`;
         appendStyledSpan(
           cls,
           col === cursorCol ? cursorCellStyle(style) : style,
-          ch,
+          ch.repeat(count),
           cellLinkKey,
           cellLinkUri,
         );
 
+        col += count - 1;
         runStyle = "";
         runLinkKey = "";
         runLinkUri = undefined;
@@ -986,8 +1096,17 @@ export class Renderer {
 
         // Font fallback can give a narrow Unicode glyph a different advance
         // from ASCII. Bound each such cell (including complete graphemes) so
-        // it cannot move later cells within a text run.
-        if (ch.length !== 1 || ch.charCodeAt(0) > 0x7e) {
+        // it cannot move later cells within a text run, unless its glyph is
+        // measured to advance exactly as far as ASCII.
+        if (
+          (ch.length !== 1 || ch.charCodeAt(0) > 0x7e) &&
+          !(
+            inBounds &&
+            cell.chars === undefined &&
+            joinsNarrowRuns(cp) &&
+            this.glyphs.matchesAscii(cp, ch, cell.flags)
+          )
+        ) {
           flushRun(col);
           const cursor = col === cursorCol;
           const box = BOX_STYLES[cp];
@@ -995,13 +1114,20 @@ export class Renderer {
           let className = boxStyle?.className ?? "";
           if (boxStyle && cell.flags & FLAG_BOLD) className += " term-box-bold";
           if (cursor) className += className ? " term-cursor" : "term-cursor";
+          const count = boxStyle?.repeatable
+            ? repeats(col, cell, style, cellLinkKey, canvasBackground)
+            : 1;
+          for (let k = 1; k < count; k++) recordText(ch, col + k);
           appendStyledSpan(
             className,
-            (cursor ? cursorCellStyle(style) : style) + (boxStyle?.style ?? ""),
-            ch,
+            columnStyle(count) +
+              (cursor ? cursorCellStyle(style) : style) +
+              (boxStyle?.style ?? ""),
+            ch.repeat(count),
             cellLinkKey,
             cellLinkUri,
           );
+          col += count - 1;
           runStyle = "";
           runLinkKey = "";
           runLinkUri = undefined;
@@ -1064,21 +1190,35 @@ export class Renderer {
     }
     if (start === oldEnd && start === newEnd) return;
 
-    // Keep spans with unchanged geometry and styling. Assigning raw text to
-    // their existing text nodes avoids HTML parsing and element replacement.
-    let textOnly = previous !== undefined && oldEnd === newEnd;
-    for (let i = start; textOnly && i < newEnd; i++) {
+    // Keep flat spans when their count is unchanged. Assigning their class,
+    // style and raw text in place avoids HTML parsing and element
+    // replacement, and keeps the layout objects of spans that only change
+    // text or colors.
+    let inPlace = previous !== undefined && oldEnd === newEnd;
+    for (let i = start; inPlace && i < newEnd; i++) {
       const child = row.childNodes[i];
-      textOnly =
+      inPlace =
         parts[i].opening !== undefined &&
-        parts[i].opening === previous![i].opening &&
-        child?.childNodes.length === 1 &&
-        child.firstChild?.nodeType === 3;
+        previous![i].opening !== undefined &&
+        child?.nodeType === 1 &&
+        child.childNodes.length === 1 &&
+        child.firstChild!.nodeType === 3;
     }
-    if (textOnly) {
+    if (inPlace) {
       for (let i = start; i < newEnd; i++) {
-        if (parts[i].html !== previous![i].html)
-          row.childNodes[i].firstChild!.nodeValue = parts[i].text!;
+        const part = parts[i];
+        const old = previous![i];
+        if (part.html === old.html) continue;
+        const child = row.childNodes[i] as HTMLElement;
+        if (part.className !== old.className) {
+          if (part.className) child.className = part.className;
+          else child.removeAttribute("class");
+        }
+        if (part.style !== old.style) {
+          if (part.style) child.setAttribute("style", part.style);
+          else child.removeAttribute("style");
+        }
+        if (part.text !== old.text) child.firstChild!.nodeValue = part.text!;
       }
       this.rowParts.set(row, parts);
       return;
@@ -1142,9 +1282,23 @@ export class Renderer {
     const visibleRows = virtual
       ? Math.ceil(viewportHeight / rowHeight)
       : scrollbackCount;
-    const start = virtual
+    const withOverscan = virtual
       ? Math.max(0, Math.min(scrollbackCount, firstVisible - overscan))
       : 0;
+    // While the view follows streaming output, rows above the viewport would
+    // be rebuilt every frame without being seen. They are left out until the
+    // output pauses or the user reaches for the history (see textStale).
+    const deferAbove =
+      virtual &&
+      viewport.live === true &&
+      !this.forceText &&
+      this._renderedScrollbackCount >= 0 &&
+      (scrollbackCount !== this._renderedScrollbackCount ||
+        discardedCount !== this._renderedDiscardedCount);
+    const start = deferAbove
+      ? Math.max(withOverscan, Math.min(scrollbackCount, firstVisible))
+      : withOverscan;
+    this.overscanDeferred = start > withOverscan;
     const end = virtual
       ? Math.max(
           start,
@@ -1384,6 +1538,13 @@ export class Renderer {
       this.setup(cols, rows);
       this.needsSetup = false;
       resized = true;
+    }
+
+    const charWidth = viewport?.charWidth ?? 0;
+    if (resized || charWidth !== this.glyphCellWidth) {
+      // Fonts change with the cell size; re-measure glyphs against both.
+      this.glyphCellWidth = charWidth;
+      this.glyphs.setFont(getComputedStyle(this.container), charWidth);
     }
 
     const gpuEligible = this._gpuEligible(core, viewport, positions !== null);
@@ -1632,7 +1793,9 @@ export class Renderer {
 
   /** DOM text lags the painted GPU frame; a text render brings it current. */
   get textStale(): boolean {
-    return this.staleRows.size > 0 || this.staleScrollback;
+    return (
+      this.staleRows.size > 0 || this.staleScrollback || this.overscanDeferred
+    );
   }
 
   /** The next render rebuilds DOM text even when the GPU path could paint. */

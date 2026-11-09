@@ -25,6 +25,10 @@ const GRAPHICS_MAX_RECORDS = 16 * 1024;
 const GRAPHICS_MAX_APC_BYTES = 48 * 1024 * 1024;
 
 pub const std_options: std.Options = .{
+    // As upstream's own wasm build does for small releases: info logs such as
+    // PageList's capacity adjustments fire during ordinary output, and each
+    // one would be formatted, decoded and printed to the console.
+    .log_level = if (builtin.mode == .Debug) .debug else .warn,
     .logFn = wasmLog,
 };
 
