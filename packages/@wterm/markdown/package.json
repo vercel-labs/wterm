@@ -1,6 +1,6 @@
 {
   "name": "@wterm/markdown",
-  "version": "0.5.9",
+  "version": "0.5.10",
   "description": "Streaming markdown-to-ANSI renderer for wterm terminals",
   "type": "module",
   "main": "dist/index.js",
@@ -19,11 +19,13 @@
     "build": "tsc",
     "prepublishOnly": "pnpm build",
     "test": "vitest run",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc-ts --noEmit",
+    "type-check:tsc": "tsc --noEmit"
   },
   "devDependencies": {
     "@internal/ts": "workspace:*",
-    "typescript": "^6.0.2"
+    "tsc-ts": "0.1.2",
+    "typescript": "^7.0.2"
   },
   "keywords": [
     "terminal",

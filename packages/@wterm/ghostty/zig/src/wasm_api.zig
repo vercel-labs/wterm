@@ -533,6 +533,8 @@ const State = struct {
     modify_keys_query: u8,
     /// History limit in lines; null keeps the byte budget passed to init.
     scrollback_lines: ?u32,
+    /// Primary page serial when history was last trimmed to the line limit.
+    history_serial: u64,
 };
 
 fn stateFromPtr(ptr: usize) *State {
@@ -802,6 +804,7 @@ export fn init(
     state.positions = .{};
     state.modify_keys_query = 0;
     state.scrollback_lines = null;
+    state.history_serial = 0;
     state.stream = .initAlloc(allocator, .init(
         allocator,
         &state.terminal,
@@ -836,12 +839,16 @@ export fn resize(ptr: usize, cols: u16, rows: u16) void {
     state.terminal.resize(allocator, cols, rows) catch {};
     // Rows per page depend on the width, so the byte budget follows it.
     if (state.scrollback_lines) |lines| applyScrollbackLines(state, lines);
+    // Reflow can leave whole pages past the line limit.
+    dropPagesPastLimit(state);
     refreshGraphicsGeneration(state);
 }
 
-/// Keep `lines` rows of history. Ghostty budgets scrollback in bytes and
-/// prunes whole pages, so this converts lines to standard pages at the current
-/// width; rows retained past the limit are reported as discarded.
+/// Keep `lines` rows of history. Ghostty budgets scrollback in bytes, but a
+/// page that outgrows its style, grapheme or hyperlink capacity holds fewer
+/// rows per byte, so writes free history by line count themselves and the byte
+/// budget only bounds memory. Rows retained past the limit are reported as
+/// discarded.
 export fn set_scrollback_lines(ptr: usize, lines: u32) void {
     const state = stateFromPtr(ptr);
     // Rows hidden under the old limit were already reported as discarded, so
@@ -858,8 +865,33 @@ fn dropHiddenHistory(state: *State) void {
     const lines = state.scrollback_lines orelse return;
     const primary = state.terminal.screens.get(.primary) orelse return;
     const pages = &primary.pages;
-    const excess = (pages.total_rows -| state.terminal.rows) -| lines;
+    dropOldestRows(state, primary, (pages.total_rows -| state.terminal.rows) -| lines);
+}
+
+/// Free the oldest primary history pages once all their rows are past the
+/// line limit. Writes call this after every step, so it only walks the pages
+/// when Ghostty has added one.
+fn dropPagesPastLimit(state: *State) void {
+    const lines = state.scrollback_lines orelse return;
+    const primary = state.terminal.screens.get(.primary) orelse return;
+    const pages = &primary.pages;
+    if (pages.page_serial == state.history_serial) return;
+    state.history_serial = pages.page_serial;
+    const hidden = (pages.total_rows -| state.terminal.rows) -| lines;
+    var whole: usize = 0;
+    var node_ = pages.pages.first;
+    while (node_) |node| : (node_ = node.next) {
+        if (whole + node.data.size.rows > hidden) break;
+        whole += node.data.size.rows;
+    }
+    dropOldestRows(state, primary, whole);
+}
+
+/// Erase the oldest `excess` primary history rows, with the positions and
+/// images in them.
+fn dropOldestRows(state: *State, primary: *Screen, excess: usize) void {
     if (excess == 0) return;
+    const pages = &primary.pages;
     for (state.positions.entries) |slot| if (slot) |entry| {
         if (entry.screen != primary) continue;
         const pt = pages.pointFromPin(.history, entry.pin.*) orelse continue;
@@ -888,13 +920,15 @@ fn dropHiddenHistory(state: *State) void {
 fn applyScrollbackLines(state: *State, lines: u32) void {
     const page = vt.page;
     const cap = page.std_capacity.adjust(.{ .cols = state.terminal.cols }) catch return;
-    // The budget covers every page, the active area's included, and pruning
-    // drops a whole page before the next one fills: two spare pages keep at
-    // least `lines` rows of history at all times.
+    // Writes free pages past the line limit, so this budget only bounds
+    // memory. It covers every page, the active area's included, with two spare
+    // pages because pruning drops a whole page before the next one fills.
+    // Pages that outgrow their style, grapheme or hyperlink capacity take more
+    // bytes per row, so the budget allows twice the standard page size.
     const history = std.math.divCeil(usize, lines, cap.rows) catch return;
     const active = std.math.divCeil(usize, state.terminal.rows, cap.rows) catch return;
     const pages = if (lines == 0) 0 else history + active + 2;
-    const bytes = pages *| page.Page.layout(page.std_capacity).total_size;
+    const bytes = pages *| page.Page.layout(page.std_capacity).total_size *| 2;
     const primary = state.terminal.screens.get(.primary) orelse return;
     primary.pages.explicit_max_size = bytes;
 }
@@ -905,7 +939,7 @@ export fn write(ptr: usize, data_ptr: [*]const u8, data_len: u32) void {
     const state = stateFromPtr(ptr);
     const stream = &state.stream;
     var rem = data_ptr[0..data_len];
-    while (rem.len > 0) {
+    while (rem.len > 0) : (dropPagesPastLimit(state)) {
         // Without SIMD every byte takes one parser step. These fast paths
         // cover the common cases and leave everything else to the parser.
         if (stream.parser.state == .sos_pm_apc_string) {

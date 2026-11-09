@@ -15,6 +15,12 @@ const INITIAL_FILES: Record<string, string> = {
     '{\n  "name": "wterm",\n  "version": "0.1.0",\n  "description": "Terminal emulator for the web"\n}\n',
 };
 
+const WEBMCP = {
+  name: "demo",
+  description:
+    "Sandboxed bash running in this page with just-bash. It has no access to a real machine.",
+};
+
 const THEMES = [
   { value: "", label: "Default" },
   { value: "solarized-dark", label: "Solarized" },
@@ -258,6 +264,9 @@ function HeroTerminal({
             rows={fullscreen ? 24 : 16}
             autoResize={fullscreen}
             theme={theme}
+            // Register WebMCP tools only once the shell is attached, so agent
+            // input isn't accepted and dropped while just-bash is loading.
+            webmcp={ready ? WEBMCP : false}
             onReady={handleReady}
             onData={handleData}
             onError={onError}
