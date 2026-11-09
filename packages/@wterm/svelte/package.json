@@ -27,7 +27,7 @@
     "build": "node scripts/build.mjs",
     "prepublishOnly": "pnpm build",
     "test": "vitest run",
-    "type-check": "svelte-check --tsconfig ./tsconfig.json"
+    "type-check": "NODE_OPTIONS=--require=@internal/ts/typescript6.cjs svelte-check --tsgo --tsconfig ./tsconfig.json"
   },
   "keywords": [
     "terminal",
@@ -48,11 +48,13 @@
     "@internal/ts": "workspace:*",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@testing-library/svelte": "^5.4.2",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "@typescript/typescript6": "^6.0.2",
     "@wterm/dom": "workspace:*",
     "jsdom": "^29.0.2",
     "svelte": "^5.57.0",
     "svelte-check": "^4.7.6",
-    "typescript": "~6.0.2",
+    "typescript": "^7.0.2",
     "vitest": "^5.0.2"
   },
   "peerDependencies": {
