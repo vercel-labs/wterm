@@ -16,7 +16,7 @@
     "just-bash": "^3.4.2"
   },
   "devDependencies": {
-    "typescript": "^6.0.2",
+    "typescript": "^7.0.2",
     "vite": "^6.3.5",
     "vite-plugin-node-polyfills": "^0.26.0"
   }

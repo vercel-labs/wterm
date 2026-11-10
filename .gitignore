@@ -13,6 +13,7 @@ dist/
 .next/
 .source/
 .svelte-kit/
+.svelte-check/
 next-env.d.ts
 packages/@wterm/core/src/wasm-inline.ts
 coverage/
