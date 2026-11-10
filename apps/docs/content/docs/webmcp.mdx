@@ -7,6 +7,16 @@ navTitle: "WebMCP"
 
 WebMCP is off by default. In browsers without a WebMCP provider, the option does nothing.
 
+## Try it
+
+The terminal on the [wterm.dev](https://wterm.dev) homepage is registered as `demo`. It runs a sandboxed bash in the page with [just-bash](/just-bash), so an agent can type into it without touching a real machine. With [agent-browser](https://github.com/vercel-labs/agent-browser), which turns on WebMCP in the Chrome it launches:
+
+```bash
+agent-browser open https://wterm.dev
+agent-browser webmcp invoke type_in_terminal --params '{"terminal":"demo","text":"ls","submit":true}'
+agent-browser webmcp invoke read_terminal --params '{"terminal":"demo","waitForIdleMs":300}'
+```
+
 ## Enabling
 
 Pass `webmcp: true`, or an options object, when you create the terminal:
