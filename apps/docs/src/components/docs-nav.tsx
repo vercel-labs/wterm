@@ -40,6 +40,7 @@ function Sidebar() {
                   <El
                     key={href}
                     href={href}
+                    aria-current={active ? "page" : undefined}
                     {...(external
                       ? { target: "_blank", rel: "noopener noreferrer" }
                       : {})}
