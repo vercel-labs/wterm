@@ -111,6 +111,10 @@ export function Search() {
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    // Ignore keys that confirm an IME composition (e.g. Enter selecting a candidate).
+    if (e.nativeEvent.isComposing || e.keyCode === 229) {
+      return;
+    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       if (results.length > 0) {
@@ -211,6 +215,7 @@ export function Search() {
               }}
               onKeyDown={handleKeyDown}
               placeholder="Search docs..."
+              aria-label="Search docs"
               className="flex-1 bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground"
             />
             {query && (
@@ -221,6 +226,7 @@ export function Search() {
                   setResults([]);
                 }}
                 className="text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
