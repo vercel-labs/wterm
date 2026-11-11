@@ -875,7 +875,8 @@ pub const Terminal = struct {
             if (grapheme_mod.props(base).emoji_vs_base and after_base) {
                 cell.width = cell_mod.WIDTH_NARROW;
                 self.grid.setCell(row, col + 1, self.blankCell());
-                self.cursor_col = col + 1;
+                // Like ghostty, a cursor on the last column stays there.
+                if (self.cursor_col != self.cols - 1) self.cursor_col = col + 1;
                 self.wrap_pending = false;
             }
         }
@@ -2982,6 +2983,14 @@ test "VS15 at the end of a row clears the pending wrap" {
     t.write("ab\u{26A1}\u{FE0E}c");
     try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 2).width);
     try std.testing.expectEqual(@as(u32, 'c'), t.grid.getCell(0, 3).char);
+    try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+}
+
+test "VS15 ending one column before the edge keeps the cursor on the last column" {
+    var t = Terminal.init(5, 2);
+    t.write("ab\u{26A1}\u{FE0E}c");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 2).width);
+    try std.testing.expectEqual(@as(u32, 'c'), t.grid.getCell(0, 4).char);
     try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
 }
 
