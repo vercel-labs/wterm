@@ -447,6 +447,59 @@ describe("InputHandler", () => {
       expect(received).toContain("\x1a");
     });
 
+    describe("paste shortcut", () => {
+      function setPlatform(platform: string) {
+        return vi
+          .spyOn(window.navigator, "platform", "get")
+          .mockReturnValue(platform);
+      }
+
+      it("sends Ctrl+V to the application on macOS", () => {
+        const platform = setPlatform("MacIntel");
+        try {
+          const event = createKeyboardEvent("v", {
+            code: "KeyV",
+            ctrlKey: true,
+          });
+          getTextarea().dispatchEvent(event);
+          expect(received).toEqual(["\x16"]);
+          expect(event.defaultPrevented).toBe(true);
+        } finally {
+          platform.mockRestore();
+        }
+      });
+
+      it("keeps Ctrl+V as the paste shortcut on other platforms", () => {
+        const platform = setPlatform("Win32");
+        try {
+          const event = createKeyboardEvent("v", {
+            code: "KeyV",
+            ctrlKey: true,
+          });
+          getTextarea().dispatchEvent(event);
+          expect(received).toEqual([]);
+          expect(event.defaultPrevented).toBe(false);
+        } finally {
+          platform.mockRestore();
+        }
+      });
+
+      it("keeps Cmd+V as the paste shortcut on macOS", () => {
+        const platform = setPlatform("MacIntel");
+        try {
+          const event = createKeyboardEvent("v", {
+            code: "KeyV",
+            metaKey: true,
+          });
+          getTextarea().dispatchEvent(event);
+          expect(received).toEqual([]);
+          expect(event.defaultPrevented).toBe(false);
+        } finally {
+          platform.mockRestore();
+        }
+      });
+    });
+
     it.each([
       [" ", {}, "\0"],
       ["2", {}, "\0"],
