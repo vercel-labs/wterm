@@ -3077,6 +3077,16 @@ test "a second combining mark after VS15 on the last column is dropped" {
     try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
 }
 
+test "a distinct second combining mark after VS15 on the last column is dropped" {
+    var t = Terminal.init(5, 2);
+    t.write("ab\u{26A1}\u{FE0E}\u{0301}\u{0302}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 2).width);
+    try std.testing.expectEqualStrings("\u{26A1}\u{FE0E}", testClusterText(&t, 0, 2));
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 4).char);
+    try std.testing.expectEqual(@as(u32, ' '), t.grid.getCell(1, 0).char);
+    try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+}
+
 test "a variation selector after VS15 on the last column is dropped" {
     var t = Terminal.init(6, 2);
     t.write("abc\u{26A1}\u{FE0E}\u{FE0F}");
