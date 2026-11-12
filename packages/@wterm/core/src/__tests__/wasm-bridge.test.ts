@@ -86,6 +86,19 @@ describe("WasmBridge", () => {
     expect(bridge.getCell(1, 2).char).toBe(0x41);
   });
 
+  it("wraps a ZWJ pictograph that VS15 left past the cursor", () => {
+    bridge.init(5, 3);
+    bridge.writeString("ab⚡\uFE0E\u200D⚡A");
+    expect(bridge.getCell(0, 2)).toMatchObject({
+      char: 0x26a1,
+      chars: "⚡\uFE0E",
+      width: 1,
+    });
+    expect(bridge.getCell(1, 0)).toMatchObject({ char: 0x26a1, width: 2 });
+    expect(bridge.getCell(1, 2).char).toBe(0x41);
+    expect(bridge.getCursor()).toMatchObject({ row: 1, col: 3 });
+  });
+
   it("leaves single code point cells without chars", () => {
     bridge.writeString("A\u4e2d");
     expect(bridge.getCell(0, 0).chars).toBeUndefined();
