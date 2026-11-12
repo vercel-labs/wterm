@@ -99,6 +99,18 @@ describe("WasmBridge", () => {
     expect(bridge.getCursor()).toMatchObject({ row: 1, col: 3 });
   });
 
+  it("drops the combining marks VS15 left past the cursor", () => {
+    bridge.init(5, 3);
+    bridge.writeString("ab⚡\uFE0E\u0301\u0301A");
+    expect(bridge.getCell(0, 2)).toMatchObject({
+      char: 0x26a1,
+      chars: "⚡\uFE0E",
+      width: 1,
+    });
+    expect(bridge.getCell(0, 4).char).toBe(0x41);
+    expect(bridge.getCursor()).toMatchObject({ row: 0, col: 4 });
+  });
+
   it("leaves single code point cells without chars", () => {
     bridge.writeString("A\u4e2d");
     expect(bridge.getCell(0, 0).chars).toBeUndefined();

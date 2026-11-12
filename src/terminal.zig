@@ -750,10 +750,10 @@ pub const Terminal = struct {
         const mapped = self.charset.map(codepoint);
         if (!self.segmenter.breaksBefore(mapped)) {
             if (self.extendCluster(mapped)) return;
-            // The cluster is no longer before the cursor, so this code point
-            // opens a new one. A leading zero-width continuation has no cell to
-            // attach to and is dropped, as in ghostty.
-            self.segmenter = .{};
+            // The cluster is no longer before the cursor. A zero-width
+            // continuation has no cell to attach to and is dropped, as in
+            // ghostty; the segmenter still holds the grapheme, so the
+            // continuations after it are dropped too.
             const gcb = grapheme_mod.props(mapped).gcb;
             if (gcb == .extend or gcb == .zwj) return;
         }
@@ -3066,6 +3066,24 @@ test "a combining mark after VS15 on the last column is dropped" {
     try std.testing.expectEqualStrings("\u{26A1}\u{FE0E}", testClusterText(&t, 0, 2));
     try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 4).char);
     try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+}
+
+test "a second combining mark after VS15 on the last column is dropped" {
+    var t = Terminal.init(5, 2);
+    t.write("ab\u{26A1}\u{FE0E}\u{0301}\u{0301}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 2).width);
+    try std.testing.expectEqualStrings("\u{26A1}\u{FE0E}", testClusterText(&t, 0, 2));
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 4).char);
+    try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+}
+
+test "a variation selector after VS15 on the last column is dropped" {
+    var t = Terminal.init(6, 2);
+    t.write("abc\u{26A1}\u{FE0E}\u{FE0F}");
+    try std.testing.expectEqual(@as(u32, ' '), t.grid.getCell(0, 5).char);
+    try std.testing.expectEqual(@as(u16, 5), t.cursor_col);
+    t.write("A");
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 5).char);
 }
 
 test "a combining mark attaches while the cluster is before the cursor" {
