@@ -552,7 +552,12 @@ pub const Terminal = struct {
             // Checked last so a code point handed back to printChar is segmented once.
             if (!self.segmenter.breaksBefore(cp)) {
                 self.cursor_col = col;
-                self.extendCluster(cp);
+                if (!self.extendCluster(cp)) {
+                    // printChar opens a new cluster for a code point that cannot
+                    // attach here, so hand the rest of the run back to it.
+                    self.segmenter = .{};
+                    break;
+                }
                 col = self.cursor_col;
                 i += len;
                 if (self.wrap_pending) break;
@@ -755,8 +760,13 @@ pub const Terminal = struct {
     fn printChar(self: *Terminal, codepoint: u21) void {
         const mapped = self.charset.map(codepoint);
         if (!self.segmenter.breaksBefore(mapped)) {
-            self.extendCluster(mapped);
-            return;
+            if (self.extendCluster(mapped)) return;
+            // The cluster is no longer before the cursor. A zero-width
+            // continuation has no cell to attach to and is dropped, as in
+            // ghostty; the segmenter still holds the grapheme, so the
+            // continuations after it are dropped too.
+            const gcb = grapheme_mod.props(mapped).gcb;
+            if (gcb == .extend or gcb == .zwj) return;
         }
 
         if (self.wrap_pending and self.auto_wrap) {
@@ -823,36 +833,41 @@ pub const Terminal = struct {
         }
     }
 
-    /// Appends a code point to the cluster printed last, widening it when VS16
-    /// or a second regional indicator turns it into emoji presentation.
-    fn extendCluster(self: *Terminal, cp: u21) void {
+    /// Appends a code point to the cluster printed last, widening it when VS16,
+    /// a second regional indicator, or a ZWJ-joined pictograph turns it into
+    /// emoji presentation, and narrowing it when VS15 selects text presentation.
+    /// Returns false when the cluster no longer sits before the cursor; the
+    /// caller then opens a new cluster.
+    fn extendCluster(self: *Terminal, cp: u21) bool {
         const row = self.cluster_row;
         const col = self.cluster_col;
-        if (row >= self.rows or col >= self.cols) return;
+        if (row >= self.rows or col >= self.cols) return false;
         var cell = self.grid.getCell(row, col);
-        if (cell.width == cell_mod.WIDTH_CONTINUATION) return;
+        if (cell.width == cell_mod.WIDTH_CONTINUATION) return false;
+        if (!self.clusterAtCursor(cell.width)) return false;
 
         var buf: [grapheme_mod.MAX_CLUSTER_CODEPOINTS * 4]u8 = undefined;
         var len: usize = 0;
         if (cell.char & grapheme_mod.CLUSTER_BIT != 0) {
-            const existing = self.clusters.get(cell.char & ~grapheme_mod.CLUSTER_BIT) orelse return;
+            const existing = self.clusters.get(cell.char & ~grapheme_mod.CLUSTER_BIT) orelse return false;
             @memcpy(buf[0..existing.len], existing);
             len = existing.len;
         } else {
-            len = std.unicode.utf8Encode(@intCast(cell.char), &buf) catch return;
+            len = std.unicode.utf8Encode(@intCast(cell.char), &buf) catch return false;
         }
-        const stored = std.unicode.utf8CountCodepoints(buf[0..len]) catch return;
+        const stored = std.unicode.utf8CountCodepoints(buf[0..len]) catch return false;
+        const after_zwj = len >= 3 and std.mem.eql(u8, buf[len - 3 .. len], "\u{200D}");
         if (stored < grapheme_mod.MAX_CLUSTER_CODEPOINTS) {
-            len += std.unicode.utf8Encode(cp, buf[len..]) catch return;
+            len += std.unicode.utf8Encode(cp, buf[len..]) catch return false;
             if (self.clusters.intern(grid_mod.allocator, buf[0..len])) |index| {
                 cell.char = grapheme_mod.CLUSTER_BIT | index;
             }
         }
 
         const widens = cell.width == cell_mod.WIDTH_NARROW and
-            (cp == 0xFE0F or grapheme_mod.props(cp).gcb == .regional_indicator) and
-            col + 1 < self.cols and !self.wrap_pending and self.cursor_row == row and
-            self.cursor_col == col + 1;
+            (cp == 0xFE0F or grapheme_mod.props(cp).gcb == .regional_indicator or
+                (after_zwj and grapheme_mod.props(cp).ext_pict)) and
+            col + 1 < self.cols;
         if (widens) {
             const blank = self.blankCell();
             self.grid.clearWideCellAt(row, col + 1, blank);
@@ -873,8 +888,30 @@ pub const Terminal = struct {
             } else {
                 self.cursor_col = self.cols - 1;
             }
+        } else if (cp == 0xFE0E and cell.width == cell_mod.WIDTH_WIDE) {
+            // Text presentation: VS15 on an emoji variation base takes one cell.
+            const base = std.unicode.utf8Decode(buf[0..(std.unicode.utf8ByteSequenceLength(buf[0]) catch 1)]) catch 0;
+            if (grapheme_mod.props(base).emoji_vs_base) {
+                cell.width = cell_mod.WIDTH_NARROW;
+                self.grid.setCell(row, col + 1, self.blankCell());
+                // Like ghostty, a cursor on the last column stays there.
+                if (self.cursor_col != self.cols - 1) self.cursor_col = col + 1;
+                self.wrap_pending = false;
+            }
         }
         self.grid.setCell(row, col, cell);
+        return true;
+    }
+
+    /// True when the cluster printed last occupies the cells right before the
+    /// cursor, so a continuation code point attaches to it. A wide cluster that
+    /// ends at the edge leaves the cursor on its last column instead.
+    fn clusterAtCursor(self: *const Terminal, width: u8) bool {
+        if (self.cluster_row != self.cursor_row) return false;
+        const end: u16 = self.cluster_col + width;
+        if (end == self.cursor_col) return true;
+        return self.cursor_col == self.cols - 1 and end >= self.cols and
+            (self.wrap_pending or !self.auto_wrap);
     }
 
     // -- C0 control codes --
@@ -2980,6 +3017,143 @@ test "a control sequence ends the cluster" {
     t.write("e\x1b[1m\u{301}");
     try std.testing.expectEqual(@as(u32, 'e'), t.grid.getCell(0, 0).char);
     try std.testing.expectEqual(@as(u32, 0x301), t.grid.getCell(0, 1).char);
+}
+
+test "VS15 narrows a default-emoji base to one cell" {
+    var t = Terminal.init(20, 2);
+    t.write("\u{26A1}\u{FE0E}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 0).width);
+    try std.testing.expectEqualStrings("\u{26A1}\u{FE0E}", testClusterText(&t, 0, 0));
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 1).char);
+    try std.testing.expectEqual(@as(u16, 2), t.cursor_col);
+}
+
+test "VS15 keeps later absolute positioning aligned" {
+    var t = Terminal.init(20, 2);
+    t.write("\u{26A1}\u{FE0E}x\x1b[1;5HZ");
+    try std.testing.expectEqual(@as(u32, 'x'), t.grid.getCell(0, 1).char);
+    try std.testing.expectEqual(@as(u32, 'Z'), t.grid.getCell(0, 4).char);
+}
+
+test "VS15 at the end of a row clears the pending wrap" {
+    var t = Terminal.init(4, 2);
+    t.write("ab\u{26A1}\u{FE0E}c");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 2).width);
+    try std.testing.expectEqual(@as(u32, 'c'), t.grid.getCell(0, 3).char);
+    try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+}
+
+test "VS15 ending one column before the edge keeps the cursor on the last column" {
+    var t = Terminal.init(5, 2);
+    t.write("ab\u{26A1}\u{FE0E}c");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 2).width);
+    try std.testing.expectEqual(@as(u32, 'c'), t.grid.getCell(0, 4).char);
+    try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+}
+
+test "VS15 leaves a wide CJK base alone" {
+    var t = Terminal.init(20, 2);
+    t.write("\u{4E2D}\u{FE0E}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(0, 0).width);
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 2).char);
+}
+
+test "VS15 leaves an emoji without a text variation wide" {
+    var t = Terminal.init(20, 4);
+    t.write("\u{1F600}\u{FE0E}A\r\n\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{FE0E}A\r\n\u{1F44B}\u{1F3FD}\u{FE0E}A");
+    for (0..3) |row| {
+        try std.testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(@intCast(row), 0).width);
+        try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(@intCast(row), 2).char);
+    }
+}
+
+test "a ZWJ-joined pictograph widens a narrow cluster" {
+    var t = Terminal.init(20, 3);
+    t.write("\u{26A1}\u{FE0E}\u{200D}\u{26A1}A\r\n\u{2764}\u{200D}\u{1F525}A");
+    for (0..2) |row| {
+        try std.testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(@intCast(row), 0).width);
+        try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(@intCast(row), 2).char);
+    }
+}
+
+test "a ZWJ-joined pictograph past the cursor starts a new cluster" {
+    var t = Terminal.init(5, 3);
+    t.write("ab\u{26A1}\u{FE0E}\u{200D}\u{26A1}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 2).width);
+    try std.testing.expectEqualStrings("\u{26A1}\u{FE0E}", testClusterText(&t, 0, 2));
+    try std.testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(1, 0).width);
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(1, 2).char);
+    try std.testing.expectEqual(@as(u16, 1), t.cursor_row);
+    try std.testing.expectEqual(@as(u16, 3), t.cursor_col);
+}
+
+test "a ZWJ-joined pictograph at the edge wraps after VS15 narrowing" {
+    var t = Terminal.init(4, 3);
+    t.write("a\u{26A1}\u{FE0E}\u{200D}\u{26A1}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 1).width);
+    try std.testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(1, 0).width);
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(1, 2).char);
+    try std.testing.expectEqual(@as(u16, 1), t.cursor_row);
+}
+
+test "a combining mark after VS15 on the last column is dropped" {
+    var t = Terminal.init(5, 2);
+    t.write("ab\u{26A1}\u{FE0E}\u{0301}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 2).width);
+    try std.testing.expectEqualStrings("\u{26A1}\u{FE0E}", testClusterText(&t, 0, 2));
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 4).char);
+    try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+}
+
+test "a second combining mark after VS15 on the last column is dropped" {
+    var t = Terminal.init(5, 2);
+    t.write("ab\u{26A1}\u{FE0E}\u{0301}\u{0301}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 2).width);
+    try std.testing.expectEqualStrings("\u{26A1}\u{FE0E}", testClusterText(&t, 0, 2));
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 4).char);
+    try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+}
+
+test "a distinct second combining mark after VS15 on the last column is dropped" {
+    var t = Terminal.init(5, 2);
+    t.write("ab\u{26A1}\u{FE0E}\u{0301}\u{0302}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 2).width);
+    try std.testing.expectEqualStrings("\u{26A1}\u{FE0E}", testClusterText(&t, 0, 2));
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 4).char);
+    try std.testing.expectEqual(@as(u32, ' '), t.grid.getCell(1, 0).char);
+    try std.testing.expectEqual(@as(u16, 0), t.cursor_row);
+}
+
+test "a variation selector after VS15 on the last column is dropped" {
+    var t = Terminal.init(6, 2);
+    t.write("abc\u{26A1}\u{FE0E}\u{FE0F}");
+    try std.testing.expectEqual(@as(u32, ' '), t.grid.getCell(0, 5).char);
+    try std.testing.expectEqual(@as(u16, 5), t.cursor_col);
+    t.write("A");
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 5).char);
+}
+
+test "a combining mark attaches while the cluster is before the cursor" {
+    var t = Terminal.init(4, 2);
+    t.write("ab\u{26A1}\u{FE0E}\u{0301}A");
+    try std.testing.expectEqualStrings("\u{26A1}\u{FE0E}\u{0301}", testClusterText(&t, 0, 2));
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 3).char);
+}
+
+test "VS15 after a keycap sequence narrows it" {
+    var t = Terminal.init(20, 2);
+    t.write("1\u{FE0F}\u{20E3}\u{FE0E}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_NARROW, t.grid.getCell(0, 0).width);
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 1).char);
+}
+
+test "VS16 still widens and plain emoji stay wide" {
+    var t = Terminal.init(20, 3);
+    t.write("\u{2764}\u{FE0F}A\r\n\u{26A1}A");
+    try std.testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(0, 0).width);
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(0, 2).char);
+    try std.testing.expectEqual(cell_mod.WIDTH_WIDE, t.grid.getCell(1, 0).width);
+    try std.testing.expectEqual(@as(u32, 'A'), t.grid.getCell(1, 2).char);
 }
 
 test "VS16 at the last column keeps the cell narrow" {

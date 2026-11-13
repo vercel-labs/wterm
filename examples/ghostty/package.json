@@ -15,7 +15,7 @@
     "@wterm/ghostty": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^6.0.2",
+    "typescript": "^7.0.2",
     "vite": "^6.3.5"
   }
 }

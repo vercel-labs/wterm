@@ -8,7 +8,7 @@
     "prebuild": "mkdir -p public && cp node_modules/@wterm/core/wasm/wterm.wasm public/wterm.wasm",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "oxlint",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
@@ -35,8 +35,7 @@
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "eslint": "^9.39.4",
-    "eslint-config-next": "16.3.5",
-    "typescript": "^6.0.2"
+    "oxlint": "^1.91.0",
+    "typescript": "^7.0.2"
   }
 }
