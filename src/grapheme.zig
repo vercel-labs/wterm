@@ -24,6 +24,8 @@ pub const Props = struct {
     gcb: Gcb,
     ext_pict: bool,
     incb: InCb,
+    /// Listed in emoji-variation-sequences.txt, so VS15 and VS16 select its presentation.
+    emoji_vs_base: bool,
 };
 
 pub fn props(cp: u21) Props {
@@ -46,7 +48,8 @@ fn runProps(run: usize) Props {
     return .{
         .gcb = @enumFromInt(p & 0x0f),
         .ext_pict = p & 0x10 != 0,
-        .incb = @enumFromInt(p >> 5),
+        .incb = @enumFromInt((p >> 5) & 0x03),
+        .emoji_vs_base = p & 0x80 != 0,
     };
 }
 
@@ -55,7 +58,7 @@ fn inRun(run: usize, cp: u21) bool {
 }
 
 /// Printable ASCII: Other, with no other property.
-const ascii_props: Props = .{ .gcb = .other, .ext_pict = false, .incb = .none };
+const ascii_props: Props = .{ .gcb = .other, .ext_pict = false, .incb = .none, .emoji_vs_base = false };
 
 /// Extended grapheme cluster segmentation (UAX #29), fed one code point at a time.
 pub const Segmenter = struct {

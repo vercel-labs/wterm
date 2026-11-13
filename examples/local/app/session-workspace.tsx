@@ -355,6 +355,9 @@ function SessionTerminal({
               const { width, height } = terminalPixelSize(terminal);
               setConnectionMessage(null);
               setReconnected(resumed && !restoredConnection);
+              // `restoredConnection` belongs to this connection attempt, not render state;
+              // oxlint's react/immutability misreads it.
+              // oxlint-disable-next-line react/immutability
               restoredConnection = false;
               setLostInput((previous) => inputLost || (resumed && previous));
               onStatus(session.id, "connected");
@@ -672,6 +675,9 @@ export function SessionWorkspace(props: SessionWorkspaceProps) {
         } catch {}
         const navigation = performance.getEntriesByType("navigation")[0] as
           PerformanceNavigationTiming | undefined;
+        // `recovery` is created once inside the useState initializer, not during render;
+        // oxlint's react/immutability misreads it.
+        // oxlint-disable-next-line react/immutability
         recovery = new SessionRecovery(
           storage,
           `${RECOVERY_KEY}:${location.pathname}`,

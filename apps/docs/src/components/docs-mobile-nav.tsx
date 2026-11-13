@@ -90,6 +90,7 @@ export function DocsMobileNav() {
                     <li key={item.href}>
                       <El
                         href={item.href}
+                        aria-current={active ? "page" : undefined}
                         {...(item.external
                           ? { target: "_blank", rel: "noopener noreferrer" }
                           : { onClick: () => setOpen(false) })}
