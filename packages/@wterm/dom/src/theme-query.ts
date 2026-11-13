@@ -4,7 +4,6 @@ export const THEME_BACKGROUND = 2;
 
 const ESC = 0x1b;
 const BEL = 0x07;
-const ST = 0x9c;
 const SEMICOLON = 0x3b;
 /** Parameters of a CSI color query that can matter; `?996` is the longest. */
 const CSI_HEAD = 8;
@@ -126,7 +125,8 @@ export class ThemeQueryScanner {
   }
 
   private _osc(byte: number): number {
-    if (byte === BEL || byte === ST) return this._finishOsc();
+    // Only BEL and ESC end an OSC in either core; a bare 0x9c is payload.
+    if (byte === BEL) return this._finishOsc();
     if (byte === ESC) {
       // The cores dispatch the payload at the ESC that starts the terminator,
       // so a query answered then must be reported before the `\` arrives.

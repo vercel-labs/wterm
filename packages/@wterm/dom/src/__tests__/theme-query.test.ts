@@ -81,6 +81,14 @@ describe("ThemeQueryScanner", () => {
     expect(scan(["\x1b]10\x07"])).toBe(0);
   });
 
+  it("keeps a bare 0x9c in the payload of an OSC query", () => {
+    // Neither core ends an OSC at 0x9c, so the query it follows is not asked.
+    expect(scan(["\x1b]10;?\x9c\x07"])).toBe(0);
+    expect(scan(["\x1b]10;?\x9c"])).toBe(0);
+    expect(scan(["\x1b]11;?\x9c", "\x07"])).toBe(0);
+    expect(scan(["\x1b]10;?\x9c\x07\x1b]11;?\x07"])).toBe(THEME_BACKGROUND);
+  });
+
   it("ignores other CSI sequences", () => {
     expect(scan(["\x1b[996n"])).toBe(0);
     expect(scan(["\x1b[?966n"])).toBe(0);
