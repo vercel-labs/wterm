@@ -17,6 +17,7 @@
     "ghostty",
     "just-bash",
     "markdown",
+    "serialize",
     "core",
     "---Examples---",
     "[Next.js](https://github.com/vercel-labs/wterm/tree/main/examples/nextjs)",
@@ -33,6 +34,7 @@
     "[@wterm/svelte](https://github.com/vercel-labs/wterm/tree/main/packages/@wterm/svelte)",
     "[@wterm/ghostty](https://github.com/vercel-labs/wterm/tree/main/packages/@wterm/ghostty)",
     "[@wterm/just-bash](https://github.com/vercel-labs/wterm/tree/main/packages/@wterm/just-bash)",
-    "[@wterm/markdown](https://github.com/vercel-labs/wterm/tree/main/packages/@wterm/markdown)"
+    "[@wterm/markdown](https://github.com/vercel-labs/wterm/tree/main/packages/@wterm/markdown)",
+    "[@wterm/serialize](https://github.com/vercel-labs/wterm/tree/main/packages/@wterm/serialize)"
   ]
 }

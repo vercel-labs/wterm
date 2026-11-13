@@ -62,6 +62,7 @@ For pages with many busy terminals, `renderer: "webgl"` paints from one shared W
 | [`@wterm/ghostty`](packages/@wterm/ghostty) | VT emulation core powered by libghostty |
 | [`@wterm/just-bash`](packages/@wterm/just-bash) | In-browser Bash shell powered by just-bash |
 | [`@wterm/markdown`](packages/@wterm/markdown) | Render Markdown in the terminal |
+| [`@wterm/serialize`](packages/@wterm/serialize) | Serialize and restore terminal state |
 
 ## For AI agents
 
