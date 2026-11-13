@@ -164,6 +164,12 @@ for (const coreName of ["builtin", "ghostty"] as const) {
       host.className = "light";
       const lightColorSet = ask(false, ["\x1b]10;#102030\x07"]);
       const lightAfterColorSet = ask();
+      // An empty parameter makes the color this `?` asks for core-specific, so
+      // the scheme is still reported ahead of the reply.
+      host.className = "dark";
+      ask();
+      host.className = "light";
+      const lightAmbiguous = ask(false, ["\x1b]10;;?\x07"]);
       return {
         dark,
         light,
@@ -177,6 +183,7 @@ for (const coreName of ["builtin", "ghostty"] as const) {
         lightPair,
         lightColorSet,
         lightAfterColorSet,
+        lightAmbiguous,
       };
     }, coreName);
 
@@ -198,5 +205,9 @@ for (const coreName of ["builtin", "ghostty"] as const) {
     ]);
     expect(replies.lightColorSet).toEqual([]);
     expect(replies.lightAfterColorSet).toEqual(["\x1b[?997;2n"]);
+    // A core-specific query reports the scheme first; only the reply's color
+    // differs, the built-in core answering with the background.
+    expect(replies.lightAmbiguous).toHaveLength(2);
+    expect(replies.lightAmbiguous[0]).toBe("\x1b[?997;2n");
   });
 }

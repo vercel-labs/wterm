@@ -1,6 +1,11 @@
 /** Theme colors a query asks for; the background carries the dark/light scheme. */
 export const THEME_FOREGROUND = 1;
 export const THEME_BACKGROUND = 2;
+/**
+ * A query whose color the cores do not agree on, so its reply may carry
+ * neither the foreground nor the background.
+ */
+export const THEME_QUERY = 4;
 
 const ESC = 0x1b;
 const BEL = 0x07;
@@ -9,6 +14,8 @@ const SEMICOLON = 0x3b;
 const CSI_HEAD = 8;
 /** Characters of an OSC parameter that can matter; `?` is the only query. */
 const OSC_PARAM = 2;
+/** Parameters a core can still name a color from; OSC 10 through 19. */
+const OSC_PARAMS = 10;
 
 type State = "ground" | "escape" | "csi" | "osc";
 
@@ -29,6 +36,11 @@ export class ThemeQueryScanner {
   private _oscNumber = 0;
   private _oscParam = "";
   private _oscIndex = 0;
+  /**
+   * Whether every parameter so far is a `?`, the only payload the built-in and
+   * Ghostty cores number the same way.
+   */
+  private _oscNamed = true;
   private _oscColors = 0;
 
   /** The theme colors the query sequences in `data` ask for, as a bit set. */
@@ -60,6 +72,7 @@ export class ThemeQueryScanner {
     this._oscNumber = 0;
     this._oscParam = "";
     this._oscIndex = 0;
+    this._oscNamed = true;
     this._oscColors = 0;
   }
 
@@ -148,8 +161,7 @@ export class ThemeQueryScanner {
       else if (head[1] === "1") this._oscNumber = 11;
       return;
     }
-    // The core stops asking once the next OSC number would pass 11.
-    if (this._oscNumber === 0 || this._oscNumber + this._oscIndex > 11) return;
+    if (this._oscNumber === 0 || this._oscIndex >= OSC_PARAMS) return;
     if (byte === SEMICOLON) {
       this._oscParamDone();
       return;
@@ -160,12 +172,25 @@ export class ThemeQueryScanner {
 
   /** Records one `?` parameter, which asks for the color at its number. */
   private _oscParamDone(): void {
+    const param = this._oscParam;
     const number = this._oscNumber + this._oscIndex;
     this._oscIndex += 1;
-    if (this._oscParam === "?")
-      this._oscColors |=
-        number === 10 ? THEME_FOREGROUND : number === 11 ? THEME_BACKGROUND : 0;
     this._oscParam = "";
+    if (param !== "?") {
+      // The cores number the parameters the same way only while every one of
+      // them asks: a Ghostty core drops an empty parameter and stops at one
+      // that is not a color.
+      this._oscNamed = false;
+      return;
+    }
+    if (!this._oscNamed)
+      // The query still refreshes the CSS colors, but its color differs between
+      // the cores, so the reply may leave the background out.
+      this._oscColors |= THEME_QUERY;
+    else if (number === 10) this._oscColors |= THEME_FOREGROUND;
+    else if (number === 11) this._oscColors |= THEME_BACKGROUND;
+    // A Ghostty core alone answers the colors past the background.
+    else this._oscColors |= THEME_QUERY;
   }
 
   private _finishOsc(): number {

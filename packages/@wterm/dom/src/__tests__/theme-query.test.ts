@@ -3,6 +3,7 @@ import {
   ThemeQueryScanner,
   THEME_BACKGROUND,
   THEME_FOREGROUND,
+  THEME_QUERY,
 } from "../theme-query.js";
 
 const BOTH = THEME_FOREGROUND | THEME_BACKGROUND;
@@ -42,6 +43,7 @@ describe("ThemeQueryScanner", () => {
       "\x1b]10;?\x07",
       "\x1b]11;?\x1b\\",
       "\x1b]10;?;?\x07",
+      "\x1b]10;;?\x07",
       "\x1b[?996n",
     ]) {
       const expected = scan([query]);
@@ -62,11 +64,27 @@ describe("ThemeQueryScanner", () => {
     // Each `?` asks for the next color, so this one carries the background too.
     expect(scan(["\x1b]10;?;?\x07"])).toBe(BOTH);
     expect(scan(["\x1b]10;?;?\x1b\\"])).toBe(BOTH);
-    // The second `?` of an OSC 11 query asks for color 12, which does not exist.
-    expect(scan(["\x1b]11;?;?\x07"])).toBe(THEME_BACKGROUND);
+    // The second `?` of an OSC 11 query asks for the cursor; only a Ghostty
+    // core answers it.
+    expect(scan(["\x1b]11;?;?\x07"])).toBe(THEME_BACKGROUND | THEME_QUERY);
     expect(scan(["\x1b]10;?;x\x07"])).toBe(THEME_FOREGROUND);
-    expect(scan(["\x1b]10;;?\x07"])).toBe(THEME_BACKGROUND);
     expect(scan(["\x1b]10;?\x07\x1b]10;?\x07"])).toBe(THEME_FOREGROUND);
+  });
+
+  it("names a color only while every parameter asks for one", () => {
+    // A Ghostty core drops the empty parameter, so this `?` asks for the
+    // foreground there and for the background in the built-in core.
+    expect(scan(["\x1b]10;;?\x07"])).toBe(THEME_QUERY);
+    expect(scan(["\x1b]11;;?\x07"])).toBe(THEME_QUERY);
+    // A Ghostty core stops at a parameter it cannot read as a color, so
+    // nothing at all is asked there.
+    expect(scan(["\x1b]10;x;?\x07"])).toBe(THEME_QUERY);
+    expect(scan(["\x1b]10;;?\x1b\\"])).toBe(THEME_QUERY);
+    expect(scan(["\x1b]10;;?", "\x07"])).toBe(THEME_QUERY);
+    // A later query the cores read the same way still carries the background.
+    expect(scan(["\x1b]10;;?\x07\x1b]11;?\x07"])).toBe(
+      THEME_QUERY | THEME_BACKGROUND,
+    );
   });
 
   it("ignores OSC payloads that do not ask for a color", () => {
