@@ -1,0 +1,74 @@
+import { describe, it, expect } from "vitest";
+import {
+  ThemeQueryScanner,
+  THEME_BACKGROUND,
+  THEME_FOREGROUND,
+} from "../theme-query.js";
+
+/** The theme colors `parts` ask for when they are written one after another. */
+function scan(parts: (string | Uint8Array)[]): number {
+  const scanner = new ThemeQueryScanner();
+  let colors = 0;
+  for (const part of parts) colors |= scanner.scan(part);
+  return colors;
+}
+
+/** Every way to cut `data` into two writes. */
+function splits(data: string): string[][] {
+  const parts: string[][] = [];
+  for (let i = 1; i < data.length; i++)
+    parts.push([data.slice(0, i), data.slice(i)]);
+  return parts;
+}
+
+function bytes(data: string): Uint8Array {
+  return new TextEncoder().encode(data);
+}
+
+describe("ThemeQueryScanner", () => {
+  it("recognizes the theme color queries the cores answer", () => {
+    expect(scan(["\x1b]10;?\x07"])).toBe(THEME_FOREGROUND);
+    expect(scan(["\x1b]11;?\x07"])).toBe(THEME_BACKGROUND);
+    expect(scan(["\x1b]10;?\x1b\\"])).toBe(THEME_FOREGROUND);
+    expect(scan(["\x1b]11;?\x1b\\"])).toBe(THEME_BACKGROUND);
+    expect(scan(["\x1b[?996n"])).toBe(THEME_BACKGROUND);
+    expect(scan([bytes("\x1b]11;?\x07")])).toBe(THEME_BACKGROUND);
+  });
+
+  it("recognizes a query cut anywhere by a write boundary", () => {
+    for (const query of ["\x1b]10;?\x07", "\x1b]11;?\x1b\\", "\x1b[?996n"]) {
+      for (const parts of splits(query)) expect(scan(parts)).not.toBe(0);
+      for (const parts of splits(query))
+        expect(scan(parts.map(bytes))).not.toBe(0);
+    }
+  });
+
+  it("keeps the state of one query while another completes", () => {
+    expect(scan(["\x1b]11;?\x07\x1b]1", "0;?\x07"])).toBe(
+      THEME_FOREGROUND | THEME_BACKGROUND,
+    );
+    expect(scan(["\x1b[?99", "6n\x1b]11;?\x07"])).toBe(THEME_BACKGROUND);
+    expect(scan(["\x1b]11;", "", "?", "\x07"])).toBe(THEME_BACKGROUND);
+  });
+
+  it("ignores other CSI sequences", () => {
+    expect(scan(["\x1b[996n"])).toBe(0);
+    expect(scan(["\x1b[?966n"])).toBe(0);
+    expect(scan(["\x1b[?996;996n"])).toBe(0);
+    expect(scan(["\x1b[?996m"])).toBe(0);
+    expect(scan(["\x1b[?996$n"])).toBe(0);
+    expect(scan(["\x1b[?2031h\x1b[?996n"])).toBe(THEME_BACKGROUND);
+  });
+
+  it("ignores text that only looks like a query", () => {
+    expect(scan(["hello 11;? world"])).toBe(0);
+    expect(scan(["10;?"])).toBe(0);
+  });
+
+  it("ends an OSC payload at the escape that follows it", () => {
+    expect(scan(["\x1b]10;?\x1b]11;?\x07"])).toBe(THEME_BACKGROUND);
+    expect(scan(["\x1b]10", "x\x1b]11;?\x07"])).toBe(THEME_BACKGROUND);
+    expect(scan(["\x1b]11;?\x1b"])).toBe(0);
+    expect(scan(["\x1b]11;?\x1b", "\\"])).toBe(THEME_BACKGROUND);
+  });
+});

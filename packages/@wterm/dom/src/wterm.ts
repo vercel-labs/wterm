@@ -15,6 +15,7 @@ import { OutputAnnouncements } from "./output-announcements.js";
 import { DebugAdapter } from "./debug.js";
 import { isLinkActivationModifier } from "./hyperlink.js";
 import { markSelectionChanged } from "./selection-state.js";
+import { ThemeQueryScanner, THEME_BACKGROUND } from "./theme-query.js";
 import {
   SearchController,
   type SearchOptions,
@@ -78,61 +79,6 @@ const THEME_PROPERTIES = [
 function assertScrollbackLines(lines: number): void {
   if (!Number.isInteger(lines) || lines < 0 || lines > 0xffffffff)
     throw new RangeError(`Invalid scrollback line count: ${lines}`);
-}
-
-/** Theme color queries; the dark/light scheme follows the background. */
-const THEME_QUERIES = [
-  { prefix: "\x1b]10;", background: false },
-  { prefix: "\x1b]11;", background: true },
-  { prefix: "\x1b[?996n", background: true },
-];
-/** Longest theme query prefix that can be cut by the end of a write. */
-const THEME_QUERY_CARRY = 6;
-
-/** The first or last `count` code units of `data` as a string. */
-function edge(data: string | Uint8Array, count: number, end: boolean): string {
-  const start = end ? Math.max(0, data.length - count) : 0;
-  const stop = end ? data.length : Math.min(count, data.length);
-  if (typeof data === "string") return data.slice(start, stop);
-  return String.fromCharCode(...data.subarray(start, stop));
-}
-
-/** Whether the bytes of `data` at `index` spell `prefix`. */
-function bytesStartWith(data: Uint8Array, index: number, prefix: string) {
-  for (let i = 0; i < prefix.length; i++)
-    if (data[index + i] !== prefix.charCodeAt(i)) return false;
-  return true;
-}
-
-/**
- * The theme color queries in `carry` (the end of the previous writes)
- * followed by `data`: `"background"` when a reply carries the background,
- * and so the dark/light scheme (OSC 11, CSI ? 996 n), `"foreground"` for an
- * OSC 10 query alone, or `null`.
- */
-function themeColorQuery(
-  data: string | Uint8Array,
-  carry: string,
-): "background" | "foreground" | null {
-  let found: "background" | "foreground" | null = null;
-  const seen = (background: boolean) => {
-    if (background) found = "background";
-    else found ??= "foreground";
-  };
-  const seam = carry ? carry + edge(data, THEME_QUERY_CARRY, false) : "";
-  for (const query of THEME_QUERIES) {
-    if (seam.includes(query.prefix)) seen(query.background);
-    if (typeof data === "string") {
-      if (data.includes(query.prefix)) seen(query.background);
-      continue;
-    }
-    for (let i = data.indexOf(0x1b); i >= 0; i = data.indexOf(0x1b, i + 1))
-      if (bytesStartWith(data, i, query.prefix)) {
-        seen(query.background);
-        break;
-      }
-  }
-  return found;
 }
 
 /** Resolves the theme custom properties on `element` to 24-bit RGB values. */
@@ -275,7 +221,8 @@ export class WTerm {
   private _rowHeight = 0;
   private _charWidth = 0;
   private _windowSizeQueryState: 0 | 1 | 2 | 3 | 4 | 6 = 0;
-  private _themeQueryCarry = "";
+  /** Theme color queries in the output, including ones cut by a write boundary. */
+  private _themeQueries = new ThemeQueryScanner();
   private _search: SearchController;
   private _historySelection: HistorySelection;
   private _rectangleDrag: RectangleDrag;
@@ -773,16 +720,14 @@ export class WTerm {
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._pinnedToBottom;
     // Answer theme color queries with the colors the page shows right now.
-    // A query cut by the end of a write is recognized when it completes. A
-    // reply that carries the background reports the new scheme, so only then
-    // does the update skip the mode 2031 report.
-    const carry = this._themeQueryCarry;
-    this._themeQueryCarry = (carry + edge(data, THEME_QUERY_CARRY, true)).slice(
-      -THEME_QUERY_CARRY,
-    );
-    const themeQuery = themeColorQuery(data, carry);
+    // The scanner carries sequence state across writes. A reply that carries
+    // the background reports the new scheme, so only then does the update
+    // skip the mode 2031 report.
+    const themeQuery = this._themeQueries.scan(data);
     if (themeQuery)
-      this._syncCssThemeColors({ quiet: themeQuery === "background" });
+      this._syncCssThemeColors({
+        quiet: (themeQuery & THEME_BACKGROUND) !== 0,
+      });
     const windowSizeQueries = this._collectWindowSizeQueries(data);
     let deliveryError: unknown;
     let hasDeliveryError = false;
@@ -1964,7 +1909,7 @@ export class WTerm {
     this._search.cancel();
     this.onSearchChange = null;
     this._windowSizeQueryState = 0;
-    this._themeQueryCarry = "";
+    this._themeQueries = new ThemeQueryScanner();
     this._cancelScheduledRender();
     this._cancelSynchronizedOutputFallback();
     if (this._textSyncTimer !== null) clearTimeout(this._textSyncTimer);
