@@ -442,7 +442,13 @@ export class InputHandler {
         return;
       }
     }
-    if (!delivered && (e.metaKey || e.ctrlKey) && e.key === "v") {
+    // macOS pastes with Cmd+V, so Ctrl+V must reach the application. Other
+    // platforms paste with Ctrl+V and keep the browser shortcut.
+    const view = this.element.ownerDocument.defaultView;
+    const isMac = (view?.navigator.platform ?? navigator.platform).startsWith(
+      "Mac",
+    );
+    if (!delivered && (e.metaKey || (e.ctrlKey && !isMac)) && e.key === "v") {
       this.suppressedKeyUps.add(keyId);
       this.textarea.focus();
       return;
