@@ -150,6 +150,23 @@ describe("WTerm", () => {
       term.destroy();
     });
 
+    it("sends the core's color scheme report as soon as the theme changes", async () => {
+      const replies = ["\x1b[?997;2n"];
+      (mockBridge as TerminalCore).setThemeColors = vi.fn();
+      mockBridge.getResponse = vi.fn(() => replies.shift() ?? null);
+      const onData = vi.fn();
+      const term = new WTerm(element, { autoResize: false, onData });
+      await term.init();
+      onData.mockClear();
+      replies.push("\x1b[?997;2n");
+      term.setThemeColors(theme());
+      expect(onData).toHaveBeenCalledExactlyOnceWith("\x1b[?997;2n");
+      replies.push("\x1b[?997;1n");
+      term.setThemeColors(null);
+      expect(onData).toHaveBeenLastCalledWith("\x1b[?997;1n");
+      term.destroy();
+    });
+
     it("supports cores without theme hooks and rejects invalid values before changing CSS", async () => {
       const term = new WTerm(element, { autoResize: false });
       await term.init();

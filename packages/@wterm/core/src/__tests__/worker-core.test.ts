@@ -46,5 +46,10 @@ describe("WorkerCore", () => {
         palette: Array.from({ length: 16 }, (_, i) => i),
       },
     });
+    core.setThemeColors(colors, { quiet: true });
+    expect(worker.posted.at(-1)).toMatchObject({
+      t: "theme",
+      options: { quiet: true },
+    });
   });
 });

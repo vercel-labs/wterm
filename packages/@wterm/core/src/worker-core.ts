@@ -5,6 +5,7 @@ import type {
   TerminalCore,
   TerminalResourceState,
   TerminalThemeColors,
+  ThemeColorsOptions,
   UnhandledSequence,
 } from "./terminal-core.js";
 import {
@@ -229,10 +230,14 @@ export class WorkerCore implements TerminalCore {
   }
 
   /** Host theme defaults for color queries, applied in order with writes. */
-  setThemeColors(colors: TerminalThemeColors): void {
+  setThemeColors(
+    colors: TerminalThemeColors,
+    options?: ThemeColorsOptions,
+  ): void {
     this.post({
       t: "theme",
       colors: { ...colors, palette: [...colors.palette] },
+      ...(options?.quiet ? { options: { quiet: true } } : {}),
     });
   }
 

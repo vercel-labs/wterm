@@ -642,6 +642,31 @@ describe("WasmBridge", () => {
       expect(bridge.getResponse()).toBeNull();
     });
 
+    it("reports dark and light theme changes while mode 2031 is on", () => {
+      const theme = (background: number) => ({
+        foreground: 0x383a42,
+        background,
+        cursor: 0x526fff,
+        palette: Array.from({ length: 16 }, () => 0),
+      });
+      bridge.writeString("\x1b[?996n");
+      expect(bridge.getResponse()).toBe("\x1b[?997;1n");
+      bridge.setThemeColors(theme(0xfafafa));
+      expect(bridge.getResponse()).toBeNull();
+      bridge.writeString("\x1b[?2031h");
+      bridge.setThemeColors(theme(0x1e1e1e));
+      expect(bridge.getResponse()).toBe("\x1b[?997;1n");
+      bridge.setThemeColors(theme(0xfafafa));
+      expect(bridge.getResponse()).toBe("\x1b[?997;2n");
+      bridge.setThemeColors(theme(0xeeeeee));
+      expect(bridge.getResponse()).toBeNull();
+      bridge.setThemeColors(theme(0x1e1e1e), { quiet: true });
+      expect(bridge.getResponse()).toBeNull();
+      bridge.writeString("\x1b[?996n");
+      expect(bridge.getResponse()).toBe("\x1b[?997;1n");
+      expect(bridge.getResponse()).toBeNull();
+    });
+
     it("tracks Kitty keyboard flags per screen with Ghostty-compatible resets", () => {
       expect(bridge.kittyKeyboardFlags()).toBe(0);
       bridge.writeString("\x1b[>6u\x1b[?u");

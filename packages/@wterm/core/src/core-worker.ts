@@ -171,7 +171,7 @@ self.onmessage = async (event: MessageEvent<ToWorker>) => {
       allDirty = true;
     } else if (msg.t === "theme") {
       // Color query and color scheme replies use the host theme from here on.
-      bridge.setThemeColors(msg.colors);
+      bridge.setThemeColors(msg.colors, msg.options);
       drainReplies(bridge);
     } else if (msg.t === "scrollbackLines") {
       bridge.setScrollbackLines(msg.lines);
