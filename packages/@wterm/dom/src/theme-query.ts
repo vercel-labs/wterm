@@ -6,10 +6,11 @@ const ESC = 0x1b;
 const BEL = 0x07;
 const ST = 0x9c;
 const BACKSLASH = 0x5c;
-/** Payload of an OSC color query that can matter; `10;?;?` is the longest. */
-const OSC_HEAD = 6;
+const SEMICOLON = 0x3b;
 /** Parameters of a CSI color query that can matter; `?996` is the longest. */
 const CSI_HEAD = 8;
+/** Characters of an OSC parameter that can matter; `?` is the only query. */
+const OSC_PARAM = 2;
 
 type State = "ground" | "escape" | "csi" | "osc" | "oscEscape";
 
@@ -21,10 +22,16 @@ type State = "ground" | "escape" | "csi" | "osc" | "oscEscape";
  */
 export class ThemeQueryScanner {
   private _state: State = "ground";
-  private _head = "";
-  private _private = 0;
-  private _intermediate = false;
-  private _tooLong = false;
+  private _csiHead = "";
+  private _csiPrivate = 0;
+  private _csiIntermediate = false;
+  private _csiTooLong = false;
+  private _oscHead = "";
+  /** OSC number while the payload can still be a color query, 0 otherwise. */
+  private _oscNumber = 0;
+  private _oscParam = "";
+  private _oscIndex = 0;
+  private _oscColors = 0;
 
   /** The theme colors the query sequences in `data` ask for, as a bit set. */
   scan(data: string | Uint8Array): number {
@@ -50,24 +57,32 @@ export class ThemeQueryScanner {
       case "oscEscape":
         // ESC followed by anything but `\` aborts the payload, as in the cores.
         if (byte === BACKSLASH) return this._finishOsc();
+        this._resetOsc();
         this._state = "ground";
         return this._escaped(byte);
     }
   }
 
+  private _resetOsc(): void {
+    this._oscHead = "";
+    this._oscNumber = 0;
+    this._oscParam = "";
+    this._oscIndex = 0;
+    this._oscColors = 0;
+  }
+
   private _escaped(byte: number): number {
     switch (byte) {
-      case 0x5b: {
+      case 0x5b:
         this._state = "csi";
-        this._head = "";
-        this._private = 0;
-        this._intermediate = false;
-        this._tooLong = false;
+        this._csiHead = "";
+        this._csiPrivate = 0;
+        this._csiIntermediate = false;
+        this._csiTooLong = false;
         return 0;
-      }
       case 0x5d:
         this._state = "osc";
-        this._head = "";
+        this._resetOsc();
         return 0;
       case ESC:
         return 0;
@@ -84,36 +99,36 @@ export class ThemeQueryScanner {
     }
     if (byte >= 0x40 && byte <= 0x7e) {
       const query =
-        this._private === 0x3f &&
-        !this._intermediate &&
-        !this._tooLong &&
-        this._head !== "" &&
-        Number(this._head) === 996 &&
+        this._csiPrivate === 0x3f &&
+        !this._csiIntermediate &&
+        !this._csiTooLong &&
+        this._csiHead !== "" &&
+        Number(this._csiHead) === 996 &&
         byte === 0x6e;
       this._state = "ground";
       return query ? THEME_BACKGROUND : 0;
     }
     if (byte >= 0x20 && byte <= 0x2f) {
-      this._intermediate = true;
+      this._csiIntermediate = true;
       return 0;
     }
     if (byte < 0x30 || byte > 0x3f) {
       this._state = "ground";
       return 0;
     }
-    const first = this._head === "" && this._private === 0;
+    const first = this._csiHead === "" && this._csiPrivate === 0;
     if (
       first &&
       (byte === 0x3f || byte === 0x3c || byte === 0x3d || byte === 0x3e)
     ) {
-      this._private = byte;
+      this._csiPrivate = byte;
       return 0;
     }
-    if (this._head.length >= CSI_HEAD) {
-      this._tooLong = true;
+    if (this._csiHead.length >= CSI_HEAD) {
+      this._csiTooLong = true;
       return 0;
     }
-    this._head += String.fromCharCode(byte);
+    this._csiHead += String.fromCharCode(byte);
     return 0;
   }
 
@@ -123,22 +138,45 @@ export class ThemeQueryScanner {
       this._state = "oscEscape";
       return 0;
     }
-    if (this._head.length < OSC_HEAD) this._head += String.fromCharCode(byte);
+    this._oscPayload(byte);
     return 0;
+  }
+
+  /** Collects the OSC number and the `?` parameters that follow it. */
+  private _oscPayload(byte: number): void {
+    if (this._oscHead.length < 3) {
+      this._oscHead += String.fromCharCode(byte);
+      const head = this._oscHead;
+      if (head.length < 3 || head[0] !== "1" || head[2] !== ";") return;
+      if (head[1] === "0") this._oscNumber = 10;
+      else if (head[1] === "1") this._oscNumber = 11;
+      return;
+    }
+    // The core stops asking once the next OSC number would pass 11.
+    if (this._oscNumber === 0 || this._oscNumber + this._oscIndex > 11) return;
+    if (byte === SEMICOLON) {
+      this._oscParamDone();
+      return;
+    }
+    if (this._oscParam.length < OSC_PARAM)
+      this._oscParam += String.fromCharCode(byte);
+  }
+
+  /** Records one `?` parameter, which asks for the color at its number. */
+  private _oscParamDone(): void {
+    const number = this._oscNumber + this._oscIndex;
+    this._oscIndex += 1;
+    if (this._oscParam === "?")
+      this._oscColors |=
+        number === 10 ? THEME_FOREGROUND : number === 11 ? THEME_BACKGROUND : 0;
+    this._oscParam = "";
   }
 
   private _finishOsc(): number {
-    const colors = this._oscColors();
+    if (this._oscNumber !== 0) this._oscParamDone();
+    const colors = this._oscColors;
     this._state = "ground";
-    this._head = "";
+    this._oscColors = 0;
     return colors;
-  }
-
-  private _oscColors(): number {
-    const head = this._head;
-    if (head.length < 3 || head[0] !== "1" || head[2] !== ";") return 0;
-    if (head[1] === "0") return THEME_FOREGROUND;
-    if (head[1] === "1") return THEME_BACKGROUND;
-    return 0;
   }
 }

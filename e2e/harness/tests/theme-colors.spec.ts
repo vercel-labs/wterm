@@ -153,6 +153,17 @@ for (const coreName of ["builtin", "ghostty"] as const) {
       host.className = "light";
       const lightForeground = ask(false, ["\x1b]10;?\x07"]);
       const lightAfterForeground = ask();
+      // A query for both colors carries the background, so no report goes out.
+      host.className = "dark";
+      ask();
+      host.className = "light";
+      const lightPair = ask(false, ["\x1b]10;?;?\x07"]);
+      // Setting a color asks for nothing, so the next query reports the change.
+      host.className = "dark";
+      ask();
+      host.className = "light";
+      const lightColorSet = ask(false, ["\x1b]10;#102030\x07"]);
+      const lightAfterColorSet = ask();
       return {
         dark,
         light,
@@ -163,6 +174,9 @@ for (const coreName of ["builtin", "ghostty"] as const) {
         darkBackground,
         lightForeground,
         lightAfterForeground,
+        lightPair,
+        lightColorSet,
+        lightAfterColorSet,
       };
     }, coreName);
 
@@ -178,5 +192,11 @@ for (const coreName of ["builtin", "ghostty"] as const) {
       "\x1b]10;rgb:1010/2020/3030\x07",
     ]);
     expect(replies.lightAfterForeground).toEqual(["\x1b[?997;2n"]);
+    expect(replies.lightPair).toEqual([
+      "\x1b]10;rgb:1010/2020/3030\x07",
+      "\x1b]11;rgb:fafa/fafa/fafa\x07",
+    ]);
+    expect(replies.lightColorSet).toEqual([]);
+    expect(replies.lightAfterColorSet).toEqual(["\x1b[?997;2n"]);
   });
 }
