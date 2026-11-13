@@ -6,6 +6,16 @@ export const THEME_BACKGROUND = 2;
  * neither the foreground nor the background.
  */
 export const THEME_QUERY = 4;
+/**
+ * `CSI ? 996 n` replies with the scheme itself, whatever color an application
+ * has pinned as its background.
+ */
+export const THEME_SCHEME = 8;
+/**
+ * The chunk sets a background with OSC 11, so a core that keeps that override
+ * answers a later query with it instead of the theme background.
+ */
+export const THEME_BACKGROUND_SET = 16;
 
 const ESC = 0x1b;
 const BEL = 0x07;
@@ -24,6 +34,9 @@ type State = "ground" | "escape" | "csi" | "osc";
  * them: OSC 10 and 11 with `?` parameters, and `CSI ? 996 n`. The scanner keeps
  * its sequence state between calls, so a query cut by a chunk boundary is
  * recognized when the rest of it arrives.
+ *
+ * A query is only answered with the theme background while the application has
+ * not pinned one, so an OSC 11 that sets a background is reported too.
  */
 export class ThemeQueryScanner {
   private _state: State = "ground";
@@ -111,7 +124,7 @@ export class ThemeQueryScanner {
         Number(this._csiHead) === 996 &&
         byte === 0x6e;
       this._state = "ground";
-      return query ? THEME_BACKGROUND : 0;
+      return query ? THEME_BACKGROUND | THEME_SCHEME : 0;
     }
     if (byte >= 0x20 && byte <= 0x2f) {
       this._csiIntermediate = true;
@@ -177,6 +190,11 @@ export class ThemeQueryScanner {
     this._oscIndex += 1;
     this._oscParam = "";
     if (param !== "?") {
+      // A color where a `?` belongs sets the background, and a core that keeps
+      // it answers the next query with that color instead of the theme's.
+      // Both cores read a color as `#rrggbb` or `rgb:`/`rgba:`.
+      if (number === 11 && (param[0] === "#" || param === "rg"))
+        this._oscColors |= THEME_BACKGROUND_SET;
       // The cores number the parameters the same way only while every one of
       // them asks: a Ghostty core drops an empty parameter and stops at one
       // that is not a color.

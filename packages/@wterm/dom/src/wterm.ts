@@ -15,7 +15,12 @@ import { OutputAnnouncements } from "./output-announcements.js";
 import { DebugAdapter } from "./debug.js";
 import { isLinkActivationModifier } from "./hyperlink.js";
 import { markSelectionChanged } from "./selection-state.js";
-import { ThemeQueryScanner, THEME_BACKGROUND } from "./theme-query.js";
+import {
+  ThemeQueryScanner,
+  THEME_BACKGROUND,
+  THEME_BACKGROUND_SET,
+  THEME_SCHEME,
+} from "./theme-query.js";
 import {
   SearchController,
   type SearchOptions,
@@ -720,13 +725,13 @@ export class WTerm {
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._pinnedToBottom;
     // Answer theme color queries with the colors the page shows right now.
-    // The scanner carries sequence state across writes. A reply that carries
-    // the background reports the new scheme, so only then does the update
-    // skip the mode 2031 report.
+    // The scanner carries sequence state across writes. A reply that reports
+    // the new scheme on its own is enough, so only then does the update skip
+    // the mode 2031 report.
     const themeQuery = this._themeQueries.scan(data);
     if (themeQuery)
       this._syncCssThemeColors({
-        quiet: (themeQuery & THEME_BACKGROUND) !== 0,
+        quiet: this._queryReportsScheme(themeQuery),
       });
     const windowSizeQueries = this._collectWindowSizeQueries(data);
     let deliveryError: unknown;
@@ -763,6 +768,18 @@ export class WTerm {
       }
     }
     if (hasDeliveryError) throw deliveryError;
+  }
+
+  /**
+   * Whether this chunk's query reply reports the new scheme by itself:
+   * `CSI ? 996 n` does, and so does an OSC 11 `?` while nothing pins the
+   * background, because an application's own OSC 11 color answers in its place.
+   */
+  private _queryReportsScheme(themeQuery: number): boolean {
+    if ((themeQuery & THEME_SCHEME) !== 0) return true;
+    if ((themeQuery & THEME_BACKGROUND) === 0) return false;
+    if ((themeQuery & THEME_BACKGROUND_SET) !== 0) return false;
+    return this.bridge?.getColorOverrides?.()?.background === undefined;
   }
 
   /**

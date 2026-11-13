@@ -2,11 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   ThemeQueryScanner,
   THEME_BACKGROUND,
+  THEME_BACKGROUND_SET,
   THEME_FOREGROUND,
   THEME_QUERY,
+  THEME_SCHEME,
 } from "../theme-query.js";
 
 const BOTH = THEME_FOREGROUND | THEME_BACKGROUND;
+const SCHEME = THEME_BACKGROUND | THEME_SCHEME;
 
 /** The theme colors `parts` ask for when they are written one after another. */
 function scan(parts: (string | Uint8Array)[]): number {
@@ -34,7 +37,7 @@ describe("ThemeQueryScanner", () => {
     expect(scan(["\x1b]11;?\x07"])).toBe(THEME_BACKGROUND);
     expect(scan(["\x1b]10;?\x1b\\"])).toBe(THEME_FOREGROUND);
     expect(scan(["\x1b]11;?\x1b\\"])).toBe(THEME_BACKGROUND);
-    expect(scan(["\x1b[?996n"])).toBe(THEME_BACKGROUND);
+    expect(scan(["\x1b[?996n"])).toBe(SCHEME);
     expect(scan([bytes("\x1b]11;?\x07")])).toBe(THEME_BACKGROUND);
   });
 
@@ -56,7 +59,7 @@ describe("ThemeQueryScanner", () => {
 
   it("keeps the state of one query while another completes", () => {
     expect(scan(["\x1b]11;?\x07\x1b]1", "0;?\x07"])).toBe(BOTH);
-    expect(scan(["\x1b[?99", "6n\x1b]11;?\x07"])).toBe(THEME_BACKGROUND);
+    expect(scan(["\x1b[?99", "6n\x1b]11;?\x07"])).toBe(SCHEME);
     expect(scan(["\x1b]11;", "", "?", "\x07"])).toBe(THEME_BACKGROUND);
   });
 
@@ -92,11 +95,22 @@ describe("ThemeQueryScanner", () => {
     expect(scan(["\x1b]2;\x1b]10;?\x07\x07"])).toBe(THEME_FOREGROUND);
     // Setting a color is not a query.
     expect(scan(["\x1b]10;#102030\x07"])).toBe(0);
-    expect(scan(["\x1b]11;#fafafa\x07"])).toBe(0);
     expect(scan(["\x1b]11;\x07"])).toBe(0);
     expect(scan(["\x1b]10;x\x07"])).toBe(0);
     expect(scan(["\x1b]110\x07"])).toBe(0);
     expect(scan(["\x1b]10\x07"])).toBe(0);
+  });
+
+  it("reports a background the chunk itself sets", () => {
+    expect(scan(["\x1b]11;#fafafa\x07"])).toBe(THEME_BACKGROUND_SET);
+    expect(scan(["\x1b]11;rgba:ff/ff/ff/ff\x07"])).toBe(THEME_BACKGROUND_SET);
+    // Only the background hides it from the reply a query gets.
+    expect(scan(["\x1b]10;#102030\x07"])).toBe(0);
+    expect(scan(["\x1b]11", ";#fafafa\x07"])).toBe(THEME_BACKGROUND_SET);
+    // A set ahead of the query in one write decides what its reply carries.
+    expect(scan(["\x1b]11;#fafafa\x07\x1b]11;?\x07"])).toBe(
+      THEME_BACKGROUND | THEME_BACKGROUND_SET,
+    );
   });
 
   it("keeps a bare 0x9c in the payload of an OSC query", () => {
@@ -113,8 +127,8 @@ describe("ThemeQueryScanner", () => {
     expect(scan(["\x1b[?996;996n"])).toBe(0);
     expect(scan(["\x1b[?996m"])).toBe(0);
     expect(scan(["\x1b[?996$n"])).toBe(0);
-    expect(scan(["\x1b[?0996n"])).toBe(THEME_BACKGROUND);
-    expect(scan(["\x1b[?2031h\x1b[?996n"])).toBe(THEME_BACKGROUND);
+    expect(scan(["\x1b[?0996n"])).toBe(SCHEME);
+    expect(scan(["\x1b[?2031h\x1b[?996n"])).toBe(SCHEME);
   });
 
   it("ignores text that only looks like a query", () => {
@@ -128,7 +142,7 @@ describe("ThemeQueryScanner", () => {
     expect(scan(["\x1b]11;?\x1b", "\\"])).toBe(THEME_BACKGROUND);
     // The escape that ends one OSC starts the next sequence.
     expect(scan(["\x1b]10;?\x1b]11;?\x07"])).toBe(BOTH);
-    expect(scan(["\x1b]10;?\x1b[?996n"])).toBe(BOTH);
+    expect(scan(["\x1b]10;?\x1b[?996n"])).toBe(BOTH | THEME_SCHEME);
     expect(scan(["\x1b]10", "x\x1b]11;?\x07"])).toBe(THEME_BACKGROUND);
   });
 });

@@ -170,6 +170,19 @@ for (const coreName of ["builtin", "ghostty"] as const) {
       ask();
       host.className = "light";
       const lightAmbiguous = ask(false, ["\x1b]10;;?\x07"]);
+      // A background the application sets answers later queries in place of
+      // the theme's, so the scheme is still reported ahead of that reply.
+      const backgroundSet = ask(false, ["\x1b]11;#123456\x07"]);
+      host.className = "dark";
+      const overridden = ask(false, ["\x1b]11;?\x07"]);
+      // Setting it in the same write as the query keeps the report too.
+      host.className = "light";
+      const overriddenSameWrite = ask(false, [
+        "\x1b]11;#654321\x07\x1b]11;?\x07",
+      ]);
+      // The 996 reply carries the scheme whatever background is on screen.
+      host.className = "dark";
+      const schemeUnderOverride = ask();
       return {
         dark,
         light,
@@ -184,6 +197,10 @@ for (const coreName of ["builtin", "ghostty"] as const) {
         lightColorSet,
         lightAfterColorSet,
         lightAmbiguous,
+        backgroundSet,
+        overridden,
+        overriddenSameWrite,
+        schemeUnderOverride,
       };
     }, coreName);
 
@@ -209,5 +226,20 @@ for (const coreName of ["builtin", "ghostty"] as const) {
     // differs, the built-in core answering with the background.
     expect(replies.lightAmbiguous).toHaveLength(2);
     expect(replies.lightAmbiguous[0]).toBe("\x1b[?997;2n");
+    expect(replies.backgroundSet).toEqual([]);
+    // Only a Ghostty core keeps the application's own background, so only
+    // there does the reply need the scheme reported ahead of it.
+    expect(replies.overridden).toEqual(
+      coreName === "ghostty"
+        ? ["\x1b[?997;1n", "\x1b]11;rgb:1212/3434/5656\x07"]
+        : ["\x1b]11;rgb:1010/1010/1010\x07"],
+    );
+    expect(replies.overriddenSameWrite).toEqual([
+      "\x1b[?997;2n",
+      coreName === "ghostty"
+        ? "\x1b]11;rgb:6565/4343/2121\x07"
+        : "\x1b]11;rgb:fafa/fafa/fafa\x07",
+    ]);
+    expect(replies.schemeUnderOverride).toEqual(["\x1b[?997;1n"]);
   });
 }

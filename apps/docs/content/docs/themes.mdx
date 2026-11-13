@@ -282,7 +282,9 @@ notices a CSS theme change returns the background (`CSI ? 996 n`, OSC `11`, or
 `OSC 10 ; ? ; ?`), the reply reports the new scheme and no separate
 `CSI ? 997` report is sent. A query that returns only the foreground, such as
 OSC `10`, leaves the scheme out, so the `CSI ? 997` report goes out ahead of its
-reply.
+reply. The same goes for an OSC `11` query that a Ghostty application's own
+background color answers: the reply carries that color, not the theme's, so the
+report still goes out.
 
 ## Font and cell alignment
 
