@@ -5,14 +5,13 @@ export const THEME_BACKGROUND = 2;
 const ESC = 0x1b;
 const BEL = 0x07;
 const ST = 0x9c;
-const BACKSLASH = 0x5c;
 const SEMICOLON = 0x3b;
 /** Parameters of a CSI color query that can matter; `?996` is the longest. */
 const CSI_HEAD = 8;
 /** Characters of an OSC parameter that can matter; `?` is the only query. */
 const OSC_PARAM = 2;
 
-type State = "ground" | "escape" | "csi" | "osc" | "oscEscape";
+type State = "ground" | "escape" | "csi" | "osc";
 
 /**
  * The theme color queries in the output, recognized the way the cores parse
@@ -54,12 +53,6 @@ export class ThemeQueryScanner {
         return this._csi(byte);
       case "osc":
         return this._osc(byte);
-      case "oscEscape":
-        // ESC followed by anything but `\` aborts the payload, as in the cores.
-        if (byte === BACKSLASH) return this._finishOsc();
-        this._resetOsc();
-        this._state = "ground";
-        return this._escaped(byte);
     }
   }
 
@@ -135,8 +128,11 @@ export class ThemeQueryScanner {
   private _osc(byte: number): number {
     if (byte === BEL || byte === ST) return this._finishOsc();
     if (byte === ESC) {
-      this._state = "oscEscape";
-      return 0;
+      // The cores dispatch the payload at the ESC that starts the terminator,
+      // so a query answered then must be reported before the `\` arrives.
+      const colors = this._finishOsc();
+      this._state = "escape";
+      return colors;
     }
     this._oscPayload(byte);
     return 0;

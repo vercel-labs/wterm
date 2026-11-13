@@ -96,10 +96,13 @@ describe("ThemeQueryScanner", () => {
     expect(scan(["10;?"])).toBe(0);
   });
 
-  it("ends an OSC payload at the escape that follows it", () => {
-    expect(scan(["\x1b]10;?\x1b]11;?\x07"])).toBe(THEME_BACKGROUND);
-    expect(scan(["\x1b]10", "x\x1b]11;?\x07"])).toBe(THEME_BACKGROUND);
-    expect(scan(["\x1b]11;?\x1b"])).toBe(0);
+  it("answers an OSC query at the escape that starts its terminator", () => {
+    // The cores dispatch at ESC, before the `\` of a split ST arrives.
+    expect(scan(["\x1b]11;?\x1b"])).toBe(THEME_BACKGROUND);
     expect(scan(["\x1b]11;?\x1b", "\\"])).toBe(THEME_BACKGROUND);
+    // The escape that ends one OSC starts the next sequence.
+    expect(scan(["\x1b]10;?\x1b]11;?\x07"])).toBe(BOTH);
+    expect(scan(["\x1b]10;?\x1b[?996n"])).toBe(BOTH);
+    expect(scan(["\x1b]10", "x\x1b]11;?\x07"])).toBe(THEME_BACKGROUND);
   });
 });
