@@ -80,7 +80,12 @@ function assertScrollbackLines(lines: number): void {
     throw new RangeError(`Invalid scrollback line count: ${lines}`);
 }
 
-const THEME_QUERIES = ["\x1b]10;", "\x1b]11;", "\x1b[?996n"];
+/** Theme color queries; the dark/light scheme follows the background. */
+const THEME_QUERIES = [
+  { prefix: "\x1b]10;", background: false },
+  { prefix: "\x1b]11;", background: true },
+  { prefix: "\x1b[?996n", background: true },
+];
 /** Longest theme query prefix that can be cut by the end of a write. */
 const THEME_QUERY_CARRY = 6;
 
@@ -92,39 +97,42 @@ function edge(data: string | Uint8Array, count: number, end: boolean): string {
   return String.fromCharCode(...data.subarray(start, stop));
 }
 
+/** Whether the bytes of `data` at `index` spell `prefix`. */
+function bytesStartWith(data: Uint8Array, index: number, prefix: string) {
+  for (let i = 0; i < prefix.length; i++)
+    if (data[index + i] !== prefix.charCodeAt(i)) return false;
+  return true;
+}
+
 /**
- * Whether `carry` (the end of the previous writes) followed by `data` holds an
- * OSC 10/11 color query or the CSI ? 996 n dark/light query.
+ * The theme color queries in `carry` (the end of the previous writes)
+ * followed by `data`: `"background"` when a reply carries the background,
+ * and so the dark/light scheme (OSC 11, CSI ? 996 n), `"foreground"` for an
+ * OSC 10 query alone, or `null`.
  */
-function mayQueryThemeColors(
+function themeColorQuery(
   data: string | Uint8Array,
   carry: string,
-): boolean {
-  if (carry) {
-    const seam = carry + edge(data, THEME_QUERY_CARRY, false);
-    if (THEME_QUERIES.some((query) => seam.includes(query))) return true;
+): "background" | "foreground" | null {
+  let found: "background" | "foreground" | null = null;
+  const seen = (background: boolean) => {
+    if (background) found = "background";
+    else found ??= "foreground";
+  };
+  const seam = carry ? carry + edge(data, THEME_QUERY_CARRY, false) : "";
+  for (const query of THEME_QUERIES) {
+    if (seam.includes(query.prefix)) seen(query.background);
+    if (typeof data === "string") {
+      if (data.includes(query.prefix)) seen(query.background);
+      continue;
+    }
+    for (let i = data.indexOf(0x1b); i >= 0; i = data.indexOf(0x1b, i + 1))
+      if (bytesStartWith(data, i, query.prefix)) {
+        seen(query.background);
+        break;
+      }
   }
-  if (typeof data === "string")
-    return THEME_QUERIES.some((query) => data.includes(query));
-  for (let i = data.indexOf(0x1b); i >= 0; i = data.indexOf(0x1b, i + 1)) {
-    if (
-      data[i + 1] === 0x5d &&
-      data[i + 2] === 0x31 &&
-      (data[i + 3] === 0x30 || data[i + 3] === 0x31) &&
-      data[i + 4] === 0x3b
-    )
-      return true;
-    if (
-      data[i + 1] === 0x5b &&
-      data[i + 2] === 0x3f &&
-      data[i + 3] === 0x39 &&
-      data[i + 4] === 0x39 &&
-      data[i + 5] === 0x36 &&
-      data[i + 6] === 0x6e
-    )
-      return true;
-  }
-  return false;
+  return found;
 }
 
 /** Resolves the theme custom properties on `element` to 24-bit RGB values. */
@@ -765,14 +773,16 @@ export class WTerm {
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._pinnedToBottom;
     // Answer theme color queries with the colors the page shows right now.
-    // A query cut by the end of a write is recognized when it completes. The
-    // reply carries the new theme, so the update skips the mode 2031 report.
+    // A query cut by the end of a write is recognized when it completes. A
+    // reply that carries the background reports the new scheme, so only then
+    // does the update skip the mode 2031 report.
     const carry = this._themeQueryCarry;
     this._themeQueryCarry = (carry + edge(data, THEME_QUERY_CARRY, true)).slice(
       -THEME_QUERY_CARRY,
     );
-    if (mayQueryThemeColors(data, carry))
-      this._syncCssThemeColors({ quiet: true });
+    const themeQuery = themeColorQuery(data, carry);
+    if (themeQuery)
+      this._syncCssThemeColors({ quiet: themeQuery === "background" });
     const windowSizeQueries = this._collectWindowSizeQueries(data);
     let deliveryError: unknown;
     let hasDeliveryError = false;

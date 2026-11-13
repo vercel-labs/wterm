@@ -149,6 +149,10 @@ for (const coreName of ["builtin", "ghostty"] as const) {
       const lightReporting = ask();
       host.className = "dark";
       const darkBackground = ask(false, ["\x1b]11;?\x07"]);
+      // An OSC 10 reply leaves the scheme out, so the change is still reported.
+      host.className = "light";
+      const lightForeground = ask(false, ["\x1b]10;?\x07"]);
+      const lightAfterForeground = ask();
       return {
         dark,
         light,
@@ -157,6 +161,8 @@ for (const coreName of ["builtin", "ghostty"] as const) {
         darkSplit,
         lightReporting,
         darkBackground,
+        lightForeground,
+        lightAfterForeground,
       };
     }, coreName);
 
@@ -167,5 +173,10 @@ for (const coreName of ["builtin", "ghostty"] as const) {
     expect(replies.darkSplit).toEqual(["\x1b[?997;1n"]);
     expect(replies.lightReporting).toEqual(["\x1b[?997;2n"]);
     expect(replies.darkBackground).toEqual(["\x1b]11;rgb:1010/1010/1010\x07"]);
+    expect(replies.lightForeground).toEqual([
+      "\x1b[?997;2n",
+      "\x1b]10;rgb:1010/2020/3030\x07",
+    ]);
+    expect(replies.lightAfterForeground).toEqual(["\x1b[?997;2n"]);
   });
 }
