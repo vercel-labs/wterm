@@ -49,8 +49,6 @@ export fn getWriteBuffer() [*]u8 {
 export fn writeBytes(len: u32) void {
     const n = if (len > input_buffer.len) input_buffer.len else len;
     terminal.write(input_buffer[0..n]);
-    // The host reads cells from getGridPtr() directly between calls.
-    terminal.grid.normalize();
 }
 
 // -- Theme --
@@ -63,9 +61,10 @@ export fn setThemeColors(foreground: u32, background: u32, quiet: u32) void {
 
 // -- Grid data --
 
+/// Logical row 0 of the active screen. Scrolling moves it, so the host reads
+/// it again after every write, resize or init.
 export fn getGridPtr() [*]const u8 {
-    terminal.grid.normalize();
-    return @ptrCast(terminal.grid.cells.ptr);
+    return @ptrCast(terminal.grid.viewPtr());
 }
 
 export fn getDirtyPtr() [*]const u8 {

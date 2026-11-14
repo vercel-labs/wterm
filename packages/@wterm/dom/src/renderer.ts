@@ -183,8 +183,10 @@ function escapeHTML(text: string): string {
 
 interface RowPart {
   html: string;
-  /** Flat spans can keep their element and text node when only text changes. */
+  /** Flat spans can keep their element and text node, updated in place. */
   opening?: string;
+  className?: string;
+  style?: string;
   text?: string;
 }
 
@@ -204,10 +206,13 @@ function cellSpanPart(className: string, style: string, text: string): RowPart {
   const classAttr = className ? ` class="${className}"` : "";
   const styleAttr = style ? ` style="${style}"` : "";
   const opening = `<span${classAttr}${styleAttr}>`;
+  if (!flat) return { html: `${opening}${content}</span>` };
   return {
     html: `${opening}${content}</span>`,
-    opening: flat ? opening : undefined,
-    text: flat ? text : undefined,
+    opening,
+    className,
+    style,
+    text,
   };
 }
 
@@ -331,6 +336,11 @@ function getBlockBackground(cp: number, fg: string, bg: string): string {
       return layers.join(",");
     }
   }
+}
+
+/** Block elements whose background does not vary across the cell's width. */
+function isUniformBlock(cp: number): boolean {
+  return (cp >= 0x2580 && cp <= 0x2588) || (cp >= 0x2591 && cp <= 0x2594);
 }
 
 // Keep box characters as text for selection and copy while painting their
@@ -785,6 +795,32 @@ export class Renderer {
       canvasCols = 0;
     };
 
+    // How many cells from `col` repeat its character, style and link, so that
+    // one span can paint them all. The cursor cell always has its own span.
+    const repeats = (
+      col: number,
+      cell: CellData,
+      style: string,
+      linkKey: string,
+    ): number => {
+      if (col === cursorCol || cell.chars !== undefined) return 1;
+      const end = Math.min(lineLen, this.cols);
+      let next = col + 1;
+      for (; next < end && next !== cursorCol; next++) {
+        const other = getCell(next);
+        if (
+          other.char !== cell.char ||
+          other.chars !== undefined ||
+          (other.width ?? 1) !== 1 ||
+          other.spacerHead ||
+          linkIdentity(other) !== linkKey ||
+          buildCellStyle(other) !== style
+        )
+          break;
+      }
+      return next - col;
+    };
+
     for (let col = 0; col < this.cols; col++) {
       const cell = getCell(col);
       const inBounds = col < lineLen;
@@ -949,7 +985,11 @@ export class Renderer {
       if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
         flushRun(col);
         const ch = cell.chars ?? String.fromCodePoint(cp);
-        recordText(ch, col);
+        const cellStyle = buildCellStyle(cell);
+        const count = isUniformBlock(cp)
+          ? repeats(col, cell, cellStyle, cellLinkKey)
+          : 1;
+        for (let k = 0; k < count; k++) recordText(ch, col + k);
 
         const colors = resolveColors(
           cell.fg,
@@ -961,15 +1001,18 @@ export class Renderer {
         const cls = col === cursorCol ? "term-block term-cursor" : "term-block";
         const bg = getBlockBackground(cp, colors.fg, colors.bg);
         const style =
-          buildCellStyle(cell) + `color:${colors.fg};background:${bg};`;
+          columnStyle(count) +
+          cellStyle +
+          `color:${colors.fg};background:${bg};`;
         appendStyledSpan(
           cls,
           col === cursorCol ? cursorCellStyle(style) : style,
-          ch,
+          ch.repeat(count),
           cellLinkKey,
           cellLinkUri,
         );
 
+        col += count - 1;
         runStyle = "";
         runLinkKey = "";
         runLinkUri = undefined;
@@ -1064,21 +1107,35 @@ export class Renderer {
     }
     if (start === oldEnd && start === newEnd) return;
 
-    // Keep spans with unchanged geometry and styling. Assigning raw text to
-    // their existing text nodes avoids HTML parsing and element replacement.
-    let textOnly = previous !== undefined && oldEnd === newEnd;
-    for (let i = start; textOnly && i < newEnd; i++) {
+    // Keep flat spans when their count is unchanged. Assigning their class,
+    // style and raw text in place avoids HTML parsing and element
+    // replacement, and keeps the layout objects of spans that only change
+    // text or colors.
+    let inPlace = previous !== undefined && oldEnd === newEnd;
+    for (let i = start; inPlace && i < newEnd; i++) {
       const child = row.childNodes[i];
-      textOnly =
+      inPlace =
         parts[i].opening !== undefined &&
-        parts[i].opening === previous![i].opening &&
-        child?.childNodes.length === 1 &&
-        child.firstChild?.nodeType === 3;
+        previous![i].opening !== undefined &&
+        child?.nodeType === 1 &&
+        child.childNodes.length === 1 &&
+        child.firstChild!.nodeType === 3;
     }
-    if (textOnly) {
+    if (inPlace) {
       for (let i = start; i < newEnd; i++) {
-        if (parts[i].html !== previous![i].html)
-          row.childNodes[i].firstChild!.nodeValue = parts[i].text!;
+        const part = parts[i];
+        const old = previous![i];
+        if (part.html === old.html) continue;
+        const child = row.childNodes[i] as HTMLElement;
+        if (part.className !== old.className) {
+          if (part.className) child.className = part.className;
+          else child.removeAttribute("class");
+        }
+        if (part.style !== old.style) {
+          if (part.style) child.setAttribute("style", part.style);
+          else child.removeAttribute("style");
+        }
+        if (part.text !== old.text) child.firstChild!.nodeValue = part.text!;
       }
       this.rowParts.set(row, parts);
       return;

@@ -27,7 +27,11 @@ const OSC_PARAM = 2;
 /** Parameters a core can still name a color from; OSC 10 through 19. */
 const OSC_PARAMS = 10;
 
-type State = "ground" | "escape" | "csi" | "osc";
+/**
+ * `csi-other` is a CSI sequence that cannot be a query: only `CSI ? 996 n`
+ * is, so any other first byte rules it out.
+ */
+type State = "ground" | "escape" | "csi" | "csi-other" | "osc";
 
 /**
  * The theme color queries in the output, recognized the way the cores parse
@@ -56,12 +60,55 @@ export class ThemeQueryScanner {
   private _oscNamed = true;
   private _oscColors = 0;
 
-  /** The theme colors the query sequences in `data` ask for, as a bit set. */
+  /**
+   * The theme colors the query sequences in `data` ask for, as a bit set.
+   * Every write passes through here, so the runs that cannot change the
+   * result are skipped in bulk: text and the sequences up to the next
+   * `ESC ]` or `ESC [ ?`, the body of a CSI sequence that is not a query, and
+   * an OSC payload past the parameters that can name a color.
+   */
   scan(data: string | Uint8Array): number {
+    const text = typeof data === "string";
+    const n = data.length;
     let colors = 0;
-    for (let i = 0; i < data.length; i++) {
-      const byte = typeof data === "string" ? data.charCodeAt(i) : data[i];
-      colors |= this._step(byte);
+    let i = 0;
+    while (i < n) {
+      switch (this._state) {
+        case "ground": {
+          // Only `ESC ]` and `ESC [ ?` can start a query, and every ESC
+          // restarts the sequence, so the ones in between (mostly SGR in
+          // styled output) cannot change the result. Steps resume at a
+          // candidate, or at the last ESC to leave the state the write ends in.
+          const esc = text ? data.indexOf("\x1b", i) : data.indexOf(ESC, i);
+          if (esc < 0) return colors;
+          let next = text
+            ? findQueryText(data, esc)
+            : findQueryBytes(data, esc);
+          if (next < 0)
+            next = text ? data.lastIndexOf("\x1b") : data.lastIndexOf(ESC);
+          this._state = "escape";
+          i = next + 1;
+          continue;
+        }
+        case "csi-other":
+          i = text ? skipCsiText(data, i) : skipCsiBytes(data, i);
+          if (i < n) {
+            // The final byte, or one that cancels the sequence.
+            const code = text ? data.charCodeAt(i) : data[i];
+            this._state = code === ESC ? "escape" : "ground";
+            i++;
+          }
+          continue;
+        case "osc":
+          if (this._oscIgnoresPayload()) {
+            i = text ? skipOscText(data, i) : skipOscBytes(data, i);
+            if (i < n) colors |= this._osc(text ? data.charCodeAt(i) : data[i]);
+            i++;
+            continue;
+          }
+      }
+      colors |= this._step(text ? data.charCodeAt(i) : data[i]);
+      i++;
     }
     return colors;
   }
@@ -75,6 +122,9 @@ export class ThemeQueryScanner {
         return this._escaped(byte);
       case "csi":
         return this._csi(byte);
+      case "csi-other":
+        // scan() consumes this state itself.
+        return 0;
       case "osc":
         return this._osc(byte);
     }
@@ -126,20 +176,19 @@ export class ThemeQueryScanner {
       this._state = "ground";
       return query ? THEME_BACKGROUND | THEME_SCHEME : 0;
     }
+    if (this._csiPrivate === 0) {
+      // The first byte: only `CSI ? 996 n` is a query, so any other parameter
+      // or intermediate byte runs to a final byte without asking for a color.
+      if (byte === 0x3f) this._csiPrivate = byte;
+      else this._state = byte >= 0x20 && byte <= 0x3f ? "csi-other" : "ground";
+      return 0;
+    }
     if (byte >= 0x20 && byte <= 0x2f) {
       this._csiIntermediate = true;
       return 0;
     }
     if (byte < 0x30 || byte > 0x3f) {
       this._state = "ground";
-      return 0;
-    }
-    const first = this._csiHead === "" && this._csiPrivate === 0;
-    if (
-      first &&
-      (byte === 0x3f || byte === 0x3c || byte === 0x3d || byte === 0x3e)
-    ) {
-      this._csiPrivate = byte;
       return 0;
     }
     if (this._csiHead.length >= CSI_HEAD) {
@@ -162,6 +211,14 @@ export class ThemeQueryScanner {
     }
     this._oscPayload(byte);
     return 0;
+  }
+
+  /** Whether the rest of the OSC payload, up to its terminator, is ignored. */
+  private _oscIgnoresPayload(): boolean {
+    return (
+      this._oscHead.length >= 3 &&
+      (this._oscNumber === 0 || this._oscIndex >= OSC_PARAMS)
+    );
   }
 
   /** Collects the OSC number and the `?` parameters that follow it. */
@@ -218,4 +275,82 @@ export class ThemeQueryScanner {
     this._oscColors = 0;
     return colors;
   }
+}
+
+/**
+ * The index of the first `ESC ]` or `ESC [ ?` at or after `i`, or -1. Both
+ * have `[` or `]` after the ESC, so the search reads every other byte and
+ * steps one byte only onto an ESC.
+ */
+function findQueryBytes(data: Uint8Array, i: number): number {
+  const n = data.length;
+  while (i + 1 < n) {
+    const next = data[i + 1];
+    if (next === ESC) i++;
+    else if (
+      data[i] === ESC &&
+      (next === 0x5d || (next === 0x5b && i + 2 < n && data[i + 2] === 0x3f))
+    )
+      return i;
+    else i += 2;
+  }
+  return -1;
+}
+
+function findQueryText(data: string, i: number): number {
+  const n = data.length;
+  while (i + 1 < n) {
+    const next = data.charCodeAt(i + 1);
+    if (next === ESC) i++;
+    else if (
+      data.charCodeAt(i) === ESC &&
+      (next === 0x5d ||
+        (next === 0x5b && i + 2 < n && data.charCodeAt(i + 2) === 0x3f))
+    )
+      return i;
+    else i += 2;
+  }
+  return -1;
+}
+
+/** The index of the first byte at or after `i` that ends a CSI sequence. */
+function skipCsiText(data: string, i: number): number {
+  const n = data.length;
+  while (i < n) {
+    const code = data.charCodeAt(i);
+    if (code < 0x20 || code > 0x3f) break;
+    i++;
+  }
+  return i;
+}
+
+function skipCsiBytes(data: Uint8Array, i: number): number {
+  const n = data.length;
+  while (i < n) {
+    const code = data[i];
+    if (code < 0x20 || code > 0x3f) break;
+    i++;
+  }
+  return i;
+}
+
+/** The index of the first BEL or ESC at or after `i`, which ends an OSC. */
+function skipOscText(data: string, i: number): number {
+  const n = data.length;
+  while (i < n) {
+    const code = data.charCodeAt(i);
+    if (code === BEL || code === ESC) break;
+    i++;
+  }
+  return i;
+}
+
+function skipOscBytes(data: Uint8Array, i: number): number {
+  const n = data.length;
+  while (i < n) {
+    const code = data[i];
+    if (code === BEL || code === ESC) break;
+    i++;
+  }
+  return i;
 }

@@ -189,7 +189,11 @@ describe("Renderer", () => {
       renderer.setCanvasSuspended(true);
       renderer.render(bridge, viewport);
       expect(container.querySelector(".term-canvas-run")).toBeNull();
-      expect(container.querySelectorAll(".term-block")).toHaveLength(2);
+      // Repeats of a uniform block share one span across their columns.
+      const blocks = container.querySelectorAll<HTMLElement>(".term-block");
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].style.getPropertyValue("--term-span-cols")).toBe("2");
+      expect(blocks[0].textContent).toHaveLength(2);
       renderer.setCanvasSuspended(false);
       renderer.render(bridge, viewport);
       expect(container.querySelectorAll(".term-canvas-run")).toHaveLength(1);
@@ -583,6 +587,48 @@ describe("Renderer", () => {
   });
 
   describe("render", () => {
+    it("paints repeated uniform blocks with one span and box lines per cell", () => {
+      const line = makeCell("─");
+      const red = makeCell("─", 1);
+      const cells = [
+        [line, line, line, line, line, red, red, makeCell("│"), makeCell("│")],
+        ["█", "█", "▌", "▌", "░", "░", "░", "▀", "▀"].map((c) => makeCell(c)),
+      ];
+      const bridge = createMockBridge(9, 2, cells);
+      bridge.getCursor = () => ({ row: 0, col: 2, visible: true });
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+      const [top, bottom] = Array.from(
+        container.querySelectorAll<HTMLElement>(".term-row"),
+      );
+      const columns = (row: HTMLElement) =>
+        Array.from(row.children as HTMLCollectionOf<HTMLElement>).map(
+          (span) => [
+            span.textContent,
+            span.style.getPropertyValue("--term-span-cols") || "1",
+          ],
+        );
+
+      // Box strokes keep one span per cell, so each glyph stays bounded by
+      // its own cell when a fallback font gives it a different advance.
+      expect(columns(top)).toEqual([
+        ...Array.from({ length: 7 }, () => ["─", "1"]),
+        ["│", "1"],
+        ["│", "1"],
+      ]);
+      expect(top.children[2].classList.contains("term-cursor")).toBe(true);
+      // Blocks that vary across the cell's width keep one span per cell.
+      expect(columns(bottom)).toEqual([
+        ["██", "2"],
+        ["▌", "1"],
+        ["▌", "1"],
+        ["░░░", "3"],
+        ["▀▀", "2"],
+      ]);
+      expect(top.textContent).toBe("───────││");
+      expect(bottom.textContent).toBe("██▌▌░░░▀▀");
+    });
+
     it("updates flat span text in place, including literal HTML and graphemes", () => {
       const cells = [
         makeCell("a"),
@@ -641,7 +687,60 @@ describe("Renderer", () => {
       observer.disconnect();
     });
 
-    it("replaces spans when colors, decorations, or cursor styling change", () => {
+    it("updates rows to the same markup a fresh render produces", () => {
+      let seed = 3;
+      const next = (n: number) => {
+        seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+        return (seed >>> 8) % n;
+      };
+      const chars = ["a", "b", " ", "λ", "─", "█", "░", "│", "界"];
+      const randomRow = () => {
+        const row: CellData[] = [];
+        while (row.length < 12) {
+          const char = chars[next(chars.length)];
+          const fg = [256, 1, 3, 196][next(4)];
+          const flags = [0, 0, 0x01, 0x08, 0x20][next(5)];
+          if (char === "界" && row.length < 11) {
+            row.push(makeCell(char, fg, 256, flags, 2));
+            row.push(makeCell(" ", fg, 256, flags, 0));
+          } else if (char !== "界") {
+            // Runs of a repeated cell exercise the merged spans.
+            for (let k = 1 + next(3); k > 0 && row.length < 12; k--)
+              row.push(makeCell(char, fg, 256, flags));
+          }
+        }
+        return row;
+      };
+      const grid = [randomRow(), randomRow()];
+      const bridge = createMockBridge(12, 2, grid);
+      bridge.isDirtyRow = () => true;
+      const renderer = new Renderer(container);
+      for (let round = 0; round < 200; round++) {
+        const r = next(2);
+        grid[r] = randomRow();
+        const cursor = { row: next(2), col: next(12), visible: next(2) === 0 };
+        bridge.getCursor = () => cursor;
+        renderer.render(bridge);
+        const fresh = document.createElement("div");
+        new Renderer(fresh).render(bridge);
+        // Attribute order may differ after an in-place update.
+        const canonical = (node: Node): unknown =>
+          node.nodeType === 3
+            ? node.nodeValue
+            : [
+                (node as Element).tagName,
+                Array.from((node as Element).attributes)
+                  .map((a) => `${a.name}=${a.value}`)
+                  .sort(),
+                Array.from(node.childNodes).map(canonical),
+              ];
+        const rows = (host: HTMLElement) =>
+          Array.from(host.querySelectorAll(".term-row")).map(canonical);
+        expect(rows(container), `round ${round}`).toEqual(rows(fresh));
+      }
+    });
+
+    it("restyles flat spans in place and replaces nested decorations", () => {
       const cells = [makeCell("λ"), makeCell("ψ")];
       const bridge = createMockBridge(2, 1, [cells]);
       bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
@@ -652,12 +751,14 @@ describe("Renderer", () => {
       const original = row.firstChild;
       cells[0] = makeCell("α", 1);
       renderer.render(bridge);
-      expect(row.firstChild).not.toBe(original);
+      expect(row.firstChild).toBe(original);
       expect((row.firstChild as HTMLElement).style.color).toBe(
         "var(--term-color-1)",
       );
+      expect(row.textContent).toBe("αψ");
       cells[0] = { ...cells[0], flags: 0x88, underlineStyle: "curly" };
       renderer.render(bridge);
+      expect(row.firstChild).not.toBe(original);
       expect(row.firstElementChild!.children).toHaveLength(1);
       expect(row.textContent).toBe("αψ");
       cells[0] = makeCell("β", 1);
