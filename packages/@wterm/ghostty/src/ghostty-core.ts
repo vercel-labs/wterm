@@ -3,6 +3,7 @@ import type {
   CursorState,
   TerminalColorOverrides,
   TerminalThemeColors,
+  ThemeColorsOptions,
   ShellIntegrationState,
   UnhandledSequence,
   TerminalCore,
@@ -879,7 +880,10 @@ export class GhosttyCore implements TerminalCore {
   }
 
   /** Update host defaults while preserving application overrides and parser state. */
-  setThemeColors(colors: TerminalThemeColors): void {
+  setThemeColors(
+    colors: TerminalThemeColors,
+    options?: ThemeColorsOptions,
+  ): void {
     const values = [
       colors.foreground,
       colors.background,
@@ -906,7 +910,7 @@ export class GhosttyCore implements TerminalCore {
     try {
       const view = new DataView(this.wasm.exports.memory.buffer, ptr, bytes);
       values.forEach((value, index) => view.setUint32(index * 4, value, true));
-      apply(this.termPtr, ptr);
+      apply(this.termPtr, ptr, options?.quiet ? 1 : 0);
       this._invalidate();
     } finally {
       freeBuffer(this.wasm, ptr, bytes);

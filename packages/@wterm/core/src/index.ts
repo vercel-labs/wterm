@@ -5,6 +5,7 @@ export type {
   CursorState,
   TerminalColorOverrides,
   TerminalThemeColors,
+  ThemeColorsOptions,
   ShellIntegrationState,
   GraphicsResourceState,
   HyperlinkResourceState,

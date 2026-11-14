@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  scanQueryBytes,
-  scanQueryText,
+  scanWindowSizeBytes,
+  scanWindowSizeText,
   type WindowSizeQueryState,
 } from "../output-queries.js";
 
@@ -19,11 +19,6 @@ function referenceWindowSizes(bytes: Uint8Array): number[] {
       out.push(bytes[i + 3] === 0x34 ? 14 : 16);
   }
   return out;
-}
-
-function hasColorQuery(bytes: Uint8Array): boolean {
-  const text = String.fromCharCode(...bytes);
-  return text.includes("\x1b]10;") || text.includes("\x1b]11;");
 }
 
 /** mulberry32 */
@@ -57,7 +52,7 @@ const PIECES = [
   "色",
 ];
 
-describe("scanQueryBytes", () => {
+describe("scanWindowSizeBytes", () => {
   it("finds the same queries as a byte-at-a-time scan at any write boundary", () => {
     const next = random(7);
     const encoder = new TextEncoder();
@@ -75,10 +70,7 @@ describe("scanQueryBytes", () => {
       const found: number[] = [];
       for (let k = 0; k + 1 < bounds.length; k++) {
         const chunk = bytes.subarray(bounds[k], bounds[k + 1]);
-        const result = scanQueryBytes(chunk, state);
-        expect(result.themeColors, JSON.stringify(text)).toBe(
-          hasColorQuery(chunk),
-        );
+        const result = scanWindowSizeBytes(chunk, state);
         found.push(...result.windowSizes);
         state = result.state;
       }
@@ -95,8 +87,8 @@ describe("scanQueryBytes", () => {
       let text = "";
       for (let i = 0; i < 30; i++)
         text += PIECES[Math.floor(next() * (PIECES.length - 1))];
-      const bytes = scanQueryBytes(encoder.encode(text), 0);
-      const chars = scanQueryText(text, 0);
+      const bytes = scanWindowSizeBytes(encoder.encode(text), 0);
+      const chars = scanWindowSizeText(text, 0);
       expect(bytes, JSON.stringify(text)).toEqual(chars);
     }
   });

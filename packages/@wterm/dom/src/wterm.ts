@@ -3,6 +3,7 @@ import {
   type TerminalCore,
   type TerminalPosition,
   type TerminalThemeColors,
+  type ThemeColorsOptions,
   type ShellIntegrationState,
 } from "@wterm/core";
 import { Renderer } from "./renderer.js";
@@ -15,14 +16,19 @@ import { DebugAdapter } from "./debug.js";
 import { isLinkActivationModifier } from "./hyperlink.js";
 import { markSelectionChanged } from "./selection-state.js";
 import {
+  ThemeQueryScanner,
+  THEME_BACKGROUND,
+  THEME_BACKGROUND_SET,
+  THEME_SCHEME,
+} from "./theme-query.js";
+import {
   SearchController,
   type SearchOptions,
   type SearchState,
 } from "./search.js";
 import {
-  scanQueryBytes,
-  scanQueryText,
-  type OutputQueries,
+  scanWindowSizeBytes,
+  scanWindowSizeText,
   type WindowSizeQueryState,
 } from "./output-queries.js";
 import {
@@ -203,6 +209,8 @@ export class WTerm {
   private _rowHeight = 0;
   private _charWidth = 0;
   private _windowSizeQueryState: WindowSizeQueryState = 0;
+  /** Theme color queries in the output, including ones cut by a write boundary. */
+  private _themeQueries = new ThemeQueryScanner();
   private _search: SearchController;
   private _historySelection: HistorySelection;
   private _rectangleDrag: RectangleDrag;
@@ -651,6 +659,7 @@ export class WTerm {
       this._syncCssThemeColors();
       this.renderer?.invalidateColors();
       this._scheduleRender();
+      this._deliverThemeReport();
       return;
     }
     const values = [
@@ -680,6 +689,16 @@ export class WTerm {
     );
     this.renderer?.invalidateColors();
     this._scheduleRender();
+    this._deliverThemeReport();
+  }
+
+  /**
+   * A core with color scheme reporting (mode 2031) on answers a dark/light
+   * change right away, so the reply goes out without waiting for output.
+   */
+  private _deliverThemeReport(): void {
+    const result = this._drainResponses();
+    if (result.hasError) throw result.error;
   }
 
   write(data: string | Uint8Array): void {
@@ -692,9 +711,15 @@ export class WTerm {
     if (this.debug) this.debug.traceWrite(data);
     this._shouldScrollToBottom = this._pinnedToBottom;
     // Answer theme color queries with the colors the page shows right now.
-    const queries = this._collectQueries(data);
-    if (queries.themeColors) this._syncCssThemeColors();
-    const windowSizeQueries = queries.windowSizes;
+    // The scanner carries sequence state across writes. A reply that reports
+    // the new scheme on its own is enough, so only then does the update skip
+    // the mode 2031 report.
+    const themeQuery = this._themeQueries.scan(data);
+    if (themeQuery)
+      this._syncCssThemeColors({
+        quiet: this._queryReportsScheme(themeQuery),
+      });
+    const windowSizeQueries = this._collectWindowSizeQueries(data);
     let deliveryError: unknown;
     let hasDeliveryError = false;
     const recordDeliveryError = (error: unknown) => {
@@ -732,10 +757,22 @@ export class WTerm {
   }
 
   /**
+   * Whether this chunk's query reply reports the new scheme by itself:
+   * `CSI ? 996 n` does, and so does an OSC 11 `?` while nothing pins the
+   * background, because an application's own OSC 11 color answers in its place.
+   */
+  private _queryReportsScheme(themeQuery: number): boolean {
+    if ((themeQuery & THEME_SCHEME) !== 0) return true;
+    if ((themeQuery & THEME_BACKGROUND) === 0) return false;
+    if ((themeQuery & THEME_BACKGROUND_SET) !== 0) return false;
+    return this.bridge?.getColorOverrides?.()?.background === undefined;
+  }
+
+  /**
    * Hands the core the theme colors the page's CSS resolves to, unless the
    * host set explicit colors with setThemeColors().
    */
-  private _syncCssThemeColors(): void {
+  private _syncCssThemeColors(options?: ThemeColorsOptions): void {
     if (this._themeColors || !this.bridge?.setThemeColors || this._destroyed)
       return;
     let colors: TerminalThemeColors | null;
@@ -754,7 +791,7 @@ export class WTerm {
     ].join();
     if (key === this._cssThemeKey) return;
     this._cssThemeKey = key;
-    this.bridge.setThemeColors(colors);
+    this.bridge.setThemeColors(colors, options);
   }
 
   /**
@@ -1592,15 +1629,15 @@ export class WTerm {
     return { hasError, error: firstError };
   }
 
-  /** The queries in a write that need the DOM (see output-queries.ts). */
-  private _collectQueries(data: string | Uint8Array): OutputQueries {
+  /** The window size queries in a write (see output-queries.ts). */
+  private _collectWindowSizeQueries(data: string | Uint8Array): (14 | 16)[] {
     const result =
       typeof data === "string"
-        ? scanQueryText(data, this._windowSizeQueryState)
-        : scanQueryBytes(data, this._windowSizeQueryState);
+        ? scanWindowSizeText(data, this._windowSizeQueryState)
+        : scanWindowSizeBytes(data, this._windowSizeQueryState);
     // Only the matched ASCII prefix survives, including across mixed writes.
     this._windowSizeQueryState = result.state;
-    return result;
+    return result.windowSizes;
   }
 
   private _windowSizeResponse(query: 14 | 16): string {
@@ -1835,6 +1872,7 @@ export class WTerm {
     this._search.cancel();
     this.onSearchChange = null;
     this._windowSizeQueryState = 0;
+    this._themeQueries = new ThemeQueryScanner();
     this._cancelScheduledRender();
     this._cancelSynchronizedOutputFallback();
     if (this._textSyncTimer !== null) clearTimeout(this._textSyncTimer);

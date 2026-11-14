@@ -1,5 +1,6 @@
 import type {
   TerminalThemeColors,
+  ThemeColorsOptions,
   CellData,
   CursorState,
   MouseEncoding,
@@ -59,7 +60,7 @@ interface WasmExports {
   getScrollbackDiscardedCount(): number;
   getScrollbackLine(offset: number): number;
   getScrollbackLineLen(offset: number): number;
-  setThemeColors?(foreground: number, background: number): void;
+  setThemeColors?(foreground: number, background: number, quiet: number): void;
   getScrollbackClearCount?(): number;
   setScrollbackLines?(lines: number): number;
   getResponsePtr(): number;
@@ -177,8 +178,15 @@ export class WasmBridge implements TerminalCore {
   }
 
   /** Theme defaults reported to OSC 10 and OSC 11 queries. */
-  setThemeColors(colors: TerminalThemeColors): void {
-    this.exports.setThemeColors?.(colors.foreground, colors.background);
+  setThemeColors(
+    colors: TerminalThemeColors,
+    options?: ThemeColorsOptions,
+  ): void {
+    this.exports.setThemeColors?.(
+      colors.foreground,
+      colors.background,
+      options?.quiet ? 1 : 0,
+    );
   }
 
   /** Lines of history to keep; extra lines are dropped from the oldest end. */

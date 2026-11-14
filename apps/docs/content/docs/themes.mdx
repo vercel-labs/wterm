@@ -255,15 +255,36 @@ Applications ask for the default foreground and background with OSC `10` and
 `11` (`printf '\e]11;?\a'`). Both cores answer with the colors the terminal
 element's CSS resolves to when the query arrives: `--term-fg` and `--term-bg`,
 including theme classes, `prefers-color-scheme` rules and colors written in any
-CSS color space. Replies end with the query's own terminator, BEL or ST.
+CSS color space. Replies end with the query's own terminator, BEL or ST. Each
+`?` asks for the color at its number, so `OSC 10 ; ? ; ?` returns the
+foreground and then the background.
 
 Colors set with `setThemeColors()` take precedence until it is called with
 `null`. A Ghostty application's own OSC `10`/`11` color changes are reported
-until it resets them. A query split across two `write()` calls is answered
-with the colors read at the previous query or at `init()`.
+until it resets them. The queries are recognized in the parsed output, so a
+query split across several `write()` calls, as PTY and WebSocket chunks can be,
+gets the same answer as one written whole. An OSC `10` or `11` sequence that
+sets a color instead of asking with `?` is not a query and leaves the colors
+alone.
 
 Headless Ghostty cores, which have no CSS, answer with their `foregroundColor`
 and `backgroundColor` options. See [Ghostty options](/ghostty).
+
+## Dark and light reports
+
+Applications such as Claude Code follow the terminal's color scheme with mode
+`2031`. Both cores answer `CSI ? 996 n` with `CSI ? 997 ; 1 n` for a dark
+background or `CSI ? 997 ; 2 n` for a light one. While an application has
+`CSI ? 2031 h` set, `setThemeColors()` sends the new report through `onData`
+when the background crosses between dark and light. The host theme decides the
+scheme; an application's own OSC `11` color does not. When the query that
+notices a CSS theme change returns the background (`CSI ? 996 n`, OSC `11`, or
+`OSC 10 ; ? ; ?`), the reply reports the new scheme and no separate
+`CSI ? 997` report is sent. A query that returns only the foreground, such as
+OSC `10`, leaves the scheme out, so the `CSI ? 997` report goes out ahead of its
+reply. The same goes for an OSC `11` query that a Ghostty application's own
+background color answers: the reply carries that color, not the theme's, so the
+report still goes out.
 
 ## Font and cell alignment
 

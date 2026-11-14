@@ -1,29 +1,17 @@
-// Queries in terminal output that WTerm answers itself, or prepares the core
-// to answer, before handing a write to the core.
+// Window size queries in terminal output, which WTerm answers itself.
 //
 // Kitty uses xterm window reports (CSI 14 t, CSI 16 t) to discover the pixel
 // geometry needed for image placement. The core intentionally does not know
 // about the browser viewport, so these two queries are answered at the DOM
-// boundary. Color queries (OSC 10, OSC 11) are answered by the core, from the
-// theme colors WTerm syncs from the page's CSS before the write.
+// boundary. Theme color queries are recognized by theme-query.ts.
 
 export type WindowSizeQueryState = 0 | 1 | 2 | 3 | 4 | 6;
 
-export interface OutputQueries {
-  /** The write may hold an OSC 10 or OSC 11 color query. */
-  themeColors: boolean;
+interface ScanResult {
   /** Complete CSI 14 t and CSI 16 t window size queries, in order. */
   windowSizes: (14 | 16)[];
-}
-
-interface ScanResult extends OutputQueries {
   /** Matcher state for a window size query that the write left unfinished. */
   state: WindowSizeQueryState;
-}
-
-/** Whether the data may hold an OSC 10 or OSC 11 color query. */
-function mayQueryThemeColors(data: string): boolean {
-  return data.includes("\x1b]10;") || data.includes("\x1b]11;");
 }
 
 function findQueryPrefix(data: string, from: number): number {
@@ -69,23 +57,22 @@ function stepWindowSizeQuery(
   }
 }
 
-// Horspool shifts for the four five-byte sequences scanQueryBytes looks for,
-// keyed by the last byte of the window: ESC [ 1 4 t, ESC [ 1 6 t,
-// ESC ] 1 0 ; and ESC ] 1 1 ;.
+// Horspool shifts for the two five-byte sequences scanWindowSizeBytes looks
+// for, keyed by the last byte of the window: ESC [ 1 4 t and ESC [ 1 6 t.
 const QUERY_SHIFT = new Uint8Array(256).fill(5);
-for (const prefix of ["\x1b[14", "\x1b[16", "\x1b]10", "\x1b]11"])
+for (const prefix of ["\x1b[14", "\x1b[16"])
   for (let k = 0; k < 4; k++) {
     const code = prefix.charCodeAt(k);
     QUERY_SHIFT[code] = Math.min(QUERY_SHIFT[code], 4 - k);
   }
 
 /**
- * Finds the color and window size queries in raw output in one pass.
+ * Finds the window size queries in raw output.
  * SGR-heavy output has an ESC every few bytes, so rather than visiting each
  * ESC this skips ahead by up to five bytes at a time (Horspool), and output
  * with no ESC at all costs a single indexOf.
  */
-export function scanQueryBytes(
+export function scanWindowSizeBytes(
   data: Uint8Array,
   state: WindowSizeQueryState,
 ): ScanResult {
@@ -95,33 +82,20 @@ export function scanQueryBytes(
   let from = 0;
   while (state !== 0 && from < n)
     state = stepWindowSizeQuery(state, data[from++], windowSizes);
-  let themeColors = false;
   let i = data.indexOf(0x1b);
-  if (i < 0) return { themeColors, windowSizes, state };
+  if (i < 0) return { windowSizes, state };
   while (i + 4 < n) {
     const last = data[i + 4];
     if (
-      (last === 0x74 || last === 0x3b) &&
+      last === 0x74 &&
       data[i] === 0x1b &&
-      data[i + 2] === 0x31
-    ) {
-      const introducer = data[i + 1];
-      const digit = data[i + 3];
-      if (
-        last === 0x74 &&
-        introducer === 0x5b &&
-        (digit === 0x34 || digit === 0x36) &&
-        // A query the continuation above already completed.
-        i >= from
-      )
-        windowSizes.push(digit === 0x34 ? 14 : 16);
-      else if (
-        last === 0x3b &&
-        introducer === 0x5d &&
-        (digit === 0x30 || digit === 0x31)
-      )
-        themeColors = true;
-    }
+      data[i + 1] === 0x5b &&
+      data[i + 2] === 0x31 &&
+      (data[i + 3] === 0x34 || data[i + 3] === 0x36) &&
+      // A query the continuation above already completed.
+      i >= from
+    )
+      windowSizes.push(data[i + 3] === 0x34 ? 14 : 16);
     i += QUERY_SHIFT[last];
   }
   if (state === 0) {
@@ -138,11 +112,11 @@ export function scanQueryBytes(
       break;
     }
   }
-  return { themeColors, windowSizes, state };
+  return { windowSizes, state };
 }
 
-/** Like scanQueryBytes, for text writes. */
-export function scanQueryText(
+/** Like scanWindowSizeBytes, for text writes. */
+export function scanWindowSizeText(
   data: string,
   state: WindowSizeQueryState,
 ): ScanResult {
@@ -163,5 +137,5 @@ export function scanQueryText(
     }
     state = stepWindowSizeQuery(state, data.charCodeAt(index++), windowSizes);
   }
-  return { themeColors: mayQueryThemeColors(data), windowSizes, state };
+  return { windowSizes, state };
 }
