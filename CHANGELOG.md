@@ -1,8 +1,34 @@
 # Changelog
 
-## 0.5.10
+## 0.6.0
 
 <!-- release:start -->
+
+### New Features
+
+- **Dark and light theme reports:** both cores answer `CSI ? 996 n` with `CSI ? 997 ; 1 n` for a dark background or `CSI ? 997 ; 2 n` for a light one. While an application has mode `2031` set, `setThemeColors()` reports the background crossing between dark and light through `onData`, so terminal applications can follow the page's color scheme. Pass `{ quiet: true }` to `setThemeColors()` to skip the report. A theme query that arrives in several `write()` calls gets the same answer as one written whole (#277).
+
+### Improvements
+
+- **TypeScript 7:** move the remaining examples and `@wterm/svelte` to TypeScript 7 and oxlint. The published packages are unchanged (#288).
+
+### Bug Fixes
+
+- **VS15 text presentation:** the built-in core lays out a text-presentation emoji as one cell, as `@wterm/ghostty` and other terminals do. An emoji base followed by U+FE0E narrows to one cell while default-emoji bases, ZWJ families, and skin-tone sequences stay two cells wide. The cursor stays in the last column when a cluster narrows at the edge, and a combining mark after the narrowed cluster no longer takes a cell of its own (#283).
+
+### Documentation
+
+- **WebMCP homepage terminal:** the wterm.dev hero terminal registers as `demo`, so an agent in a WebMCP-enabled browser can read and type into the sandboxed just-bash shell on the page. The WebMCP page adds a Try it section that drives it with agent-browser (#269).
+- **Docs accessibility:** the search dialog labels its input and clear button, an Enter that confirms an IME composition no longer submits a search, and the active sidebar item is marked with `aria-current` (#290).
+
+### Contributors
+
+- @Railly
+- @ctate
+
+<!-- release:end -->
+
+## 0.5.10
 
 ### Bug Fixes
 
