@@ -709,6 +709,21 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  packages/@wterm/search:
+    devDependencies:
+      '@internal/ts':
+        specifier: workspace:*
+        version: link:../../@internal/ts
+      '@wterm/core':
+        specifier: workspace:*
+        version: link:../core
+      '@wterm/dom':
+        specifier: workspace:*
+        version: link:../dom
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+
   packages/@wterm/svelte:
     devDependencies:
       '@internal/ts':
