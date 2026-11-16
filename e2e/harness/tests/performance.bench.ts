@@ -2,6 +2,7 @@ import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { constants, deflateSync } from "node:zlib";
 import {
   ROWS,
   HISTORY_LINES,
@@ -79,8 +80,15 @@ for (const core of ["builtin", "ghostty"]) {
   test(`${core} downloads the embedded binary only when selected`, async ({
     page,
   }) => {
-    const binary = readFileSync(
-      new URL("../../../packages/@wterm/core/wasm/wterm.wasm", import.meta.url),
+    // packages/@wterm/core/scripts/inline-wasm.js embeds the binary deflated.
+    const binary = deflateSync(
+      readFileSync(
+        new URL(
+          "../../../packages/@wterm/core/wasm/wterm.wasm",
+          import.meta.url,
+        ),
+      ),
+      { level: constants.Z_BEST_COMPRESSION },
     ).toString("base64");
     const scripts: Promise<string>[] = [];
     page.on("response", (response) => {
