@@ -542,8 +542,8 @@ pub const Terminal = struct {
                 cp = b;
             } else {
                 len = parser_mod.utf8SequenceLength(b);
-                if (len < 2 or i + len > data.len or !parser_mod.utf8Continuations(data[i + 1 .. i + len])) break;
-                cp = parser_mod.decodeUtf8(data[i .. i + len]);
+                if (len < 2 or i + len > data.len) break;
+                cp = parser_mod.decodeUtf8(data[i .. i + len]) orelse break;
             }
             const width: u16 = if (cp < unicode_width.first_wide) 1 else unicode_width.displayWidth(cp);
             if (col + width >= cols) break;
@@ -743,6 +743,9 @@ pub const Terminal = struct {
 
     fn processByte(self: *Terminal, byte: u8) void {
         const action = self.parser.feed(byte);
+        // An invalid byte that ends a partial sequence first contributes one
+        // U+FFFD for the maximal subpart, then its own action follows.
+        if (self.parser.takeReplacement()) self.printChar(0xFFFD);
         if (action != .none and action != .print) self.segmenter = .{};
         switch (action) {
             .none => {},
