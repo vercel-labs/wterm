@@ -2,12 +2,16 @@ import { GeistdocsThemeScript } from "@vercel/geistdocs/layout";
 import { Footer } from "@vercel/geistdocs/footer";
 import { Navbar } from "@vercel/geistdocs/navbar";
 import { config } from "@/lib/geistdocs/config";
+import { versionedOgImage } from "@/lib/og-version";
+import { getPageTitle } from "@/lib/page-titles";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import type { Metadata, Viewport } from "next";
 import { DocsChat, DocsChatProvider } from "@/components/docs-chat";
 import { DocsProvider } from "@/components/geistdocs-provider";
 import "./globals.css";
+
+const ogImage = versionedOgImage("/og", getPageTitle("")!);
 
 export const viewport: Viewport = { viewportFit: "cover" };
 
@@ -27,14 +31,14 @@ export const metadata: Metadata = {
     title: "wterm | Terminal Emulator for the Web",
     description:
       "A terminal emulator for the web. Renders to the DOM, powered by Zig/WASM.",
-    images: [{ url: "/og", width: 1200, height: 630, alt: "wterm" }],
+    images: [{ url: ogImage, width: 1200, height: 630, alt: "wterm" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "wterm | Terminal Emulator for the Web",
     description:
       "A terminal emulator for the web. Renders to the DOM, powered by Zig/WASM.",
-    images: ["/og"],
+    images: [{ url: ogImage, width: 1200, height: 630, alt: "wterm" }],
   },
 };
 
