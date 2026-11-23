@@ -78,17 +78,38 @@ function loadAssets() {
 }
 
 function toArrayBuffer(buffer: Buffer) {
-  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+  return buffer.buffer.slice(
+    buffer.byteOffset,
+    buffer.byteOffset + buffer.byteLength,
+  ) as ArrayBuffer;
 }
 
-type Line = { text: string; left: number; baseline: number; size: number; letterSpacing: number };
+type Line = {
+  text: string;
+  left: number;
+  baseline: number;
+  size: number;
+  letterSpacing: number;
+};
 
-function wrap(font: Font, text: string, lineSize: number, tracking: number, maxWidth: number) {
+function wrap(
+  font: Font,
+  text: string,
+  lineSize: number,
+  tracking: number,
+  maxWidth: number,
+) {
   const lines: string[] = [];
   let line = "";
   for (const word of text.split(/\s+/).filter(Boolean)) {
     const next = line ? `${line} ${word}` : word;
-    if (line && font.getAdvanceWidth(next, lineSize, { kerning: true, letterSpacing: tracking }) > maxWidth) {
+    if (
+      line &&
+      font.getAdvanceWidth(next, lineSize, {
+        kerning: true,
+        letterSpacing: tracking,
+      }) > maxWidth
+    ) {
       lines.push(line);
       line = word;
     } else {
@@ -134,7 +155,11 @@ function titleLines(font: Font, title: string | string[]): Line[] {
   }));
 }
 
-function descriptionLine(text: string, index: number, firstBaseline: number): Line {
+function descriptionLine(
+  text: string,
+  index: number,
+  firstBaseline: number,
+): Line {
   return {
     text,
     left: descriptionLeft,
@@ -179,18 +204,34 @@ async function renderLabsOg({
   const { regular, semibold, logo } = await loadAssets();
   const palette = themes[theme];
   const capHeight = 40.4273 * logoScale;
-  const wordSize = capHeight / (semibold.tables.os2.sCapHeight / semibold.unitsPerEm);
+  const wordSize =
+    capHeight / (semibold.tables.os2.sCapHeight / semibold.unitsPerEm);
   const slash = `M${slashX + 14.75} 64.5L${slashX + 17.75} 64.5L${slashX + 3.25} 106.75L${slashX} 106.75Z`;
   const titles = titleLines(regular, title);
   const lastBaseline = titles[titles.length - 1]?.baseline ?? titleBaseline;
   const details = description
-    ? wrap(regular, description, descriptionSize, descriptionTracking / descriptionSize, descriptionMaxWidth).map(
-        (text, index) => descriptionLine(text, index, lastBaseline + descriptionGap + descriptionSize),
+    ? wrap(
+        regular,
+        description,
+        descriptionSize,
+        descriptionTracking / descriptionSize,
+        descriptionMaxWidth,
+      ).map((text, index) =>
+        descriptionLine(
+          text,
+          index,
+          lastBaseline + descriptionGap + descriptionSize,
+        ),
       )
     : [];
   const paths =
     linePath(regular, titles) +
-    semibold.getPath(product, wordX, wordBaseline, wordSize, { kerning: true, letterSpacing: -0.05 }).toPathData(3);
+    semibold
+      .getPath(product, wordX, wordBaseline, wordSize, {
+        kerning: true,
+        letterSpacing: -0.05,
+      })
+      .toPathData(3);
 
   return new ImageResponse(
     <div
@@ -219,7 +260,9 @@ async function renderLabsOg({
       >
         <path d={slash} fill={palette.slash} />
         <path d={paths} fill={palette.text} />
-        {details.length > 0 && <path d={linePath(regular, details)} fill={palette.description} />}
+        {details.length > 0 && (
+          <path d={linePath(regular, details)} fill={palette.description} />
+        )}
       </svg>
     </div>,
     { ...size },
