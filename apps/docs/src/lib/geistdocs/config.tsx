@@ -5,7 +5,7 @@ export const config = defineConfig({
   siteUrl: "https://wterm.dev",
   defaultLanguage: "en",
   logo: (
-    <span className="font-sans font-semibold text-[24.4px] leading-none tracking-[-0.05em]">
+    <span className="translate-y-[-0.5px] font-sans font-semibold text-[24.4px] leading-none tracking-[-0.05em]">
       wterm
     </span>
   ),
