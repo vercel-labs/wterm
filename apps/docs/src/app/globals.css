@@ -59,3 +59,33 @@
 #nd-toc a[data-active="true"] {
   @apply text-gray-1000;
 }
+
+/*
+ * Header lockup: match the OG card's logo, slash, and name geometry with the
+ * logo at 18px. The card places the slash 11px after the logo at this scale,
+ * draws it as a 6.2x14.8px parallelogram with a ~1.05px stroke, then leaves
+ * 7.7px before the product name.
+ */
+header span:has(> a[aria-label="Vercel Labs"]) {
+  gap: 0;
+}
+
+header a[aria-label="Vercel Labs"] + div {
+  width: 6.2px;
+  height: 14.8px;
+  margin-inline: 11px 7.7px;
+  overflow: hidden;
+}
+
+header a[aria-label="Vercel Labs"] + div > svg {
+  display: none;
+}
+
+header a[aria-label="Vercel Labs"] + div::before {
+  content: "";
+  display: block;
+  width: 6.22px;
+  height: 14.8px;
+  background-color: currentColor;
+  clip-path: polygon(0 100%, 5.17px 0, 6.22px 0, 1.14px 100%);
+}
