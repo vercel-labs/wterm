@@ -39,11 +39,19 @@ describe("Geistdocs public route contract", () => {
           `rel="canonical" href="https://wterm.dev${path === "/" ? "" : path}`,
         ),
       );
-      assert.ok(
-        html.includes(
-          `property="og:image" content="https://wterm.dev/og${path === "/" ? "" : path}"`,
-        ),
+      const ogImageMatch = html.match(
+        /property="og:image" content="([^"]+)"/,
       );
+      assert.ok(ogImageMatch, "og:image is present");
+      const ogImage = new URL(ogImageMatch[1], "https://wterm.dev");
+      assert.strictEqual(ogImage.origin, "https://wterm.dev");
+      assert.strictEqual(ogImage.pathname, `/og${path === "/" ? "" : path}`);
+      assert.match(ogImage.searchParams.get("v") ?? "", /^[0-9a-f]{8}$/);
+      const twitterImageMatch = html.match(
+        /name="twitter:image" content="([^"]+)"/,
+      );
+      assert.ok(twitterImageMatch, "twitter:image is present");
+      assert.strictEqual(twitterImageMatch[1], ogImage.href);
       assert.strictEqual(html.match(/<h1(?:\s|>)/g)?.length, 1);
       assert.ok(!html.includes("NEXT_HTTP_ERROR_FALLBACK;500"));
     });

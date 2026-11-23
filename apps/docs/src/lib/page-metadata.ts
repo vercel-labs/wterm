@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { versionedOgImage } from "./og-version";
 import { PAGE_TITLES } from "./page-titles";
 
 const DESCRIPTION =
@@ -10,7 +11,7 @@ export function pageMetadata(slug: string): Metadata {
 
   const displayTitle = title.replace(/\n/g, " ");
   const fullTitle = `${displayTitle} | wterm`;
-  const ogImageUrl = slug ? `/og/${slug}` : "/og";
+  const ogImageUrl = versionedOgImage(slug ? `/og/${slug}` : "/og", title);
 
   return {
     title: displayTitle,
