@@ -4,7 +4,11 @@ export const config = defineConfig({
   title: "wterm",
   siteUrl: "https://wterm.dev",
   defaultLanguage: "en",
-  logo: <span className="font-medium">wterm</span>,
+  logo: (
+    <span className="translate-y-[-0.5px] font-sans font-semibold text-[24.4px] leading-none tracking-[-0.05em]">
+      wterm
+    </span>
+  ),
   navbarActiveProduct: "wterm",
   navbarBrand: "labs",
   github: {
