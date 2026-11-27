@@ -1131,7 +1131,7 @@ export class WTerm {
     if (this._destroyed) return null;
     return (
       this._historySelection.getText() ??
-      this.renderer?.getSelectionText() ??
+      this.renderer?.getSelectionText(this.bridge ?? undefined) ??
       null
     );
   }

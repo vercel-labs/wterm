@@ -370,6 +370,33 @@ describe("terminal selection text", () => {
     expect(copy().event.defaultPrevented).toBe(false);
   });
 
+  it("copies wrapped history between two mounted selection endpoints", async () => {
+    Object.defineProperty(element, "clientHeight", { value: 68 });
+    Object.defineProperty(element, "scrollHeight", {
+      get: () => (core.getScrollbackCount() + core.getRows()) * 17,
+    });
+    const lines = Array.from(
+      { length: 100 },
+      (_, index) => `a${index} bcdefghij`,
+    );
+    await write([...lines, "end"].join("\r\n"));
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event("scroll"));
+    await vi.runAllTimersAsync();
+
+    const mounted = element.querySelectorAll(".term-row");
+    expect(mounted.length).toBeLessThan(
+      core.getScrollbackCount() + core.getRows(),
+    );
+    select(0, 1, mounted.length - 1, 2);
+    const expected = [lines[0].slice(1), ...lines.slice(1), "en"].join("\n");
+    expect(copy().clipboardData.setData).toHaveBeenCalledExactlyOnceWith(
+      "text/plain",
+      expected,
+    );
+    expect(element.querySelectorAll(".term-row")).toHaveLength(mounted.length);
+  });
+
   it("owns a wrap snapshot even when a custom core reuses a metadata object", async () => {
     const metadata = { wrapsToNext: false, continuesPrevious: false };
     core.getRowMetadata = () => metadata;
