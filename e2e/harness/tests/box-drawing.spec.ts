@@ -155,6 +155,85 @@ for (const scale of [1, 2]) {
         expect(seams.heavy).toEqual([]);
         expect(seams.bar).toEqual([]);
       });
+
+      test(`${core} keeps every stroke in place when box cells overlap`, async ({
+        page,
+      }) => {
+        await page.goto(`/?core=${core}&mode=replay`);
+        await expect(page.locator("#status")).toHaveText("Replay ready");
+        await page.evaluate(() => window.ptyHarness.resize(40, 4));
+        // Cells at many fractional offsets, so rounding differs per column.
+        await write(page, "\x1b[?25l\x1b[2;1H" + "─┤ ".repeat(12));
+
+        const grid = page.locator(".term-grid");
+        const tees = await grid.evaluate((element) => {
+          const gridRect = element.getBoundingClientRect();
+          return Array.from(element.querySelectorAll<HTMLElement>(".term-box"))
+            .filter((span) => span.textContent === "┤")
+            .map((span) => {
+              const rect = span.getBoundingClientRect();
+              return {
+                left: rect.left - gridRect.left,
+                right: rect.right - gridRect.left,
+                top: rect.top - gridRect.top,
+                height: rect.height,
+              };
+            });
+        });
+        expect(tees).toHaveLength(12);
+
+        // Right edges of each ┤'s arm row and of its vertical stroke alone.
+        const strokeEdges = async () => {
+          const screenshot = await grid.screenshot({ scale: "device" });
+          return page.evaluate(
+            async ({ png, scale, tees }) => {
+              const image = new Image();
+              image.src = `data:image/png;base64,${png}`;
+              await image.decode();
+              const canvas = document.createElement("canvas");
+              canvas.width = image.width;
+              canvas.height = image.height;
+              const context = canvas.getContext("2d")!;
+              context.drawImage(image, 0, 0);
+              const pixels = context.getImageData(
+                0,
+                0,
+                image.width,
+                image.height,
+              ).data;
+              const brightness = (x: number, y: number) => {
+                const i = (y * image.width + x) * 4;
+                return Math.max(pixels[i], pixels[i + 1], pixels[i + 2]);
+              };
+              const rightmostInk = (y: number, left: number, right: number) => {
+                let last = -1;
+                for (let x = left; x <= right; x++)
+                  if (brightness(x, y) >= 100) last = x;
+                return last;
+              };
+              return tees.map((tee) => {
+                const left = Math.floor(tee.left * scale);
+                const right = Math.ceil(tee.right * scale);
+                const row = (fraction: number) =>
+                  Math.round((tee.top + tee.height * fraction) * scale);
+                return {
+                  arm: rightmostInk(row(0.5), left, right),
+                  bar: rightmostInk(row(0.25), left, right),
+                };
+              });
+            },
+            { png: screenshot.toString("base64"), scale, tees },
+          );
+        };
+
+        const overlapped = await strokeEdges();
+        await page.addStyleTag({
+          content: ".term-box { margin: 0 !important; padding: 0 !important; }",
+        });
+        await page.evaluate(() => window.ptyHarness.frame());
+        const separate = await strokeEdges();
+        expect(overlapped).toEqual(separate);
+      });
     }
   });
 }
