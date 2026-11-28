@@ -406,7 +406,8 @@ function addBoxStyles(
     }
     BOX_STYLES[Number(codepoint)] = {
       className,
-      style: `background-image:${selected.map(() => "linear-gradient(currentColor,currentColor)").join(",")};background-position:${selected.map(([position]) => position).join(",")};background-size:${selected.map(([, size]) => size).join(",")};background-repeat:no-repeat;`,
+      // terminal.css paints these on the cell's ::before layer.
+      style: `--term-box-image:${selected.map(() => "linear-gradient(currentColor,currentColor)").join(",")};--term-box-position:${selected.map(([position]) => position).join(",")};--term-box-size:${selected.map(([, size]) => size).join(",")};`,
     };
   }
 }
