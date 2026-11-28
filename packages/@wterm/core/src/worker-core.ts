@@ -8,6 +8,7 @@ import type {
   ThemeColorsOptions,
   UnhandledSequence,
 } from "./terminal-core.js";
+import { sanitizeCodePoint } from "./wasm-bridge.js";
 import {
   CELL_WORDS,
   CLUSTER_BIT,
@@ -191,7 +192,9 @@ export class WorkerCore implements TerminalCore {
     const w1 = cells[o + 1];
     const w2 = cells[o + 2];
     const cell: CellData = {
-      char: char & CLUSTER_BIT ? (cluster?.codePointAt(0) ?? 32) : char,
+      char: sanitizeCodePoint(
+        char & CLUSTER_BIT ? (cluster?.codePointAt(0) ?? 32) : char,
+      ),
       fg: w1 & 0xffff,
       bg: w1 >>> 16,
       flags: w2 & 0xff,

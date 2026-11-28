@@ -53,12 +53,23 @@ pub const Parser = struct {
 
     // UTF-8 decoder
     utf8_buf: [4]u8 = undefined,
-    utf8_remaining: u3 = 0,
-    utf8_expected: u3 = 0,
+    utf8_len: u3 = 0,
+    utf8_need: u3 = 0,
+    /// Allowed range for the next continuation byte, from the lead byte.
+    utf8_lower: u8 = 0x80,
+    utf8_upper: u8 = 0xBF,
+    /// Set when an invalid byte ended a sequence: the caller prints one U+FFFD
+    /// before handling the action returned for that byte.
+    replacement_pending: bool = false,
 
     pub fn feed(self: *Parser, byte: u8) Action {
         // ESC always starts a new sequence (except in OSC where ST = ESC \ terminates)
         if (byte == 0x1B) {
+            // An incomplete sequence left in the air is one maximal subpart.
+            if (self.state == .utf8) {
+                self.state = .ground;
+                self.replacement_pending = true;
+            }
             if (self.state == .osc_string) {
                 self.state = .escape;
                 self.osc_bel = false;
@@ -74,6 +85,7 @@ pub const Parser = struct {
 
         // CAN (0x18) and SUB (0x1A) cancel any sequence
         if (byte == 0x18 or byte == 0x1A) {
+            if (self.state == .utf8) self.replacement_pending = true;
             self.state = .ground;
             return .none;
         }
@@ -148,49 +160,64 @@ pub const Parser = struct {
             return .execute;
         }
 
-        // UTF-8 multi-byte sequences
-        if (byte >= 0xC0 and byte <= 0xDF) {
-            self.utf8_buf[0] = byte;
-            self.utf8_expected = 2;
-            self.utf8_remaining = 1;
-            self.state = .utf8;
-            return .none;
+        // UTF-8 multi-byte sequences. Bytes 0x80..0xC1 and 0xF5..0xFF cannot
+        // start a scalar value, so each of them becomes one U+FFFD.
+        if (byte >= 0xC2 and byte <= 0xDF) {
+            return self.beginUtf8(byte, 2, 0x80, 0xBF);
         }
         if (byte >= 0xE0 and byte <= 0xEF) {
-            self.utf8_buf[0] = byte;
-            self.utf8_expected = 3;
-            self.utf8_remaining = 2;
-            self.state = .utf8;
-            return .none;
+            const lower: u8 = if (byte == 0xE0) 0xA0 else 0x80;
+            const upper: u8 = if (byte == 0xED) 0x9F else 0xBF;
+            return self.beginUtf8(byte, 3, lower, upper);
         }
-        if (byte >= 0xF0 and byte <= 0xF7) {
-            self.utf8_buf[0] = byte;
-            self.utf8_expected = 4;
-            self.utf8_remaining = 3;
-            self.state = .utf8;
-            return .none;
+        if (byte >= 0xF0 and byte <= 0xF4) {
+            const lower: u8 = if (byte == 0xF0) 0x90 else 0x80;
+            const upper: u8 = if (byte == 0xF4) 0x8F else 0xBF;
+            return self.beginUtf8(byte, 4, lower, upper);
         }
 
+        self.print_char = 0xFFFD;
+        return .print;
+    }
+
+    fn beginUtf8(self: *Parser, byte: u8, need: u3, lower: u8, upper: u8) Action {
+        self.utf8_buf[0] = byte;
+        self.utf8_len = 1;
+        self.utf8_need = need;
+        self.utf8_lower = lower;
+        self.utf8_upper = upper;
+        self.state = .utf8;
         return .none;
     }
 
     // -- UTF-8 continuation --
 
     fn handleUtf8(self: *Parser, byte: u8) Action {
-        if (byte >= 0x80 and byte <= 0xBF) {
-            const idx = self.utf8_expected - self.utf8_remaining;
-            self.utf8_buf[idx] = byte;
-            self.utf8_remaining -= 1;
-            if (self.utf8_remaining == 0) {
-                self.print_char = decodeUtf8(self.utf8_buf[0..self.utf8_expected]);
-                self.state = .ground;
-                return .print;
-            }
-            return .none;
+        if (byte < self.utf8_lower or byte > self.utf8_upper) {
+            // The bytes collected so far are one maximal invalid subpart. Emit
+            // its replacement, then handle this byte as if it began in ground.
+            self.state = .ground;
+            self.replacement_pending = true;
+            return self.handleGround(byte);
         }
-        // Invalid continuation: go back to ground and reprocess
-        self.state = .ground;
-        return self.handleGround(byte);
+        self.utf8_buf[self.utf8_len] = byte;
+        self.utf8_len += 1;
+        self.utf8_lower = 0x80;
+        self.utf8_upper = 0xBF;
+        if (self.utf8_len == self.utf8_need) {
+            self.print_char = decodeUtf8(self.utf8_buf[0..self.utf8_need]) orelse 0xFFFD;
+            self.state = .ground;
+            return .print;
+        }
+        return .none;
+    }
+
+    /// True once per invalid byte that ended an incomplete sequence, so the
+    /// caller prints its U+FFFD before acting on the byte that ended it.
+    pub fn takeReplacement(self: *Parser) bool {
+        const pending = self.replacement_pending;
+        self.replacement_pending = false;
+        return pending;
     }
 
     // -- Escape state --
@@ -391,40 +418,33 @@ pub const Parser = struct {
 
 /// Bytes in the UTF-8 sequence a lead byte starts, as the ground state reads it; 0 when not a lead.
 pub fn utf8SequenceLength(lead: u8) u8 {
-    if (lead >= 0xC0 and lead <= 0xDF) return 2;
+    if (lead >= 0xC2 and lead <= 0xDF) return 2;
     if (lead >= 0xE0 and lead <= 0xEF) return 3;
-    if (lead >= 0xF0 and lead <= 0xF7) return 4;
+    if (lead >= 0xF0 and lead <= 0xF4) return 4;
     return 0;
 }
 
-pub fn utf8Continuations(bytes: []const u8) bool {
-    for (bytes) |b| if (b < 0x80 or b > 0xBF) return false;
-    return true;
-}
-
-pub fn decodeUtf8(bytes: []const u8) u21 {
-    if (bytes.len == 0) return 0xFFFD;
-    return switch (bytes.len) {
-        2 => {
-            const b0: u21 = bytes[0] & 0x1F;
-            const b1: u21 = bytes[1] & 0x3F;
-            return (b0 << 6) | b1;
-        },
-        3 => {
-            const b0: u21 = bytes[0] & 0x0F;
-            const b1: u21 = bytes[1] & 0x3F;
-            const b2: u21 = bytes[2] & 0x3F;
-            return (b0 << 12) | (b1 << 6) | b2;
-        },
-        4 => {
-            const b0: u21 = bytes[0] & 0x07;
-            const b1: u21 = bytes[1] & 0x3F;
-            const b2: u21 = bytes[2] & 0x3F;
-            const b3: u21 = bytes[3] & 0x3F;
-            return (b0 << 18) | (b1 << 12) | (b2 << 6) | b3;
-        },
-        else => 0xFFFD,
+/// Decodes one complete sequence, or null when it is not a well-formed
+/// encoding of a Unicode scalar value: overlong, surrogate, or above U+10FFFF.
+pub fn decodeUtf8(bytes: []const u8) ?u21 {
+    if (bytes.len < 2 or bytes.len > 4) return null;
+    if (utf8SequenceLength(bytes[0]) != bytes.len) return null;
+    for (bytes[1..]) |b| if (b < 0x80 or b > 0xBF) return null;
+    const cp: u21 = switch (bytes.len) {
+        2 => (@as(u21, bytes[0] & 0x1F) << 6) | (bytes[1] & 0x3F),
+        3 => (@as(u21, bytes[0] & 0x0F) << 12) | (@as(u21, bytes[1] & 0x3F) << 6) | (bytes[2] & 0x3F),
+        4 => (@as(u21, bytes[0] & 0x07) << 18) | (@as(u21, bytes[1] & 0x3F) << 12) |
+            (@as(u21, bytes[2] & 0x3F) << 6) | (bytes[3] & 0x3F),
+        else => unreachable,
     };
+    const min: u21 = switch (bytes.len) {
+        2 => 0x80,
+        3 => 0x800,
+        else => 0x10000,
+    };
+    if (cp < min or cp > 0x10FFFF) return null;
+    if (cp >= 0xD800 and cp <= 0xDFFF) return null;
+    return cp;
 }
 
 test "bulk CSI parameters match bytewise parsing across every split" {
@@ -512,6 +532,129 @@ test "unsupported APC is consumed across split writes and resumes text" {
     try testing.expectEqual(Action.unsupported_apc, parser.feed('\\'));
     try testing.expectEqual(Action.print, parser.feed('X'));
     try testing.expectEqual(@as(u21, 'X'), parser.print_char);
+}
+
+/// Feeds every byte and collects what the terminal would print, replacement
+/// characters included, in order.
+fn collectPrinted(parser: *Parser, bytes: []const u8, out: *[16]u21) []const u21 {
+    var count: usize = 0;
+    for (bytes) |byte| {
+        const action = parser.feed(byte);
+        if (parser.takeReplacement()) {
+            out[count] = 0xFFFD;
+            count += 1;
+        }
+        if (action == .print) {
+            out[count] = parser.print_char;
+            count += 1;
+        }
+    }
+    return out[0..count];
+}
+
+test "malformed UTF-8 prints one replacement per maximal subpart" {
+    const testing = @import("std").testing;
+    const replacement: u21 = 0xFFFD;
+    const cases = [_]struct { bytes: []const u8, expected: []const u21 }{
+        // Lead byte above the four-byte range.
+        .{ .bytes = &.{ 0xF7, 0xBF, 0xBF, 0xBF }, .expected = &.{ replacement, replacement, replacement, replacement } },
+        // Four-byte sequence above U+10FFFF.
+        .{ .bytes = &.{ 0xF4, 0x90, 0x80, 0x80 }, .expected = &.{ replacement, replacement, replacement, replacement } },
+        // Overlong two-byte encodings, including C0/C1 which never lead.
+        .{ .bytes = &.{ 0xC0, 0x80 }, .expected = &.{ replacement, replacement } },
+        .{ .bytes = &.{ 0xC1, 0xBF }, .expected = &.{ replacement, replacement } },
+        // Overlong three-byte encoding.
+        .{ .bytes = &.{ 0xE0, 0x80, 0x80 }, .expected = &.{ replacement, replacement, replacement } },
+        // Surrogate U+D800.
+        .{ .bytes = &.{ 0xED, 0xA0, 0x80 }, .expected = &.{ replacement, replacement, replacement } },
+        // Overlong four-byte encoding.
+        .{ .bytes = &.{ 0xF0, 0x80, 0x80, 0x80 }, .expected = &.{ replacement, replacement, replacement, replacement } },
+        // Stray continuation bytes.
+        .{ .bytes = &.{ 0x80, 0xBF }, .expected = &.{ replacement, replacement } },
+        // Truncated prefix abandoned by a printable byte.
+        .{ .bytes = &.{ 0xE2, 0x82, 'A' }, .expected = &.{ replacement, 'A' } },
+    };
+    for (cases) |case| {
+        var parser = Parser{};
+        var printed: [16]u21 = undefined;
+        try testing.expectEqualSlices(u21, case.expected, collectPrinted(&parser, case.bytes, &printed));
+        try testing.expectEqual(State.ground, parser.state);
+    }
+}
+
+test "well-formed UTF-8 sequences print unchanged" {
+    const testing = @import("std").testing;
+    const cases = [_]struct { bytes: []const u8, expected: u21 }{
+        .{ .bytes = &.{ 0xC3, 0xA9 }, .expected = 0xE9 },
+        .{ .bytes = &.{ 0xE2, 0x82, 0xAC }, .expected = 0x20AC },
+        .{ .bytes = &.{ 0xE0, 0xA0, 0x80 }, .expected = 0x800 },
+        .{ .bytes = &.{ 0xF0, 0x90, 0x80, 0x80 }, .expected = 0x10000 },
+        .{ .bytes = &.{ 0xF0, 0x9F, 0x98, 0x80 }, .expected = 0x1F600 },
+        .{ .bytes = &.{ 0xF4, 0x8F, 0xBF, 0xBF }, .expected = 0x10FFFF },
+    };
+    for (cases) |case| {
+        var parser = Parser{};
+        var printed: [16]u21 = undefined;
+        try testing.expectEqualSlices(u21, &.{case.expected}, collectPrinted(&parser, case.bytes, &printed));
+        try testing.expectEqual(State.ground, parser.state);
+    }
+}
+
+test "a sequence split across feeds is held until it completes" {
+    const testing = @import("std").testing;
+    var parser = Parser{};
+    var printed: [16]u21 = undefined;
+    try testing.expectEqualSlices(u21, &.{}, collectPrinted(&parser, &.{ 0xE2 }, &printed));
+    try testing.expectEqual(State.utf8, parser.state);
+    try testing.expectEqualSlices(u21, &.{}, collectPrinted(&parser, &.{ 0x82 }, &printed));
+    try testing.expectEqual(State.utf8, parser.state);
+    try testing.expectEqualSlices(u21, &.{0x20AC}, collectPrinted(&parser, &.{ 0xAC }, &printed));
+    try testing.expectEqual(State.ground, parser.state);
+}
+
+test "control bytes end a truncated sequence with one replacement" {
+    const testing = @import("std").testing;
+    const replacement: u21 = 0xFFFD;
+    inline for ([_]u8{ 0x18, 0x1A }) |control| {
+        var parser = Parser{};
+        var printed: [16]u21 = undefined;
+        try testing.expectEqualSlices(u21, &.{replacement}, collectPrinted(&parser, &.{ 0xE2, 0x82, control }, &printed));
+        try testing.expectEqual(State.ground, parser.state);
+    }
+    var parser = Parser{};
+    var printed: [16]u21 = undefined;
+    try testing.expectEqualSlices(u21, &.{replacement}, collectPrinted(&parser, &.{ 0xE2, 0x82, 0x1B }, &printed));
+    try testing.expectEqual(State.escape, parser.state);
+    try testing.expectEqual(Action.none, parser.feed('['));
+    try testing.expectEqual(State.csi_param, parser.state);
+}
+
+test "decodeUtf8 rejects every non-scalar encoding" {
+    const testing = @import("std").testing;
+    const invalid = [_][]const u8{
+        &.{ 0xF7, 0xBF, 0xBF, 0xBF },
+        &.{ 0xF4, 0x90, 0x80, 0x80 },
+        &.{ 0xC0, 0x80 },
+        &.{ 0xC1, 0xBF },
+        &.{ 0xE0, 0x80, 0x80 },
+        &.{ 0xED, 0xA0, 0x80 },
+        &.{ 0xED, 0xBF, 0xBF },
+        &.{ 0xF0, 0x80, 0x80, 0x80 },
+        &.{ 0xE2, 0x82 },
+        &.{0x80},
+    };
+    for (invalid) |bytes| try testing.expectEqual(@as(?u21, null), decodeUtf8(bytes));
+
+    const valid = [_]struct { bytes: []const u8, cp: u21 }{
+        .{ .bytes = &.{ 0xC2, 0x80 }, .cp = 0x80 },
+        .{ .bytes = &.{ 0xDF, 0xBF }, .cp = 0x7FF },
+        .{ .bytes = &.{ 0xE0, 0xA0, 0x80 }, .cp = 0x800 },
+        .{ .bytes = &.{ 0xED, 0x9F, 0xBF }, .cp = 0xD7FF },
+        .{ .bytes = &.{ 0xEE, 0x80, 0x80 }, .cp = 0xE000 },
+        .{ .bytes = &.{ 0xF0, 0x90, 0x80, 0x80 }, .cp = 0x10000 },
+        .{ .bytes = &.{ 0xF4, 0x8F, 0xBF, 0xBF }, .cp = 0x10FFFF },
+    };
+    for (valid) |case| try testing.expectEqual(@as(?u21, case.cp), decodeUtf8(case.bytes));
 }
 
 test "cancelled and oversized APC payloads do not leak bytes" {

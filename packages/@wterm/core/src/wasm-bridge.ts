@@ -14,6 +14,16 @@ import { loadWasmModule } from "./wasm-loading.js";
 const CLUSTER_BIT = 0x80000000;
 const DEFAULT_COLOR = 256;
 
+/**
+ * Maps a cell char that is not a Unicode scalar value to U+FFFD, so callers
+ * can pass every char to `String.fromCodePoint`. The core decodes strictly;
+ * this keeps a malformed value from ever reaching a string API.
+ */
+export function sanitizeCodePoint(char: number): number {
+  if (char > 0x10ffff || (char >= 0xd800 && char <= 0xdfff)) return 0xfffd;
+  return char;
+}
+
 interface WasmExports {
   memory: WebAssembly.Memory;
   init(cols: number, rows: number): void;
@@ -172,6 +182,7 @@ export class WasmBridge implements TerminalCore {
       width: dv.getUint8(offset + 9),
     };
     this._resolveCluster(result);
+    this._sanitizeCellChars(result);
     this._resolveRgb(result);
     Object.assign(result, this._readLink(dv.getUint16(offset + 10, true)));
     return result;
@@ -382,6 +393,7 @@ export class WasmBridge implements TerminalCore {
       width: dv.getUint8(off + 9),
     };
     this._resolveCluster(result);
+    this._sanitizeCellChars(result);
     this._resolveRgb(result);
     Object.assign(result, this._readLink(dv.getUint16(off + 10, true)));
     return result;
@@ -448,6 +460,10 @@ export class WasmBridge implements TerminalCore {
     cell.char = chars.codePointAt(0) ?? 32;
     if (chars.length > String.fromCodePoint(cell.char).length)
       cell.chars = chars;
+  }
+
+  private _sanitizeCellChars(cell: CellData): void {
+    cell.char = sanitizeCodePoint(cell.char);
   }
 
   private _resolveRgb(cell: CellData): void {
