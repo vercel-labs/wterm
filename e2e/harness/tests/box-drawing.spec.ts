@@ -193,4 +193,88 @@ for (const core of ["builtin", "ghostty"]) {
     expect(printStyle.image).toBe("none");
     expect(printStyle.corner).toBe("none");
   });
+
+  test(`${core} keeps box-drawing corners and T-junctions flush without overshoot`, async ({
+    page,
+  }) => {
+    await page.goto(`/?core=${core}&mode=replay`);
+    await expect(page.locator("#status")).toHaveText("Replay ready");
+    await page.evaluate(() => window.ptyHarness.resize(20, 5));
+    await write(page, "\x1b[?25l\x1b[1;2H│   │   │\x1b[2;2H└───┴───┘");
+
+    const grid = page.locator(".term-grid");
+    const geometry = await grid.evaluate((element) => {
+      const gridRect = element.getBoundingClientRect();
+      const row = element.querySelectorAll(".term-row")[1];
+      const spans = Array.from(row.querySelectorAll<HTMLElement>(".term-box"));
+      const bar = spans.find((span) => span.textContent === "─")!;
+      const stroke = parseFloat(
+        getComputedStyle(bar).getPropertyValue("--term-box-stroke"),
+      );
+      const cellBox = (ch: string) => {
+        const rect = spans
+          .find((span) => span.textContent === ch)!
+          .getBoundingClientRect();
+        return {
+          left: rect.left - gridRect.left,
+          top: rect.top - gridRect.top,
+          width: rect.width,
+          height: rect.height,
+        };
+      };
+      return {
+        stroke,
+        bar: cellBox("─"),
+        bl: cellBox("└"),
+        tee: cellBox("┴"),
+        br: cellBox("┘"),
+      };
+    });
+
+    const screenshot = await grid.screenshot({ scale: "css" });
+    const result = await page.evaluate(
+      async ({ png, stroke, bar, bl, tee, br }) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${png}`;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        const brightness = (x: number, y: number) => {
+          const [r, g, b] = context.getImageData(x, y, 1, 1).data;
+          return Math.max(r, g, b);
+        };
+
+        const barCenterX = Math.floor(bar.left + bar.width / 2);
+        let barBottom = -1;
+        for (
+          let y = Math.floor(bar.top);
+          y < Math.ceil(bar.top + bar.height);
+          y++
+        ) {
+          if (brightness(barCenterX, y) >= 100) barBottom = y;
+        }
+
+        const belowY = barBottom + 1;
+        const belowBrightness = (box: { left: number; width: number }) =>
+          brightness(Math.floor(box.left + box.width / 2), belowY);
+
+        return {
+          stroke,
+          barBottom,
+          blBelow: belowBrightness(bl),
+          teeBelow: belowBrightness(tee),
+          brBelow: belowBrightness(br),
+        };
+      },
+      { png: screenshot.toString("base64"), ...geometry },
+    );
+
+    expect(result.barBottom).toBeGreaterThan(0);
+    expect(result.blBelow).toBeLessThan(100);
+    expect(result.teeBelow).toBeLessThan(100);
+    expect(result.brBelow).toBeLessThan(100);
+  });
 }
