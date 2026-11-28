@@ -1,8 +1,25 @@
 # Changelog
 
-## 0.6.0
+## 0.6.1
 
 <!-- release:start -->
+
+### Bug Fixes
+
+- **Box-drawing corners and T-junctions:** `@wterm/dom` sizes single-direction box-drawing arms to `calc(50% + var(--term-box-stroke) * 0.5)` instead of `calc(50% + var(--term-box-stroke))`, so corners (`┌ ┐ └ ┘ ┏ ┓ ┗ ┛`), T-junctions (`├ ┤ ┬ ┴ ┣ ┫ ┳ ┻`), and half-lines meet perpendicular strokes flush instead of overshooting by half a stroke width (#311).
+
+### Documentation
+
+- **Docs branding and OG cards:** use the Vercel Labs lockup in the docs header, switch to the Vercel Labs OG card generator, and version OG image URLs by card content (#299, #300, #301).
+
+### Contributors
+
+- @Railly
+- @ctate
+
+<!-- release:end -->
+
+## 0.6.0
 
 ### New Features
 
@@ -26,8 +43,6 @@
 - @Railly
 - @ctate
 
-<!-- release:end -->
-
 ## 0.5.10
 
 ### Bug Fixes
@@ -40,8 +55,6 @@
 
 - @Railly
 - @ctate
-
-<!-- release:end -->
 
 ## 0.5.9
 
