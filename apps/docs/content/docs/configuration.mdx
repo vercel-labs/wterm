@@ -314,7 +314,8 @@ const term = new WTerm(element, { core, renderer: "webgl" });
 Writes return before they are parsed: cells, replies, titles, and bells arrive
 with the worker's next update. Each `WorkerCore` owns one worker; call
 `dispose()` when the terminal is gone. The worker uses code splitting, so set
-`worker: { format: "es" }` in a Vite config.
+`worker: { format: "es" }` in a Vite config. The core's JavaScript source maps
+include the original TypeScript for debugging in the browser.
 
 ### React-only
 
