@@ -319,16 +319,10 @@ function getBlockBackground(cp: number, fg: string, bg: string): string {
       if (!q) return fg;
       const [tl, tr, bl, br] = q;
       if (tl && tr && bl && br) return fg;
-      const layers: string[] = [];
-      const POS = ["0 0", "100% 0", "0 100%", "100% 100%"];
-      q.forEach((filled, i) => {
-        if (filled)
-          layers.push(
-            `linear-gradient(${fg},${fg}) ${POS[i]}/50% 50% no-repeat`,
-          );
-      });
-      layers.push(bg);
-      return layers.join(",");
+      // One layer over the whole cell: 50% tiles leave its far edges partly
+      // uncovered when the cell is a fractional number of device pixels.
+      const c = (filled: boolean) => (filled ? fg : "transparent");
+      return `conic-gradient(${c(tr)} 0 25%,${c(br)} 0 50%,${c(bl)} 0 75%,${c(tl)} 0),${bg}`;
     }
   }
 }
@@ -556,8 +550,8 @@ export class Renderer {
   }
 
   /**
-   * Sizes the live-row color canvas to the grid. Cell edges sit on whole CSS
-   * pixels, matching where the browser paints DOM cell backgrounds.
+   * Sizes the live-row color canvas to the grid and rounds column edges to
+   * whole CSS pixels.
    */
   private syncCellCanvas(viewport?: RenderViewport): boolean {
     const rowHeight = viewport?.rowHeight ?? 0;
@@ -670,6 +664,7 @@ export class Renderer {
     lineLen: number,
     cursorCol: number,
     rowIndex: number,
+    forceDom = false,
   ): void {
     // Each part is one direct child: a cell span, text run, or complete link.
     // Keeping their boundaries lets a redraw preserve unchanged Unicode cells.
@@ -704,7 +699,7 @@ export class Renderer {
     let uniformBackground = lineLen >= this.cols;
     const canvasTop = rowIndex >= 0 && this.cellEnabled ? this.cellTop : null;
     const canvasBottom = this.cellBottom!;
-    if (canvasTop) {
+    if (canvasTop && !forceDom) {
       canvasTop.fill(0);
       canvasBottom.fill(0);
     }
@@ -814,27 +809,42 @@ export class Renderer {
           foreground !== undefined &&
           (cp === 0x2588 || background !== undefined)
         ) {
-          flushRun(col);
-          canvasTop[col] = cp === 0x2584 ? background! : foreground;
-          canvasBottom[col] = cp === 0x2580 ? background! : foreground;
-          canvasUsed = true;
-          const text = cell.chars ?? String.fromCodePoint(cp);
-          recordText(text, col);
-          canvasText += text;
-          canvasCols++;
           uniformBackground = false;
-          runStart = col + 1;
-          continue;
+          if (!forceDom) {
+            flushRun(col);
+            canvasTop[col] = cp === 0x2584 ? background! : foreground;
+            canvasBottom[col] = cp === 0x2580 ? background! : foreground;
+            canvasUsed = true;
+            const text = cell.chars ?? String.fromCodePoint(cp);
+            recordText(text, col);
+            canvasText += text;
+            canvasCols++;
+            runStart = col + 1;
+            continue;
+          }
         }
       }
+      const block = inBounds && cp >= 0x2580 && cp <= 0x259f;
+      // DOM and canvas can round the same column edge to different device pixels.
+      if (block && width !== 0 && canvasTop && !forceDom) {
+        return this._buildRowContent(
+          rowEl,
+          getCell,
+          lineLen,
+          cursorCol,
+          rowIndex,
+          true,
+        );
+      }
       const canvasBackground =
+        !forceDom &&
         canvasTop &&
         inBounds &&
         width === 1 &&
         col !== cursorCol &&
         !cellLinkKey &&
         !(cell.flags & (FLAG_DIM | FLAG_INVISIBLE)) &&
-        !(cp >= 0x2580 && cp <= 0x259f)
+        !block
           ? cellBackgroundPixel(cell)
           : undefined;
       if (canvasTop && canvasBackground !== undefined) {
@@ -946,7 +956,7 @@ export class Renderer {
         continue;
       }
 
-      if (inBounds && cp >= 0x2580 && cp <= 0x259f) {
+      if (block) {
         flushRun(col);
         const ch = cell.chars ?? String.fromCodePoint(cp);
         recordText(ch, col);

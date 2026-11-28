@@ -352,45 +352,51 @@ describe("Renderer", () => {
       });
     });
 
-    it("keeps cursor, themed, dim, invisible, decorated, linked, wide, and other blocks in the DOM", () => {
-      const { context } = mockCanvas();
-      const cells = [
-        opaque,
-        makeCell("█"),
-        makeCell("█", 1, 16),
-        makeCell("▀", 16, 1),
-        { ...opaque, flags: 0x02 },
-        { ...opaque, flags: 0x40 },
-        { ...opaque, flags: 0x08 },
-        { ...opaque, flags: 0x80 },
-        { ...opaque, linkUri: "https://example.com", linkKey: "block" },
-        { ...opaque, width: 2 },
-        makeCell(" ", 256, 256, 0, 0),
-        { ...opaque, char: 0x2591 },
-        opaque,
-      ];
-      const bridge = createMockBridge(cells.length, 1, [cells]);
-      new Renderer(container).render(bridge, viewport);
-
-      const row = container.querySelector(".term-row")!;
-      expect(row.textContent).toBe("███▀██████░█");
-      expect(row.querySelector(".term-cursor")?.textContent).toBe("█");
-      expect(row.querySelector("a.term-link")?.getAttribute("href")).toBe(
-        "https://example.com/",
-      );
-      expect(row.querySelector(".term-wide")?.textContent).toBe("█");
-      expect(row.querySelectorAll(".term-canvas-run")).toHaveLength(1);
-      expect(row.querySelector(".term-canvas-run")?.textContent).toBe("█");
-
-      const image = context.createImageData.mock.results[0].value;
-      cells.forEach((_, col) => {
-        const expected =
-          col === cells.length - 1 ? [17, 34, 51, 255] : [0, 0, 0, 0];
-        for (const y of [0, viewport.rowHeight - 1]) {
-          expect(pixel(image, center(col), y)).toEqual(expected);
-        }
-      });
-    });
+    it.each([
+      { name: "cursor", block: opaque, cursor: true },
+      { name: "default foreground", block: makeCell("█") },
+      { name: "palette foreground", block: makeCell("█", 1, 16) },
+      { name: "palette background", block: makeCell("▀", 16, 1) },
+      { name: "dim", block: { ...opaque, flags: 0x02 } },
+      { name: "invisible", block: { ...opaque, flags: 0x40 } },
+      { name: "underlined", block: { ...opaque, flags: 0x08 } },
+      { name: "struck through", block: { ...opaque, flags: 0x80 } },
+      {
+        name: "linked",
+        block: { ...opaque, linkUri: "https://example.com", linkKey: "block" },
+      },
+      {
+        name: "wide",
+        block: { ...opaque, char: 0x259b, chars: "▛\uFE0F", width: 2 },
+      },
+      { name: "shaded", block: { ...opaque, char: 0x2591 } },
+    ])(
+      "keeps a $name block and its neighbors in the DOM",
+      ({ block, cursor }) => {
+        const { context } = mockCanvas();
+        const cells = [opaque, block, opaque];
+        if (block.width === 2)
+          cells.splice(2, 0, makeCell(" ", 256, 256, 0, 0));
+        const bridge = createMockBridge(cells.length, 1, [cells]);
+        bridge.getCursor = () => ({ row: 0, col: 1, visible: cursor === true });
+        new Renderer(container).render(bridge, viewport);
+        const row = container.querySelector(".term-row")!;
+        expect(row.querySelector(".term-canvas-run")).toBeNull();
+        expect(context.createImageData).not.toHaveBeenCalled();
+        const glyph =
+          ("chars" in block ? block.chars : undefined) ??
+          String.fromCodePoint(block.char);
+        expect(row.textContent).toBe("█" + glyph + "█");
+        if (cursor)
+          expect(row.querySelector(".term-cursor")?.textContent).toBe(glyph);
+        if (block.width === 2)
+          expect(row.querySelector(".term-wide")?.textContent).toBe(glyph);
+        if ("linkUri" in block)
+          expect(row.querySelector("a.term-link")?.getAttribute("href")).toBe(
+            "https://example.com/",
+          );
+      },
+    );
 
     it("paints a full block from its foreground when the theme supplies the background", () => {
       const { context } = mockCanvas();
@@ -403,6 +409,73 @@ describe("Renderer", () => {
       expect(container.querySelector(".term-canvas-run")?.textContent).toBe(
         "█",
       );
+    });
+
+    it.each([
+      ["quadrant", 0x259b],
+      ["half", 0x2590],
+      ["lower quarter", 0x2582],
+    ])(
+      "keeps a row with a %s block out of the canvas and clears its band",
+      (_, char) => {
+        const { context } = mockCanvas();
+        const cells = [opaque, opaque];
+        const bridge = createMockBridge(2, 1, [cells]);
+        bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+        const renderer = new Renderer(container);
+        renderer.setup(2, 1);
+        renderer.render(bridge, viewport);
+        const image = context.createImageData.mock.results[0].value;
+        expect(pixel(image, center(1), 0)).toEqual([17, 34, 51, 255]);
+
+        context.putImageData.mockClear();
+        cells[0] = { ...opaque, char };
+        bridge.isDirtyRow = () => true;
+        renderer.render(bridge, viewport);
+        expect(container.querySelector(".term-canvas-run")).toBeNull();
+        expect(
+          Array.from(
+            container.querySelectorAll(".term-block"),
+            (el) => el.textContent,
+          ),
+        ).toEqual([String.fromCodePoint(char), "█"]);
+        expect(pixel(image, center(1), 0)).toEqual([0, 0, 0, 0]);
+        expect(context.putImageData).toHaveBeenCalledWith(
+          image,
+          0,
+          0,
+          0,
+          0,
+          image.width,
+          image.height,
+        );
+        cells[0] = opaque;
+        renderer.render(bridge, viewport);
+        expect(container.querySelector(".term-canvas-run")?.textContent).toBe(
+          "██",
+        );
+        expect(pixel(image, center(1), 0)).toEqual([17, 34, 51, 255]);
+      },
+    );
+
+    it("keeps a block's background to its cell in a row with a quadrant", () => {
+      mockCanvas();
+      const cells: CellData[] = Array.from({ length: 4 }, () => ({
+        ...makeCell(" "),
+        fgRgb: 0xd77757,
+        bgRgb: 0x14283c,
+      }));
+      cells[0] = { ...cells[0], char: 0x259b };
+      cells[1] = { ...cells[1], char: 0x2588 };
+      const bridge = createMockBridge(4, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.setup(4, 1);
+      renderer.render(bridge, viewport);
+      expect(container.querySelector(".term-canvas-run")).toBeNull();
+      expect(
+        container.querySelector<HTMLElement>(".term-row")!.style.background,
+      ).toBe("");
     });
 
     it("falls back without usable geometry or a 2D context", () => {
@@ -1707,6 +1780,33 @@ describe("Renderer", () => {
       expect(spans[3].style.backgroundSize).toBe(
         "var(--term-box-stroke) calc(50% + var(--term-box-stroke) * 0.5),calc(50% + var(--term-box-stroke) * 0.5) var(--term-box-stroke)",
       );
+    });
+  });
+
+  describe("quadrant blocks", () => {
+    it("paint their filled quadrants in one layer over the cell background", () => {
+      const cells = ["▖", "▛", "▞"].map((char) => ({
+        ...makeCell(char),
+        fgRgb: 0xd77757,
+        bgRgb: 0x000000,
+      }));
+      const bridge = createMockBridge(cells.length, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+
+      const styles = Array.from(
+        container.querySelectorAll<HTMLElement>(".term-row > .term-block"),
+        (span) => span.getAttribute("style") ?? "",
+      );
+      const fg = "rgb(215,119,87)";
+      const no = "transparent";
+      const quadrants = (tr: string, br: string, bl: string, tl: string) =>
+        `background:conic-gradient(${tr} 0 25%,${br} 0 50%,${bl} 0 75%,${tl} 0),rgb(0,0,0);`;
+      expect(styles).toHaveLength(3);
+      expect(styles[0]).toContain(quadrants(no, no, fg, no));
+      expect(styles[1]).toContain(quadrants(fg, no, fg, fg));
+      expect(styles[2]).toContain(quadrants(fg, no, fg, no));
     });
   });
 });

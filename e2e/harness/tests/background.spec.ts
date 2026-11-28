@@ -192,3 +192,164 @@ for (const core of ["builtin", "ghostty"]) {
     ]);
   });
 }
+
+test.describe("at device pixel ratio 2", () => {
+  test.use({ deviceScaleFactor: 2 });
+
+  // Each pattern is orange across the top quarter of its row: ▛ and █ fill
+  // the top half, and ▐ ▌ ▂ are drawn orange on orange.
+  const seamCases = [
+    { blocks: "quadrants", pattern: "▛█".repeat(8), bg: "0;0;0" },
+    {
+      blocks: "half and lower-quarter blocks",
+      pattern: "▐█▌█▂█".repeat(3),
+      bg: "215;119;87",
+    },
+  ];
+  for (const core of ["builtin", "ghostty"]) {
+    for (const { blocks, pattern, bg } of seamCases)
+      test(`${core} leaves no seam between ${blocks} and full blocks at a fractional cell width`, async ({
+        page,
+      }) => {
+        await page.goto(`/?core=${core}&mode=replay`);
+        await expect(page.locator("#status")).toHaveText("Replay ready");
+        await page.evaluate(() => window.ptyHarness.resize(20, 3));
+        await write(
+          page,
+          `\x1b[?25l\x1b[38;2;215;119;87;48;2;${bg}m${pattern}\x1b[0m`,
+        );
+        const grid = page.locator(".term-grid");
+        await expect(grid.locator(".term-row").first()).toContainText(pattern);
+        const span = await grid.evaluate((el) => {
+          const rect = el.getBoundingClientRect();
+          const row = el.querySelector(".term-row")!.getBoundingClientRect();
+          const width = parseFloat(
+            getComputedStyle(el).getPropertyValue("--term-cell-width"),
+          );
+          return {
+            width,
+            left: row.left - rect.left,
+            y: row.top - rect.top + row.height / 4,
+          };
+        });
+        expect(Number.isInteger(span.width * 2)).toBe(false);
+        const png = await grid.screenshot({ scale: "device" });
+        const seams = await page.evaluate(
+          async ({ png, span, cols }) => {
+            const image = new Image();
+            image.src = `data:image/png;base64,${png}`;
+            await image.decode();
+            const canvas = document.createElement("canvas");
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const context = canvas.getContext("2d")!;
+            context.drawImage(image, 0, 0);
+            const from = Math.ceil(span.left * 2);
+            const to = Math.floor((span.left + cols * span.width) * 2);
+            const { data } = context.getImageData(
+              from,
+              Math.floor(span.y * 2),
+              to - from,
+              1,
+            );
+            // Off by more than WebKit's colour conversion: a seam.
+            const off = new Set<string>();
+            for (let i = 0; i < data.length; i += 4)
+              if (
+                Math.abs(data[i] - 215) > 2 ||
+                Math.abs(data[i + 1] - 119) > 2 ||
+                Math.abs(data[i + 2] - 87) > 2
+              )
+                off.add(
+                  `${from + i / 4}: rgb(${data[i]}, ${data[i + 1]}, ${data[i + 2]})`,
+                );
+            return [...off];
+          },
+          { png: png.toString("base64"), span, cols: pattern.length },
+        );
+        expect(seams).toEqual([]);
+      });
+
+    for (const offset of [0.25, 0.5]) {
+      test(`${core} leaves no line between a canvas row and a quadrant row ${offset}px off the pixel grid`, async ({
+        page,
+      }) => {
+        await page.goto(`/?core=${core}&mode=replay`);
+        await expect(page.locator("#status")).toHaveText("Replay ready");
+        await page.evaluate(() => window.ptyHarness.resize(20, 3));
+        const terminal = page.locator("#terminal");
+        const margin = await terminal.evaluate((el) =>
+          parseFloat(getComputedStyle(el).marginTop),
+        );
+        await terminal.evaluate(
+          (el, top) => (el.style.marginTop = `${top}px`),
+          Math.floor(margin) + offset,
+        );
+        // Every row is orange where the scans cross it: █, then ▛ (left
+        // half) or █ in the row that stays out of the canvas, then the top
+        // half of ▀.
+        await write(
+          page,
+          "\x1b[?25l\x1b[38;2;215;119;87;48;2;0;0;0m" +
+            "█".repeat(20) +
+            "\r\n▛▀" +
+            "█".repeat(18) +
+            "\r\n" +
+            "▀".repeat(20) +
+            "\x1b[0m",
+        );
+        const grid = page.locator(".term-grid");
+        await expect(grid.locator(".term-row").nth(1)).toContainText("▛▀");
+        const box = await grid.evaluate((el) => {
+          const rect = el.getBoundingClientRect();
+          const rows = el.querySelectorAll(".term-row");
+          const first = rows[0].getBoundingClientRect();
+          const last = rows[2].getBoundingClientRect();
+          const width = parseFloat(
+            getComputedStyle(el).getPropertyValue("--term-cell-width"),
+          );
+          return {
+            xs: [0.25, 10.5].map((col) => first.left - rect.left + col * width),
+            top: first.top - rect.top + first.height / 2,
+            bottom: last.top - rect.top + last.height / 4,
+          };
+        });
+        const png = await grid.screenshot({ scale: "device" });
+        const lines = await page.evaluate(
+          async ({ png, box }) => {
+            const image = new Image();
+            image.src = `data:image/png;base64,${png}`;
+            await image.decode();
+            const canvas = document.createElement("canvas");
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const context = canvas.getContext("2d")!;
+            context.drawImage(image, 0, 0);
+            const from = Math.ceil(box.top * 2);
+            const off: string[] = [];
+            for (const x of box.xs.map((x) => Math.floor(x * 2))) {
+              const { data } = context.getImageData(
+                x,
+                from,
+                1,
+                Math.floor(box.bottom * 2) - from,
+              );
+              for (let i = 0; i < data.length; i += 4)
+                if (
+                  Math.abs(data[i] - 215) > 2 ||
+                  Math.abs(data[i + 1] - 119) > 2 ||
+                  Math.abs(data[i + 2] - 87) > 2
+                )
+                  off.push(
+                    `${x},${from + i / 4}: rgb(${data[i]}, ${data[i + 1]}, ${data[i + 2]})`,
+                  );
+            }
+            return off;
+          },
+          { png: png.toString("base64"), box },
+        );
+        expect(lines).toEqual([]);
+      });
+    }
+  }
+});

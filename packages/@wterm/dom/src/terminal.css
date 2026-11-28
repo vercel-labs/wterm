@@ -58,6 +58,10 @@
   white-space: pre;
   contain: layout paint style;
   will-change: contents;
+  /* Its own layer, on whole device pixels: at a fractional offset, WebKit and
+     Firefox can otherwise leave a device-pixel line between a canvas-painted
+     row and a DOM-painted one. */
+  transform: translateZ(0);
 }
 
 .term-cell-canvas {
