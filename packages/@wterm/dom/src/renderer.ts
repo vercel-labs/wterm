@@ -1498,10 +1498,20 @@ export class Renderer {
   }
 
   /** Plain text for the native selection, or null when this terminal does not own it. */
-  getSelectionText(): string | null {
+  getSelectionText(core?: TerminalCore): string | null {
     const terminal = this.container.parentElement;
     if (!terminal) return null;
-    return getSelectionText(terminal, this.selectionRows());
+    const matchesPaint =
+      this.painted &&
+      core &&
+      core.getScrollbackCount() === this._renderedScrollbackCount &&
+      (core.getScrollbackDiscardedCount?.() ?? 0) ===
+        this._renderedDiscardedCount;
+    return getSelectionText(
+      terminal,
+      this.selectionRows(),
+      matchesPaint ? core : undefined,
+    );
   }
 
   private *selectionRows() {

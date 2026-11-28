@@ -1,5 +1,7 @@
-import type { TerminalRowMetadata } from "@wterm/core";
+import type { TerminalCore, TerminalRowMetadata } from "@wterm/core";
+import { MAX_SELECTION_ROWS, MAX_SELECTION_TEXT } from "./selection-range.js";
 import { markSelectionChanged, selectionMayExist } from "./selection-state.js";
+import { readHistoryText } from "./text-capture.js";
 
 /** Text offsets are UTF-16 offsets in a rendered row, not terminal columns. */
 export interface RenderedRowText {
@@ -39,23 +41,28 @@ function selectedText(
   return parts.join("");
 }
 
+function lineBreak(wrapsToNext?: boolean, continuesPrevious?: boolean): string {
+  return wrapsToNext && continuesPrevious ? "" : "\n";
+}
+
 /**
  * Extract only a selection wholly owned by this terminal. Work against the
- * painted snapshot: core state can already be ahead of the visible frame.
- * Unknown/missing rows, multiple ranges, and selections outside the terminal
- * stay with the browser rather than silently exporting incomplete history.
+ * painted snapshot. When the core matches that snapshot it can supply rows
+ * between two mounted endpoints without mounting more history.
  */
 export function getSelectionText(
   terminal: HTMLElement,
   rows: Iterable<SelectedRow>,
+  core?: TerminalCore,
 ): string | null {
   markSelectionChanged(terminal.ownerDocument);
-  return readSelection(terminal, rows)?.text ?? null;
+  return readSelection(terminal, rows, core)?.text ?? null;
 }
 
 export function readSelection(
   terminal: HTMLElement,
   rows: Iterable<SelectedRow>,
+  core?: TerminalCore,
 ) {
   if (!selectionMayExist(terminal.ownerDocument)) return null;
   const selection = terminal.ownerDocument.getSelection();
@@ -78,6 +85,8 @@ export function readSelection(
   let first: { row: SelectedRow; offset: number } | undefined;
   let last: { row: SelectedRow; offset: number } | undefined;
   let previous: SelectedRow | undefined;
+  let usedHistory = false;
+  let historyLength = 0;
   for (const current of rows) {
     const { element, content } = current;
     if (!range.intersectsNode(element)) continue;
@@ -103,11 +112,27 @@ export function readSelection(
           : end,
     };
     if (previous) {
-      if (current.row !== previous.row + 1) return null;
-      const wrapped =
-        previous.content.metadata?.wrapsToNext &&
-        content.metadata?.continuesPrevious;
-      if (!wrapped) parts.push("\n");
+      let wrapsToNext = previous.content.metadata?.wrapsToNext;
+      if (current.row !== previous.row + 1) {
+        if (
+          !core ||
+          !first.row.element.contains(range.startContainer) ||
+          current.row - first.row.row >= MAX_SELECTION_ROWS
+        )
+          return null;
+        const gap = readHistoryText(
+          core,
+          previous.row + 1,
+          current.row,
+          MAX_SELECTION_TEXT - historyLength,
+        );
+        if (!gap) return null;
+        parts.push(lineBreak(wrapsToNext, gap.continuesPrevious), gap.text);
+        wrapsToNext = gap.wrapsToNext;
+        historyLength += gap.text.length;
+        usedHistory = true;
+      }
+      parts.push(lineBreak(wrapsToNext, content.metadata?.continuesPrevious));
     }
     let text = start === end ? "" : selectedText(content, start, end);
     if (end === content.text.length && !content.metadata?.wrapsToNext)
@@ -115,16 +140,23 @@ export function readSelection(
     parts.push(text);
     previous = current;
   }
-  return first && last
-    ? {
-        text: parts.join(""),
-        first,
-        last,
-        backward:
-          selection.anchorNode !== range.startContainer ||
-          selection.anchorOffset !== range.startOffset,
-      }
-    : null;
+  if (!first || !last) return null;
+  const text = parts.join("");
+  if (
+    usedHistory &&
+    (!last.row.element.contains(range.endContainer) ||
+      last.row.row - first.row.row >= MAX_SELECTION_ROWS ||
+      text.length > MAX_SELECTION_TEXT)
+  )
+    return null;
+  return {
+    text,
+    first,
+    last,
+    backward:
+      selection.anchorNode !== range.startContainer ||
+      selection.anchorOffset !== range.startOffset,
+  };
 }
 
 /** Anchor an edge to an included cell, so an end at a wrap follows that cell. */

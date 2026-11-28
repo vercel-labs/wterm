@@ -7,6 +7,7 @@ export function* scanText(
   core: TerminalCore,
   limit = MAX_TEXT_LENGTH,
   startRow = 0,
+  endRow = core.getScrollbackCount() + core.getRows(),
 ): Generator<void, string> {
   const history = core.getScrollbackCount();
   const parts: string[] = [];
@@ -26,7 +27,7 @@ export function* scanText(
       chunk = "";
     }
   };
-  for (let row = startRow; row < history + core.getRows(); row++) {
+  for (let row = startRow; row < endRow; row++) {
     const offset = history - row - 1;
     const metadata =
       row < history
@@ -75,6 +76,30 @@ export function* scanText(
   }
   parts.push(chunk);
   return parts.join("");
+}
+
+export function readHistoryText(
+  core: TerminalCore,
+  start: number,
+  end: number,
+  limit: number,
+) {
+  const history = core.getScrollbackCount();
+  if (start < 0 || end > history || start >= end) return null;
+  const scan = scanText(core, limit, start, end);
+  try {
+    let result = scan.next();
+    while (!result.done) result = scan.next();
+    return {
+      text: result.value,
+      continuesPrevious: core.getScrollbackRowMetadata?.(history - start - 1)
+        ?.continuesPrevious,
+      wrapsToNext: core.getScrollbackRowMetadata?.(history - end)?.wrapsToNext,
+    };
+  } catch (error) {
+    if (error instanceof RangeError) return null;
+    throw error;
+  }
 }
 
 function aborted(message: string): DOMException {

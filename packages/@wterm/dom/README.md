@@ -344,7 +344,7 @@ WTerm owns scrollback anchoring when old history is discarded. The package style
 
 ### Selecting and copying text
 
-Use the browser's normal selection and Copy action. WTerm supplies plain text for selections entirely within contiguous mounted terminal rows. With Ghostty, confirmed soft wraps are joined, so a wrapped command copies as one line; explicit newlines remain `\n`. Cores without row-wrap metadata, including the built-in core, keep physical row breaks.
+Use the browser's normal selection and Copy action. WTerm can fill in retained history between two mounted selection endpoints. With Ghostty, confirmed soft wraps join, so a wrapped command copies as one line. Explicit newlines remain `\n`, and cores without row-wrap metadata, including the built-in core, keep physical row breaks.
 
 Copy preserves complete cell graphemes, emoji, CJK, block glyphs, and box-drawing characters. Selecting part of a multi-code-point cell copies that whole cell. Wide-cell continuations and flagged right-edge spacer heads add no text. Hyperlinks copy their displayed text without HTML or URLs. Trailing ASCII spaces are removed when selection reaches a hard row's right edge; spaces within text, across soft wraps, or at a partially selected row end are preserved.
 
@@ -356,7 +356,7 @@ if (text !== null) {
 }
 ```
 
-The method reads the painted text, including while synchronized output holds a newer frame. It returns `null` for a collapsed or unavailable selection, selections extending outside this terminal, multiple ranges, or a gap in mounted history. In those cases, Copy keeps the browser's normal behavior. Input-field selections and previously handled copy events are also left to the host. An all-padding selection can return an empty string.
+The method reads the painted text, including while synchronized output holds a newer frame. Filling a gap requires a current frame and a selection of at most 1,000 physical rows and 1,048,576 UTF-16 units. The method returns `null` for an unavailable range, a gap it cannot fill, multiple ranges, or a selection outside the terminal. In these cases, Copy uses the browser's normal behavior. Input-field selections and previously handled copy events are left to the host. An all-padding selection can return an empty string.
 
 With Ghostty's current WASM binary, WTerm tracks both selection edges through output scrolling and resize/reflow and restores the native highlight, including backward selections. If selected text changes, an edge is discarded, or the application resets or switches screens, the selection clears. The copied text stays tied to what was selected. Resize reports applied dimensions immediately and rebuilds the DOM on the next paint frame.
 
