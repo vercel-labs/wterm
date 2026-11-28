@@ -237,15 +237,24 @@
     1px,
     round(calc(var(--term-cell-width, 1ch) * 0.18), 1px)
   );
+  position: relative;
   -webkit-text-fill-color: transparent;
-  /* Cells sit at fractional offsets, and Chromium snaps each cell's strokes
-     on its own, which leaves hairline seams between neighbors. Overlap each
-     cell by one pixel. A whole pixel keeps every centered stroke at the same
-     position, so arms stay flush; content-box sizing lets the padding cancel
-     the margin, so columns stay in place under a border-box reset. */
-  box-sizing: content-box;
-  margin: -1px;
-  padding: 1px;
+}
+
+/* Cells sit at fractional offsets, and Chromium snaps each cell's strokes on
+   its own, which leaves hairline seams between neighbors. The strokes paint on
+   a layer one pixel larger than the cell on every side, so neighbors overlap
+   while the cell keeps its size. A whole pixel keeps every centered stroke
+   where it is in the cell, so arms stay flush with the strokes they meet. */
+.term-box::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  background-image: var(--term-box-image, none);
+  background-position: var(--term-box-position, 0 0);
+  background-size: var(--term-box-size, auto);
+  background-repeat: no-repeat;
+  pointer-events: none;
 }
 
 .term-box-heavy,
@@ -312,10 +321,10 @@
   }
 
   .term-box {
-    background-image: none !important;
     -webkit-text-fill-color: currentColor;
   }
 
+  .term-box::before,
   .term-box-round::after {
     display: none;
   }

@@ -19,15 +19,10 @@ for (const scale of [1, 2]) {
         await page.goto(`/?core=${core}&mode=replay`);
         await expect(page.locator("#status")).toHaveText("Replay ready");
         await page.evaluate(() => window.ptyHarness.resize(40, 8));
-        // Hosts often reset every element to border-box sizing.
-        await page.addStyleTag({
-          content: "*, *::before, *::after { box-sizing: border-box; }",
-        });
         await write(
           page,
           "\x1b[?25l\x1b[2;2H" +
             "─".repeat(30) +
-            "X" +
             "\x1b[4;2H" +
             "━".repeat(30) +
             Array.from({ length: 6 }, (_, row) => `\x1b[${row + 2};36H│`).join(
@@ -59,11 +54,6 @@ for (const scale of [1, 2]) {
             cellWidth: parseFloat(
               getComputedStyle(element).getPropertyValue("--term-cell-width"),
             ),
-            afterRule:
-              Array.from(rows[1].querySelectorAll("span"))
-                .find((span) => span.textContent?.startsWith("X"))!
-                .getBoundingClientRect().left -
-              rows[1].getBoundingClientRect().left,
             light: rule(rows[1], "─"),
             heavy: rule(rows[3], "━"),
             bar: {
@@ -78,11 +68,6 @@ for (const scale of [1, 2]) {
         const fraction = (geometry.cellWidth * scale) % 1;
         expect(fraction).toBeGreaterThan(0.05);
         expect(fraction).toBeLessThan(0.95);
-        // The cell after the rule stays in column 32.
-        expect(
-          Math.abs(geometry.afterRule - 31 * geometry.cellWidth),
-        ).toBeLessThan(0.1);
-
         const screenshot = await grid.screenshot({ scale: "device" });
         const seams = await page.evaluate(
           async ({ png, scale, light, heavy, bar }) => {
@@ -228,7 +213,7 @@ for (const scale of [1, 2]) {
 
         const overlapped = await strokeEdges();
         await page.addStyleTag({
-          content: ".term-box { margin: 0 !important; padding: 0 !important; }",
+          content: ".term-box::before { inset: 0 !important; }",
         });
         await page.evaluate(() => window.ptyHarness.frame());
         const separate = await strokeEdges();
@@ -262,19 +247,6 @@ for (const core of ["builtin", "ghostty"]) {
     const geometry = await grid.evaluate((element) => {
       const gridRect = element.getBoundingClientRect();
       const rows = element.querySelectorAll(".term-row");
-      // Measure the cell itself, not the half-pixel overlap around it.
-      const cellRect = (span: HTMLElement) => {
-        const rect = span.getBoundingClientRect();
-        const style = getComputedStyle(span);
-        const x = parseFloat(style.paddingLeft);
-        const y = parseFloat(style.paddingTop);
-        return new DOMRect(
-          rect.left + x,
-          rect.top + y,
-          rect.width - 2 * x,
-          rect.height - 2 * y,
-        );
-      };
       const vertical = Array.from(rows)
         .slice(0, 3)
         .map((row) =>
@@ -282,10 +254,10 @@ for (const core of ["builtin", "ghostty"]) {
             (span) => span.textContent === "│",
           ),
         )
-        .map((span) => cellRect(span!));
+        .map((span) => span!.getBoundingClientRect());
       const horizontal = Array.from(rows[3].querySelectorAll("span"))
         .filter((span) => span.textContent === "─")
-        .map(cellRect);
+        .map((span) => span.getBoundingClientRect());
       return {
         vertical: {
           x: vertical[0].left + vertical[0].width / 2 - gridRect.left,
@@ -389,7 +361,7 @@ for (const core of ["builtin", "ghostty"]) {
         selected,
         straightColor: getComputedStyle(straight).color,
         controlColor: getComputedStyle(control).color,
-        straightImage: getComputedStyle(straight).backgroundImage,
+        straightImage: getComputedStyle(straight, "::before").backgroundImage,
         roundedText: rounded.textContent,
         roundedBorder: getComputedStyle(rounded, "::after").borderTopWidth,
         heavy: Boolean(heavy),
@@ -412,7 +384,7 @@ for (const core of ["builtin", "ghostty"]) {
       return {
         color: style.color,
         background: style.backgroundColor,
-        image: style.backgroundImage,
+        image: getComputedStyle(element, "::before").backgroundImage,
       };
     });
     expect(cursorStyle.color).toBe("rgb(30, 30, 30)");
@@ -425,7 +397,7 @@ for (const core of ["builtin", "ghostty"]) {
       return {
         color: style.color,
         fill: style.webkitTextFillColor,
-        image: style.backgroundImage,
+        strokes: getComputedStyle(element, "::before").display,
         corner: getComputedStyle(
           element.closest(".term-grid")!.querySelector(".term-box-round")!,
           "::after",
@@ -433,7 +405,7 @@ for (const core of ["builtin", "ghostty"]) {
       };
     });
     expect(printStyle.fill).toBe(printStyle.color);
-    expect(printStyle.image).toBe("none");
+    expect(printStyle.strokes).toBe("none");
     expect(printStyle.corner).toBe("none");
   });
 

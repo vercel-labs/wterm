@@ -1695,16 +1695,16 @@ describe("Renderer", () => {
         container.querySelectorAll<HTMLElement>(".term-row > .term-box"),
       );
       expect(spans).toHaveLength(4);
-      expect(spans[0].style.backgroundSize).toBe(
+      expect(spans[0].style.getPropertyValue("--term-box-size")).toBe(
         "var(--term-box-stroke) calc(50% + var(--term-box-stroke) * 0.5),calc(50% + var(--term-box-stroke) * 0.5) var(--term-box-stroke)",
       );
-      expect(spans[1].style.backgroundSize).toBe(
+      expect(spans[1].style.getPropertyValue("--term-box-size")).toBe(
         "var(--term-box-stroke) calc(50% + var(--term-box-stroke) * 0.5),100% var(--term-box-stroke)",
       );
-      expect(spans[2].style.backgroundSize).toBe(
+      expect(spans[2].style.getPropertyValue("--term-box-size")).toBe(
         "var(--term-box-stroke) calc(50% + var(--term-box-stroke) * 0.5),calc(50% + var(--term-box-stroke) * 0.5) var(--term-box-stroke)",
       );
-      expect(spans[3].style.backgroundSize).toBe(
+      expect(spans[3].style.getPropertyValue("--term-box-size")).toBe(
         "var(--term-box-stroke) calc(50% + var(--term-box-stroke) * 0.5),calc(50% + var(--term-box-stroke) * 0.5) var(--term-box-stroke)",
       );
     });
