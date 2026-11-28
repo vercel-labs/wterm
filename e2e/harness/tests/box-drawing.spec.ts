@@ -8,6 +8,157 @@ async function write(page: Page, text: string) {
   await page.evaluate(() => window.ptyHarness.frame());
 }
 
+for (const scale of [1, 2]) {
+  test.describe(`at device scale ${scale}`, () => {
+    test.use({ deviceScaleFactor: scale });
+
+    for (const core of ["builtin", "ghostty"]) {
+      test(`${core} paints box rules without seams at fractional cell widths`, async ({
+        page,
+      }) => {
+        await page.goto(`/?core=${core}&mode=replay`);
+        await expect(page.locator("#status")).toHaveText("Replay ready");
+        await page.evaluate(() => window.ptyHarness.resize(40, 8));
+        // Hosts often reset every element to border-box sizing.
+        await page.addStyleTag({
+          content: "*, *::before, *::after { box-sizing: border-box; }",
+        });
+        await write(
+          page,
+          "\x1b[?25l\x1b[2;2H" +
+            "─".repeat(30) +
+            "X" +
+            "\x1b[4;2H" +
+            "━".repeat(30) +
+            Array.from({ length: 6 }, (_, row) => `\x1b[${row + 2};36H│`).join(
+              "",
+            ),
+        );
+
+        const grid = page.locator(".term-grid");
+        const geometry = await grid.evaluate((element) => {
+          const gridRect = element.getBoundingClientRect();
+          const rows = Array.from(element.querySelectorAll(".term-row"));
+          const cells = (row: Element, ch: string) =>
+            Array.from(row.querySelectorAll<HTMLElement>(".term-box"))
+              .filter((span) => span.textContent === ch)
+              .map((span) => span.getBoundingClientRect());
+          const rule = (row: Element, ch: string) => {
+            const spans = cells(row, ch);
+            return {
+              y: spans[0].top + spans[0].height / 2 - gridRect.top,
+              left: spans[0].left - gridRect.left,
+              right: spans.at(-1)!.right - gridRect.left,
+            };
+          };
+          const bars = rows
+            .slice(1, 7)
+            .map((row) => cells(row, "│")[0])
+            .filter(Boolean);
+          return {
+            cellWidth: parseFloat(
+              getComputedStyle(element).getPropertyValue("--term-cell-width"),
+            ),
+            afterRule:
+              Array.from(rows[1].querySelectorAll("span"))
+                .find((span) => span.textContent?.startsWith("X"))!
+                .getBoundingClientRect().left -
+              rows[1].getBoundingClientRect().left,
+            light: rule(rows[1], "─"),
+            heavy: rule(rows[3], "━"),
+            bar: {
+              x: bars[0].left + bars[0].width / 2 - gridRect.left,
+              top: bars[0].top - gridRect.top,
+              bottom: bars.at(-1)!.bottom - gridRect.top,
+            },
+          };
+        });
+        // Seams come from cells that sit at fractional device-pixel offsets.
+        // A whole-pixel cell width would pass without exercising the overlap.
+        const fraction = (geometry.cellWidth * scale) % 1;
+        expect(fraction).toBeGreaterThan(0.05);
+        expect(fraction).toBeLessThan(0.95);
+        // The cell after the rule stays in column 32.
+        expect(
+          Math.abs(geometry.afterRule - 31 * geometry.cellWidth),
+        ).toBeLessThan(0.1);
+
+        const screenshot = await grid.screenshot({ scale: "device" });
+        const seams = await page.evaluate(
+          async ({ png, scale, light, heavy, bar }) => {
+            const image = new Image();
+            image.src = `data:image/png;base64,${png}`;
+            await image.decode();
+            const canvas = document.createElement("canvas");
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const context = canvas.getContext("2d")!;
+            context.drawImage(image, 0, 0);
+            const pixels = context.getImageData(
+              0,
+              0,
+              image.width,
+              image.height,
+            ).data;
+            const brightness = (x: number, y: number) => {
+              const i = (y * image.width + x) * 4;
+              return Math.max(pixels[i], pixels[i + 1], pixels[i + 2]);
+            };
+            // A seam is a pixel along the stroke that is much darker than
+            // the rest of the stroke.
+            const seamsIn = (samples: number[]) => {
+              const sorted = [...samples].sort((a, b) => a - b);
+              const median = sorted[Math.floor(sorted.length / 2)];
+              return samples.flatMap((value, index) =>
+                value < median * 0.8 ? [index] : [],
+              );
+            };
+            const horizontal = (rule: typeof light) => {
+              const samples: number[] = [];
+              const y = Math.round(rule.y * scale);
+              for (
+                let x = Math.ceil(rule.left * scale) + 1;
+                x < Math.floor(rule.right * scale) - 1;
+                x++
+              ) {
+                let brightest = 0;
+                for (let dy = -3 * scale; dy <= 3 * scale; dy++)
+                  brightest = Math.max(brightest, brightness(x, y + dy));
+                samples.push(brightest);
+              }
+              return seamsIn(samples);
+            };
+            const vertical = () => {
+              const samples: number[] = [];
+              const x = Math.round(bar.x * scale);
+              for (
+                let y = Math.ceil(bar.top * scale) + 1;
+                y < Math.floor(bar.bottom * scale) - 1;
+                y++
+              ) {
+                let brightest = 0;
+                for (let dx = -2 * scale; dx <= 2 * scale; dx++)
+                  brightest = Math.max(brightest, brightness(x + dx, y));
+                samples.push(brightest);
+              }
+              return seamsIn(samples);
+            };
+            return {
+              light: horizontal(light),
+              heavy: horizontal(heavy),
+              bar: vertical(),
+            };
+          },
+          { png: screenshot.toString("base64"), scale, ...geometry },
+        );
+        expect(seams.light).toEqual([]);
+        expect(seams.heavy).toEqual([]);
+        expect(seams.bar).toEqual([]);
+      });
+    }
+  });
+}
+
 for (const core of ["builtin", "ghostty"]) {
   test(`${core} connects box-drawing strokes across cells`, async ({
     page,
@@ -32,6 +183,19 @@ for (const core of ["builtin", "ghostty"]) {
     const geometry = await grid.evaluate((element) => {
       const gridRect = element.getBoundingClientRect();
       const rows = element.querySelectorAll(".term-row");
+      // Measure the cell itself, not the half-pixel overlap around it.
+      const cellRect = (span: HTMLElement) => {
+        const rect = span.getBoundingClientRect();
+        const style = getComputedStyle(span);
+        const x = parseFloat(style.paddingLeft);
+        const y = parseFloat(style.paddingTop);
+        return new DOMRect(
+          rect.left + x,
+          rect.top + y,
+          rect.width - 2 * x,
+          rect.height - 2 * y,
+        );
+      };
       const vertical = Array.from(rows)
         .slice(0, 3)
         .map((row) =>
@@ -39,10 +203,10 @@ for (const core of ["builtin", "ghostty"]) {
             (span) => span.textContent === "│",
           ),
         )
-        .map((span) => span!.getBoundingClientRect());
+        .map((span) => cellRect(span!));
       const horizontal = Array.from(rows[3].querySelectorAll("span"))
         .filter((span) => span.textContent === "─")
-        .map((span) => span.getBoundingClientRect());
+        .map(cellRect);
       return {
         vertical: {
           x: vertical[0].left + vertical[0].width / 2 - gridRect.left,

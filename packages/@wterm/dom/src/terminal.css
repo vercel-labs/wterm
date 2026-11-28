@@ -238,6 +238,13 @@
     round(calc(var(--term-cell-width, 1ch) * 0.18), 1px)
   );
   -webkit-text-fill-color: transparent;
+  /* Cells sit at fractional offsets, and Chromium snaps each cell's strokes
+     on its own, which leaves hairline seams between neighbors. Overlap each
+     cell by half a pixel. Content-box sizing lets the padding cancel the
+     margin, so columns stay in place under a border-box reset. */
+  box-sizing: content-box;
+  margin: -0.5px;
+  padding: 0.5px;
 }
 
 .term-box-heavy,
