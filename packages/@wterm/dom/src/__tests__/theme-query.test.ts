@@ -131,6 +131,25 @@ describe("ThemeQueryScanner", () => {
     expect(scan(["\x1b[?2031h\x1b[?996n"])).toBe(SCHEME);
   });
 
+  it("finds queries between the sequences it skips, cut anywhere", () => {
+    // Styled text, hyperlinks, a mouse report and a cursor style around the
+    // queries, and CSI sequences that an ESC or a control byte cuts short.
+    const output =
+      "plain \x1b[38;2;1;2;3mred\x1b[0m " +
+      "\x1b]8;;https://example.com/?a=1;b=2\x1b\\link\x1b]8;;\x1b\\" +
+      "\x1b[<0;10;5M\x1b[ q\x1b[38;5\x1b]11;?\x07\x1b[1\x07" +
+      "\x1b[ ?996n\x1b]0;title ?;?\x07\x1b[?996n done";
+    const expected = THEME_BACKGROUND | THEME_SCHEME;
+    expect(scan([output])).toBe(expected);
+    for (const parts of splits(output)) expect(scan(parts)).toBe(expected);
+    for (const parts of splits(output))
+      expect(scan(parts.map(bytes))).toBe(expected);
+    expect(scan(["\x1b[ ?996n", "\x1b[38;5\x1b[?996", "n"])).toBe(
+      THEME_BACKGROUND | THEME_SCHEME,
+    );
+    expect(scan(["\x1b[ ?996n\x1b[3\x18?996n"])).toBe(0);
+  });
+
   it("ignores text that only looks like a query", () => {
     expect(scan(["hello 11;? world"])).toBe(0);
     expect(scan(["10;?"])).toBe(0);

@@ -169,10 +169,7 @@ pub const Grid = struct {
 
     pub fn clearRowAs(self: *Grid, row: u16, blank: Cell) void {
         if (row >= self.rows) return;
-        var c: u16 = 0;
-        while (c < self.cols) : (c += 1) {
-            self.getRow(row)[c] = blank;
-        }
+        @memset(self.getRow(row)[0..self.cols], blank);
         self.dirty[row] = 1;
         self.wrapped[row] = 0;
         self.row_ids[row] = freshRowId();
@@ -308,9 +305,9 @@ pub const Grid = struct {
             if (@as(u32, self.top_row) + n + self.rows > self.capacity_rows) self.normalize();
             if (@as(u32, self.top_row) + n + self.rows <= self.capacity_rows) {
                 self.top_row += n;
-                std.mem.copyForwards(u8, self.dirty[0 .. self.rows - n], self.dirty[n..self.rows]);
-                std.mem.copyForwards(u32, self.row_ids[0 .. self.rows - n], self.row_ids[n..self.rows]);
-                std.mem.copyForwards(u8, self.wrapped[0 .. self.rows - n], self.wrapped[n..self.rows]);
+                @memmove(self.dirty[0 .. self.rows - n], self.dirty[n..self.rows]);
+                @memmove(self.row_ids[0 .. self.rows - n], self.row_ids[n..self.rows]);
+                @memmove(self.wrapped[0 .. self.rows - n], self.wrapped[n..self.rows]);
                 var r: u16 = self.rows - n;
                 while (r < self.rows) : (r += 1) self.clearRowAs(r, blank);
                 return;
@@ -329,13 +326,19 @@ pub const Grid = struct {
         }
     }
 
+    /// Logical row 0. Rows are `stride` cells apart from there: the visible
+    /// window never wraps past the end of the buffer.
+    pub fn viewPtr(self: *const Grid) [*]const Cell {
+        return self.cells[@as(usize, self.top_row) * self.stride ..].ptr;
+    }
+
     /// Move the visible window back to physical row 0 so `cells.ptr` addresses
-    /// logical row 0, the layout the host reads.
+    /// logical row 0.
     pub fn normalize(self: *Grid) void {
         if (self.top_row == 0) return;
         const len = @as(usize, self.rows) * self.stride;
         const start = @as(usize, self.top_row) * self.stride;
-        std.mem.copyForwards(Cell, self.cells[0..len], self.cells[start .. start + len]);
+        @memmove(self.cells[0..len], self.cells[start .. start + len]);
         self.top_row = 0;
     }
 

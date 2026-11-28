@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { deflateSync } from "node:zlib";
 let WasmBridge: typeof import("../wasm-bridge.js").WasmBridge;
 const wasmBytes = readFileSync(
   new URL("../../wasm/wterm.wasm", import.meta.url),
@@ -24,7 +25,9 @@ function respondWith(body: BodyInit, init?: ResponseInit): void {
 }
 
 it("imports the embedded binary only for loads without a URL", async () => {
-  const imported = vi.fn(() => ({ WASM_BASE64: wasmBytes.toString("base64") }));
+  const imported = vi.fn(() => ({
+    WASM_DEFLATE_BASE64: deflateSync(wasmBytes).toString("base64"),
+  }));
   vi.doMock("../wasm-inline.js", imported);
   vi.resetModules();
   try {
@@ -38,6 +41,15 @@ it("imports the embedded binary only for loads without a URL", async () => {
   } finally {
     vi.doUnmock("../wasm-inline.js");
   }
+});
+
+it("explains a missing DecompressionStream for the embedded binary", async () => {
+  vi.stubGlobal("DecompressionStream", undefined);
+  await expect(WasmBridge.load()).rejects.toThrow(
+    /DecompressionStream.*wasmUrl/,
+  );
+  vi.unstubAllGlobals();
+  await expect(WasmBridge.load()).resolves.toBeDefined();
 });
 
 it("decodes and compiles the embedded binary once across concurrent and later loads", async () => {

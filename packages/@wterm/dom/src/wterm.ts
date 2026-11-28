@@ -27,6 +27,11 @@ import {
   type SearchState,
 } from "./search.js";
 import {
+  scanWindowSizeBytes,
+  scanWindowSizeText,
+  type WindowSizeQueryState,
+} from "./output-queries.js";
+import {
   registerWebMCPTerminal,
   type WebMCPOptions,
   type WebMCPTerminal,
@@ -35,28 +40,6 @@ import {
 const SYNCHRONIZED_OUTPUT_TIMEOUT_MS = 1000;
 const PROGRAMMATIC_SCROLL_TOLERANCE = 1;
 const TEXT_SYNC_IDLE_MS = 150;
-
-function findQueryPrefix(data: string | Uint8Array, from: number): number {
-  if (typeof data === "string") return data.indexOf("\x1b[1", from);
-  for (
-    let i = data.indexOf(0x1b, from);
-    i >= 0;
-    i = data.indexOf(0x1b, i + 1)
-  ) {
-    if (data[i + 1] === 0x5b && data[i + 2] === 0x31) return i;
-  }
-  return -1;
-}
-
-/** Query state for an `ESC` or `ESC [` that ends the data. */
-function trailingQueryState(data: string | Uint8Array): 0 | 1 | 2 {
-  const at = (i: number) =>
-    typeof data === "string" ? data.charCodeAt(i) : data[i];
-  const n = data.length;
-  if (n >= 1 && at(n - 1) === 0x1b) return 1;
-  if (n >= 2 && at(n - 2) === 0x1b && at(n - 1) === 0x5b) return 2;
-  return 0;
-}
 
 const pendingRenders = new Set<WTerm>();
 let renderFrameId: number | null = null;
@@ -225,7 +208,7 @@ export class WTerm {
   private _pendingResizeScrollTop: number | null = null;
   private _rowHeight = 0;
   private _charWidth = 0;
-  private _windowSizeQueryState: 0 | 1 | 2 | 3 | 4 | 6 = 0;
+  private _windowSizeQueryState: WindowSizeQueryState = 0;
   /** Theme color queries in the output, including ones cut by a write boundary. */
   private _themeQueries = new ThemeQueryScanner();
   private _search: SearchController;
@@ -517,14 +500,17 @@ export class WTerm {
     try {
       if (this._coreOption) {
         this.bridge = this._coreOption;
+        this._setRowHeight();
       } else {
-        this.bridge = await WasmBridge.load(this.wasmUrl);
+        const loading = WasmBridge.load(this.wasmUrl);
+        // Lay out the row probe while the built-in core loads and compiles.
+        this._setRowHeight();
+        this.bridge = await loading;
       }
       if (this._destroyed) return this;
       this.bridge.setUpdateListener?.(this._onCoreUpdate);
       const initialCols = this.cols;
       const initialRows = this.rows;
-      this._setRowHeight();
       if (this.autoResize) {
         const size = this._measureGridSize();
         if (size) {
@@ -1643,55 +1629,15 @@ export class WTerm {
     return { hasError, error: firstError };
   }
 
-  /**
-   * Kitty uses xterm window reports to discover the pixel geometry needed for
-   * image placement. The core intentionally does not know about the browser
-   * viewport, so these two queries are answered at the DOM boundary.
-   */
+  /** The window size queries in a write (see output-queries.ts). */
   private _collectWindowSizeQueries(data: string | Uint8Array): (14 | 16)[] {
-    const queries: (14 | 16)[] = [];
-    let state = this._windowSizeQueryState;
-    let index = 0;
-    while (index < data.length) {
-      if (state === 0) {
-        // Skip ordinary output in bulk, jumping straight to `ESC [ 1`: SGR-heavy
-        // output has an ESC every few bytes. ASCII queries can be recognized in
-        // raw bytes without allocating or decoding a copy of every write.
-        const found = findQueryPrefix(data, index);
-        if (found < 0) {
-          // A prefix cut by the end of this write resumes in the next one.
-          state = trailingQueryState(data);
-          index = data.length;
-          break;
-        }
-        state = 3;
-        index = found + 3;
-        continue;
-      }
-      const code =
-        typeof data === "string" ? data.charCodeAt(index) : data[index];
-      index++;
-      const restart = code === 0x1b ? 1 : 0;
-      switch (state) {
-        case 1: // ESC
-          state = code === 0x5b ? 2 : restart;
-          break;
-        case 2: // ESC [
-          state = code === 0x31 ? 3 : restart;
-          break;
-        case 3: // ESC [ 1
-          state = code === 0x34 ? 4 : code === 0x36 ? 6 : restart;
-          break;
-        case 4:
-        case 6:
-          if (code === 0x74) queries.push(state === 4 ? 14 : 16);
-          state = restart;
-          break;
-      }
-    }
+    const result =
+      typeof data === "string"
+        ? scanWindowSizeText(data, this._windowSizeQueryState)
+        : scanWindowSizeBytes(data, this._windowSizeQueryState);
     // Only the matched ASCII prefix survives, including across mixed writes.
-    this._windowSizeQueryState = state;
-    return queries;
+    this._windowSizeQueryState = result.state;
+    return result.windowSizes;
   }
 
   private _windowSizeResponse(query: 14 | 16): string {

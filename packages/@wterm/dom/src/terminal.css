@@ -221,8 +221,9 @@
 }
 
 .term-block {
-  width: var(--term-cell-width, 1ch);
+  width: calc(var(--term-span-cols, 1) * var(--term-cell-width, 1ch));
   overflow: hidden;
+  letter-spacing: var(--term-block-spacing, 0px);
   -webkit-text-fill-color: transparent;
 }
 

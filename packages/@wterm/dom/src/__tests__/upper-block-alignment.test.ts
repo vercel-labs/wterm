@@ -73,8 +73,11 @@ describe("U+2594 horizontal-rule alignment (Claude Code TUI)", () => {
     const renderer = new Renderer(container);
     renderer.render(bridge as any);
 
-    const blocks = container.querySelectorAll(".term-block");
-    expect(blocks).toHaveLength(5);
+    // The run shares one span, so every column paints from one gradient.
+    const blocks = container.querySelectorAll<HTMLElement>(".term-block");
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].style.getPropertyValue("--term-span-cols")).toBe("5");
+    expect(blocks[0].textContent).toBe("▔▔▔▔▔");
 
     // Every block span must carry a background gradient.
     for (const block of Array.from(blocks)) {
@@ -96,14 +99,6 @@ describe("U+2594 horizontal-rule alignment (Claude Code TUI)", () => {
     // or an explicit `px` length). Either keeps the gradient stop on a
     // device pixel.
     expect(firstStyle).toMatch(/round\(|\bpx\b/);
-
-    // All five U+2594 cells must share an identical background string so
-    // adjacent cells paint at the same pixel — any divergence reintroduces
-    // the per-cell jog symptom.
-    const styles = Array.from(blocks).map((b) => b.getAttribute("style"));
-    for (let i = 1; i < styles.length; i++) {
-      expect(styles[i]).toBe(styles[0]);
-    }
   });
 
   it("U+2594 spans inherit the .term-row > span vertical-align rule (no baseline jog)", () => {
