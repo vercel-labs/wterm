@@ -384,8 +384,8 @@ function addBoxStyles(
   className: string,
 ): void {
   const stroke = "var(--term-box-stroke)";
-  const verticalLength = `calc(50% + ${stroke})`;
-  const horizontalLength = `calc(50% + ${stroke})`;
+  const verticalLength = `calc(50% + ${stroke} * 0.5)`;
+  const horizontalLength = `calc(50% + ${stroke} * 0.5)`;
   for (const [codepoint, arms] of Object.entries(characters)) {
     const selected: [position: string, size: string][] = [];
     if (arms.includes("u") && arms.includes("d")) {

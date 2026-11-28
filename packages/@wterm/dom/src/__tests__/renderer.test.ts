@@ -1677,4 +1677,36 @@ describe("Renderer", () => {
       selection.removeAllRanges();
     });
   });
+
+  describe("box-drawing stroke geometry", () => {
+    it("stops single-direction arms at the far edge of the orthogonal stroke", () => {
+      const cells = [
+        makeCell("└"),
+        makeCell("┴"),
+        makeCell("┘"),
+        makeCell("┏"),
+      ];
+      const bridge = createMockBridge(cells.length, 1, [cells]);
+      bridge.getCursor = () => ({ row: 0, col: 0, visible: false });
+      const renderer = new Renderer(container);
+      renderer.render(bridge);
+
+      const spans = Array.from(
+        container.querySelectorAll<HTMLElement>(".term-row > .term-box"),
+      );
+      expect(spans).toHaveLength(4);
+      expect(spans[0].style.backgroundSize).toBe(
+        "var(--term-box-stroke) calc(50% + var(--term-box-stroke) * 0.5),calc(50% + var(--term-box-stroke) * 0.5) var(--term-box-stroke)",
+      );
+      expect(spans[1].style.backgroundSize).toBe(
+        "var(--term-box-stroke) calc(50% + var(--term-box-stroke) * 0.5),100% var(--term-box-stroke)",
+      );
+      expect(spans[2].style.backgroundSize).toBe(
+        "var(--term-box-stroke) calc(50% + var(--term-box-stroke) * 0.5),calc(50% + var(--term-box-stroke) * 0.5) var(--term-box-stroke)",
+      );
+      expect(spans[3].style.backgroundSize).toBe(
+        "var(--term-box-stroke) calc(50% + var(--term-box-stroke) * 0.5),calc(50% + var(--term-box-stroke) * 0.5) var(--term-box-stroke)",
+      );
+    });
+  });
 });
